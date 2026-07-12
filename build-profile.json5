@@ -1,6 +1,20 @@
 {
   "app": {
-    "signingConfigs": [],
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "C:\\Users\\JiHuanyu\\.ohos\\config\\default_UPlayer_96SQCdxCEjOFzywLQBJbqR6teqVtp2PoO2U-gRnqqEU=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001B2BE2E70BE99150EB678913B55A75D4BF08F7860BBAE828E0204D6EE116F8FD204550A799E243A0",
+          "profile": "C:\\Users\\JiHuanyu\\.ohos\\config\\default_UPlayer_96SQCdxCEjOFzywLQBJbqR6teqVtp2PoO2U-gRnqqEU=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "C:\\Users\\JiHuanyu\\.ohos\\config\\default_UPlayer_96SQCdxCEjOFzywLQBJbqR6teqVtp2PoO2U-gRnqqEU=.p12",
+          "storePassword": "0000001B51FA0C4D200E7A831842AE108E02F585B3D3C11171A2C14CE7EC046DC28276626FACD1F1219671"
+        }
+      }
+    ],
     "products": [
       {
         "name": "default",
