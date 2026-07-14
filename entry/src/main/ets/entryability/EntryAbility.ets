@@ -22,6 +22,19 @@ export default class EntryAbility extends UIAbility {
     // Main window is created, set main page for this ability
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageCreate');
 
+    // 检测系统主题
+    let isDark = false;
+    try {
+      const cm = this.context.config.colorMode;
+      if (cm === ConfigurationConstant.ColorMode.COLOR_MODE_DARK) {
+        isDark = true;
+      }
+    } catch (err) {
+      hilog.error(DOMAIN, 'testTag', 'Failed to detect color mode. Cause: %{public}s', JSON.stringify(err));
+    }
+    AppStorage.SetOrCreate('isDarkMode', isDark);
+    hilog.info(DOMAIN, 'testTag', 'isDarkMode set to: %{public}s', JSON.stringify(isDark));
+
     windowStage.loadContent('pages/Index', (err) => {
       if (err.code) {
         hilog.error(DOMAIN, 'testTag', 'Failed to load the content. Cause: %{public}s', JSON.stringify(err));
