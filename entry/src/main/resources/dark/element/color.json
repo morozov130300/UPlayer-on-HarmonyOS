@@ -3,6 +3,22 @@
     {
       "name": "start_window_background",
       "value": "#000000"
+    },
+    {
+      "name": "player_icon_color",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "player_bg_color",
+      "value": "#CC333333"
+    },
+    {
+      "name": "text_primary",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "shadow_color",
+      "value": "#33FFFFFF"
     }
   ]
 }
