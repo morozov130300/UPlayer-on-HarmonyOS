@@ -1,5 +1,5 @@
-import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BackupExtensionAbility, BundleVersion } from '@kit.CoreFileKit';
+import hilog from '@ohos.hilog';
 
 const DOMAIN = 0x0000;
 
