@@ -19,6 +19,10 @@
     {
       "name": "shadow_color",
       "value": "#33FFFFFF"
+    },
+    {
+      "name": "music_player_bg",
+      "value": "#1A1A1A"
     }
   ]
 }

@@ -168,6 +168,9 @@ struct MainPage {
         .rotate({ angle: this.rotationAngle })
         .backgroundColor('#00ffffff')
         .fillColor($r('app.color.player_icon_color'))
+        .onClick(() => {
+          this.getUIContext().getRouter().pushUrl({ url: 'pages/MusicPlayer' })
+        })
 
       Blank()
 
@@ -233,6 +236,14 @@ struct MainPage {
   // 页面销毁前的清理
   aboutToDisappear(): void {
     this.stopRotation()
+  }
+
+  // 页面转场动画：保持静止，播放器从底部覆盖弹出
+  pageTransition() {
+    PageTransitionEnter({ duration: 350 })
+      .translate({ x: 0, y: 0 })
+    PageTransitionExit({ duration: 350 })
+      .translate({ x: 0, y: 0 })
   }
 
   // 主页面布局

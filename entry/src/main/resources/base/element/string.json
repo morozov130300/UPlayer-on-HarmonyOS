@@ -11,6 +11,10 @@
     {
       "name": "EntryAbility_label",
       "value": "label"
+    },
+    {
+      "name": "keep_background_running_reason",
+      "value": "用于在后台继续播放音乐"
     }
   ]
 }
