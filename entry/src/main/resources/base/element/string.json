@@ -15,6 +15,194 @@
     {
       "name": "keep_background_running_reason",
       "value": "用于在后台继续播放音乐"
+    },
+    {
+      "name": "shared_desc",
+      "value": "shared_desc"
+    },
+    {
+      "name": "collection_num",
+      "value": "125000"
+    },
+    {
+      "name": "list_name",
+      "value": "Independent folk"
+    },
+    {
+      "name": "playlist_Introduction",
+      "value": "The set list is a selection of popular folk songs."
+    },
+    {
+      "name": "play_all",
+      "value": "Play all(%d)"
+    },
+    {
+      "name": "collect",
+      "value": "collect"
+    },
+    {
+      "name": "download",
+      "value": "download"
+    },
+    {
+      "name": "comment",
+      "value": "comment"
+    },
+    {
+      "name": "share",
+      "value": "share"
+    },
+    {
+      "name": "play_list",
+      "value": "play list %d"
+    },
+    {
+      "name": "song_name",
+      "value": "I don't know"
+    },
+    {
+      "name": "singer",
+      "value": "Hello xiao wan"
+    },
+    {
+      "name": "EntryFormAbility_desc",
+      "value": "form_description"
+    },
+    {
+      "name": "EntryFormAbility_label",
+      "value": "form_label"
+    },
+    {
+      "name": "sequential_playback",
+      "value": "Sequential playback"
+    },
+    {
+      "name": "single_playback",
+      "value": "Single playback"
+    },
+    {
+      "name": "random_playback",
+      "value": "Random playback"
+    },
+    {
+      "name": "reason_background",
+      "value": "Allow applications to run in the background of music player scenes."
+    },
+    {
+      "name": "page_show",
+      "value": "page from package"
+    },
+    {
+      "name": "volume_setting",
+      "value": "Volume setting"
+    },
+    {
+      "name": "speed_setting",
+      "value": "Speed setting"
+    },
+    {
+      "name": "song_title_two",
+      "value": "I don't know."
+    },
+    {
+      "name": "singer_one",
+      "value": "Delacey"
+    },
+    {
+      "name": "song_title_one",
+      "value": "Dream It Possible"
+    },
+    {
+      "name": "singer_two",
+      "value": "second singer"
+    },
+    {
+      "name": "song_title_three",
+      "value": "third song"
+    },
+    {
+      "name": "singer_three",
+      "value": "third singer"
+    },
+    {
+      "name": "song_title_four",
+      "value": "fourth song"
+    },
+    {
+      "name": "singer_four",
+      "value": "fourth singer"
+    },
+    {
+      "name": "song_title_five",
+      "value": "fifth song"
+    },
+    {
+      "name": "singer_five",
+      "value": "fifth singer"
+    },
+    {
+      "name": "song_title_six",
+      "value": "sixth song"
+    },
+    {
+      "name": "singer_six",
+      "value": "sixth singer"
+    },
+    {
+      "name": "song_title_seven",
+      "value": "seventh song"
+    },
+    {
+      "name": "singer_seven",
+      "value": "seventh singer"
+    },
+    {
+      "name": "song_title_eight",
+      "value": "eighth song"
+    },
+    {
+      "name": "singer_eight",
+      "value": "eighth singer"
+    },
+    {
+      "name": "song_title_nine",
+      "value": "ninth song"
+    },
+    {
+      "name": "singer_nine",
+      "value": "ninth singer"
+    },
+    {
+      "name": "song_title_ten",
+      "value": "tenth singer"
+    },
+    {
+      "name": "singer_ten",
+      "value": "tenth singer"
+    },
+    {
+      "name": "playback_speed",
+      "value": "Playback Speed"
+    },
+    {
+      "name": "no_lyric",
+      "value": "This song is instrumental."
+    },
+    {
+      "name": "got_it",
+      "value": "Got it"
+    },
+    {
+      "name": "no_operate",
+      "value": "Please go back to the inner screen to experience this sample!"
+    },
+    {
+      "name": "Ultra_high_definition_audio",
+      "value": "Ultra-high-definition audio"
+    },
+    {
+      "name": "Spatial_audio",
+      "value": "Spatial audio"
     }
   ]
 }
