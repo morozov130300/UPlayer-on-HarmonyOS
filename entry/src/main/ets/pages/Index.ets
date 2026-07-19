@@ -1,4 +1,6 @@
 import display from '@ohos.display'
+import { curves } from '@kit.ArkUI'
+import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 
 @Entry
 @Component
@@ -7,10 +9,15 @@ struct MainPage {
   @State currentIndex: number = 0
   @State indicatorOffset: number = 4
   @State greetingTitle: string = "加载中……"
+  @State greetingOpacity: number = 0
+  @State greetingOffset: number = 20
   @State isPlaying: boolean = false
   @State rotationAngle: number = 0
+  @State isGlowing: boolean = false
   @State hasAlbumCover: boolean = false
   @State breakpoint: string = 'md' // 屏幕断点：sm/md/lg/xl/xxl
+  @StorageLink(AppStorageKeyConstants.KEY_TOP_HEIGHT) topSafeHeight: number = 0
+  @StorageLink(AppStorageKeyConstants.KEY_BOTTOM_HEIGHT) bottomSafeHeight: number = 0
   // 私有属性
   private tabsController: TabsController = new TabsController()
   private tabWidth: number = 100
@@ -55,6 +62,7 @@ struct MainPage {
       .margin({ bottom: 10 })
       .height(40)
       .borderRadius(20)
+      .backgroundColor('rgba(255,255,255,0.06)')
       .shadow({ radius: 50, color: $r('app.color.shadow_color'), offsetY: 10 })
 
     }
@@ -69,6 +77,10 @@ struct MainPage {
       Image(icon)
         .height(18)
         .fillColor(this.currentIndex === index ? '#FFFFFF' : '#666666')
+        .scale({
+          x: this.currentIndex === index ? 1.15 : 1.0,
+          y: this.currentIndex === index ? 1.15 : 1.0
+        })
 
       Text(name)
         .fontSize(9)
@@ -79,7 +91,9 @@ struct MainPage {
     .height(40)
     .justifyContent(FlexAlign.Center)
     .onClick(() => {
-      this.currentIndex = index
+      this.getUIContext()?.animateTo({ duration: 200, curve: Curve.EaseInOut }, () => {
+        this.currentIndex = index
+      })
       this.tabsController.changeIndex(index)
       this.updateIndicatorOffset(index)
     })
@@ -88,8 +102,7 @@ struct MainPage {
   // 更新指示器偏移量（带动画）
   updateIndicatorOffset(index: number) {
     this.getUIContext()?.animateTo({
-      duration: 300,
-      curve: Curve.EaseInOut
+      curve: curves.springMotion(0.4, 0.8)
     }, () => {
       this.indicatorOffset = this.indicatorInset + index * (this.tabWidth + this.tabGap)
     })
@@ -99,6 +112,10 @@ struct MainPage {
   aboutToAppear(): void {
     this.updateGreeting()
     this.initBreakpoint()
+    this.getUIContext()?.animateTo({ duration: 800, curve: Curve.EaseOut }, () => {
+      this.greetingOpacity = 1
+      this.greetingOffset = 0
+    })
   }
 
   // 获取屏幕宽度（vp）并计算断点
@@ -204,20 +221,37 @@ struct MainPage {
     })
     .backgroundColor($r('app.color.player_bg_color'))
     .borderRadius(20)
-    .shadow({ radius: 50, color: $r('app.color.shadow_color'), offsetY: 5 })
+    .shadow({
+      radius: this.isGlowing ? 60 : 50,
+      color: this.isGlowing ? '#66007DFF' : $r('app.color.shadow_color'),
+      offsetY: 5
+    })
   }
 
   // 切换播放/暂停状态
   togglePlay() {
     this.isPlaying = !this.isPlaying
     if (this.isPlaying) {
-      this.startRotation()
+      // 播放：封面弹簧加速启动
+      this.getUIContext()?.animateTo({ duration: 400, curve: curves.springMotion(0.3, 0.7) }, () => {
+        this.rotationAngle += 30
+      })
+      setTimeout(() => {
+        this.startRotation()
+      }, 400)
+      this.getUIContext()?.animateTo({ duration: 800, curve: Curve.EaseInOut }, () => {
+        this.isGlowing = true
+      })
     } else {
+      // 暂停：封面减速停止 + 光晕消失
       this.stopRotation()
+      this.getUIContext()?.animateTo({ duration: 500, curve: Curve.EaseInOut }, () => {
+        this.isGlowing = false
+      })
     }
   }
 
-  // 开始旋转动画（每8秒一圈）
+  // 开始旋转动画（每8秒一圈，平滑连续）
   startRotation() {
     this.stopRotation()
     this.rotationTimer = setInterval(() => {
@@ -238,12 +272,16 @@ struct MainPage {
     this.stopRotation()
   }
 
-  // 页面转场动画：保持静止，播放器从底部覆盖弹出
+  // 页面转场动画：保持静止并微微缩小，制造景深感
   pageTransition() {
-    PageTransitionEnter({ duration: 350 })
+    PageTransitionEnter({ duration: 400 })
       .translate({ x: 0, y: 0 })
-    PageTransitionExit({ duration: 350 })
+      .scale({ x: 0.92, y: 0.92 })
+      .opacity(0.6)
+    PageTransitionExit({ duration: 400 })
       .translate({ x: 0, y: 0 })
+      .scale({ x: 0.92, y: 0.92 })
+      .opacity(0.6)
   }
 
   // 主页面布局
@@ -253,24 +291,42 @@ struct MainPage {
         // 内容区域
         Stack() {
           //主页标题栏问候语
-          if (this.currentIndex === 0) {
+          Stack() {
+            // 动态环境光背景
+            Column()
+              .width('140%')
+              .aspectRatio(1)
+              .borderRadius('50%')
+              .position({ top: -80, left: -60 })
+              .radialGradient({
+                center: ['50%', '50%'],
+                radius: '80%',
+                colors: [
+                  ['rgba(0,125,255,0.04)', 0.0],
+                  ['rgba(0,125,255,0.01)', 0.6],
+                  ['rgba(0,125,255,0)', 1.0],
+                ]
+              })
+
             Column() {
               Text(this.greetingTitle)
                 .fontWeight(FontWeight.Bolder)
                 .fontSize(28)
                 .fontColor($r('app.color.text_primary'))
+                .opacity(this.greetingOpacity)
+                .translate({ y: this.greetingOffset })
             }
             .width('100%')
             .height('100%')
             .justifyContent(FlexAlign.Start)
             .alignItems(HorizontalAlign.Start)
-            .padding({ top: 24, left: 16 })
-
-          } else if (this.currentIndex === 1) {
-            //歌单页内容
-          } else {
-            //设置页内容
+            .padding({ top: 16 + this.topSafeHeight, left: 16 })
+            .opacity(this.currentIndex === 0 ? 1.0 : 0)
+            .animation({ duration: 250, curve: Curve.EaseInOut })
           }
+          .width('100%')
+          .height('100%')
+
         }
         .layoutWeight(1)
 
@@ -286,7 +342,7 @@ struct MainPage {
           }
           .alignItems(HorizontalAlign.Center)
           .width('100%')
-          .padding({ bottom: 8 })
+          .padding({ bottom: this.bottomSafeHeight })
         } else {
 
           // 大屏：播控条 + 导航栏，水平横排
@@ -301,7 +357,7 @@ struct MainPage {
 
           }
           .width("100%")
-          .padding({ left: 16, right: 16, bottom: 8 })
+          .padding({ left: 16, right: 16, bottom: this.bottomSafeHeight })
           .alignItems(VerticalAlign.Center)
 
         }

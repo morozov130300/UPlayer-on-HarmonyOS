@@ -72,7 +72,8 @@ export struct LyricsComponent {
     Column() {
       if (this.mainWindowInfo.widthBp === WidthBreakpoint.WIDTH_SM) {
         Row() {
-          Image(this.songList[this.selectIndex].label)
+          Image(this.songList && this.selectIndex >= 0 && this.selectIndex < this.songList.length ?
+            this.songList[this.selectIndex].label : $r('app.media.ic_public_music'))
             .width(48)
             .height(48)
             .borderRadius($r('app.float.label_border'))
@@ -80,13 +81,15 @@ export struct LyricsComponent {
               right: 16
             })
           Column() {
-            Text(this.songList[this.selectIndex].title)
+            Text(this.songList && this.selectIndex < this.songList.length ?
+              this.songList[this.selectIndex].title : $r('app.string.page_show'))
               .fontSize(20)
               .fontColor(Color.White)
               .fontWeight(PlayerConstants.FONT_WEIGHT_700)
               .fontFamily(PlayerConstants.FONT_FAMILY_BOLD)
             Row() {
-              Text(this.songList[this.selectIndex].singer)
+              Text(this.songList && this.selectIndex < this.songList.length ?
+                this.songList[this.selectIndex].singer : $r('app.string.page_show'))
                 .fontSize(16)
                 .fontColor($r('sys.color.ohos_id_color_text_hint_contrary'))
                 .fontWeight(PlayerConstants.FONT_WEIGHT_500)
@@ -147,6 +150,16 @@ export struct LyricsComponent {
         ControlAreaComponent({ mainWindowInfo: this.mainWindowInfo })
           .margin({
             top: $r('app.float.control_lyric_margin'),
+          })
+          .transition({
+            type: TransitionType.Insert,
+            translate: { x: 0, y: 40 },
+            opacity: 0
+          })
+          .transition({
+            type: TransitionType.Delete,
+            translate: { x: 0, y: 40 },
+            opacity: 0
           })
       }
     }
