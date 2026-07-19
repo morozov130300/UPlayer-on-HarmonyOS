@@ -118,8 +118,12 @@ export class ColorConversion {
       }
     }
 
-    window.setWindowSystemBarProperties(systemBarProperties).then(() => {
-      Logger.info(TAG, 'setWindowSystemBarProperties success ');
-    })
+    try {
+      window.setWindowSystemBarProperties(systemBarProperties).then(() => {
+        Logger.info(TAG, 'setWindowSystemBarProperties success ');
+      })
+    } catch (err) {
+      Logger.error(TAG, `setWindowSystemBarProperties failed: ${JSON.stringify(err)}`);
+    }
   }
 }

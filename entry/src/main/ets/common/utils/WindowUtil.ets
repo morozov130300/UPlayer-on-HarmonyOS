@@ -54,8 +54,15 @@ export class WindowUtil {
     if (!this.uiContext) {
       return;
     }
-    let topArea = this.mainWindow.getWindowAvoidArea(window.AvoidAreaType.TYPE_SYSTEM);
-    let bottomArea = this.mainWindow.getWindowAvoidArea(window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR)
+    let topArea: window.AvoidArea;
+    let bottomArea: window.AvoidArea;
+    try {
+      topArea = this.mainWindow.getWindowAvoidArea(window.AvoidAreaType.TYPE_SYSTEM);
+      bottomArea = this.mainWindow.getWindowAvoidArea(window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR)
+    } catch (err) {
+      Logger.error(TAG, `getWindowAvoidArea failed: ${JSON.stringify(err)}`);
+      return;
+    }
     let topHeight: number;
     let bottomHeight: number;
     if (!topArea) {

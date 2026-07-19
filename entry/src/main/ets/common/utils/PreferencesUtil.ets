@@ -53,8 +53,12 @@ export class PreferencesUtil {
       Logger.info(TAG, 'preferences is undefined');
       return;
     }
-    this.preferences.putSync(key, value);
-    this.preferences.flushSync();
+    try {
+      this.preferences.putSync(key, value);
+      this.preferences.flushSync();
+    } catch (err) {
+      Logger.error(TAG, `preferencesPut failed: ${JSON.stringify(err)}`);
+    }
   }
 
   // Determine whether there is a certain data in the preferences
@@ -63,11 +67,20 @@ export class PreferencesUtil {
       Logger.info(TAG, 'preferences is undefined');
       return false;
     }
-    return this.preferences.hasSync(key);
+    try {
+      return this.preferences.hasSync(key);
+    } catch (err) {
+      Logger.error(TAG, `preferencesHas failed: ${JSON.stringify(err)}`);
+      return false;
+    }
   }
 
   removePreferencesFromCache(): void {
-    preferences.removePreferencesFromCache(this.context, MY_STORE);
+    try {
+      preferences.removePreferencesFromCache(this.context, MY_STORE);
+    } catch (err) {
+      Logger.error(TAG, `removePreferencesFromCache failed: ${JSON.stringify(err)}`);
+    }
   }
 
   getValue(key: string): preferences.ValueType | undefined {
@@ -75,7 +88,12 @@ export class PreferencesUtil {
       Logger.info(TAG, 'preferences is undefined');
       return undefined;
     }
-    return this.preferences.getSync(key, undefined);
+    try {
+      return this.preferences.getSync(key, undefined);
+    } catch (err) {
+      Logger.error(TAG, `getValue failed: ${JSON.stringify(err)}`);
+      return undefined;
+    }
   }
 
   // Remove data by key
@@ -84,6 +102,10 @@ export class PreferencesUtil {
       Logger.info(TAG, 'preferences is undefined');
       return;
     }
-    this.preferences.deleteSync(key);
+    try {
+      this.preferences.deleteSync(key);
+    } catch (err) {
+      Logger.error(TAG, `removeKey failed: ${JSON.stringify(err)}`);
+    }
   }
 }

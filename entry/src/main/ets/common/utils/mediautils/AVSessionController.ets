@@ -56,9 +56,14 @@ export class AVSessionController {
       return;
     }
     this.mediaControlCenter = MediaControlCenter.getInstance();
-    this.AVSession = await avSession.createAVSession(this.context, "PLAY_AUDIO", 'audio');
-    await this.AVSession.activate();
-    Logger.info(TAG, `session create successed : sessionId : ${this.AVSession.sessionId}`);
+    try {
+      this.AVSession = await avSession.createAVSession(this.context, "PLAY_AUDIO", 'audio');
+      await this.AVSession.activate();
+      Logger.info(TAG, `session create successed : sessionId : ${this.AVSession.sessionId}`);
+    } catch (err) {
+      Logger.error(TAG, `session create failed: ${JSON.stringify(err)}`);
+      return;
+    }
     await this.setAVMetadata();
     this.setLaunchAbility();
     this.setListenerForMesFromController();
@@ -169,13 +174,17 @@ export class AVSessionController {
     if (!this.AVSession) {
       return;
     }
-    this.AVSession.on('play', this.onPlay);
-    this.AVSession.on('pause', this.onPause);
-    this.AVSession.on('playNext', this.onPlayNext);
-    this.AVSession.on('playPrevious', this.onPlayPrevious);
-    this.AVSession.on('seek', this.onSeek);
-    this.AVSession.on('setLoopMode', this.onSetLoopMode);
-    this.AVSession.on('toggleFavorite', this.onToggleFavorite);
+    try {
+      this.AVSession.on('play', this.onPlay);
+      this.AVSession.on('pause', this.onPause);
+      this.AVSession.on('playNext', this.onPlayNext);
+      this.AVSession.on('playPrevious', this.onPlayPrevious);
+      this.AVSession.on('seek', this.onSeek);
+      this.AVSession.on('setLoopMode', this.onSetLoopMode);
+      this.AVSession.on('toggleFavorite', this.onToggleFavorite);
+    } catch (err) {
+      Logger.error(TAG, `setListenerForMesFromController failed: ${JSON.stringify(err)}`);
+    }
   }
 
   // [End setListenerForMesFromController]
@@ -367,13 +376,17 @@ export class AVSessionController {
     if (!this.AVSession) {
       return;
     }
-    this.AVSession.off('play');
-    this.AVSession.off('pause');
-    this.AVSession.off('playNext');
-    this.AVSession.off('playPrevious');
-    this.AVSession.off('setLoopMode');
-    this.AVSession.off('seek');
-    this.AVSession.off('toggleFavorite');
-    this.AVSession.destroy();
+    try {
+      this.AVSession.off('play');
+      this.AVSession.off('pause');
+      this.AVSession.off('playNext');
+      this.AVSession.off('playPrevious');
+      this.AVSession.off('setLoopMode');
+      this.AVSession.off('seek');
+      this.AVSession.off('toggleFavorite');
+      this.AVSession.destroy();
+    } catch (err) {
+      Logger.error(TAG, `unregisterSessionListener failed: ${JSON.stringify(err)}`);
+    }
   }
 }
