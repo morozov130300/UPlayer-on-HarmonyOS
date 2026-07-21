@@ -252,6 +252,7 @@ export struct PlayerInfoComponent {
               .selectedItemHeight(6)
           )
           // 切页回调：切到歌词页显示控制栏，5 秒无操作自动隐藏
+          //TODO: 此处应加上动画，最好是非线性的
           .onChange((index: number) => {
             this.currentSwiperIndex = index;
             if (index === 1) {
