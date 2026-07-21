@@ -31,33 +31,51 @@ import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstan
 
 const TAG = 'PlayerInfoComponent'
 
+/**
+ * 播放器全屏页面的主容器组件
+ * 负责：模糊背景（封面提取主色 + 高斯模糊 + 渐变光效）、多断点布局
+ */
 @Component
 export struct PlayerInfoComponent {
+  /** 窗口信息（断点、安全区），从父级传入并自动监听变化 */
   @ObjectLink @Watch('mainWindowInfoChange') mainWindowInfo: WindowInfo;
+  /** 歌单列表 */
   @StorageLink(AppStorageKeyConstants.KEY_SONG_LIST) songList: SongItem[] = [];
+  /** 当前选中歌曲索引（变化时触发 getImageColor 更新封面主色） */
   @StorageProp(AppStorageKeyConstants.KEY_SELECT_INDEX) @Watch('getImageColor') selectIndex: number = 0;
+  /** 封面提取的主颜色，用于背景着色 */
   @StorageLink(AppStorageKeyConstants.KEY_IMAGE_COLOR) imageColor: string = 'rgba(0, 0, 2, 1.00)';
   @StorageLink(AppStorageKeyConstants.KEY_TOP_HEIGHT) topHeight: number = 0;
   @StorageLink(AppStorageKeyConstants.KEY_BOTTOM_HEIGHT) @Watch('bottomHeightChange') bottomHeight: number = 0;
+  /** 当前封面的模糊图（PixelMap 或 Resource） */
   @State imageLabel: PixelMap | Resource = this.songList[this.selectIndex].label;
+  /** 小屏歌词页是否显示控制栏 */
   @State isShowControl: boolean = true;
+  /** 大屏歌词页是否显示控制栏 */
   @State isShowControlLg: boolean = false;
   @State isTablet: boolean = true;
   @State isTabletFalse: boolean = false;
+  /** 页面无操作计时（秒），超过5秒自动隐藏控制栏 */
   @StorageLink(AppStorageKeyConstants.KEY_PAGE_SHOW_TIME) pageShowTime: number = 0;
+  /** 页面无操作计时器 ID */
   @State intervalID: number = 0;
+  /** 是否显示播放状态（从父组件传入） */
   @Link isShowPlay: boolean;
   @State message: Resource = $r('app.string.no_operate');
+  /** 实际播放状态 */
   @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) isPlay: boolean = false;
   @State particleOpacity: number = 0;
+  /** 上一首封面的模糊图（用于交叉淡出过渡） */
   @State prevImageLabel: PixelMap | Resource = this.imageLabel;
+  /** 上一首封面的当前透明度（0 → 0.5 → 0 的淡出过程） */
   @State prevImageOpacity: number = 0;
+  @State currentSwiperIndex: number = 0;
   private context: common.UIAbilityContext | undefined = AppStorage.get(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT);
 
-  bottomHeightChange(){
-
+  bottomHeightChange() {
   }
 
+  /** 窗口信息变化时：若为手机竖屏中等高度，弹出提示对话框 */
   mainWindowInfoChange() {
     Logger.info(`windowUtil is change,current width breakpoint is ${this.mainWindowInfo?.widthBp},height breakpoint is ${this.mainWindowInfo?.heightBp}`)
     if (this.mainWindowInfo.heightBp === HeightBreakpoint.HEIGHT_MD &&
@@ -78,35 +96,23 @@ export struct PlayerInfoComponent {
 
   build() {
     Stack() {
-      // 上一首模糊背景（淡出过渡）
+      /** 上一首封面的模糊背景（淡出过渡，实现封面切换的交叉溶解） */
       Image(this.prevImageLabel)
         .size(this.mainWindowInfo.heightBp !== HeightBreakpoint.HEIGHT_LG ?
-          {
-            width: PlayerConstants.BACK_IMAGE,
-            height: '100%',
-          } :
-          {
-            width: '100%',
-            height: PlayerConstants.BACK_IMAGE
-          })
+          { width: PlayerConstants.BACK_IMAGE, height: '100%' } :
+          { width: '100%', height: PlayerConstants.BACK_IMAGE })
         .objectFit(ImageFit.Cover)
         .opacity(this.prevImageOpacity)
 
-      // 当前模糊背景
+      /** 当前封面的模糊背景 */
       Image(this.imageLabel)
         .size(this.mainWindowInfo.heightBp !== HeightBreakpoint.HEIGHT_LG ?
-          {
-            width: PlayerConstants.BACK_IMAGE,
-            height: '100%',
-          } :
-          {
-            width: '100%',
-            height: PlayerConstants.BACK_IMAGE
-          })
+          { width: PlayerConstants.BACK_IMAGE, height: '100%' } :
+          { width: '100%', height: PlayerConstants.BACK_IMAGE })
         .objectFit(ImageFit.Cover)
         .opacity(0.5)
 
-      // 径向渐变光晕：中央柔光，边缘暗化
+      /** 径向渐变：中央柔光，边缘暗化 */
       Column()
         .width('100%')
         .height('100%')
@@ -119,7 +125,7 @@ export struct PlayerInfoComponent {
           ]
         })
 
-      // 动态流光效果
+      /** 动态流光效果（播放时可见，水平方向扫光） */
       Column()
         .width('100%')
         .height('100%')
@@ -136,7 +142,7 @@ export struct PlayerInfoComponent {
         .opacity(this.isPlay ? 0.6 : 0)
         .animation({ duration: 1500, curve: Curve.EaseInOut })
 
-      // 顶部柔光：上方向下渐变
+      /** 顶部向下柔光渐变 */
       Column()
         .width('100%')
         .height('40%')
@@ -149,7 +155,7 @@ export struct PlayerInfoComponent {
         })
         .position({ top: 0 })
 
-      // 底部柔光：下方向上渐变
+      /** 底部向上柔光渐变（暗角） */
       Column()
         .width('100%')
         .height('30%')
@@ -162,87 +168,111 @@ export struct PlayerInfoComponent {
         })
         .position({ bottom: 0 })
         .opacity(0.6)
-      Row() {
+
+      // 统一容器：返回按钮 + 指示器 + 内容区，确保三者在同一层级不重叠
+      Column() {
+        // 顶部栏：固定高度 56vp，仅返回按钮靠左
+        Row() {
+          // 返回按钮：始终显示，56x56 圆形触摸区域
+          Row() {
+            SymbolGlyph($r('sys.symbol.chevron_left'))
+              .fontSize(32)
+              .fontColor([Color.White])
+              .opacity(0.8)
+          }
+          .width(56)
+          .height(56)
+          .justifyContent(FlexAlign.Center)
+          .borderRadius(28)
+          .onClick(() => {
+            this.getUIContext()?.getRouter().back()
+          })
+
+          Blank()
+        }
+        .width('100%')
+        .height(56)
+
+        // MD+ 断点：左右双栏布局，左栏专辑封面 + 歌曲信息，右栏歌词
         if (this.mainWindowInfo.widthBp !== WidthBreakpoint.WIDTH_SM) {
           Row() {
+            // 左栏：专辑封面 + 歌曲信息（50% 宽度）
             Column() {
               MusicInfoComponent({ mainWindowInfo: this.mainWindowInfo })
             }
             .padding(this.mainWindowInfo.widthBp === WidthBreakpoint.WIDTH_MD ? 24 : 80)
             .width('50%')
-
+            // 右栏：歌词组件（50% 宽度）
             Column() {
-              LyricsComponent({
-                isShowControl: this.isShowControlLg,
-                mainWindowInfo: this.mainWindowInfo
-              })
+              LyricsComponent({ isShowControl: this.isShowControlLg, mainWindowInfo: this.mainWindowInfo })
             }
             .width('50%')
             .padding(this.mainWindowInfo.widthBp === WidthBreakpoint.WIDTH_MD ? 24 : 80)
           }
+          .layoutWeight(1)
           .width('100%')
         } else {
-          Stack({ alignContent: Alignment.TopStart }) {
-            Swiper() {
-              Column() {
-                MusicInfoComponent({ mainWindowInfo: this.mainWindowInfo, isReverse: true })
-              }
-              .padding({
-                top: 56,
-                bottom: $r('app.float.music_component_bottom'),
-                left: $r('app.float.common_padding'),
-                right: $r('app.float.common_padding')
-              })
-              .width('100%')
-              .height('100%')
-
-              Column() {
-                LyricsComponent({ isShowControl: this.isShowControl, mainWindowInfo: this.mainWindowInfo })
-              }
-              .padding({
-                top: 56,
-                left: $r('app.float.common_padding'),
-                right: $r('app.float.common_padding'),
-                bottom: $r('app.float.music_component_bottom'),
-              })
-              .width('100%')
-              .height('100%')
-
+          // SM 断点：Swiper 左右滑页，第一页专辑封面，第二页歌词
+          Swiper() {
+            // 第一页：专辑封面 + 歌曲信息
+            Column() {
+              MusicInfoComponent({ mainWindowInfo: this.mainWindowInfo, isReverse: true })
             }
-            .height(StyleConstants.FULL_HEIGHT)
-            .indicator(
-              new DotIndicator()
-                .top($r('app.float.options_padding'))
-                .selectedColor($r('app.color.select_swiper'))
-                .color($r('app.color.slider_track'))
-                .itemWidth(8)
-                .selectedItemWidth(20)
-            )
-            .clip(false)
-            .loop(false)
-            .curve(curves.springMotion(0.2, 0.8))
-            .onChange((index: number) => {
-              if (index === 1) {
-                this.isShowControl = true;
-                this.intervalID = setInterval(() => {
-                  this.pageShowTime += 1;
-                  if (this.pageShowTime > 5) {
-                    this.isShowControl = false;
-                    clearInterval(this.intervalID);
-                  }
-                }, 1000);
-              } else {
-                this.pageShowTime = 0;
-                clearInterval(this.intervalID);
-              }
+            .padding({
+              bottom: $r('app.float.music_component_bottom'),
+              left: $r('app.float.common_padding'),
+              right: $r('app.float.common_padding')
             })
-          }
-          .height(StyleConstants.FULL_HEIGHT)
+            .width('100%')
+            .height('100%')
+            // 第二页：歌词组件
+            Column() {
+              LyricsComponent({ isShowControl: this.isShowControl, mainWindowInfo: this.mainWindowInfo })
+            }
+            .padding({
+              left: $r('app.float.common_padding'),
+              right: $r('app.float.common_padding'),
+              bottom: $r('app.float.music_component_bottom'),
+            })
+            .width('100%')
+            .height('100%')
+          }.layoutWeight(1)
+          .loop(false)
+          .clip(false)
+          .curve(curves.springMotion(0.5, 0.8))
+          //指示器，作为swiper的子组件显示
+          .indicator(
+            new DotIndicator()
+              .top(-16) 
+              .color(this.getDotColor(false))
+              .selectedColor(this.getDotColor(true))
+              .itemWidth(6)
+              .itemHeight(6)
+              .selectedItemWidth(14)
+              .selectedItemHeight(6)
+          )
+          // 切页回调：切到歌词页显示控制栏，5 秒无操作自动隐藏
+          .onChange((index: number) => {
+            this.currentSwiperIndex = index;
+            if (index === 1) {
+              this.isShowControl = true;
+              this.intervalID = setInterval(() => {
+                this.pageShowTime += 1;
+                if (this.pageShowTime > 5) {
+                  this.isShowControl = false;
+                  clearInterval(this.intervalID);
+                }
+              }, 1000);
+            } else {
+              this.pageShowTime = 0;
+              clearInterval(this.intervalID);
+            }
+          })
         }
       }
       .padding({
         bottom: this.bottomHeight,
-        top: this.topHeight
+        top: this.mainWindowInfo.widthBp === WidthBreakpoint.WIDTH_SM ? this.topHeight : Math.max(this.topHeight, 56)
       })
     }
     .height(StyleConstants.FULL_HEIGHT)
@@ -251,8 +281,28 @@ export struct PlayerInfoComponent {
     .animation({ duration: 800, curve: Curve.EaseInOut })
   }
 
+  /** 判断封面主色是否为亮色（用于指示器自适应颜色） */
+  private isBackgroundLight(colorStr: string): boolean {
+    const match = colorStr.match(/rgba\((\d+),\s*(\d+),\s*(\d+)/)
+    if (match) {
+      const r = parseInt(match[1]), g = parseInt(match[2]), b = parseInt(match[3])
+      return 0.299 * r + 0.587 * g + 0.114 * b > 128
+    }
+    return false
+  }
+
+  /** 获取指示器颜色：isSelected=true 返回选中色，否则返回未选中色 */
+  private getDotColor(isSelected: boolean): ResourceColor {
+    const isLight = this.isBackgroundLight(this.imageColor)
+    if (isSelected) {
+      return isLight ? '#333333' : '#FFFFFF'
+    }
+    return isLight ? '#AAAAAA' : '#666666'
+  }
+
   /**
-   * Get largest proportion color of an image.
+   * 从当前封面图中提取主色 + 生成模糊图
+   * 流程：getMediaContent → createPixelMap → createColorPicker(取主色) → blur(高斯模糊) → 交叉淡出
    */
   getImageColor() {
     if (!this.context) {
@@ -267,6 +317,7 @@ export struct PlayerInfoComponent {
       .then((value: Uint8Array) => {
         let buffer = value.buffer as ArrayBuffer;
         image.createImageSource(buffer).createPixelMap().then((pixelMap) => {
+          /** 从取色器中提取占比最大的颜色 → 转为 RGBA 字符串 */
           effectKit.createColorPicker(pixelMap, (error, colorPicker) => {
             if (error) {
               Logger.error('Failed to create color picker.');
@@ -276,17 +327,17 @@ export struct PlayerInfoComponent {
               this.imageColor = `rgba(${colorArr[0]}, ${colorArr[1]}, ${colorArr[2]}, 1)`;
             }
           })
+          /** 对封面做高斯模糊 → 保存模糊图用于背景 */
           let headFilter = effectKit.createEffect(pixelMap);
           if (headFilter !== null) {
             headFilter.blur(PlayerConstants.IMAGE_BLUR);
             headFilter.getEffectPixelMap().then((value) => {
-              // 先保存当前封面，用于交叉淡出
+              /** 先用旧封面淡出到 0.5，再切换到新封面，然后旧封面完全淡出 */
               this.prevImageLabel = this.imageLabel;
               this.getUIContext()?.animateTo({ duration: 600, curve: Curve.EaseOut }, () => {
                 this.prevImageOpacity = 0.5;
               });
               this.imageLabel = value;
-              // 新封面显示后，旧封面淡出
               setTimeout(() => {
                 this.getUIContext()?.animateTo({ duration: 800, curve: Curve.EaseOut }, () => {
                   this.prevImageOpacity = 0;
