@@ -15,6 +15,7 @@
 
 import { common } from '@kit.AbilityKit';
 import { util } from '@kit.ArkTS';
+import { curves } from '@kit.ArkUI';
 import { ControlAreaComponent } from './ControlAreaComponent';
 import { PlayerConstants } from '../common/constants/PlayerConstants';
 import { StyleConstants } from '../common/constants/StyleConstants';
@@ -48,8 +49,7 @@ export struct LyricsComponent {
   @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) isPlay: boolean = false;
   /** 是否显示控制栏（外层通过 @Link 控制） */
   @Link isShowControl: boolean;
-  @State intervalID: number = 0;
-  @State pageShowTime: number = 0;
+  @StorageLink(AppStorageKeyConstants.KEY_PAGE_SHOW_TIME) pageShowTime: number = 0;
   private context: common.UIAbilityContext | undefined = AppStorage.get(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT);
 
   aboutToAppear() {
@@ -137,6 +137,13 @@ export struct LyricsComponent {
           .transition({ type: TransitionType.Delete, translate: { x: 0, y: 40 }, opacity: 0 })
       }
     }
-    .onClick(() => { this.pageShowTime = 0; })
+    .onClick(() => {
+      this.pageShowTime = 0;
+      if (!this.isShowControl) {
+        this.getUIContext()?.animateTo({ curve: curves.springMotion(0.5, 0.8) }, () => {
+          this.isShowControl = true;
+        })
+      }
+    })
   }
 }
