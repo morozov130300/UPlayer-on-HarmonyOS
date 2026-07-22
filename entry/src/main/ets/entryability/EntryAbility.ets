@@ -4,6 +4,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
 import { WindowUtil } from '../common/utils/WindowUtil';
 import { MediaControlCenter } from '../common/utils/mediautils/MediaControlCenter';
+import { DataService } from '../service/DataService';
 import Logger from '../common/utils/Logger';
 
 const DOMAIN = 0x0000;
@@ -35,7 +36,10 @@ export default class EntryAbility extends UIAbility {
       }
       hilog.info(DOMAIN, 'testTag', 'Succeeded in loading the content.');
 
-      // 初始化 WindowUtil
+      // Initialize DataService
+      DataService.getInstance().initToAppStorage();
+
+      // Initialize WindowUtil
       windowStage.getMainWindow().then((mainWindow: window.Window) => {
         let uiContext = windowStage.getMainWindowSync().getUIContext();
         let windowUtil = new WindowUtil(mainWindow, uiContext);
@@ -48,7 +52,7 @@ export default class EntryAbility extends UIAbility {
         Logger.error(TAG, `getMainWindow failed: ${JSON.stringify(error)}`);
       });
 
-      // 设置全屏布局
+      // Set full screen layout
       windowStage.getMainWindow().then((mainWindow: window.Window) => {
         mainWindow.setWindowLayoutFullScreen(true).catch((err: Error) => {
           Logger.error(TAG, `setWindowLayoutFullScreen failed: ${JSON.stringify(err)}`);
@@ -58,17 +62,14 @@ export default class EntryAbility extends UIAbility {
   }
 
   onWindowStageDestroy(): void {
-    // Main window is destroyed, release UI related resources
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageDestroy');
   }
 
   onForeground(): void {
-    // Ability has brought to foreground
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onForeground');
   }
 
   onBackground(): void {
-    // Ability has back to background
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onBackground');
   }
 }

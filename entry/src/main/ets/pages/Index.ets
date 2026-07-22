@@ -1,56 +1,61 @@
 import display from '@ohos.display'
 import { curves } from '@kit.ArkUI'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
+import { HomeContent } from './HomeContent'
+import { PlaylistContent } from './PlaylistContent'
+import { SettingsContent } from './SettingsContent'
+import { DataService } from '../service/DataService'
+import { FolderInfo } from '../model/FolderInfo'
 
 @Entry
 @Component
 struct MainPage {
-  /** 当前选中的 Tab 索引（0-首页 1-歌单 2-设置） */
   @State currentIndex: number = 0
-  /** 底部导航蓝色指示器的水平偏移量 */
   @State indicatorOffset: number = 4
-  /** 顶部问候语文字 */
-  @State greetingTitle: string = "加载中……"
-  /** 问候语透明度（用于入场动画） */
+  @State greetingTitle: string = '加载中……'
   @State greetingOpacity: number = 0
-  /** 问候语 Y 偏移（用于入场动画） */
   @State greetingOffset: number = 20
-  /** 是否正在播放（仅控制主页播控条图标，不关联实际播放） */
   @State isPlaying: boolean = false
-  /** 封面旋转角度 */
   @State rotationAngle: number = 0
-  /** 是否显示播放光晕效果 */
   @State isGlowing: boolean = false
   @State hasAlbumCover: boolean = false
-  /** 屏幕断点：sm/md/lg/xl/xxl，控制响应式布局 */
   @State breakpoint: string = 'md'
-  /** 顶部安全区高度（状态栏），从 AppStorage 同步 */
   @StorageLink(AppStorageKeyConstants.KEY_TOP_HEIGHT) topSafeHeight: number = 0
-  /** 底部安全区高度（导航指示器），从 AppStorage 同步 */
   @StorageLink(AppStorageKeyConstants.KEY_BOTTOM_HEIGHT) bottomSafeHeight: number = 0
 
-  /** Tab 控制器 */
   private tabsController: TabsController = new TabsController()
-  /** 每个 Tab 的宽度（vp） */
   private tabWidth: number = 100
-  /** Tab 之间的间距（vp） */
   private tabGap: number = 8
-  /** 蓝色指示器与 Tab 边缘的内间距 */
   private indicatorInset: number = 4
-  /** 封面旋转定时器 ID */
   private rotationTimer: number = -1
+  private dataService: DataService = DataService.getInstance()
 
-  /** 自定义底部导航栏（居中胶囊式，含滑动蓝色指示器） */
+  aboutToAppear(): void {
+    this.dataService.initToAppStorage()
+    this.updateGreeting()
+    this.initBreakpoint()
+    this.getUIContext()?.animateTo({ duration: 800, curve: Curve.EaseOut }, () => {
+      this.greetingOpacity = 1
+      this.greetingOffset = 0
+    })
+  }
+
+  onFolderClick(folder: FolderInfo): void {
+    this.getUIContext()?.animateTo({ duration: 200, curve: Curve.EaseInOut }, () => {
+      this.currentIndex = 0
+      this.updateIndicatorOffset(0)
+    })
+  }
+
   @Builder
   customTabBar() {
     Stack({ alignContent: Alignment.BottomStart }) {
-      /** 蓝色指示器：径向渐变模拟中间凸起边缘凹陷的立体效果 */
       Row()
         .width(this.tabWidth - 2 * this.indicatorInset)
         .height(36)
         .borderRadius(18)
         .alignItems(VerticalAlign.Center)
-        .margin({ left: this.indicatorOffset, bottom: 12, })
+        .margin({ left: this.indicatorOffset, bottom: 12 })
         .shadow({
           radius: 6,
           color: $r('app.color.shadow_color'),
@@ -67,7 +72,6 @@ struct MainPage {
           ]
         })
 
-      /** 三个 Tab */
       Row({ space: this.tabGap }) {
         this.tabItem(0, '首页', $r('app.media.ic_public_home'))
         this.tabItem(1, '歌单', $r('app.media.ic_public_view_list'))
@@ -83,7 +87,6 @@ struct MainPage {
     .height(60)
   }
 
-  /** 单个 Tab 项：图标 + 文字，选中时放大且变白 */
   @Builder
   tabItem(index: number, name: string, icon: Resource) {
     Column() {
@@ -111,7 +114,6 @@ struct MainPage {
     })
   }
 
-  /** 更新指示器偏移（带动画：springMotion 弹性曲线） */
   updateIndicatorOffset(index: number) {
     this.getUIContext()?.animateTo({
       curve: curves.springMotion(0.4, 0.8)
@@ -120,17 +122,24 @@ struct MainPage {
     })
   }
 
-  /** 页面初始化：问候语 → 断点检测 → 问候语入场动画 */
-  aboutToAppear(): void {
-    this.updateGreeting()
-    this.initBreakpoint()
-    this.getUIContext()?.animateTo({ duration: 800, curve: Curve.EaseOut }, () => {
-      this.greetingOpacity = 1
-      this.greetingOffset = 0
-    })
+  updateGreeting() {
+    const now = new Date()
+    const hour = now.getHours()
+    if (hour >= 5 && hour < 9) {
+      this.greetingTitle = '早上好'
+    } else if (hour >= 9 && hour < 12) {
+      this.greetingTitle = '上午好'
+    } else if (hour >= 12 && hour < 14) {
+      this.greetingTitle = '中午好'
+    } else if (hour >= 14 && hour < 18) {
+      this.greetingTitle = '下午好'
+    } else if (hour >= 18 && hour < 24) {
+      this.greetingTitle = '晚上好'
+    } else {
+      this.greetingTitle = '夜深了'
+    }
   }
 
-  /** 初始化屏幕断点监听（根据物理像素宽度计算） */
   initBreakpoint() {
     try {
       const displayInfo = display.getDefaultDisplaySync()
@@ -148,7 +157,6 @@ struct MainPage {
     }
   }
 
-  /** 根据物理像素宽度设置断点：sm(<320) md(<600) lg(<840) xl(<1280) xxl */
   updateBreakpoint(pxWidth: number) {
     const vpWidth = this.getUIContext().px2vp(pxWidth)
     if (vpWidth < 320) {
@@ -165,30 +173,9 @@ struct MainPage {
     console.log('breakpoint:', this.breakpoint)
   }
 
-  /** 根据当前时段更新顶部问候语 */
-  updateGreeting() {
-    const now = new Date()
-    const hour = now.getHours()
-    if (hour >= 5 && hour < 9) {
-      this.greetingTitle = "早上好"
-    } else if (hour >= 9 && hour < 12) {
-      this.greetingTitle = "上午好"
-    } else if (hour >= 12 && hour < 14) {
-      this.greetingTitle = "中午好"
-    } else if (hour >= 14 && hour < 18) {
-      this.greetingTitle = "下午好"
-    } else if (hour >= 18 && hour < 24) {
-      this.greetingTitle = "晚上好"
-    } else {
-      this.greetingTitle = "夜深了"
-    }
-  }
-
-  /** ✅ 主页底部播控条：封面缩略图 + 上一曲 + 播放/暂停 + 下一曲 */
   @Builder
   playerControl() {
     Row({ space: 20 }) {
-      /** 专辑封面缩略图（点击跳转播放器全屏页） */
       Image($r('app.media.ic_public_music'))
         .width(25)
         .height(25)
@@ -200,12 +187,10 @@ struct MainPage {
           this.getUIContext().getRouter().pushUrl({ url: 'pages/MusicPlayer' })
         })
       Blank()
-      /** 上一曲 */
       Image($r('app.media.ic_public_play_last'))
         .width(20)
         .height(20)
         .fillColor($r('app.color.player_icon_color'))
-      /** ✅ 播放/暂停按钮：未播放时显示三角（play），播放时显示两竖线（pause） */
       Image(this.isPlaying ? $r('app.media.ic_public_play') : $r('app.media.ic_public_pause'))
         .width(20)
         .height(20)
@@ -213,14 +198,13 @@ struct MainPage {
         .onClick(() => {
           this.togglePlay()
         })
-      /** 下一曲 */
       Image($r('app.media.ic_public_play_next'))
         .width(20)
         .height(20)
         .fillColor($r('app.color.player_icon_color'))
     }
     .height(40)
-    .padding({ left: 6, right: 14, top: 4, bottom: 4 })
+    .padding({ left: 16, right: 24, top: 4, bottom: 4 })
     .backgroundColor($r('app.color.player_bg_color'))
     .borderRadius(20)
     .shadow({
@@ -230,11 +214,9 @@ struct MainPage {
     })
   }
 
-  /** 切换播放/暂停状态（仅主页动画，不涉及真实音频播放） */
   togglePlay() {
     this.isPlaying = !this.isPlaying
     if (this.isPlaying) {
-      /** 播放：封面先弹簧加速转30°，再持续匀速旋转，同时开启光晕 */
       this.getUIContext()?.animateTo({ duration: 400, curve: curves.springMotion(0.3, 0.7) }, () => {
         this.rotationAngle += 30
       })
@@ -245,7 +227,6 @@ struct MainPage {
         this.isGlowing = true
       })
     } else {
-      /** 暂停：停止旋转，光晕渐隐 */
       this.stopRotation()
       this.getUIContext()?.animateTo({ duration: 500, curve: Curve.EaseInOut }, () => {
         this.isGlowing = false
@@ -253,7 +234,6 @@ struct MainPage {
     }
   }
 
-  /** 开始封面旋转定时器（每 50ms 转 2.25°，约 8 秒一圈） */
   startRotation() {
     this.stopRotation()
     this.rotationTimer = setInterval(() => {
@@ -261,7 +241,6 @@ struct MainPage {
     }, 50)
   }
 
-  /** 停止封面旋转 */
   stopRotation() {
     if (this.rotationTimer !== -1) {
       clearInterval(this.rotationTimer)
@@ -273,7 +252,6 @@ struct MainPage {
     this.stopRotation()
   }
 
-  /** 页面转场：进入/退出时微微缩小并降透明度，制造景深感 */
   pageTransition() {
     PageTransitionEnter({ duration: 500, curve: curves.springMotion(0.6, 0.8) })
       .scale({ x: 0.92, y: 0.92 })
@@ -286,8 +264,8 @@ struct MainPage {
   build() {
     Stack() {
       Column() {
-        Stack() {
-          /** 顶部问候区：径向渐变环境光背景 + 问候语文字 */
+        // Greeting header - only on home tab
+        if (this.currentIndex === 0) {
           Stack() {
             Column()
               .width('140%')
@@ -316,17 +294,30 @@ struct MainPage {
             .justifyContent(FlexAlign.Start)
             .alignItems(HorizontalAlign.Start)
             .padding({ top: 16 + this.topSafeHeight, left: 16 })
-            .opacity(this.currentIndex === 0 ? 1.0 : 0)
-            .animation({ duration: 250, curve: Curve.EaseInOut })
           }
           .width('100%')
-          .height('100%')
+          .height(80)
+          .transition({ type: TransitionType.Insert, opacity: 0, translate: { y: -20 } })
+          .transition({ type: TransitionType.Delete, opacity: 0, translate: { y: -20 } })
         }
-        .layoutWeight(1)
 
-        /** ✅ 响应式布局：小屏（sm/md）竖排，大屏（lg+）横排 */
+        // Tab content
+        if (this.currentIndex === 0) {
+          HomeContent()
+            .layoutWeight(1)
+        } else if (this.currentIndex === 1) {
+          PlaylistContent({ onNavigateToHome: (folder: FolderInfo): void => {
+            this.onFolderClick(folder)
+          }})
+            .layoutWeight(1)
+        } else {
+          SettingsContent()
+            .layoutWeight(1)
+        }
+
+        // Bottom bar
         if (this.breakpoint === 'sm' || this.breakpoint === 'md') {
-          Column() {
+          Column({ space: 8 }) {
             this.playerControl()
             this.customTabBar()
           }
@@ -339,7 +330,7 @@ struct MainPage {
             Blank()
             this.playerControl()
           }
-          .width("100%")
+          .width('100%')
           .padding({ left: 16, right: 16, bottom: this.bottomSafeHeight })
           .alignItems(VerticalAlign.Center)
         }
