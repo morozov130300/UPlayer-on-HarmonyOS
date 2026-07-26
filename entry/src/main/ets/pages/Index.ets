@@ -2,7 +2,7 @@ import display from '@ohos.display'
 import { curves } from '@kit.ArkUI'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { SongInfo } from '../model/SongInfo'
-import { MediaControlCenter } from '../common/utils/mediautils/MediaControlCenter'
+import { AVPlayerService } from '../service/AVPlayerService'
 import { HomeContent } from './HomeContent'
 import { PlaylistContent } from './PlaylistContent'
 import { SettingsContent } from './SettingsContent'
@@ -27,13 +27,15 @@ struct MainPage {
   @StorageLink('uplayer_current_title') currentSongTitle: string = ''
   @StorageLink('uplayer_current_artist') currentSongArtist: string = ''
   @StorageLink('uplayer_current_album_art') currentSongAlbumArt: string = ''
+  @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
 
   private tabsController: TabsController = new TabsController()
-  private tabWidth: number = 100
-  private tabGap: number = 8
+  private tabWidth: number = 72
+  private tabGap: number = 6
   private indicatorInset: number = 4
   private rotationTimer: number = -1
   private dataService: DataService = DataService.getInstance()
+  private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
 
   aboutToAppear(): void {
     this.dataService.initToAppStorage()
@@ -72,7 +74,7 @@ struct MainPage {
           radius: '75%',
           colors: [
             ['#ed007dff', 0.0],
-            ['#007DFF', 0.5],
+            [this.primaryColor, 0.5],
             ['#0044AA', 1.0],
           ]
         })
@@ -181,7 +183,6 @@ struct MainPage {
   @Builder
   playerControl() {
     Row({ space: 20 }) {
-      // Album art or default icon
       if (this.currentSongAlbumArt.length > 0) {
         Image(this.currentSongAlbumArt)
           .width(25).height(25)
@@ -202,7 +203,6 @@ struct MainPage {
           })
       }
 
-      // Song title and artist
       if (this.currentSongTitle.length > 0) {
         Column() {
           Text(this.currentSongTitle)
@@ -215,7 +215,7 @@ struct MainPage {
             .textAlign(TextAlign.Start)
           Text(this.currentSongArtist.length > 0 ? this.currentSongArtist : '未知歌手')
             .fontSize(10)
-            .fontColor('rgba(51,51,51,0.6)')
+            .fontColor($r('app.color.text_sixty_color'))
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .width('100%')
@@ -226,9 +226,11 @@ struct MainPage {
         .margin({ left: 8, right: 8 })
       } else {
         Column() {
-          Text('没有歌曲在播放')
-            .fontSize(12)
-            .fontColor('rgba(51,51,51,0.4)')
+          Text('未播放')
+            .fontSize(11)
+            .fontColor($r('app.color.text_twenty_color'))
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
@@ -250,7 +252,7 @@ struct MainPage {
         .height(20)
         .fillColor($r('app.color.player_icon_color'))
     }
-    .width('85%')
+    .constraintSize({ maxWidth: this.breakpoint === 'sm' || this.breakpoint === 'md' ? '85%' : '36%' })
     .height(40)
     .alignSelf(ItemAlign.Center)
     .padding({ left: 12, right: 16, top: 4, bottom: 4 })
@@ -284,9 +286,9 @@ struct MainPage {
 
   togglePlay(): void {
     if (this.isPlaying) {
-      MediaControlCenter.getInstance().pause()
+      this.avPlayerService.pause()
     } else {
-      MediaControlCenter.getInstance().play()
+      this.avPlayerService.resume()
     }
   }
 
@@ -320,7 +322,6 @@ struct MainPage {
   build() {
     Stack() {
       Column() {
-        // Greeting header - only on home tab
         if (this.currentIndex === 0) {
           Stack() {
             Column()
@@ -357,7 +358,6 @@ struct MainPage {
           .transition({ type: TransitionType.Delete, opacity: 0, translate: { y: -20 } })
         }
 
-        // Tab content
         if (this.currentIndex === 0) {
           HomeContent()
             .layoutWeight(1)
@@ -371,7 +371,6 @@ struct MainPage {
             .layoutWeight(1)
         }
 
-        // Bottom bar
         if (this.breakpoint === 'sm' || this.breakpoint === 'md') {
           Column({ space: 8 }) {
             this.playerControl()

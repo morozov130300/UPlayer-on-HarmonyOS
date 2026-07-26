@@ -1,41 +1,27 @@
-/*
- * Copyright (c) 2026 Huawei Device Co., Ltd.
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import { common, wantAgent } from '@kit.AbilityKit';
 import { avSession } from '@kit.AVSessionKit';
-import { resourceManager } from '@kit.LocalizationKit';
 import { MediaTools } from './MediaTools';
-import { SongItem } from '../../../viewmodel/SongData';
+import { SongInfo } from '../../../model/SongInfo';
+import { AVPlayerService } from '../../../service/AVPlayerService';
 import Logger from '../Logger';
-import { FirstSongSinger, FirstSongTitle, MusicPlayMode } from '../../constants/PlayerConstants';
+import { MusicPlayMode } from '../../constants/PlayerConstants';
 import { PreferencesUtil } from '../PreferencesUtil';
-import { MediaControlCenter } from './MediaControlCenter';
 import { AppStorageKeyConstants } from '../../constants/AppStorageKeyConstants';
+import { image } from '@kit.ImageKit';
+import { BusinessError } from '@kit.BasicServicesKit';
 
 const TAG = 'AVSessionController';
 
 export class AVSessionController {
   private context: common.UIAbilityContext | undefined = undefined;
   private AVSession: avSession.AVSession | undefined = undefined;
-  private songList: SongItem[] = [];
-  private musicIndex: number | undefined = 0;
-  private mediaControlCenter: MediaControlCenter | undefined = undefined;
+  private songList: SongInfo[] = [];
+  private musicIndex: number = 0;
+  private avPlayerService: AVPlayerService = AVPlayerService.getInstance();
   private static avSessionController: AVSessionController;
 
   constructor() {
-    let list: SongItem[] | undefined = AppStorage.get(AppStorageKeyConstants.KEY_SONG_LIST);
+    const list: SongInfo[] | undefined = AppStorage.get(AppStorageKeyConstants.KEY_SONG_LIST);
     if (list) {
       this.songList = list;
     }
@@ -48,18 +34,16 @@ export class AVSessionController {
     return AVSessionController.avSessionController;
   }
 
-  // [Start initAVSession]
-  public async initAVSession() {
+  public async initAVSession(): Promise<void> {
     this.context = AppStorage.get(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT);
     if (!this.context) {
-      Logger.info(TAG, `session create failed, conext is undefined`);
+      Logger.info(TAG, `session create failed, context is undefined`);
       return;
     }
-    this.mediaControlCenter = MediaControlCenter.getInstance();
     try {
       this.AVSession = await avSession.createAVSession(this.context, "PLAY_AUDIO", 'audio');
       await this.AVSession.activate();
-      Logger.info(TAG, `session create successed : sessionId : ${this.AVSession.sessionId}`);
+      Logger.info(TAG, `session create succeeded : sessionId : ${this.AVSession.sessionId}`);
     } catch (err) {
       Logger.error(TAG, `session create failed: ${JSON.stringify(err)}`);
       return;
@@ -67,20 +51,14 @@ export class AVSessionController {
     await this.setAVMetadata();
     this.setLaunchAbility();
     this.setListenerForMesFromController();
-    if (this.musicIndex !== undefined) {
-      this.getAndUpdateFavoriteState(this.musicIndex.toString());
-    }
+    this.getAndUpdateFavoriteState(this.musicIndex.toString());
   }
 
-  // [End initAVSession]
-
-  // [Start setLaunchAbility]
-  // Set LaunchAbility.
-  private setLaunchAbility() {
+  private setLaunchAbility(): void {
     if (!this.context) {
       return;
     }
-    let wantAgentInfo: wantAgent.WantAgentInfo = {
+    const wantAgentInfo: wantAgent.WantAgentInfo = {
       wants: [
         {
           bundleName: this.context.abilityInfo.bundleName,
@@ -91,68 +69,48 @@ export class AVSessionController {
       requestCode: 0,
       wantAgentFlags: [wantAgent.WantAgentFlags.UPDATE_PRESENT_FLAG]
     };
-    wantAgent.getWantAgent(wantAgentInfo).then((agent) => {
+    wantAgent.getWantAgent(wantAgentInfo).then((agent: wantAgent.WantAgent) => {
       if (this.AVSession) {
         this.AVSession.setLaunchAbility(agent);
       }
-    })
-      .catch((err: BusinessError) => {
-        Logger.error(TAG, `getWantAgent failed: code: ${err.code}, message: ${err.message}`);
-      });
+    }).catch((err: BusinessError) => {
+      Logger.error(TAG, `getWantAgent failed: code: ${err.code}, message: ${err.message}`);
+    });
   }
 
-  // [End setLaunchAbility]
-
-  private getDuration() {
-    let duration: number | undefined = AppStorage.get(AppStorageKeyConstants.KEY_TOTAL_MS_TIME);
+  private getDuration(): number | undefined {
+    const duration: number | undefined = AppStorage.get(AppStorageKeyConstants.KEY_TOTAL_MS_TIME);
     if (!duration) {
       Logger.error(TAG, 'get duration failed');
-      return;
+      return undefined;
     }
     return duration;
   }
 
-  // [Start setAVMetadata]
-  // Set metadata
-  public async setAVMetadata() {
-    this.musicIndex = AppStorage.get(AppStorageKeyConstants.KEY_SELECT_INDEX) ?
-      AppStorage.get(AppStorageKeyConstants.KEY_SELECT_INDEX) : 0;
+  public async setAVMetadata(): Promise<void> {
+    this.musicIndex = AppStorage.get(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? 0;
     Logger.info(TAG, 'current musicIndex is:' + this.musicIndex);
-    if (this.musicIndex === undefined) {
-      this.musicIndex = 0;
+    this.refreshSongList();
+    if (this.musicIndex < 0 || this.musicIndex >= this.songList.length) {
+      return;
     }
     try {
       if (this.context) {
-        let mediaImage = await MediaTools.getPixelMapFromResource(this.context,
-          this.songList[this.musicIndex].label as resourceManager.Resource);
-        Logger.info(TAG, 'getPixelMapFromResource success' + JSON.stringify(mediaImage));
-        let title = '';
-        let artist = '';
-        if (this.context) {
-          if (this.songList[this.musicIndex].title !== undefined) {
-            title = this.context.resourceManager.getStringSync(this.songList[this.musicIndex].title!.id);
-          }
-          if (this.songList[this.musicIndex].singer !== undefined) {
-            artist = this.context.resourceManager.getStringSync(this.songList[this.musicIndex].singer!.id);
-          }
-        } else {
-          title = FirstSongTitle;
-          artist = FirstSongSinger;
+        const song: SongInfo = this.songList[this.musicIndex];
+        let mediaImage: image.PixelMap | undefined = undefined;
+        if (song.albumArtPath && song.albumArtPath.length > 0) {
+          mediaImage = await MediaTools.getPixelMapFromFile(song.id, song.albumArtPath);
         }
-        let metadata: avSession.AVMetadata = {
+        const metadata: avSession.AVMetadata = {
           assetId: `${this.musicIndex}`,
-          title: title,
-          artist: artist,
+          title: song.title,
+          artist: song.artist,
           mediaImage: mediaImage,
           duration: this.getDuration(),
           avQueueName: 'AudioRendererQueue',
           avQueueId: 'AudioRendererQueueId',
           avQueueImage: mediaImage
         };
-        let lrc = await MediaTools.getLrcFromRawFile(this.context, this.songList[this.musicIndex].lyric);
-        if (lrc) {
-          metadata.lyric = lrc;
-        }
         if (this.AVSession) {
           this.AVSession.setAVMetadata(metadata).then(() => {
             Logger.info(TAG, 'SetAVMetadata successfully');
@@ -162,15 +120,11 @@ export class AVSessionController {
         }
       }
     } catch (error) {
-      Logger.error(TAG, `SetAVMetadata faile, code: ${(error as BusinessError).code}`);
+      Logger.error(TAG, `SetAVMetadata failed, code: ${(error as BusinessError).code}`);
     }
   }
 
-  // [End setAVMetadata]
-
-  // [Start setListenerForMesFromController]
-  // Set listening events
-  async setListenerForMesFromController() {
+  async setListenerForMesFromController(): Promise<void> {
     if (!this.AVSession) {
       return;
     }
@@ -187,87 +141,82 @@ export class AVSessionController {
     }
   }
 
-  // [End setListenerForMesFromController]
+  private refreshSongList(): void {
+    const list: SongInfo[] | undefined = AppStorage.get(AppStorageKeyConstants.KEY_SONG_LIST);
+    if (list) {
+      this.songList = list;
+    }
+  }
 
-  // Set playback listening
   private onPlay: () => void = () => {
     Logger.info(TAG, `on play , do play task`);
-    if (!this.mediaControlCenter) {
-      Logger.error(TAG, 'mediaControlFunction is undefined in onPlay');
-      return;
-    }
-    this.mediaControlCenter.play()
+    this.avPlayerService.resume();
   }
-  // Set pause listening
+
   private onPause: () => void = () => {
     Logger.info(TAG, `on pause , do pause task`);
-    if (!this.mediaControlCenter) {
-      Logger.error(TAG, 'mediaControlFunction is undefined in onPause');
-      return;
-    }
-    this.mediaControlCenter.pause();
+    this.avPlayerService.pause();
   }
-  // Set play next song listening.
+
   private onPlayNext: () => void = () => {
     Logger.info(TAG, `on playNext , do playNext task`);
-    if (!this.mediaControlCenter) {
-      Logger.error(TAG, 'mediaControlFunction is undefined in onPlayNext');
-      return;
+    this.refreshSongList();
+    const currentIdx: number = AppStorage.get(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? 0;
+    let nextIdx: number = currentIdx + 1;
+    if (nextIdx >= this.songList.length) {
+      nextIdx = 0;
     }
-    this.mediaControlCenter.playNext();
+    if (nextIdx < this.songList.length) {
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, nextIdx);
+      this.avPlayerService.play(this.songList[nextIdx].filePath);
+    }
   }
-  // Set play previous song listening.
+
   private onPlayPrevious: () => void = () => {
     Logger.info(TAG, `on playPrevious , do playPrevious task`);
-    if (!this.mediaControlCenter) {
-      Logger.error(TAG, 'mediaControlFunction is undefined in onPlayPrevious')
-      return;
+    this.refreshSongList();
+    const currentIdx: number = AppStorage.get(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? 0;
+    let prevIdx: number = currentIdx - 1;
+    if (prevIdx < 0) {
+      prevIdx = this.songList.length - 1;
     }
-    this.mediaControlCenter.playPrevious();
+    if (prevIdx >= 0 && prevIdx < this.songList.length) {
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, prevIdx);
+      this.avPlayerService.play(this.songList[prevIdx].filePath);
+    }
   }
-  // Set seek listening.
+
   private onSeek: (curMs: number) => void = (curMs: number) => {
     Logger.info(TAG, `on seek , do seek task`);
-    if (!this.mediaControlCenter) {
-      Logger.error(TAG, 'mediaControlFunction is undefined in onSeek');
-      return;
-    }
-    this.mediaControlCenter.seek(curMs);
+    this.avPlayerService.seek(curMs);
   }
-  // Set set loopMode listening.
+
   private onSetLoopMode: (loopMode: avSession.LoopMode) => void = (loopMode: avSession.LoopMode) => {
     Logger.info(TAG, `on setLoopMode , do loopMode task`);
-    if (!this.mediaControlCenter) {
-      Logger.error(TAG, 'mediaControlFunction is undefined in onSetLoopMode');
-      return;
-    }
+    let playMode: MusicPlayMode = MusicPlayMode.ORDER;
     switch (loopMode) {
       case avSession.LoopMode.LOOP_MODE_SINGLE:
-        this.mediaControlCenter.setPlayModel(MusicPlayMode.ORDER);
+        playMode = MusicPlayMode.SINGLE_CYCLE;
         break;
       case avSession.LoopMode.LOOP_MODE_SEQUENCE:
-        this.mediaControlCenter.setPlayModel(MusicPlayMode.RANDOM);
+        playMode = MusicPlayMode.ORDER;
         break;
       case avSession.LoopMode.LOOP_MODE_SHUFFLE:
-        this.mediaControlCenter.setPlayModel(MusicPlayMode.SINGLE_CYCLE);
+        playMode = MusicPlayMode.RANDOM;
         break;
       default:
         break;
     }
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PLAY_MODE, playMode);
   }
-  // Set favorite state listening.
+
   private onToggleFavorite: (assetId: string) => void = (assetId: string) => {
     Logger.info(TAG, `on toggleFavorite , do toggleFavorite task`);
-    let isFavorite: boolean | undefined = AppStorage.get(AppStorageKeyConstants.KEY_IS_FAVORITE);
+    const isFavorite: boolean | undefined = AppStorage.get(AppStorageKeyConstants.KEY_IS_FAVORITE);
     this.updateFavoriteState(assetId, isFavorite ? !isFavorite : true);
   }
 
-  // Set play mode listening.
-  public setPlayModeToAVSession(currentPlayMode: MusicPlayMode) {
-    if (!this.mediaControlCenter) {
-      Logger.error(TAG, 'mediaControlFunction is undefined in setPlayModeToAVSession');
-      return;
-    }
+  public setPlayModeToAVSession(currentPlayMode: MusicPlayMode): void {
     let AVSessionLoopMode: avSession.LoopMode = avSession.LoopMode.LOOP_MODE_SEQUENCE;
     switch (currentPlayMode) {
       case MusicPlayMode.SINGLE_CYCLE:
@@ -285,9 +234,7 @@ export class AVSessionController {
     this.setLoopModeState(AVSessionLoopMode);
   }
 
-  // [Start setPlayState]
-  // Set favorite state.
-  private setFavoriteState(isFavorite: boolean) {
+  private setFavoriteState(isFavorite: boolean): void {
     if (this.AVSession) {
       this.AVSession.setAVPlaybackState({ isFavorite }, (err: BusinessError) => {
         if (err) {
@@ -299,8 +246,7 @@ export class AVSessionController {
     }
   }
 
-  // Set progress state.
-  public setProgressState(ms: number) {
+  public setProgressState(ms: number): void {
     if (this.AVSession) {
       this.AVSession.setAVPlaybackState({
         position: {
@@ -317,8 +263,7 @@ export class AVSessionController {
     }
   }
 
-  // Set play state.
-  public setPlayState(isPlay: boolean) {
+  public setPlayState(isPlay: boolean): void {
     if (!this.AVSession) {
       Logger.error(TAG, 'AVSession is undefined');
       return;
@@ -334,9 +279,7 @@ export class AVSessionController {
     });
   }
 
-  // [End setPlayState]
-
-  public async updateFavoriteState(assetId: string, isFavorite: boolean) {
+  public async updateFavoriteState(assetId: string, isFavorite: boolean): Promise<void> {
     if (!this.context) {
       return;
     }
@@ -345,13 +288,13 @@ export class AVSessionController {
     this.setFavoriteState(isFavorite);
   }
 
-  public async getAndUpdateFavoriteState(assetId: string) {
+  public async getAndUpdateFavoriteState(assetId: string): Promise<void> {
     let isFavorite = false;
     if (!this.context) {
       return;
     }
-    let isHas: boolean = PreferencesUtil.getInstance().preferencesHas(assetId);
-    Logger.info(TAG, `isHas: ${isHas}, assetId:${assetId}`)
+    const isHas: boolean = PreferencesUtil.getInstance().preferencesHas(assetId);
+    Logger.info(TAG, `isHas: ${isHas}, assetId:${assetId}`);
     if (isHas) {
       isFavorite = PreferencesUtil.getInstance().getValue(assetId) as boolean;
     }
@@ -359,8 +302,7 @@ export class AVSessionController {
     this.setFavoriteState(isFavorite);
   }
 
-  // Set loopMode state.
-  public async setLoopModeState(AVSessionLoopMode: avSession.LoopMode) {
+  public async setLoopModeState(AVSessionLoopMode: avSession.LoopMode): Promise<void> {
     if (this.AVSession) {
       this.AVSession.setAVPlaybackState({ loopMode: AVSessionLoopMode }, (err: BusinessError) => {
         if (err) {
@@ -372,7 +314,7 @@ export class AVSessionController {
     }
   }
 
-  async unregisterSessionListener() {
+  async unregisterSessionListener(): Promise<void> {
     if (!this.AVSession) {
       return;
     }

@@ -27,7 +27,6 @@ export class AppSettingsData {
   primaryColor: string = '#007DFF'
   showLyrics: boolean = true
   enableNotification: boolean = true
-  backgroundPlayback: boolean = true
   eqEnabled: boolean = false
   volumeGain: number = 0
   playSpeed: number = 1
@@ -250,7 +249,6 @@ export class DataService {
       s.primaryColor = r['primaryColor'] as string
       s.showLyrics = r['showLyrics'] as boolean
       s.enableNotification = r['enableNotification'] as boolean
-      s.backgroundPlayback = r['backgroundPlayback'] as boolean
       s.eqEnabled = r['eqEnabled'] as boolean
       s.volumeGain = r['volumeGain'] as number
       s.playSpeed = r['playSpeed'] as number
@@ -268,7 +266,6 @@ export class DataService {
     r['primaryColor'] = settings.primaryColor
     r['showLyrics'] = settings.showLyrics
     r['enableNotification'] = settings.enableNotification
-    r['backgroundPlayback'] = settings.backgroundPlayback
     r['eqEnabled'] = settings.eqEnabled
     r['volumeGain'] = settings.volumeGain
     r['playSpeed'] = settings.playSpeed
@@ -340,6 +337,5 @@ export class DataService {
     AppStorage.setOrCreate('uplayer_theme_mode', s.themeMode)
     AppStorage.setOrCreate('uplayer_show_lyrics', s.showLyrics)
     AppStorage.setOrCreate('uplayer_notification', s.enableNotification)
-    AppStorage.setOrCreate('uplayer_background', s.backgroundPlayback)
   }
 }

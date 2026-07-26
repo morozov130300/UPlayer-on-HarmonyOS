@@ -3,7 +3,7 @@ import { window } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
 import { WindowUtil } from '../common/utils/WindowUtil';
-import { MediaControlCenter } from '../common/utils/mediautils/MediaControlCenter';
+import { AVPlayerService } from '../service/AVPlayerService';
 import { DataService } from '../service/DataService';
 import Logger from '../common/utils/Logger';
 
@@ -22,7 +22,7 @@ export default class EntryAbility extends UIAbility {
   }
 
   onDestroy(): void {
-    MediaControlCenter.getInstance().release();
+    AVPlayerService.getInstance().release();
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onDestroy');
   }
 

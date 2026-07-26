@@ -2,6 +2,7 @@ import { common } from '@kit.AbilityKit'
 import { SongInfo } from '../model/SongInfo'
 import { DataService, AppSettingsData } from '../service/DataService'
 import { SongScanner } from '../service/SongScanner'
+import { AVPlayerService } from '../service/AVPlayerService'
 import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 
@@ -22,10 +23,13 @@ export struct HomeContent {
   @State viewMode: string = 'flat'
   @State sortMode: string = 'name'
   @State isPlusVisible: boolean = true
-  @State lastScrollY: number = 0
   @State settings: AppSettingsData = new AppSettingsData()
+  @State isMultiSelectMode: boolean = false
+  @State selectedIds: string[] = []
+  @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
   private dataService: DataService = DataService.getInstance()
   private songScanner: SongScanner = SongScanner.getInstance()
+  private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
   private scroller: Scroller = new Scroller()
 
   aboutToAppear(): void {
@@ -46,8 +50,6 @@ export struct HomeContent {
     for (let i = 0; i < this.songs.length; i++) {
       result.push(this.songs[i])
     }
-
-    // Active folder filter
     const activeFolder: string = this.dataService.getActiveFolderFilter()
     if (activeFolder.length > 0) {
       const filtered: SongInfo[] = []
@@ -58,7 +60,6 @@ export struct HomeContent {
       }
       result = filtered
     }
-
     const sorted: SongInfo[] = this.sortSongs(result)
     this.buildDisplayItems(sorted)
   }
@@ -73,7 +74,6 @@ export struct HomeContent {
         items.push(di)
       }
     } else {
-      // Folder mode: group by folder
       const groupMap: Record<string, SongInfo[]> = {}
       for (let i = 0; i < sorted.length; i++) {
         const song: SongInfo = sorted[i]
@@ -87,12 +87,10 @@ export struct HomeContent {
       for (let gi = 0; gi < keys.length; gi++) {
         const key: string = keys[gi]
         const groupSongs: SongInfo[] = groupMap[key]
-        // Add header
         const header: DisplayItem = new DisplayItem()
         header.isHeader = true
         header.headerText = key
         items.push(header)
-        // Add songs
         for (let si = 0; si < groupSongs.length; si++) {
           const di: DisplayItem = new DisplayItem()
           di.isHeader = false
@@ -191,21 +189,54 @@ export struct HomeContent {
     this.loadData()
   }
 
-  removeSong(songId: string): void {
-    this.dataService.removeSong(songId)
-    this.loadData()
-  }
-
   onSongTap(item: SongInfo): void {
-    AppStorage.setOrCreate('uplayer_current_title', item.title)
+    if (this.isMultiSelectMode) {
+      this.toggleSelectItem(item.id)
+      return
+    }
+    AppStorage.setOrCreate('uplayer_current_title', item.title.length > 0 ? item.title : item.name)
     AppStorage.setOrCreate('uplayer_current_artist', item.artist)
     AppStorage.setOrCreate('uplayer_current_album_art', item.albumArtPath)
     AppStorage.setOrCreate('uplayer_current_song_path', item.filePath)
-    try {
-      this.getUIContext().getRouter().pushUrl({ url: 'pages/MusicPlayer' })
-    } catch (err) {
-      Logger.error(TAG, 'pushUrl error: ' + JSON.stringify(err))
+    this.avPlayerService.play(item.filePath)
+  }
+
+  onSongLongPress(item: SongInfo): void {
+    if (!this.isMultiSelectMode) {
+      this.isMultiSelectMode = true
+      this.selectedIds = []
     }
+    this.toggleSelectItem(item.id)
+  }
+
+  toggleSelectItem(id: string): void {
+    const idx: number = this.selectedIds.indexOf(id)
+    if (idx >= 0) {
+      this.selectedIds.splice(idx, 1)
+    } else {
+      this.selectedIds.push(id)
+    }
+    if (this.selectedIds.length === 0) {
+      this.isMultiSelectMode = false
+    }
+  }
+
+  exitMultiSelect(): void {
+    this.isMultiSelectMode = false
+    this.selectedIds = []
+  }
+
+  deleteSelected(): void {
+    for (let i = 0; i < this.selectedIds.length; i++) {
+      this.dataService.removeSong(this.selectedIds[i])
+    }
+    this.isMultiSelectMode = false
+    this.selectedIds = []
+    this.loadData()
+  }
+
+  isSelected(id: string): boolean {
+    return this.selectedIds.indexOf(id) >= 0
   }
 
   getSortLabel(): string {
@@ -226,10 +257,11 @@ export struct HomeContent {
     this.lastScrollY = yOffset
   }
 
+  @State lastScrollY: number = 0
+
   build() {
     Stack() {
       Column() {
-        // Header toolbar
         Row() {
           Row() {
             Text(this.listMode === 'all' ? '全部歌曲' : '当前播放')
@@ -238,7 +270,7 @@ export struct HomeContent {
               .fontWeight(FontWeight.Bold)
           }
           .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-          .backgroundColor(this.listMode === 'all' ? 'rgba(0,125,255,0.12)' : 'rgba(0,0,0,0.05)')
+          .backgroundColor(this.listMode === 'all' ? ('rgba(0,125,255,0.12)') : ('rgba(0,0,0,0.05)'))
           .borderRadius(16)
           .onClick(() => { this.toggleListMode() })
 
@@ -271,51 +303,66 @@ export struct HomeContent {
         .width('100%')
         .padding({ left: 16, right: 16, top: 8, bottom: 8 })
 
-        // Song list
-        Scroll(this.scroller) {
-          Column() {
-            if (this.displayItems.length > 0) {
-              List() {
-                ForEach(this.displayItems, (item: DisplayItem, index: number) => {
-                  ListItem() {
-                    if (item.isHeader) {
-                      this.folderHeaderRow(item.headerText)
-                    } else if (item.song !== null) {
-                      this.songItemRow(item.song)
-                    }
-                  }
-                }, (item: DisplayItem, index: number) => {
-                  if (item.isHeader) {
-                    return 'h_' + item.headerText
-                  }
-                  if (item.song !== null) {
-                    return item.song.id
-                  }
-                  return 'empty_' + index
-                })
+        List({ space: 0 }) {
+          ForEach(this.displayItems, (item: DisplayItem, index: number) => {
+            ListItem() {
+              if (item.isHeader) {
+                this.folderHeaderRow(item.headerText)
+              } else if (item.song !== null) {
+                this.songItemRow(item.song)
               }
-              .width('100%')
-            } else {
-              Text('暂无歌曲，点击右下角 + 添加')
-                .fontSize(14)
-                .fontColor($r('app.color.text_twenty_color'))
-                .width('100%')
-                .height(200)
-                .textAlign(TextAlign.Center)
             }
-          }
-          .width('100%')
+          }, (item: DisplayItem, index: number) => {
+            if (item.isHeader) {
+              return 'h_' + item.headerText
+            }
+            if (item.song !== null) {
+              return item.song.id
+            }
+            return 'empty_' + index
+          })
         }
         .width('100%')
         .layoutWeight(1)
         .edgeEffect(EdgeEffect.Spring)
         .onScroll((xOffset: number, yOffset: number) => { this.onScroll(xOffset, yOffset) })
+
+        if (this.displayItems.length === 0) {
+          Text('暂无歌曲，点击右下角 + 添加')
+            .fontSize(14)
+            .fontColor($r('app.color.text_twenty_color'))
+            .width('100%')
+            .height(200)
+            .textAlign(TextAlign.Center)
+        }
+
+        if (this.isMultiSelectMode) {
+          Row() {
+            Text('已选 ' + this.selectedIds.length + ' 首')
+              .fontSize(14)
+              .fontColor($r('app.color.text_primary'))
+            Blank()
+            Text('取消')
+              .fontSize(14)
+              .fontColor(this.primaryColor)
+              .margin({ right: 16 })
+              .onClick(() => { this.exitMultiSelect() })
+            Text('删除')
+              .fontSize(14)
+              .fontColor('#FF3B30')
+              .onClick(() => { this.deleteSelected() })
+          }
+          .width('100%')
+          .height(48)
+          .padding({ left: 16, right: 16 })
+          .backgroundColor($r('app.color.page_background_sm'))
+          .border({ width: 1, color: $r('app.color.list_divider') })
+        }
       }
       .width('100%')
       .height('100%')
 
-      // "+" button overlay
-      if (this.settings.plusButtonVisible && this.isPlusVisible) {
+      if (!this.isMultiSelectMode && this.settings.plusButtonVisible && this.isPlusVisible) {
         Row() {
           Text('+')
             .fontSize(32)
@@ -324,7 +371,7 @@ export struct HomeContent {
         }
         .width(40).height(40)
         .borderRadius(20)
-        .backgroundColor('rgba(0,125,255,0.9)')
+        .backgroundColor(this.primaryColor)
         .shadow({ radius: 10, color: '#44007DFF', offsetY: 4 })
         .position({ bottom: 12, right: 20 })
         .justifyContent(FlexAlign.Center)
@@ -352,7 +399,24 @@ export struct HomeContent {
   @Builder
   songItemRow(item: SongInfo): void {
     Row() {
-      // Album art thumbnail
+      if (this.isMultiSelectMode) {
+        Row() {
+          if (this.isSelected(item.id)) {
+            Text('✓')
+              .fontSize(14)
+              .fontColor('#FFFFFF')
+              .fontWeight(FontWeight.Bold)
+          }
+        }
+        .width(22).height(22)
+        .borderRadius(11)
+        .backgroundColor(this.isSelected(item.id) ? this.primaryColor : 'rgba(0,0,0,0.08)')
+        .border({ width: 1, color: this.isSelected(item.id) ? this.primaryColor : $r('app.color.list_divider') })
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .margin({ right: 10 })
+      }
+
       if (item.albumArtPath.length > 0) {
         Image(item.albumArtPath)
           .width(36).height(36)
@@ -388,24 +452,25 @@ export struct HomeContent {
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
 
-      // Favorite button
       Image(item.isFavorite ? $r('app.media.heart_fill') : $r('app.media.heart_gap'))
         .width(20).height(20)
         .fillColor(item.isFavorite ? '#FF3B30' : $r('app.color.text_twenty_color'))
         .margin({ right: 12 })
-        .onClick(() => { this.toggleFavorite(item.id) })
-
-      // Delete button
-      Text('✕')
-        .fontSize(16)
-        .fontColor($r('app.color.text_twenty_color'))
-        .width(18).height(18)
-        .textAlign(TextAlign.Center)
-        .onClick(() => { this.removeSong(item.id) })
+        .onClick(() => {
+          this.toggleFavorite(item.id)
+        })
     }
     .width('100%')
     .padding({ left: 16, right: 16, top: 10, bottom: 10 })
     .alignItems(VerticalAlign.Center)
-    .onClick(() => { this.onSongTap(item) })
+    .gesture(
+      LongPressGesture()
+        .onAction(() => {
+          this.onSongLongPress(item)
+        })
+    )
+    .onClick(() => {
+      this.onSongTap(item)
+    })
   }
 }
