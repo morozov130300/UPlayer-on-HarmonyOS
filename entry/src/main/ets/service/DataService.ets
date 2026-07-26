@@ -22,7 +22,7 @@ export const AUDIO_EXTENSIONS: string[] = [
 ]
 
 export class AppSettingsData {
-  plusButtonVisible: boolean = true
+  plusButtonScrollHide: boolean = true
   themeMode: string = 'system'
   primaryColor: string = '#007DFF'
   showLyrics: boolean = true
@@ -31,6 +31,7 @@ export class AppSettingsData {
   volumeGain: number = 0
   playSpeed: number = 1
   audioEffect: string = 'none'
+  folderSortMode: string = 'name'
 }
 
 export class DataService {
@@ -126,6 +127,8 @@ export class DataService {
     r['songCount'] = folder.songCount
     r['addedTime'] = folder.addedTime
     r['isAvailable'] = folder.isAvailable
+    r['isFavorite'] = folder.isFavorite
+    r['sortOrder'] = folder.sortOrder
     return r
   }
 
@@ -137,6 +140,10 @@ export class DataService {
     folder.songCount = r['songCount'] as number
     folder.addedTime = r['addedTime'] as number
     folder.isAvailable = r['isAvailable'] as boolean
+    let rawFav: Object | undefined = r['isFavorite']
+    folder.isFavorite = rawFav !== undefined ? rawFav as boolean : false
+    let rawSort: Object | undefined = r['sortOrder']
+    folder.sortOrder = rawSort !== undefined ? rawSort as number : 0
     return folder
   }
 
@@ -176,6 +183,28 @@ export class DataService {
       }
     }
     this.saveSongs(filtered)
+  }
+
+  removeSongsByFolder(folderPath: string): void {
+    const songs: SongInfo[] = this.getSongs()
+    const filtered: SongInfo[] = []
+    for (let i = 0; i < songs.length; i++) {
+      if (songs[i].folderPath !== folderPath) {
+        filtered.push(songs[i])
+      }
+    }
+    this.saveSongs(filtered)
+  }
+
+  getFavoriteSongs(): SongInfo[] {
+    const songs: SongInfo[] = this.getSongs()
+    const favs: SongInfo[] = []
+    for (let i = 0; i < songs.length; i++) {
+      if (songs[i].isFavorite) {
+        favs.push(songs[i])
+      }
+    }
+    return favs
   }
 
   toggleFavorite(songId: string): boolean {
@@ -234,6 +263,31 @@ export class DataService {
     this.saveFolders(filtered)
   }
 
+  toggleFolderFavorite(folderId: string): boolean {
+    const folders: FolderInfo[] = this.getFolders()
+    let newFav: boolean = false
+    for (let i = 0; i < folders.length; i++) {
+      if (folders[i].id === folderId) {
+        folders[i].isFavorite = !folders[i].isFavorite
+        newFav = folders[i].isFavorite
+        break
+      }
+    }
+    this.saveFolders(folders)
+    return newFav
+  }
+
+  updateFolderSortOrder(folderId: string, newOrder: number): void {
+    const folders: FolderInfo[] = this.getFolders()
+    for (let i = 0; i < folders.length; i++) {
+      if (folders[i].id === folderId) {
+        folders[i].sortOrder = newOrder
+        break
+      }
+    }
+    this.saveFolders(folders)
+  }
+
   // ═══════════ Settings ═══════════
 
   getSettings(): AppSettingsData {
@@ -244,7 +298,7 @@ export class DataService {
     try {
       const r: Record<string, Object> = JSON.parse(raw as string) as Record<string, Object>
       const s: AppSettingsData = new AppSettingsData()
-      s.plusButtonVisible = r['plusButtonVisible'] as boolean
+      s.plusButtonScrollHide = r['plusButtonScrollHide'] as boolean
       s.themeMode = r['themeMode'] as string
       s.primaryColor = r['primaryColor'] as string
       s.showLyrics = r['showLyrics'] as boolean
@@ -253,6 +307,8 @@ export class DataService {
       s.volumeGain = r['volumeGain'] as number
       s.playSpeed = r['playSpeed'] as number
       s.audioEffect = r['audioEffect'] as string
+      let rawFolderSort: Object | undefined = r['folderSortMode']
+      s.folderSortMode = rawFolderSort !== undefined ? rawFolderSort as string : 'name'
       return s
     } catch (e) {
       return new AppSettingsData()
@@ -261,7 +317,7 @@ export class DataService {
 
   saveSettings(settings: AppSettingsData): void {
     const r: Record<string, Object> = {}
-    r['plusButtonVisible'] = settings.plusButtonVisible
+    r['plusButtonScrollHide'] = settings.plusButtonScrollHide
     r['themeMode'] = settings.themeMode
     r['primaryColor'] = settings.primaryColor
     r['showLyrics'] = settings.showLyrics
@@ -270,6 +326,7 @@ export class DataService {
     r['volumeGain'] = settings.volumeGain
     r['playSpeed'] = settings.playSpeed
     r['audioEffect'] = settings.audioEffect
+    r['folderSortMode'] = settings.folderSortMode
     this.getPref().preferencesPut(KEY_SETTINGS, JSON.stringify(r))
     AppStorage.setOrCreate(KEY_SETTINGS, settings)
   }

@@ -54,7 +54,8 @@ export class SongInfo {
       const folderSepIdx: number = folderLastSlash > folderLastBackslash ? folderLastSlash : folderLastBackslash
       song.folderName = folderSepIdx >= 0 ? song.folderPath.substring(folderSepIdx + 1) : song.folderPath
     }
-    const lyricPath: string = filePath.substring(0, dotIdx) + '.lrc'
+    const pathDotIdx: number = filePath.lastIndexOf('.')
+    const lyricPath: string = pathDotIdx > 0 ? filePath.substring(0, pathDotIdx) + '.lrc' : ''
     song.lyricPath = lyricPath
     return song
   }

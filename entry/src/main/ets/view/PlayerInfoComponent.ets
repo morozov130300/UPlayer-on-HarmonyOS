@@ -2,7 +2,7 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import { curves } from '@kit.ArkUI';
 import { effectKit } from '@kit.ArkGraphics2D';
 import { image } from '@kit.ImageKit';
-import { common } from '@kit.AbilityKit';
+import { common, ConfigurationConstant } from '@kit.AbilityKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { LyricsComponent } from './LyricsComponent';
 import { MusicInfoComponent } from './MusicInfoComponent';
@@ -31,6 +31,7 @@ export struct PlayerInfoComponent {
   @State isTablet: boolean = true;
   @State isTabletFalse: boolean = false;
   @StorageLink(AppStorageKeyConstants.KEY_PAGE_SHOW_TIME) pageShowTime: number = 0;
+  @StorageLink('uplayer_theme_mode') themeMode: string = 'system';
   @State intervalID: number = 0;
   @Link isShowPlay: boolean;
   @State message: Resource = $r('app.string.no_operate');
@@ -301,12 +302,29 @@ export struct PlayerInfoComponent {
       return;
     }
     if (!this.songList || this.selectIndex < 0 || this.selectIndex >= this.songList.length) {
-      Logger.error('getImageColor: selectIndex out of bounds');
+      this.setDefaultBackground();
       return;
     }
     const song: SongInfo = this.songList[this.selectIndex];
     if (song.albumArtPath && song.albumArtPath.length > 0) {
       this.loadAlbumArtFromFile(song.albumArtPath);
+    } else {
+      this.setDefaultBackground();
+    }
+  }
+
+  private setDefaultBackground() {
+    let isDark: boolean = this.themeMode === 'dark';
+    if (!isDark && this.themeMode === 'system' && this.context) {
+      const config = this.context.config;
+      if (config.colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK) {
+        isDark = true;
+      }
+    }
+    if (isDark) {
+      this.imageColor = 'rgba(0, 0, 2, 1.00)';
+    } else {
+      this.imageColor = 'rgba(228, 236, 247, 1.00)';
     }
   }
 

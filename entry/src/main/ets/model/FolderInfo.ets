@@ -1,11 +1,13 @@
 // 文件夹信息数据模型
 export class FolderInfo {
   id: string = ''
-  name: string = ''           // 文件夹名称
-  path: string = ''           // 文件夹路径
-  songCount: number = 0       // 文件夹内歌曲数量
-  addedTime: number = Date.now()  // 添加时间戳
-  isAvailable: boolean = true // 文件夹是否可用
+  name: string = ''
+  path: string = ''
+  songCount: number = 0
+  addedTime: number = Date.now()
+  isAvailable: boolean = true
+  isFavorite: boolean = false
+  sortOrder: number = 0
 
   // 生成唯一ID
   static createId(): string {
@@ -23,7 +25,8 @@ export class FolderInfo {
     folder.name = sepIdx >= 0 ? folderPath.substring(sepIdx + 1) : folderPath
     folder.songCount = 0
     folder.addedTime = Date.now()
-    folder.isAvailable = true
+    folder.isFavorite = false
+    folder.sortOrder = 0
     return folder
   }
 }

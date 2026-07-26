@@ -43,7 +43,14 @@ export class SongScanner {
         Logger.info(TAG, `uri=${uri} fileName=${fileName} isAudio=${isAudio}`)
         if (isAudio) {
           const song: SongInfo = SongInfo.fromFile(uri, fileName)
-          // Extract metadata (title, artist, album art, bitrate, sample rate)
+          // Check if LRC lyrics file exists alongside the audio file
+          if (song.lyricPath.length > 0) {
+            try {
+              fs.accessSync(song.lyricPath)
+            } catch (_) {
+              song.lyricPath = ''
+            }
+          }
           await metadataService.extractAndSaveMetadata(song, context)
           songs.push(song)
         }
