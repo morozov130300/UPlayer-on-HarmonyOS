@@ -1,6 +1,8 @@
 import display from '@ohos.display'
 import { curves } from '@kit.ArkUI'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
+import { SongInfo } from '../model/SongInfo'
+import { MediaControlCenter } from '../common/utils/mediautils/MediaControlCenter'
 import { HomeContent } from './HomeContent'
 import { PlaylistContent } from './PlaylistContent'
 import { SettingsContent } from './SettingsContent'
@@ -15,13 +17,16 @@ struct MainPage {
   @State greetingTitle: string = '加载中……'
   @State greetingOpacity: number = 0
   @State greetingOffset: number = 20
-  @State isPlaying: boolean = false
+  @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) @Watch('onPlayStateChange') isPlaying: boolean = false
   @State rotationAngle: number = 0
   @State isGlowing: boolean = false
   @State hasAlbumCover: boolean = false
   @State breakpoint: string = 'md'
   @StorageLink(AppStorageKeyConstants.KEY_TOP_HEIGHT) topSafeHeight: number = 0
   @StorageLink(AppStorageKeyConstants.KEY_BOTTOM_HEIGHT) bottomSafeHeight: number = 0
+  @StorageLink('uplayer_current_title') currentSongTitle: string = ''
+  @StorageLink('uplayer_current_artist') currentSongArtist: string = ''
+  @StorageLink('uplayer_current_album_art') currentSongAlbumArt: string = ''
 
   private tabsController: TabsController = new TabsController()
   private tabWidth: number = 100
@@ -176,17 +181,59 @@ struct MainPage {
   @Builder
   playerControl() {
     Row({ space: 20 }) {
-      Image($r('app.media.ic_public_music'))
-        .width(25)
-        .height(25)
-        .borderRadius(16)
-        .rotate({ angle: this.rotationAngle })
-        .backgroundColor('#00ffffff')
-        .fillColor($r('app.color.player_icon_color'))
-        .onClick(() => {
-          this.getUIContext().getRouter().pushUrl({ url: 'pages/MusicPlayer' })
-        })
-      Blank()
+      // Album art or default icon
+      if (this.currentSongAlbumArt.length > 0) {
+        Image(this.currentSongAlbumArt)
+          .width(25).height(25)
+          .borderRadius(16)
+          .objectFit(ImageFit.Cover)
+          .rotate({ angle: this.rotationAngle })
+          .onClick(() => {
+            this.getUIContext().getRouter().pushUrl({ url: 'pages/MusicPlayer' })
+          })
+      } else {
+        Image($r('app.media.ic_public_music'))
+          .width(25).height(25)
+          .borderRadius(16)
+          .rotate({ angle: this.rotationAngle })
+          .fillColor($r('app.color.player_icon_color'))
+          .onClick(() => {
+            this.getUIContext().getRouter().pushUrl({ url: 'pages/MusicPlayer' })
+          })
+      }
+
+      // Song title and artist
+      if (this.currentSongTitle.length > 0) {
+        Column() {
+          Text(this.currentSongTitle)
+            .fontSize(13)
+            .fontColor($r('app.color.text_primary'))
+            .fontWeight(FontWeight.Medium)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .width('100%')
+            .textAlign(TextAlign.Start)
+          Text(this.currentSongArtist.length > 0 ? this.currentSongArtist : '未知歌手')
+            .fontSize(10)
+            .fontColor('rgba(51,51,51,0.6)')
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .width('100%')
+            .textAlign(TextAlign.Start)
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+        .margin({ left: 8, right: 8 })
+      } else {
+        Column() {
+          Text('没有歌曲在播放')
+            .fontSize(12)
+            .fontColor('rgba(51,51,51,0.4)')
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+        .margin({ left: 8 })
+      }
       Image($r('app.media.ic_public_play_last'))
         .width(20)
         .height(20)
@@ -203,8 +250,10 @@ struct MainPage {
         .height(20)
         .fillColor($r('app.color.player_icon_color'))
     }
+    .width('85%')
     .height(40)
-    .padding({ left: 16, right: 24, top: 4, bottom: 4 })
+    .alignSelf(ItemAlign.Center)
+    .padding({ left: 12, right: 16, top: 4, bottom: 4 })
     .backgroundColor($r('app.color.player_bg_color'))
     .borderRadius(20)
     .shadow({
@@ -214,8 +263,7 @@ struct MainPage {
     })
   }
 
-  togglePlay() {
-    this.isPlaying = !this.isPlaying
+  onPlayStateChange(): void {
     if (this.isPlaying) {
       this.getUIContext()?.animateTo({ duration: 400, curve: curves.springMotion(0.3, 0.7) }, () => {
         this.rotationAngle += 30
@@ -231,6 +279,14 @@ struct MainPage {
       this.getUIContext()?.animateTo({ duration: 500, curve: Curve.EaseInOut }, () => {
         this.isGlowing = false
       })
+    }
+  }
+
+  togglePlay(): void {
+    if (this.isPlaying) {
+      MediaControlCenter.getInstance().pause()
+    } else {
+      MediaControlCenter.getInstance().play()
     }
   }
 

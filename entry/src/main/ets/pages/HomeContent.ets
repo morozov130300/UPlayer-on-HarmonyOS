@@ -196,6 +196,18 @@ export struct HomeContent {
     this.loadData()
   }
 
+  onSongTap(item: SongInfo): void {
+    AppStorage.setOrCreate('uplayer_current_title', item.title)
+    AppStorage.setOrCreate('uplayer_current_artist', item.artist)
+    AppStorage.setOrCreate('uplayer_current_album_art', item.albumArtPath)
+    AppStorage.setOrCreate('uplayer_current_song_path', item.filePath)
+    try {
+      this.getUIContext().getRouter().pushUrl({ url: 'pages/MusicPlayer' })
+    } catch (err) {
+      Logger.error(TAG, 'pushUrl error: ' + JSON.stringify(err))
+    }
+  }
+
   getSortLabel(): string {
     if (this.sortMode === 'name') {
       return '名称排序'
@@ -222,11 +234,11 @@ export struct HomeContent {
           Row() {
             Text(this.listMode === 'all' ? '全部歌曲' : '当前播放')
               .fontSize(14)
-              .fontColor('#FFFFFF')
+              .fontColor($r('app.color.text_primary'))
               .fontWeight(FontWeight.Bold)
           }
           .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-          .backgroundColor(this.listMode === 'all' ? 'rgba(0,125,255,0.3)' : 'rgba(255,255,255,0.1)')
+          .backgroundColor(this.listMode === 'all' ? 'rgba(0,125,255,0.12)' : 'rgba(0,0,0,0.05)')
           .borderRadius(16)
           .onClick(() => { this.toggleListMode() })
 
@@ -235,24 +247,24 @@ export struct HomeContent {
           Row() {
             Image($r('app.media.ic_sort_list'))
               .width(16).height(16)
-              .fillColor('#FFFFFF')
+              .fillColor($r('app.color.text_primary'))
             Text(this.getSortLabel())
               .fontSize(12)
-              .fontColor('#FFFFFF')
+              .fontColor($r('app.color.text_primary'))
               .margin({ left: 4 })
           }
           .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-          .backgroundColor('rgba(255,255,255,0.1)')
+          .backgroundColor('rgba(0,0,0,0.05)')
           .borderRadius(16)
           .onClick(() => { this.switchSortMode() })
 
           Row() {
             Text(this.viewMode === 'flat' ? '平铺' : '文件夹')
               .fontSize(12)
-              .fontColor('#FFFFFF')
+              .fontColor($r('app.color.text_primary'))
           }
           .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-          .backgroundColor('rgba(255,255,255,0.1)')
+          .backgroundColor('rgba(0,0,0,0.05)')
           .borderRadius(16)
           .onClick(() => { this.toggleViewMode() })
         }
@@ -286,7 +298,7 @@ export struct HomeContent {
             } else {
               Text('暂无歌曲，点击右下角 + 添加')
                 .fontSize(14)
-                .fontColor('rgba(255,255,255,0.4)')
+                .fontColor($r('app.color.text_twenty_color'))
                 .width('100%')
                 .height(200)
                 .textAlign(TextAlign.Center)
@@ -329,32 +341,46 @@ export struct HomeContent {
     Row() {
       Text(title)
         .fontSize(13)
-        .fontColor('rgba(255,255,255,0.6)')
+        .fontColor($r('app.color.text_sixty_color'))
         .fontWeight(FontWeight.Medium)
         .padding({ left: 16, top: 12, bottom: 4 })
     }
     .width('100%')
-    .backgroundColor('rgba(255,255,255,0.03)')
+    .backgroundColor('rgba(0,0,0,0.02)')
   }
 
   @Builder
   songItemRow(item: SongInfo): void {
     Row() {
+      // Album art thumbnail
+      if (item.albumArtPath.length > 0) {
+        Image(item.albumArtPath)
+          .width(36).height(36)
+          .borderRadius(6)
+          .objectFit(ImageFit.Cover)
+          .margin({ right: 10 })
+      } else {
+        Image($r('app.media.ic_public_music'))
+          .width(36).height(36)
+          .fillColor($r('app.color.text_sixty_color'))
+          .margin({ right: 10 })
+      }
+
       Column() {
-        Text(item.name)
+        Text(item.title.length > 0 ? item.title : item.name)
           .fontSize(15)
-          .fontColor(item.isAvailable ? '#FFFFFF' : 'rgba(255,255,255,0.3)')
+          .fontColor(item.isAvailable ? $r('app.color.text_primary') : $r('app.color.text_twenty_color'))
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .width('100%')
         Row() {
           Text(item.artist.length > 0 ? item.artist : '未知歌手')
             .fontSize(12)
-            .fontColor('rgba(255,255,255,0.5)')
+            .fontColor($r('app.color.text_sixty_color'))
           if (item.folderName.length > 0) {
             Text(' · ' + item.folderName)
               .fontSize(12)
-              .fontColor('rgba(255,255,255,0.3)')
+              .fontColor($r('app.color.text_twenty_color'))
           }
         }
         .width('100%')
@@ -365,14 +391,14 @@ export struct HomeContent {
       // Favorite button
       Image(item.isFavorite ? $r('app.media.heart_fill') : $r('app.media.heart_gap'))
         .width(20).height(20)
-        .fillColor(item.isFavorite ? '#FF3B30' : 'rgba(255,255,255,0.4)')
+        .fillColor(item.isFavorite ? '#FF3B30' : $r('app.color.text_twenty_color'))
         .margin({ right: 12 })
         .onClick(() => { this.toggleFavorite(item.id) })
 
       // Delete button
       Text('✕')
         .fontSize(16)
-        .fontColor('rgba(255,255,255,0.3)')
+        .fontColor($r('app.color.text_twenty_color'))
         .width(18).height(18)
         .textAlign(TextAlign.Center)
         .onClick(() => { this.removeSong(item.id) })
@@ -380,5 +406,6 @@ export struct HomeContent {
     .width('100%')
     .padding({ left: 16, right: 16, top: 10, bottom: 10 })
     .alignItems(VerticalAlign.Center)
+    .onClick(() => { this.onSongTap(item) })
   }
 }
