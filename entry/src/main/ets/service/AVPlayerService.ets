@@ -16,6 +16,10 @@ export class AVPlayerService {
   private isPrepared: boolean = false
   private pendingPlay: boolean = false
   private resolvePrepare: (() => void) | undefined = undefined
+  private fadeTimer: number = -1
+  private fadeStep: number = 0
+  private static FADE_STEPS: number = 6
+  private static FADE_INTERVAL: number = 50
 
   public static getInstance(): AVPlayerService {
     return AVPlayerService.instance
@@ -124,25 +128,82 @@ export class AVPlayerService {
     }
   }
 
-  async resume(): Promise<void> {
+  resume(): void {
     if (this.avPlayer === undefined) {
       return
     }
     try {
-      this.avPlayer.play()
+      const fadeInOut: boolean = AppStorage.get<boolean>('uplayer_fade_in_out') ?? false
+      if (fadeInOut) {
+        this.avPlayer.setVolume(0)
+        this.avPlayer.play()
+        this.fadeIn()
+      } else {
+        this.avPlayer.play()
+      }
     } catch (err) {
       Logger.error(TAG, `resume failed: ${JSON.stringify(err)}`)
     }
   }
 
-  async pause(): Promise<void> {
+  pause(): void {
     if (this.avPlayer === undefined) {
       return
     }
     try {
-      this.avPlayer.pause()
+      const fadeInOut: boolean = AppStorage.get<boolean>('uplayer_fade_in_out') ?? false
+      if (fadeInOut) {
+        this.fadeOut()
+      } else {
+        this.avPlayer.pause()
+      }
     } catch (err) {
       Logger.error(TAG, `pause failed: ${JSON.stringify(err)}`)
+    }
+  }
+
+  private fadeIn(): void {
+    this.stopFade()
+    this.fadeStep = 0
+    const targetVol: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_CURRENT_VOLUME) ?? 1
+    if (targetVol === 0) {
+      return
+    }
+    this.fadeTimer = setInterval(() => {
+      this.fadeStep++
+      const vol: number = Math.min((this.fadeStep / AVPlayerService.FADE_STEPS) * targetVol, targetVol)
+      if (this.avPlayer !== undefined) {
+        this.avPlayer.setVolume(vol)
+      }
+      if (this.fadeStep >= AVPlayerService.FADE_STEPS) {
+        this.stopFade()
+      }
+    }, AVPlayerService.FADE_INTERVAL)
+  }
+
+  private fadeOut(): void {
+    this.stopFade()
+    const startVol: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_CURRENT_VOLUME) ?? 1
+    this.fadeStep = 0
+    this.fadeTimer = setInterval(() => {
+      this.fadeStep++
+      const vol: number = Math.max(startVol - (this.fadeStep / AVPlayerService.FADE_STEPS) * startVol, 0)
+      if (this.avPlayer !== undefined) {
+        this.avPlayer.setVolume(vol)
+      }
+      if (this.fadeStep >= AVPlayerService.FADE_STEPS) {
+        this.stopFade()
+        if (this.avPlayer !== undefined) {
+          this.avPlayer.pause()
+        }
+      }
+    }, AVPlayerService.FADE_INTERVAL)
+  }
+
+  private stopFade(): void {
+    if (this.fadeTimer !== -1) {
+      clearInterval(this.fadeTimer)
+      this.fadeTimer = -1
     }
   }
 

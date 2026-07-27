@@ -172,6 +172,11 @@ export struct SettingsContent {
           this.toggleRow('通知栏控制', this.settings.enableNotification, (val: boolean) => {
             this.onNotificationChange(val)
           })
+          this.toggleRow('淡入淡出', this.settings.fadeInOut, (val: boolean) => {
+            this.settings.fadeInOut = val
+            this.updateSetting()
+            AppStorage.setOrCreate('uplayer_fade_in_out', val)
+          })
 
           this.divider()
 

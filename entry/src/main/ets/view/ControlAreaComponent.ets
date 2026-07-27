@@ -43,18 +43,15 @@ export struct ControlAreaComponent {
   @State trackThickness: number = 6;
   @State playBtnScale: number = 1.0;
   @State sliderGlow: number = 0;
-  @Prop isReverse: boolean = false;
   private scroller: Scroller = new Scroller();
   private resourceConversion: ResourceConversion = new ResourceConversion();
   private context: common.UIAbilityContext | undefined = AppStorage.get(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT);
   uiContext: UIContext = this.getUIContext();
   promptAction: PromptAction = this.uiContext.getPromptAction();
-  @State speedSelectIndex: number = 0;
-  @State speedArr: number[] = [0.5, 1, 2, 3];
-  @State silentScale: number = 1.0;
   @State playlistScale: number = 1.0;
   @State playModeScale: number = 1.0;
   @State speedScale: number = 1.0;
+  @State volumeScale: number = 1.0;
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance();
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF';
 
@@ -147,100 +144,98 @@ export struct ControlAreaComponent {
   build() {
     Column() {
       Column() {
-        Column() {
-          Slider({
-            min: 0, max: this.max, step: 1, style: SliderStyle.NONE, value: this.value
-          })
-            .trackThickness(this.trackThickness)
-            .selectedColor($r('app.color.slider_select'))
-            .trackColor($r('app.color.slider_track'))
-            .enabled(this.max > 0)
-            .shadow({ radius: this.sliderGlow, color: '#33007DFF' })
-            .onChange((value: number, mode: SliderChangeMode) => {
-              if (mode === SliderChangeMode.End) {
-                this.avPlayerService.seek(value);
-                this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
-                  this.trackThickness = 6;
-                  this.songTimeFontSize = 10;
-                  this.songTimeFontColor = $r('app.color.play_text_color');
-                  this.sliderGlow = 0;
-                });
-              }
-              if (mode === SliderChangeMode.Moving) {
-                this.currentTime = MediaTools.msToCountdownTime(value);
-                this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
-                  this.trackThickness = 10;
-                  this.songTimeFontSize = 12;
-                  this.songTimeFontColor = $r('app.color.slider_select');
-                  this.sliderGlow = 8;
-                });
-              }
-              this.pageShowTime = 0;
-            })
-            .height($r('app.float.slider_height'))
-            .width(StyleConstants.FULL_WIDTH)
-            .hitTestBehavior(HitTestMode.Block)
-          Row() {
-            Text(this.currentTime)
-              .fontColor(this.songTimeFontColor)
-              .fontSize(this.songTimeFontSize)
-              .fontFamily(PlayerConstants.FONT_FAMILY_BLACK)
-              .lineHeight('14vp')
-            Text(this.totalTime)
-              .fontColor(this.songTimeFontColor)
-              .fontSize(this.songTimeFontSize)
-              .fontFamily(PlayerConstants.FONT_FAMILY_BLACK)
-              .lineHeight('14vp')
-          }
-          .width(StyleConstants.FULL_WIDTH)
-          .justifyContent(FlexAlign.SpaceBetween)
-        }
-        .margin({ bottom: 12 })
-
-        Row() {
-          Image($r('app.media.ic_public_forward'))
-            .controlImageBuilder()
-            .width(32)
-            .hoverEffect(HoverEffect.Scale)
-            .onClick(() => {
-              this.playPrevious();
-              this.pageShowTime = 0;
-            })
-          Image(this.isPlay ? $r('app.media.ic_public_play') : $r('app.media.ic_public_pause'))
-            .controlImageBuilder()
-            .width(72)
-            .scale({ x: this.playBtnScale, y: this.playBtnScale })
-            .shadow({ radius: 10, color: ColorHelper.hexWithAlpha(this.primaryColor, '22') })
-            .hoverEffect(HoverEffect.Scale)
-            .onClick(() => {
+        Slider({
+          min: 0, max: this.max, step: 1, style: SliderStyle.NONE, value: this.value
+        })
+          .trackThickness(this.trackThickness)
+          .selectedColor($r('app.color.slider_select'))
+          .trackColor($r('app.color.slider_track'))
+          .enabled(this.max > 0)
+          .shadow({ radius: this.sliderGlow, color: ColorHelper.hexWithAlpha(this.primaryColor, '33') })
+          .onChange((value: number, mode: SliderChangeMode) => {
+            if (mode === SliderChangeMode.End) {
+              this.avPlayerService.seek(value);
               this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
-                this.playBtnScale = 0.85;
+                this.trackThickness = 6;
+                this.songTimeFontSize = 10;
+                this.songTimeFontColor = $r('app.color.play_text_color');
+                this.sliderGlow = 0;
               });
-              setTimeout(() => {
-                this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
-                  this.playBtnScale = 1.0;
-                });
-              }, 100);
-              if (this.isPlay) {
-                this.avPlayerService.pause();
-              } else {
-                this.avPlayerService.resume();
-              }
-              this.pageShowTime = 0;
-            })
-          Image($r('app.media.ic_public_next'))
-            .controlImageBuilder()
-            .width(32)
-            .hoverEffect(HoverEffect.Scale)
-            .onClick(() => {
-              this.playNext();
-              this.pageShowTime = 0;
-            })
+            }
+            if (mode === SliderChangeMode.Moving) {
+              this.currentTime = MediaTools.msToCountdownTime(value);
+              this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
+                this.trackThickness = 10;
+                this.songTimeFontSize = 12;
+                this.songTimeFontColor = $r('app.color.slider_select');
+                this.sliderGlow = 8;
+              });
+            }
+            this.pageShowTime = 0;
+          })
+          .height($r('app.float.slider_height'))
+          .width(StyleConstants.FULL_WIDTH)
+          .hitTestBehavior(HitTestMode.Block)
+        Row() {
+          Text(this.currentTime)
+            .fontColor(this.songTimeFontColor)
+            .fontSize(this.songTimeFontSize)
+            .fontFamily(PlayerConstants.FONT_FAMILY_BLACK)
+            .lineHeight('14vp')
+          Text(this.totalTime)
+            .fontColor(this.songTimeFontColor)
+            .fontSize(this.songTimeFontSize)
+            .fontFamily(PlayerConstants.FONT_FAMILY_BLACK)
+            .lineHeight('14vp')
         }
         .width(StyleConstants.FULL_WIDTH)
         .justifyContent(FlexAlign.SpaceBetween)
-        .padding({ left: $r('app.float.control_padding'), right: $r('app.float.control_padding') })
       }
+      .margin({ bottom: 12 })
+
+      Row() {
+        Image($r('app.media.ic_public_forward'))
+          .controlImageBuilder()
+          .width(32)
+          .hoverEffect(HoverEffect.Scale)
+          .onClick(() => {
+            this.playPrevious();
+            this.pageShowTime = 0;
+          })
+        Image(this.isPlay ? $r('app.media.ic_public_play') : $r('app.media.ic_public_pause'))
+          .controlImageBuilder()
+          .width(72)
+          .scale({ x: this.playBtnScale, y: this.playBtnScale })
+          .shadow({ radius: 10, color: ColorHelper.hexWithAlpha(this.primaryColor, '22') })
+          .hoverEffect(HoverEffect.Scale)
+          .onClick(() => {
+            if (this.isPlay) {
+              this.avPlayerService.pause();
+            } else {
+              this.avPlayerService.resume();
+            }
+            this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
+              this.playBtnScale = 0.85;
+            });
+            setTimeout(() => {
+              this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
+                this.playBtnScale = 1.0;
+              });
+            }, 100);
+            this.pageShowTime = 0;
+          })
+        Image($r('app.media.ic_public_next'))
+          .controlImageBuilder()
+          .width(32)
+          .hoverEffect(HoverEffect.Scale)
+          .onClick(() => {
+            this.playNext();
+            this.pageShowTime = 0;
+          })
+      }
+      .width(StyleConstants.FULL_WIDTH)
+      .justifyContent(FlexAlign.SpaceBetween)
+      .padding({ left: $r('app.float.control_padding'), right: $r('app.float.control_padding') })
 
       Row() {
         SymbolGlyph(this.playMode === MusicPlayMode.ORDER ? $r('sys.symbol.order_play') :
@@ -291,59 +286,46 @@ export struct ControlAreaComponent {
             }
           })
 
-        SymbolGlyph(this.isSilentMode ? $r('sys.symbol.bell_slash') : $r('sys.symbol.bell'))
-          .fontSize(26)
-          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
-          .fontColor([Color.White])
-          .opacity(0.86)
-          .scale({ x: this.silentScale, y: this.silentScale })
-          .onClick(() => {
-            this.getUIContext()?.animateTo({ duration: 200, curve: Curve.EaseInOut }, () => {
-              this.silentScale = 0.75;
-            });
-            setTimeout(() => {
-              this.getUIContext()?.animateTo({ duration: 300, curve: curves.springMotion() }, () => {
-                this.silentScale = 1.0;
-              });
-            }, 150);
-            this.isSilentMode = !this.isSilentMode;
-            if (this.isSilentMode) {
-              this.avPlayerService.setVolume(0);
-              this.volume = 0;
-            } else {
-              const preVolume: number = PreferencesUtil.getInstance().getValue(VOLUME_ID) as number;
-              this.volume = preVolume ? preVolume : 0.1;
-              this.avPlayerService.setVolume(this.volume);
-            }
-          })
-
         SymbolGlyph($r('sys.symbol.speed_multiple'))
           .fontSize(26)
           .renderingStrategy(SymbolRenderingStrategy.SINGLE)
           .fontColor([Color.White])
           .opacity(0.86)
+          .scale({ x: this.speedScale, y: this.speedScale })
           .onClick(() => { this.isShowSpeedBuild = true; })
-          .bindMenu(this.speedBuilder())
+          .bindPopup(this.isShowSpeedBuild, {
+            builder: this.speedPopupBuilder,
+            placement: Placement.Top,
+            showInSubWindow: false,
+            onStateChange: (e) => {
+              if (!e.isVisible) {
+                this.isShowSpeedBuild = false;
+              }
+            }
+          })
 
         SymbolGlyph($r('sys.symbol.speaker_wave_2'))
           .fontSize(26)
           .renderingStrategy(SymbolRenderingStrategy.SINGLE)
           .fontColor([Color.White])
           .opacity(0.86)
+          .scale({ x: this.volumeScale, y: this.volumeScale })
           .onClick(() => { this.isShowVolumeBuild = true; })
-          .bindSheet($$this.isShowVolumeBuild, this.volumeBuilder(), {
-            dragBar: false,
-            height: SheetSize.FIT_CONTENT,
-            preferType: this.mainWindowInfo.widthBp === WidthBreakpoint.WIDTH_SM ? SheetType.CENTER : SheetType.POPUP,
-            title: this.volumeTitle(),
-            showClose: true,
+          .bindPopup(this.isShowVolumeBuild, {
+            builder: this.volumePopupBuilder,
+            placement: Placement.Top,
+            showInSubWindow: false,
+            onStateChange: (e) => {
+              if (!e.isVisible) {
+                this.isShowVolumeBuild = false;
+              }
+            }
           })
       }
       .width(StyleConstants.FULL_WIDTH)
-      .justifyContent(FlexAlign.SpaceBetween)
-      .padding({ top: $r('app.float.slider_margin_top'), bottom: this.isReverse ? $r('app.float.slider_margin_top') : 0 })
+      .justifyContent(FlexAlign.SpaceEvenly)
+      .padding({ top: $r('app.float.slider_margin_top') })
     }
-    .reverse(this.isReverse)
   }
 
   @Builder
@@ -370,8 +352,16 @@ export struct ControlAreaComponent {
   }
 
   @Builder
-  volumeBuilder() {
+  volumePopupBuilder() {
     Column() {
+      Row() {
+        Text('音量')
+          .fontSize(14)
+          .fontColor($r('app.color.text_primary'))
+          .fontWeight(FontWeight.Bold)
+      }
+      .width('100%')
+      .margin({ bottom: 8 })
       Row() {
         Slider({
           value: this.volume * 100, min: 0, max: 100, step: 10, style: SliderStyle.OutSet
@@ -388,59 +378,75 @@ export struct ControlAreaComponent {
               this.isSilentMode = false;
             }
           })
-        Text(`${this.volume * 100}`)
+        Text(`${Math.round(this.volume * 100)}%`)
+          .fontSize(14)
+          .fontColor($r('app.color.text_primary'))
+          .width(40)
+          .textAlign(TextAlign.Center)
       }
     }
-    .padding({ bottom: 30, left: 15, right: 15 })
+    .padding(16)
+    .width(240)
   }
 
   @Builder
-  speedTitle() {
-    Text($r('app.string.speed_setting'))
-      .fontColor($r('app.color.text_primary'))
-      .fontWeight(FontWeight.Bold)
-      .fontSize((this.mainWindowInfo.widthBp === WidthBreakpoint.WIDTH_SM ||
-        this.mainWindowInfo.widthBp === WidthBreakpoint.WIDTH_MD) ? 20 : 14)
-  }
+  speedPopupBuilder() {
+    Column() {
+      Row() {
+        Text('倍速')
+          .fontSize(14)
+          .fontColor($r('app.color.text_primary'))
+          .fontWeight(FontWeight.Bold)
+        Text(`${this.speed.toFixed(2)}x`)
+          .fontSize(14)
+          .fontColor($r('app.color.slider_select'))
+          .fontWeight(FontWeight.Bold)
+          .margin({ left: 8 })
+      }
+      .width('100%')
+      .margin({ bottom: 8 })
 
-  @Builder
-  speedBuilder() {
-    Menu() {
-      MenuItemGroup({ header: this.speedTitle() }) {
-        ForEach(this.speedArr, (speed: number, index: number) => {
-          MenuItem({
-            content: `${speed}x`,
-            symbolEndIcon: this.speed === speed ? new SymbolGlyphModifier($r('sys.symbol.checkmark')).fontSize('24vp') : undefined
-          })
-            .width('100%')
-            .onClick(() => {
-              this.speed = speed;
-              this.avPlayerService.setSpeed(this.speed);
-            })
+      Slider({
+        min: 0.25, max: 3.0, step: 0.25, style: SliderStyle.OutSet, value: this.speed
+      })
+        .showSteps(true)
+        .showTips(false)
+        .width('100%')
+        .selectedColor($r('app.color.slider_select'))
+        .onChange((value: number, mode: SliderChangeMode) => {
+          this.speed = Math.round(value * 4) / 4
+          AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_SPEED, this.speed)
+          this.avPlayerService.setSpeed(this.speed)
         })
+
+      Row() {
+        Text('0.5')
+          .fontSize(10)
+          .fontColor($r('app.color.text_sixty_color'))
+        Text('1.0')
+          .fontSize(10)
+          .fontColor($r('app.color.text_sixty_color'))
+        Text('1.5')
+          .fontSize(10)
+          .fontColor($r('app.color.text_sixty_color'))
+        Text('2.0')
+          .fontSize(10)
+          .fontColor($r('app.color.text_sixty_color'))
+        Text('3.0')
+          .fontSize(10)
+          .fontColor($r('app.color.text_sixty_color'))
       }
+      .width('100%')
+      .justifyContent(FlexAlign.SpaceBetween)
+      .padding({ left: 4, right: 4 })
     }
-    .menuItemDivider({
-      strokeWidth: LengthMetrics.vp(0.5),
-      mode: DividerMode.EMBEDDED_IN_MENU,
-      color: 'rgba(0,0,0,0.2)'
-    })
-    .width(224)
+    .padding(16)
+    .width(260)
   }
 
   @Builder
   playListTitle() {
     Text($r('app.string.play_list', this.songList.length))
-      .maxLines(ContentConstants.PLAY_ALL_MAX_LINES)
-      .fontColor($r('app.color.text_primary'))
-      .fontWeight(FontWeight.Bold)
-      .fontSize(20)
-      .width('100%')
-  }
-
-  @Builder
-  volumeTitle() {
-    Text($r('app.string.volume_setting'))
       .maxLines(ContentConstants.PLAY_ALL_MAX_LINES)
       .fontColor($r('app.color.text_primary'))
       .fontWeight(FontWeight.Bold)

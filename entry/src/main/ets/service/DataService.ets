@@ -1,6 +1,7 @@
 import { SongInfo } from '../model/SongInfo'
 import { FolderInfo } from '../model/FolderInfo'
 import { PreferencesUtil } from '../common/utils/PreferencesUtil'
+import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import Logger from '../common/utils/Logger'
 
 const TAG = 'DataService'
@@ -8,10 +9,10 @@ const TAG = 'DataService'
 const KEY_SONG_LIST: string = 'uplayer_song_list'
 const KEY_FOLDER_LIST: string = 'uplayer_folder_list'
 const KEY_SETTINGS: string = 'uplayer_settings'
-const KEY_ACTIVE_FOLDER: string = 'uplayer_active_folder'
 const KEY_SORT_MODE: string = 'uplayer_sort_mode'
 const KEY_VIEW_MODE: string = 'uplayer_view_mode'
-const KEY_LIST_MODE: string = 'uplayer_list_mode'
+const KEY_SELECTED_FOLDERS: string = 'uplayer_selected_folders'
+const KEY_FAVORITES_SELECTED: string = 'uplayer_favorites_selected'
 
 export const AUDIO_EXTENSIONS: string[] = [
   '.mp3', '.flac', '.wav', '.aac', '.m4a', '.ogg', '.wma', '.ape',
@@ -32,6 +33,7 @@ export class AppSettingsData {
   playSpeed: number = 1
   audioEffect: string = 'none'
   folderSortMode: string = 'name'
+  fadeInOut: boolean = false
 }
 
 export class DataService {
@@ -114,7 +116,6 @@ export class DataService {
     song.addedTime = r['addedTime'] as number
     song.isFavorite = r['isFavorite'] as boolean
     song.isAvailable = r['isAvailable'] as boolean
-    song.isAvailable = r['isAvailable'] as boolean
     song.lyricPath = r['lyricPath'] as string
     return song
   }
@@ -164,6 +165,7 @@ export class DataService {
       records.push(this.songToRecord(songs[i]))
     }
     this.writeJsonArray(KEY_SONG_LIST, records as object[])
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SONG_LIST, songs)
   }
 
   addSongs(newSongs: SongInfo[]): void {
@@ -309,6 +311,8 @@ export class DataService {
       s.audioEffect = r['audioEffect'] as string
       let rawFolderSort: Object | undefined = r['folderSortMode']
       s.folderSortMode = rawFolderSort !== undefined ? rawFolderSort as string : 'name'
+      let rawFadeInOut: Object | undefined = r['fadeInOut']
+      s.fadeInOut = rawFadeInOut !== undefined ? rawFadeInOut as boolean : false
       return s
     } catch (e) {
       return new AppSettingsData()
@@ -327,22 +331,13 @@ export class DataService {
     r['playSpeed'] = settings.playSpeed
     r['audioEffect'] = settings.audioEffect
     r['folderSortMode'] = settings.folderSortMode
+    r['fadeInOut'] = settings.fadeInOut
     this.getPref().preferencesPut(KEY_SETTINGS, JSON.stringify(r))
     AppStorage.setOrCreate(KEY_SETTINGS, settings)
+    AppStorage.setOrCreate('uplayer_fade_in_out', settings.fadeInOut)
   }
 
   // ═══════════ Simple string flags ═══════════
-
-  getActiveFolderFilter(): string {
-    const raw = this.getPref().getValue(KEY_ACTIVE_FOLDER)
-    if (raw === undefined) return ''
-    return raw as string
-  }
-
-  setActiveFolderFilter(folderPath: string): void {
-    this.getPref().preferencesPut(KEY_ACTIVE_FOLDER, folderPath)
-    AppStorage.setOrCreate(KEY_ACTIVE_FOLDER, folderPath)
-  }
 
   getSortMode(): string {
     const raw = this.getPref().getValue(KEY_SORT_MODE)
@@ -366,33 +361,47 @@ export class DataService {
     AppStorage.setOrCreate(KEY_VIEW_MODE, mode)
   }
 
-  getListMode(): string {
-    const raw = this.getPref().getValue(KEY_LIST_MODE)
-    if (raw === undefined) return 'all'
-    return raw as string
+  getSelectedFolderPaths(): string[] {
+    const raw = this.getPref().getValue(KEY_SELECTED_FOLDERS)
+    if (raw === undefined) return []
+    try {
+      return JSON.parse(raw as string) as string[]
+    } catch (e) {
+      return []
+    }
   }
 
-  setListMode(mode: string): void {
-    this.getPref().preferencesPut(KEY_LIST_MODE, mode)
-    AppStorage.setOrCreate(KEY_LIST_MODE, mode)
+  setSelectedFolderPaths(paths: string[]): void {
+    this.getPref().preferencesPut(KEY_SELECTED_FOLDERS, JSON.stringify(paths))
+    AppStorage.setOrCreate(KEY_SELECTED_FOLDERS, paths)
+  }
+
+  isFavoritesSelected(): boolean {
+    const raw = this.getPref().getValue(KEY_FAVORITES_SELECTED)
+    if (raw === undefined) return false
+    return raw as boolean
+  }
+
+  setFavoritesSelected(selected: boolean): void {
+    this.getPref().preferencesPut(KEY_FAVORITES_SELECTED, selected)
+    AppStorage.setOrCreate(KEY_FAVORITES_SELECTED, selected)
   }
 
   // ═══════════ Init ═══════════
 
   initToAppStorage(): void {
     AppStorage.setOrCreate(KEY_SETTINGS, this.getSettings())
-    AppStorage.setOrCreate(KEY_ACTIVE_FOLDER, this.getActiveFolderFilter())
     AppStorage.setOrCreate(KEY_SORT_MODE, this.getSortMode())
     AppStorage.setOrCreate(KEY_VIEW_MODE, this.getViewMode())
-    AppStorage.setOrCreate(KEY_LIST_MODE, this.getListMode())
-    // Also preload songs/folders into AppStorage for cross-tab access
-    AppStorage.setOrCreate(KEY_SONG_LIST, this.getSongs())
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SONG_LIST, this.getSongs())
     AppStorage.setOrCreate(KEY_FOLDER_LIST, this.getFolders())
-    // Initialize theme-related AppStorage values
+    AppStorage.setOrCreate(KEY_SELECTED_FOLDERS, this.getSelectedFolderPaths())
+    AppStorage.setOrCreate(KEY_FAVORITES_SELECTED, this.isFavoritesSelected())
     const s: AppSettingsData = this.getSettings()
     AppStorage.setOrCreate('uplayer_primary_color', s.primaryColor)
     AppStorage.setOrCreate('uplayer_theme_mode', s.themeMode)
     AppStorage.setOrCreate('uplayer_show_lyrics', s.showLyrics)
     AppStorage.setOrCreate('uplayer_notification', s.enableNotification)
+    AppStorage.setOrCreate('uplayer_fade_in_out', s.fadeInOut)
   }
 }

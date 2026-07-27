@@ -23,7 +23,6 @@ export struct HomeContent {
   @State songs: SongInfo[] = []
   @State displayItems: DisplayItem[] = []
   private displayDataSource: DisplayItemDataSource = new DisplayItemDataSource([])
-  @State listMode: string = 'all'
   @State viewMode: string = 'flat'
   @State sortMode: string = 'name'
   @State isPlusVisible: boolean = true
@@ -44,7 +43,6 @@ export struct HomeContent {
   loadData(): void {
     this.songs = this.dataService.getSongs()
     this.settings = this.dataService.getSettings()
-    this.listMode = this.dataService.getListMode()
     this.viewMode = this.dataService.getViewMode()
     this.sortMode = this.dataService.getSortMode()
     this.applyFilters()
@@ -55,7 +53,7 @@ export struct HomeContent {
     for (let i = 0; i < this.songs.length; i++) {
       result.push(this.songs[i])
     }
-    if (this.listMode === 'favorites') {
+    if (this.dataService.isFavoritesSelected()) {
       const filtered: SongInfo[] = []
       for (let i = 0; i < result.length; i++) {
         if (result[i].isFavorite) {
@@ -64,11 +62,11 @@ export struct HomeContent {
       }
       result = filtered
     } else {
-      const activeFolder: string = this.dataService.getActiveFolderFilter()
-      if (activeFolder.length > 0 && this.listMode === 'current') {
+      const selectedPaths: string[] = this.dataService.getSelectedFolderPaths()
+      if (selectedPaths.length > 0) {
         const filtered: SongInfo[] = []
         for (let i = 0; i < result.length; i++) {
-          if (result[i].folderPath === activeFolder) {
+          if (selectedPaths.indexOf(result[i].folderPath) >= 0) {
             filtered.push(result[i])
           }
         }
@@ -139,14 +137,31 @@ export struct HomeContent {
     return sorted
   }
 
-  toggleListMode(): void {
-    if (this.listMode === 'all') {
-      this.listMode = 'current'
-    } else {
-      this.listMode = 'all'
-    }
-    this.dataService.setListMode(this.listMode)
+  clearFilters(): void {
+    this.dataService.setSelectedFolderPaths([])
+    this.dataService.setFavoritesSelected(false)
     this.applyFilters()
+  }
+
+  hasActiveFilter(): boolean {
+    return this.dataService.isFavoritesSelected() || this.dataService.getSelectedFolderPaths().length > 0
+  }
+
+  getFilterLabel(): string {
+    if (this.dataService.isFavoritesSelected()) {
+      return '我喜欢的'
+    }
+    const paths: string[] = this.dataService.getSelectedFolderPaths()
+    if (paths.length === 1) {
+      const lastSlash: number = paths[0].lastIndexOf('/')
+      const lastBackslash: number = paths[0].lastIndexOf('\\')
+      const sepIdx: number = lastSlash > lastBackslash ? lastSlash : lastBackslash
+      return sepIdx >= 0 ? paths[0].substring(sepIdx + 1) : paths[0]
+    }
+    if (paths.length > 1) {
+      return paths.length + ' 个文件夹'
+    }
+    return '全部歌曲'
   }
 
   toggleViewMode(): void {
@@ -156,25 +171,7 @@ export struct HomeContent {
       this.viewMode = 'flat'
     }
     this.dataService.setViewMode(this.viewMode)
-    this.buildDisplayItems(this.sortSongs(this.filterActiveSongs()))
-  }
-
-  filterActiveSongs(): SongInfo[] {
-    let result: SongInfo[] = []
-    for (let i = 0; i < this.songs.length; i++) {
-      result.push(this.songs[i])
-    }
-    const activeFolder: string = this.dataService.getActiveFolderFilter()
-    if (activeFolder.length > 0) {
-      const filtered: SongInfo[] = []
-      for (let i = 0; i < result.length; i++) {
-        if (result[i].folderPath === activeFolder) {
-          filtered.push(result[i])
-        }
-      }
-      result = filtered
-    }
-    return result
+    this.applyFilters()
   }
 
   switchSortMode(): void {
@@ -201,7 +198,8 @@ export struct HomeContent {
   }
 
   toggleFavorite(songId: string): void {
-    this.dataService.toggleFavorite(songId)
+    const newFav: boolean = this.dataService.toggleFavorite(songId)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_IS_FAVORITE, newFav)
     this.loadData()
   }
 
@@ -214,6 +212,13 @@ export struct HomeContent {
     AppStorage.setOrCreate('uplayer_current_artist', item.artist)
     AppStorage.setOrCreate('uplayer_current_album_art', item.albumArtPath)
     AppStorage.setOrCreate('uplayer_current_song_path', item.filePath)
+    const allSongs: SongInfo[] = this.dataService.getSongs()
+    for (let i = 0; i < allSongs.length; i++) {
+      if (allSongs[i].id === item.id) {
+        AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, i)
+        break
+      }
+    }
     this.avPlayerService.play(item.filePath)
   }
 
@@ -271,15 +276,15 @@ export struct HomeContent {
       Column() {
         Row() {
           Row() {
-            Text(this.listMode === 'all' ? '全部歌曲' : this.listMode === 'favorites' ? '我喜欢的' : '当前播放')
-              .fontSize(14)
-              .fontColor($r('app.color.text_primary'))
-              .fontWeight(FontWeight.Bold)
-          }
-          .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-          .backgroundColor(this.listMode === 'all' ? ColorHelper.hexToRgba(this.primaryColor, 0.12) : 'rgba(0,0,0,0.05)')
-          .borderRadius(16)
-          .onClick(() => { this.toggleListMode() })
+             Text(this.getFilterLabel())
+               .fontSize(14)
+               .fontColor($r('app.color.text_primary'))
+               .fontWeight(FontWeight.Bold)
+           }
+           .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+           .backgroundColor(this.hasActiveFilter() ? ColorHelper.hexToRgba(this.primaryColor, 0.12) : 'rgba(0,0,0,0.05)')
+           .borderRadius(16)
+           .onClick(() => { this.clearFilters() })
 
           Blank()
 

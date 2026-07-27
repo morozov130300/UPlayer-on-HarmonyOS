@@ -12,20 +12,21 @@ const FAVORITES_FOLDER_ID: string = '__favorites__'
 
 @Component
 export struct PlaylistContent {
-  onNavigateToHome: (folder: FolderInfo) => void = (folder: FolderInfo): void => {}
+  onNavigateToHome: () => void = (): void => {}
   private context: common.UIAbilityContext | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
   @State folders: FolderInfo[] = []
   @State songs: SongInfo[] = []
   @State settings: AppSettingsData = new AppSettingsData()
   @State isPlusVisible: boolean = true
   @State lastScrollY: number = 0
-  @State isMultiSelectMode: boolean = false
-  @State selectedFolderIds: Set<string> = new Set()
+  @State selectedFolderPaths: string[] = []
+  @State favoritesSelected: boolean = false
   @StorageLink(AppStorageKeyConstants.KEY_TOP_HEIGHT) topSafeHeight: number = 0
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
   private dataService: DataService = DataService.getInstance()
   private songScanner: SongScanner = SongScanner.getInstance()
   private scroller: Scroller = new Scroller()
+  private previousFolderPaths: string[] = []
 
   aboutToAppear(): void {
     this.loadData()
@@ -34,6 +35,8 @@ export struct PlaylistContent {
   loadData(): void {
     this.songs = this.dataService.getSongs()
     this.settings = this.dataService.getSettings()
+    this.selectedFolderPaths = this.dataService.getSelectedFolderPaths()
+    this.favoritesSelected = this.dataService.isFavoritesSelected()
     this.buildFoldersFromSongs()
   }
 
@@ -75,80 +78,40 @@ export struct PlaylistContent {
   }
 
   onFolderClick(folder: FolderInfo): void {
-    if (this.isMultiSelectMode) {
-      this.toggleFolderSelection(folder.id)
-      return
-    }
     if (folder.id === FAVORITES_FOLDER_ID) {
-      this.dataService.setActiveFolderFilter('__favorites__')
-      this.dataService.setListMode('favorites')
-    } else {
-      this.dataService.setActiveFolderFilter(folder.path)
-      this.dataService.setListMode('all')
-    }
-    this.onNavigateToHome(folder)
-  }
-
-  toggleFolderSelection(folderId: string): void {
-    if (this.selectedFolderIds.has(folderId)) {
-      this.selectedFolderIds.delete(folderId)
-    } else {
-      this.selectedFolderIds.add(folderId)
-    }
-    if (this.selectedFolderIds.size === 0) {
-      this.isMultiSelectMode = false
-    }
-  }
-
-  onFolderLongPress(folder: FolderInfo): void {
-    if (folder.id === FAVORITES_FOLDER_ID) {
-      return
-    }
-    this.isMultiSelectMode = true
-    this.selectedFolderIds = new Set()
-    this.selectedFolderIds.add(folder.id)
-  }
-
-  deleteSelectedFolders(): void {
-    this.selectedFolderIds.forEach((folderId: string) => {
-      for (let i = 0; i < this.folders.length; i++) {
-        if (this.folders[i].id === folderId) {
-          this.dataService.removeSongsByFolder(this.folders[i].path)
-          break
-        }
+      if (this.favoritesSelected) {
+        this.favoritesSelected = false
+        this.selectedFolderPaths = [...this.previousFolderPaths]
+      } else {
+        this.previousFolderPaths = [...this.selectedFolderPaths]
+        this.favoritesSelected = true
+        this.selectedFolderPaths = []
       }
-    })
-    this.selectedFolderIds = new Set()
-    this.isMultiSelectMode = false
-    this.loadData()
+    } else {
+      if (this.favoritesSelected) {
+        this.favoritesSelected = false
+        this.previousFolderPaths = []
+      }
+      const idx: number = this.selectedFolderPaths.indexOf(folder.path)
+      if (idx >= 0) {
+        this.selectedFolderPaths.splice(idx, 1)
+        this.selectedFolderPaths = [...this.selectedFolderPaths]
+      } else {
+        const newPaths: string[] = []
+        for (let i = 0; i < this.selectedFolderPaths.length; i++) {
+          newPaths.push(this.selectedFolderPaths[i])
+        }
+        newPaths.push(folder.path)
+        this.selectedFolderPaths = newPaths
+      }
+    }
+    this.dataService.setSelectedFolderPaths(this.selectedFolderPaths)
+    this.dataService.setFavoritesSelected(this.favoritesSelected)
+    this.onNavigateToHome()
   }
 
-  moveFolderUp(folderId: string): void {
-    const idx: number = this.folders.findIndex((f: FolderInfo): boolean => f.id === folderId)
-    if (idx > 0) {
-      const temp: FolderInfo = this.folders[idx]
-      this.folders[idx] = this.folders[idx - 1]
-      this.folders[idx - 1] = temp
-      this.folders = [...this.folders]
-      this.saveFolderOrder()
-    }
-  }
-
-  moveFolderDown(folderId: string): void {
-    const idx: number = this.folders.findIndex((f: FolderInfo): boolean => f.id === folderId)
-    if (idx >= 0 && idx < this.folders.length - 1) {
-      const temp: FolderInfo = this.folders[idx]
-      this.folders[idx] = this.folders[idx + 1]
-      this.folders[idx + 1] = temp
-      this.folders = [...this.folders]
-      this.saveFolderOrder()
-    }
-  }
-
-  saveFolderOrder(): void {
-    for (let i = 0; i < this.folders.length; i++) {
-      this.dataService.updateFolderSortOrder(this.folders[i].id, i)
-    }
+  isFolderSelected(folder: FolderInfo): boolean {
+    return this.selectedFolderPaths.indexOf(folder.path) >= 0
   }
 
   async onPlusClick(): Promise<void> {
@@ -181,25 +144,10 @@ export struct PlaylistContent {
             .fontColor($r('app.color.text_primary'))
             .fontWeight(FontWeight.Bold)
           Blank()
-          if (this.isMultiSelectMode) {
-            Text('删除 (' + this.selectedFolderIds.size + ')')
-              .fontSize(14)
-              .fontColor(Color.Red)
-              .onClick(() => { this.deleteSelectedFolders() })
-            Text('取消')
-              .fontSize(14)
-              .fontColor($r('app.color.text_sixty_color'))
-              .margin({ left: 12 })
-              .onClick(() => {
-                this.isMultiSelectMode = false
-                this.selectedFolderIds = new Set()
-              })
-          } else {
-            Text(this.sortModeLabel())
-              .fontSize(12)
-              .fontColor($r('app.color.text_sixty_color'))
-              .onClick(() => { this.cycleSortMode() })
-          }
+          Text(this.sortModeLabel())
+            .fontSize(12)
+            .fontColor($r('app.color.text_sixty_color'))
+            .onClick(() => { this.cycleSortMode() })
         }
         .width('100%')
         .padding({ left: 16, right: 16, top: this.topSafeHeight + 8, bottom: 12 })
@@ -210,7 +158,7 @@ export struct PlaylistContent {
               Row() {
                 Image($r('app.media.heart_fill'))
                   .width(20).height(20)
-                  .fillColor(this.primaryColor)
+                  .fillColor(this.favoritesSelected ? Color.Red : this.primaryColor)
                   .margin({ right: 8 })
                 Text('我喜欢的')
                   .fontSize(14)
@@ -224,7 +172,8 @@ export struct PlaylistContent {
               .width('100%')
               .height(52)
               .padding({ left: 16, right: 16 })
-              .backgroundColor('rgba(0,0,0,0.03)')
+              .backgroundColor(this.favoritesSelected ?
+                ColorHelper.hexWithAlpha(this.primaryColor, '22') : 'rgba(0,0,0,0.03)')
               .borderRadius(12)
               .margin({ left: 16, right: 16, bottom: 12 })
               .onClick(() => {
@@ -302,60 +251,45 @@ export struct PlaylistContent {
 
   @Builder
   folderCard(item: FolderInfo): void {
-    Stack() {
-      Column() {
-        Image($r('app.media.ic_public_music'))
-          .width(36).height(36)
-          .fillColor($r('app.color.text_sixty_color'))
-          .margin({ bottom: 8 })
-        Text(item.name)
-          .fontSize(14)
-          .fontColor($r('app.color.text_primary'))
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-        Text(item.songCount + ' 首歌曲')
-          .fontSize(11)
-          .fontColor($r('app.color.text_sixty_color'))
-          .margin({ top: 4 })
-      }
-      .width('100%')
-      .height('100%')
-      .justifyContent(FlexAlign.Center)
-      .alignItems(HorizontalAlign.Center)
-
-      if (this.isMultiSelectMode) {
-        Checkbox()
-          .select(this.selectedFolderIds.has(item.id))
-          .position({ x: 4, y: 4 })
-          .width(20).height(20)
-          .onChange((checked: boolean) => {
-            this.toggleFolderSelection(item.id)
-          })
-      }
-
-      if (this.settings.folderSortMode === 'custom' && !this.isMultiSelectMode) {
-        Column() {
-          Text('▲')
-            .fontSize(12)
-            .fontColor($r('app.color.text_sixty_color'))
-            .onClick(() => { this.moveFolderUp(item.id) })
-          Text('▼')
-            .fontSize(12)
-            .fontColor($r('app.color.text_sixty_color'))
-            .margin({ top: 2 })
-            .onClick(() => { this.moveFolderDown(item.id) })
+    Column() {
+      Image($r('app.media.ic_public_music'))
+        .width(36).height(36)
+        .fillColor($r('app.color.text_sixty_color'))
+        .margin({ bottom: 8 })
+      Text(item.name)
+        .fontSize(14)
+        .fontColor($r('app.color.text_primary'))
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+      Text(item.songCount + ' 首歌曲')
+        .fontSize(11)
+        .fontColor($r('app.color.text_sixty_color'))
+        .margin({ top: 4 })
+      if (this.isFolderSelected(item)) {
+        Row() {
+          Text('✓')
+            .fontSize(10)
+            .fontColor('#FFFFFF')
+            .fontWeight(FontWeight.Bold)
         }
+        .width(18).height(18)
+        .borderRadius(9)
+        .backgroundColor(this.primaryColor)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
         .position({ x: 4, y: 4 })
       }
     }
     .width('100%')
     .aspectRatio(1.2)
-    .backgroundColor(this.isMultiSelectMode && this.selectedFolderIds.has(item.id) ?
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+    .backgroundColor(this.isFolderSelected(item) ?
       ColorHelper.hexWithAlpha(this.primaryColor, '22') : 'rgba(0,0,0,0.03)')
     .borderRadius(16)
-    .border({ width: 1, color: $r('app.color.list_divider') })
+    .border({ width: this.isFolderSelected(item) ? 2 : 1,
+      color: this.isFolderSelected(item) ? this.primaryColor : $r('app.color.list_divider') })
     .onClick(() => { this.onFolderClick(item) })
-    .gesture(LongPressGesture().onAction(() => { this.onFolderLongPress(item) }))
   }
 
   sortModeLabel(): string {
