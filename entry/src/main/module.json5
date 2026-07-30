@@ -58,6 +58,12 @@
             "resource": "$profile:backup_config"
           }
         ],
+      },
+      {
+        "name": "LiveViewExtAbility",
+        "srcEntry": "./ets/liveview/LiveViewExtAbility.ets",
+        "type": "liveViewLockScreen",
+        "exported": false
       }
     ]
   }

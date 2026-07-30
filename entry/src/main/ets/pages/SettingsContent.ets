@@ -8,6 +8,11 @@ import Logger from '../common/utils/Logger'
 const TAG = 'SettingsContent'
 const KEY_PRIMARY_COLOR = 'uplayer_primary_color'
 
+class EqBandInfo {
+  freq: string = ''
+  index: number = 0
+}
+
 interface ThemeOption {
   label: string
   value: string
@@ -27,6 +32,12 @@ export struct SettingsContent {
   ]
   private colorOptions: string[] = ['#007DFF', '#FF3B30', '#34C759', '#FF9500', '#AF52DE', '#5AC8FA']
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
+  private eqBands: EqBandInfo[] = [
+    { freq: '32', index: 0 }, { freq: '64', index: 1 }, { freq: '125', index: 2 },
+    { freq: '250', index: 3 }, { freq: '500', index: 4 }, { freq: '1k', index: 5 },
+    { freq: '2k', index: 6 }, { freq: '4k', index: 7 }, { freq: '8k', index: 8 },
+    { freq: '16k', index: 9 }
+  ]
 
   aboutToAppear(): void {
     this.settings = this.dataService.getSettings()
@@ -77,17 +88,6 @@ export struct SettingsContent {
     }
   }
 
-  onVolumeGainChange(value: number): void {
-    this.settings.volumeGain = value - 20
-    this.updateSetting()
-    const vol: number = Math.max(0, Math.min(1, (value - 20 + 20) / 40))
-    try {
-      this.avPlayerService.setVolume(vol)
-    } catch (e) {
-      Logger.error(TAG, 'setVolume failed: ' + JSON.stringify(e))
-    }
-  }
-
   onShowLyricsChange(val: boolean): void {
     this.settings.showLyrics = val
     this.updateSetting()
@@ -98,6 +98,11 @@ export struct SettingsContent {
     this.settings.enableNotification = val
     this.updateSetting()
     AppStorage.setOrCreate('uplayer_notification', val)
+  }
+
+  onEqBandChange(bandIndex: number, value: number): void {
+    this.settings.eqBands[bandIndex] = value - 12
+    this.updateSetting()
   }
 
   build() {
@@ -178,46 +183,12 @@ export struct SettingsContent {
             AppStorage.setOrCreate('uplayer_fade_in_out', val)
           })
 
-          this.divider()
-
-          this.sectionHeader('音效设置')
-          this.toggleRow('均衡器', this.settings.eqEnabled, (val: boolean) => {
-            this.settings.eqEnabled = val
-            this.updateSetting()
-          })
-
-          Row() {
-            Text('音量增益')
-              .fontSize(14)
-              .fontColor($r('app.color.text_sixty_color'))
-            Blank()
-            Text(this.settings.volumeGain + ' dB')
-              .fontSize(13)
-              .fontColor($r('app.color.text_sixty_color'))
-          }
-          .width('100%')
-          .padding({ left: 16, right: 16, top: 8, bottom: 8 })
-          Slider({
-            value: this.settings.volumeGain + 20,
-            min: 0,
-            max: 40,
-            step: 1,
-            style: SliderStyle.OutSet
-          })
-            .width('100%')
-            .padding({ left: 16, right: 16 })
-            .selectedColor(this.primaryColor)
-            .trackColor($r('app.color.list_divider'))
-            .onChange((value: number) => {
-              this.onVolumeGainChange(value)
-            })
-
           Row() {
             Text('播放速度')
               .fontSize(14)
               .fontColor($r('app.color.text_sixty_color'))
             Blank()
-            Text(this.settings.playSpeed + 'x')
+            Text(this.settings.playSpeed.toFixed(1) + 'x')
               .fontSize(13)
               .fontColor($r('app.color.text_sixty_color'))
           }
@@ -238,36 +209,49 @@ export struct SettingsContent {
               this.onSpeedChange(value)
             })
 
-          Row() {
-            Text('音效增强')
-              .fontSize(14)
-              .fontColor($r('app.color.text_sixty_color'))
-            Blank()
-            Text(this.settings.audioEffect === 'none' ? '关闭' : this.settings.audioEffect)
-              .fontSize(13)
-              .fontColor($r('app.color.text_sixty_color'))
+          this.divider()
+
+          this.sectionHeader('音效设置')
+          this.toggleRow('均衡器', this.settings.eqEnabled, (val: boolean) => {
+            this.settings.eqEnabled = val
+            this.updateSetting()
+          })
+
+          if (this.settings.eqEnabled) {
+            Row() {
+              ForEach(this.eqBands, (band: EqBandInfo) => {
+                Column() {
+                  Slider({
+                    value: this.settings.eqBands[band.index] + 12,
+                    min: 0,
+                    max: 24,
+                    step: 1,
+                    style: SliderStyle.OutSet,
+                    direction: Axis.Vertical
+                  })
+                    .width(24)
+                    .height(140)
+                    .selectedColor(this.primaryColor)
+                    .trackColor($r('app.color.list_divider'))
+                    .showSteps(true)
+                    .onChange((value: number) => {
+                      this.onEqBandChange(band.index, value)
+                    })
+                  Text(band.freq)
+                    .fontSize(9)
+                    .fontColor($r('app.color.text_sixty_color'))
+                    .margin({ top: 4 })
+                  Text((this.settings.eqBands[band.index] >= 0 ? '+' : '') + this.settings.eqBands[band.index] + 'dB')
+                    .fontSize(8)
+                    .fontColor($r('app.color.text_twenty_color'))
+                }
+                .alignItems(HorizontalAlign.Center)
+              }, (band: EqBandInfo) => band.freq)
+            }
+            .width('100%')
+            .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+            .justifyContent(FlexAlign.SpaceEvenly)
           }
-          .width('100%')
-          .padding({ left: 16, right: 16, top: 12, bottom: 8 })
-          Flex({ wrap: FlexWrap.Wrap }) {
-            ForEach(['none', 'pop', 'rock', 'classical', 'jazz', 'bass'], (effect: string) => {
-              Column() {
-                Text(this.getEffectLabel(effect))
-                  .fontSize(11)
-                  .fontColor(this.settings.audioEffect === effect ? this.primaryColor : $r('app.color.text_sixty_color'))
-              }
-              .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-              .backgroundColor(this.settings.audioEffect === effect ? ColorHelper.hexToRgba(this.primaryColor, 0.12) : 'rgba(0,0,0,0.03)')
-              .borderRadius(12)
-              .margin({ right: 6 })
-              .onClick(() => {
-                this.settings.audioEffect = effect
-                this.updateSetting()
-              })
-            }, (effect: string) => effect)
-          }
-          .padding({ left: 16, right: 16 })
-          .width('100%')
 
           Column().height(40)
         }
@@ -278,18 +262,6 @@ export struct SettingsContent {
     }
     .width('100%')
     .height('100%')
-  }
-
-  getEffectLabel(effect: string): string {
-    const map: Record<string, string> = {
-      'none': '关闭',
-      'pop': '流行',
-      'rock': '摇滚',
-      'classical': '古典',
-      'jazz': '爵士',
-      'bass': '重低音'
-    }
-    return map[effect] || effect
   }
 
   @Builder

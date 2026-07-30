@@ -9,6 +9,7 @@ import { PreferencesUtil } from '../PreferencesUtil';
 import { AppStorageKeyConstants } from '../../constants/AppStorageKeyConstants';
 import { image } from '@kit.ImageKit';
 import { BusinessError } from '@kit.BasicServicesKit';
+import WantAgent from '@ohos.app.ability.wantAgent';
 
 const TAG = 'AVSessionController';
 
@@ -17,7 +18,14 @@ export class AVSessionController {
   private AVSession: avSession.AVSession | undefined = undefined;
   private songList: SongInfo[] = [];
   private musicIndex: number = 0;
-  private avPlayerService: AVPlayerService = AVPlayerService.getInstance();
+  private avPlayerService: AVPlayerService | undefined = undefined;
+
+  private getAvPlayerService(): AVPlayerService {
+    if (this.avPlayerService === undefined) {
+      this.avPlayerService = AVPlayerService.getInstance();
+    }
+    return this.avPlayerService;
+  }
   private static avSessionController: AVSessionController;
 
   constructor() {
@@ -69,7 +77,7 @@ export class AVSessionController {
       requestCode: 0,
       wantAgentFlags: [wantAgent.WantAgentFlags.UPDATE_PRESENT_FLAG]
     };
-    wantAgent.getWantAgent(wantAgentInfo).then((agent: wantAgent.WantAgent) => {
+    wantAgent.getWantAgent(wantAgentInfo).then((agent: Object) => {
       if (this.AVSession) {
         this.AVSession.setLaunchAbility(agent);
       }
@@ -150,12 +158,12 @@ export class AVSessionController {
 
   private onPlay: () => void = () => {
     Logger.info(TAG, `on play , do play task`);
-    this.avPlayerService.resume();
+    this.getAvPlayerService().resume();
   }
 
   private onPause: () => void = () => {
     Logger.info(TAG, `on pause , do pause task`);
-    this.avPlayerService.pause();
+    this.getAvPlayerService().pause();
   }
 
   private onPlayNext: () => void = () => {
@@ -168,7 +176,7 @@ export class AVSessionController {
     }
     if (nextIdx < this.songList.length) {
       AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, nextIdx);
-      this.avPlayerService.play(this.songList[nextIdx].filePath);
+      this.getAvPlayerService().play(this.songList[nextIdx].filePath);
     }
   }
 
@@ -182,13 +190,13 @@ export class AVSessionController {
     }
     if (prevIdx >= 0 && prevIdx < this.songList.length) {
       AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, prevIdx);
-      this.avPlayerService.play(this.songList[prevIdx].filePath);
+      this.getAvPlayerService().play(this.songList[prevIdx].filePath);
     }
   }
 
   private onSeek: (curMs: number) => void = (curMs: number) => {
     Logger.info(TAG, `on seek , do seek task`);
-    this.avPlayerService.seek(curMs);
+    this.getAvPlayerService().seek(curMs);
   }
 
   private onSetLoopMode: (loopMode: avSession.LoopMode) => void = (loopMode: avSession.LoopMode) => {

@@ -5,6 +5,9 @@ import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstan
 import { WindowUtil } from '../common/utils/WindowUtil';
 import { AVPlayerService } from '../service/AVPlayerService';
 import { DataService } from '../service/DataService';
+import { AVSessionController } from '../common/utils/mediautils/AVSessionController';
+import { BackgroundUtil } from '../common/utils/BackgroundUtil';
+import { LiveViewService } from '../service/LiveViewService';
 import Logger from '../common/utils/Logger';
 
 const DOMAIN = 0x0000;
@@ -19,20 +22,24 @@ export default class EntryAbility extends UIAbility {
     }
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate');
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT, this.context);
+    AVSessionController.getInstance().initAVSession();
+    BackgroundUtil.startContinuousTask(this.context);
+    LiveViewService.getInstance().setContext(this.context);
   }
 
   onDestroy(): void {
     AVPlayerService.getInstance().release();
+    AVSessionController.getInstance().unregisterSessionListener();
+    BackgroundUtil.stopContinuousTask(this.context);
+    LiveViewService.getInstance().stopLiveView();
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onDestroy');
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageCreate');
 
-    // Populate AppStorage BEFORE page rendering so @StorageLink gets data
     DataService.getInstance().initToAppStorage();
 
-    // Apply saved theme mode
     const settings = DataService.getInstance().getSettings();
     try {
       if (settings.themeMode === 'light') {
@@ -53,7 +60,6 @@ export default class EntryAbility extends UIAbility {
       }
       hilog.info(DOMAIN, 'testTag', 'Succeeded in loading the content.');
 
-      // Initialize WindowUtil
       windowStage.getMainWindow().then((mainWindow: window.Window) => {
         let uiContext = windowStage.getMainWindowSync().getUIContext();
         let windowUtil = new WindowUtil(mainWindow, uiContext);
@@ -66,7 +72,6 @@ export default class EntryAbility extends UIAbility {
         Logger.error(TAG, `getMainWindow failed: ${JSON.stringify(error)}`);
       });
 
-      // Set full screen layout
       windowStage.getMainWindow().then((mainWindow: window.Window) => {
         mainWindow.setWindowLayoutFullScreen(true).catch((err: Error) => {
           Logger.error(TAG, `setWindowLayoutFullScreen failed: ${JSON.stringify(err)}`);
