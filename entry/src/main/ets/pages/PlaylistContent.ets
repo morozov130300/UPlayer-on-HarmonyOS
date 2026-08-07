@@ -6,7 +6,7 @@ import { SongScanner } from '../service/SongScanner'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
-import { promptAction } from '@kit.ArkUI'
+import { promptAction, LengthMetrics } from '@kit.ArkUI'
 
 const TAG = 'PlaylistContent'
 const FAVORITES_FOLDER_ID: string = '__favorites__'
@@ -28,6 +28,8 @@ export struct PlaylistContent {
   private songScanner: SongScanner = SongScanner.getInstance()
   private scroller: Scroller = new Scroller()
   private previousFolderPaths: string[] = []
+  @State isEditMode: boolean = false
+  @State editSelectedFolderIds: string[] = []
 
   aboutToAppear(): void {
     this.loadData()
@@ -78,7 +80,7 @@ export struct PlaylistContent {
     }
   }
 
-  onFolderClick(folder: FolderInfo): void {
+  onFolderToggle(folder: FolderInfo): void {
     if (folder.id === FAVORITES_FOLDER_ID) {
       if (this.favoritesSelected) {
         this.favoritesSelected = false
@@ -108,11 +110,65 @@ export struct PlaylistContent {
     }
     this.dataService.setSelectedFolderPaths(this.selectedFolderPaths)
     this.dataService.setFavoritesSelected(this.favoritesSelected)
-    this.onNavigateToHome()
   }
 
   isFolderSelected(folder: FolderInfo): boolean {
+    if (folder.id === FAVORITES_FOLDER_ID) {
+      return this.favoritesSelected
+    }
     return this.selectedFolderPaths.indexOf(folder.path) >= 0
+  }
+
+  enterEditMode(folderId: string): void {
+    this.isEditMode = true
+    this.editSelectedFolderIds = [folderId]
+  }
+
+  toggleEditSelect(folderId: string): void {
+    const idx: number = this.editSelectedFolderIds.indexOf(folderId)
+    if (idx >= 0) {
+      this.editSelectedFolderIds.splice(idx, 1)
+      this.editSelectedFolderIds = [...this.editSelectedFolderIds]
+    } else {
+      this.editSelectedFolderIds.push(folderId)
+      this.editSelectedFolderIds = [...this.editSelectedFolderIds]
+    }
+    if (this.editSelectedFolderIds.length === 0) {
+      this.isEditMode = false
+    }
+  }
+
+  exitEditMode(): void {
+    this.isEditMode = false
+    this.editSelectedFolderIds = []
+  }
+
+  deleteEditSelected(): void {
+    for (let i = 0; i < this.editSelectedFolderIds.length; i++) {
+      const fid: string = this.editSelectedFolderIds[i]
+      if (fid === FAVORITES_FOLDER_ID) {
+        const allSongs: SongInfo[] = this.dataService.getSongs()
+        for (let j = 0; j < allSongs.length; j++) {
+          if (allSongs[j].isFavorite) {
+            this.dataService.toggleFavorite(allSongs[j].id)
+          }
+        }
+      } else {
+        for (let j = 0; j < this.folders.length; j++) {
+          if (this.folders[j].id === fid) {
+            this.dataService.removeSongsByFolder(this.folders[j].path)
+            this.dataService.removeFolder(fid)
+            break
+          }
+        }
+      }
+    }
+    this.exitEditMode()
+    this.loadData()
+  }
+
+  isEditSelected(folderId: string): boolean {
+    return this.editSelectedFolderIds.indexOf(folderId) >= 0
   }
 
   async onPlusClick(): Promise<void> {
@@ -164,6 +220,23 @@ export struct PlaylistContent {
           Column() {
             if (this.getFavoriteCount() > 0) {
               Row() {
+                if (this.isEditMode) {
+                  Row() {
+                    if (this.isEditSelected(FAVORITES_FOLDER_ID)) {
+                      Text('✓')
+                        .fontSize(12)
+                        .fontColor('#FFFFFF')
+                        .fontWeight(FontWeight.Bold)
+                    }
+                  }
+                  .width(20).height(20)
+                  .borderRadius(10)
+                  .backgroundColor(this.isEditSelected(FAVORITES_FOLDER_ID) ? this.primaryColor : 'rgba(0,0,0,0.08)')
+                  .border({ width: 1, color: this.isEditSelected(FAVORITES_FOLDER_ID) ? this.primaryColor : $r('app.color.list_divider') })
+                  .justifyContent(FlexAlign.Center)
+                  .alignItems(VerticalAlign.Center)
+                  .margin({ right: 8 })
+                }
                 Image($r('app.media.heart_fill'))
                   .width(20).height(20)
                   .fillColor(this.favoritesSelected ? Color.Red : this.primaryColor)
@@ -184,27 +257,34 @@ export struct PlaylistContent {
                 ColorHelper.hexWithAlpha(this.primaryColor, '22') : 'rgba(0,0,0,0.03)')
               .borderRadius(12)
               .margin({ left: 16, right: 16, bottom: 12 })
+              .gesture(
+                LongPressGesture()
+                  .onAction(() => {
+                    if (!this.isEditMode) {
+                      this.enterEditMode(FAVORITES_FOLDER_ID)
+                    }
+                  })
+              )
               .onClick(() => {
-                const favFolder: FolderInfo = new FolderInfo()
-                favFolder.id = FAVORITES_FOLDER_ID
-                favFolder.name = '我喜欢的'
-                favFolder.path = '__favorites__'
-                favFolder.songCount = this.getFavoriteCount()
-                this.onFolderClick(favFolder)
+                if (this.isEditMode) {
+                  this.toggleEditSelect(FAVORITES_FOLDER_ID)
+                } else {
+                  const favFolder: FolderInfo = new FolderInfo()
+                  favFolder.id = FAVORITES_FOLDER_ID
+                  favFolder.name = '我喜欢的'
+                  favFolder.path = '__favorites__'
+                  favFolder.songCount = this.getFavoriteCount()
+                  this.onFolderToggle(favFolder)
+                }
               })
             }
 
             if (this.folders.length > 0) {
-              Grid() {
+              Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.vp(12), cross: LengthMetrics.vp(12) } }) {
                 ForEach(this.folders, (item: FolderInfo) => {
-                  GridItem() {
-                    this.folderCard(item)
-                  }
+                  this.folderCard(item)
                 }, (item: FolderInfo) => item.id)
               }
-              .columnsTemplate('1fr 1fr')
-              .columnsGap(12)
-              .rowsGap(12)
               .padding({ left: 16, right: 16 })
               .width('100%')
             } else {
@@ -232,11 +312,34 @@ export struct PlaylistContent {
           }
           this.lastScrollY = yOffset
         })
+
+        if (this.isEditMode) {
+          Row() {
+            Text('已选 ' + this.editSelectedFolderIds.length + ' 个')
+              .fontSize(14)
+              .fontColor($r('app.color.text_primary'))
+            Blank()
+            Text('取消')
+              .fontSize(14)
+              .fontColor(this.primaryColor)
+              .margin({ right: 16 })
+              .onClick(() => { this.exitEditMode() })
+            Text('删除')
+              .fontSize(14)
+              .fontColor('#FF3B30')
+              .onClick(() => { this.deleteEditSelected() })
+          }
+          .width('100%')
+          .height(48)
+          .padding({ left: 16, right: 16 })
+          .backgroundColor($r('app.color.page_background_sm'))
+          .border({ width: 1, color: $r('app.color.list_divider') })
+        }
       }
       .width('100%')
       .height('100%')
 
-      if (this.isPlusVisible || !this.settings.plusButtonScrollHide) {
+      if (!this.isEditMode && (this.isPlusVisible || !this.settings.plusButtonScrollHide)) {
         Row() {
           Text('+')
             .fontSize(32)
@@ -260,6 +363,23 @@ export struct PlaylistContent {
   @Builder
   folderCard(item: FolderInfo): void {
     Column() {
+      if (this.isEditMode) {
+        Row() {
+          if (this.isEditSelected(item.id)) {
+            Text('✓')
+              .fontSize(12)
+              .fontColor('#FFFFFF')
+              .fontWeight(FontWeight.Bold)
+          }
+        }
+        .width(20).height(20)
+        .borderRadius(10)
+        .backgroundColor(this.isEditSelected(item.id) ? this.primaryColor : 'rgba(0,0,0,0.08)')
+        .border({ width: 1, color: this.isEditSelected(item.id) ? this.primaryColor : $r('app.color.list_divider') })
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .position({ x: 6, y: 6 })
+      }
       Image($r('app.media.ic_public_music'))
         .width(36).height(36)
         .fillColor($r('app.color.text_sixty_color'))
@@ -273,22 +393,8 @@ export struct PlaylistContent {
         .fontSize(11)
         .fontColor($r('app.color.text_sixty_color'))
         .margin({ top: 4 })
-      if (this.isFolderSelected(item)) {
-        Row() {
-          Text('✓')
-            .fontSize(10)
-            .fontColor('#FFFFFF')
-            .fontWeight(FontWeight.Bold)
-        }
-        .width(18).height(18)
-        .borderRadius(9)
-        .backgroundColor(this.primaryColor)
-        .justifyContent(FlexAlign.Center)
-        .alignItems(VerticalAlign.Center)
-        .position({ x: 4, y: 4 })
-      }
     }
-    .width('100%')
+    .width('calc(50% - 6vp)')
     .aspectRatio(1.2)
     .justifyContent(FlexAlign.Center)
     .alignItems(HorizontalAlign.Center)
@@ -297,7 +403,21 @@ export struct PlaylistContent {
     .borderRadius(16)
     .border({ width: this.isFolderSelected(item) ? 2 : 1,
       color: this.isFolderSelected(item) ? this.primaryColor : $r('app.color.list_divider') })
-    .onClick(() => { this.onFolderClick(item) })
+    .gesture(
+      LongPressGesture()
+        .onAction(() => {
+          if (!this.isEditMode) {
+            this.enterEditMode(item.id)
+          }
+        })
+    )
+    .onClick(() => {
+      if (this.isEditMode) {
+        this.toggleEditSelect(item.id)
+      } else {
+        this.onFolderToggle(item)
+      }
+    })
   }
 
   sortModeLabel(): string {
