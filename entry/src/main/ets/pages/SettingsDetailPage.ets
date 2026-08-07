@@ -1,4 +1,4 @@
-import { router } from '@kit.ArkUI'
+import { router, curves } from '@kit.ArkUI'
 import { common, ConfigurationConstant } from '@kit.AbilityKit'
 import { DataService, AppSettingsData } from '../service/DataService'
 import { AVPlayerService } from '../service/AVPlayerService'
@@ -104,28 +104,44 @@ struct SettingsDetailPage {
     this.updateSetting()
   }
 
+  pageTransition() {
+    PageTransitionEnter({ duration: 300, curve: Curve.EaseOut })
+      .slide(SlideEffect.Right)
+      .opacity(1)
+    PageTransitionExit({ duration: 250, curve: Curve.EaseIn })
+      .slide(SlideEffect.Right)
+      .opacity(0)
+  }
+
   build() {
     Column() {
       Row() {
-        SymbolGlyph($r('sys.symbol.chevron_left'))
-          .fontSize(22)
-          .fontColor([$r('app.color.text_primary')])
-          .margin({ right: 8 })
-          .onClick(() => { router.back() })
+        Row() {
+          SymbolGlyph($r('sys.symbol.chevron_left'))
+            .fontSize(32)
+            .fontColor([this.primaryColor])
+            .opacity(0.9)
+        }
+        .width(48)
+        .height(48)
+        .justifyContent(FlexAlign.Center)
+        .borderRadius(24)
+        .hoverEffect(HoverEffect.Scale)
+        .onClick(() => { router.back() })
+
         Text(this.pageTitle)
-          .fontSize(18)
-          .fontColor($r('app.color.text_primary'))
+          .fontSize(17)
+          .fontColor(ColorHelper.darken(this.primaryColor, 0.3))
           .fontWeight(FontWeight.Bold)
+          .margin({ left: 4 })
       }
       .width('100%')
-      .height(56)
-      .padding({ left: 12, right: 16, top: this.topSafeHeight })
+      .height(52)
+      .padding({ left: 4, right: 16, top: this.topSafeHeight })
       .alignItems(VerticalAlign.Center)
 
-      Divider().color($r('app.color.list_divider'))
-
       Scroll() {
-        Column({ space: 12 }) {
+        Column({ space: 10 }) {
           if (this.pageTitle === '定制条目') {
             this.buildCustomizeSection()
           } else if (this.pageTitle === '播放设置') {
@@ -135,23 +151,25 @@ struct SettingsDetailPage {
           }
         }
         .width('100%')
-        .padding({ left: 12, right: 12, top: 12, bottom: 40 })
+        .padding({ left: 12, right: 12, top: 16, bottom: 40 })
       }
       .width('100%')
       .layoutWeight(1)
+      .align(Alignment.Top)
     }
     .width('100%')
     .height('100%')
+    .backgroundColor($r('app.color.page_background_other'))
   }
 
   @Builder
   sectionTitle(title: string): void {
     Text(title)
-      .fontSize(14)
-      .fontColor(this.primaryColor)
+      .fontSize(13)
+      .fontColor(ColorHelper.hexWithAlpha(this.primaryColor, '99'))
       .fontWeight(FontWeight.Medium)
       .width('100%')
-      .padding({ left: 4, top: 8, bottom: 4 })
+      .padding({ left: 4, top: 6, bottom: 2 })
   }
 
   @Builder
@@ -164,8 +182,8 @@ struct SettingsDetailPage {
       })
     }
     .width('100%')
-    .backgroundColor($r('app.color.page_background_sm'))
-    .borderRadius(12)
+    .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+    .borderRadius(10)
 
     Column() {
       this.sectionTitle('主题模式')
@@ -173,44 +191,46 @@ struct SettingsDetailPage {
         ForEach(this.themeOptions, (opt: ThemeOption) => {
           Column() {
             Text(opt.label)
-              .fontSize(12)
-              .fontColor(this.settings.themeMode === opt.value ? this.primaryColor : $r('app.color.text_sixty_color'))
+              .fontSize(11)
+              .fontColor(this.settings.themeMode === opt.value ? '#FFFFFF' : ColorHelper.darken(this.primaryColor, 0.4))
           }
-          .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-          .backgroundColor(this.settings.themeMode === opt.value ? ColorHelper.hexToRgba(this.primaryColor, 0.12) : 'rgba(0,0,0,0.05)')
-          .borderRadius(16)
+          .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+          .backgroundColor(this.settings.themeMode === opt.value ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+          .borderRadius(14)
           .onClick(() => { this.setThemeMode(opt.value) })
         }, (opt: ThemeOption) => opt.value)
       }
-      .padding({ left: 12, right: 12, top: 4, bottom: 12 })
+      .padding({ left: 12, right: 12, top: 2, bottom: 10 })
       .width('100%')
+      .justifyContent(FlexAlign.End)
     }
     .width('100%')
-    .backgroundColor($r('app.color.page_background_sm'))
-    .borderRadius(12)
+    .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+    .borderRadius(10)
 
     Column() {
       this.sectionTitle('主题色')
       Row() {
         ForEach(this.colorOptions, (color: string) => {
           Column()
-            .width(28).height(28)
-            .borderRadius(14)
+            .width(26).height(26)
+            .borderRadius(13)
             .backgroundColor(color)
             .border({
-              width: this.settings.primaryColor === color ? 3 : 1,
-              color: this.settings.primaryColor === color ? this.primaryColor : $r('app.color.list_divider')
+              width: this.settings.primaryColor === color ? 2.5 : 0.5,
+              color: this.settings.primaryColor === color ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.25)
             })
-            .margin({ right: 10 })
+            .margin({ left: 8 })
             .onClick(() => { this.setPrimaryColor(color) })
         }, (color: string) => color)
       }
-      .padding({ left: 12, right: 12, top: 4, bottom: 12 })
+      .padding({ left: 12, right: 12, top: 2, bottom: 10 })
       .width('100%')
+      .justifyContent(FlexAlign.End)
     }
     .width('100%')
-    .backgroundColor($r('app.color.page_background_sm'))
-    .borderRadius(12)
+    .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+    .borderRadius(10)
   }
 
   @Builder
@@ -221,13 +241,13 @@ struct SettingsDetailPage {
         this.updateSetting()
         AppStorage.setOrCreate('uplayer_show_lyrics', val)
       })
-      Divider().color($r('app.color.list_divider')).margin({ left: 16, right: 16 })
+      Divider().color(ColorHelper.hexToRgba(this.primaryColor, 0.08)).margin({ left: 14, right: 14 })
       this.toggleRow('通知栏控制', this.settings.enableNotification, (val: boolean) => {
         this.settings.enableNotification = val
         this.updateSetting()
         AppStorage.setOrCreate('uplayer_notification', val)
       })
-      Divider().color($r('app.color.list_divider')).margin({ left: 16, right: 16 })
+      Divider().color(ColorHelper.hexToRgba(this.primaryColor, 0.08)).margin({ left: 14, right: 14 })
       this.toggleRow('淡入淡出', this.settings.fadeInOut, (val: boolean) => {
         this.settings.fadeInOut = val
         this.updateSetting()
@@ -235,18 +255,18 @@ struct SettingsDetailPage {
       })
     }
     .width('100%')
-    .backgroundColor($r('app.color.page_background_sm'))
-    .borderRadius(12)
+    .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+    .borderRadius(10)
 
     Column() {
       this.sectionTitle('播放速度')
       Row() {
         Text(this.settings.playSpeed.toFixed(1) + 'x')
-          .fontSize(13)
-          .fontColor($r('app.color.text_sixty_color'))
+          .fontSize(12)
+          .fontColor(ColorHelper.darken(this.primaryColor, 0.35))
       }
       .width('100%')
-      .padding({ left: 12, right: 12, top: 4 })
+      .padding({ left: 12, right: 12, top: 2 })
       Slider({
         value: (this.settings.playSpeed - 0.5) * 100,
         min: 0,
@@ -255,16 +275,16 @@ struct SettingsDetailPage {
         style: SliderStyle.OutSet
       })
         .width('100%')
-        .padding({ left: 12, right: 12, bottom: 12 })
+        .padding({ left: 12, right: 12, bottom: 8 })
         .selectedColor(this.primaryColor)
-        .trackColor($r('app.color.list_divider'))
+        .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
         .onChange((value: number) => {
           this.onSpeedChange(value)
         })
     }
     .width('100%')
-    .backgroundColor($r('app.color.page_background_sm'))
-    .borderRadius(12)
+    .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+    .borderRadius(10)
   }
 
   @Builder
@@ -276,49 +296,60 @@ struct SettingsDetailPage {
       })
     }
     .width('100%')
-    .backgroundColor($r('app.color.page_background_sm'))
-    .borderRadius(12)
+    .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+    .borderRadius(10)
 
     if (this.settings.eqEnabled) {
       Column() {
-        this.sectionTitle('频段调节')
         Row() {
           ForEach(this.eqBands, (band: EqBandInfo) => {
             Column() {
-              Slider({
-                value: this.settings.eqBands[band.index] + 12,
-                min: 0,
-                max: 24,
-                step: 1,
-                style: SliderStyle.OutSet,
-                direction: Axis.Vertical
-              })
-                .width(24)
-                .height(140)
-                .selectedColor(this.primaryColor)
-                .trackColor($r('app.color.list_divider'))
-                .showSteps(true)
-                .onChange((value: number) => {
-                  this.onEqBandChange(band.index, value)
-                })
-              Text(band.freq)
-                .fontSize(9)
-                .fontColor($r('app.color.text_sixty_color'))
-                .margin({ top: 4 })
               Text((this.settings.eqBands[band.index] >= 0 ? '+' : '') + this.settings.eqBands[band.index] + 'dB')
-                .fontSize(8)
-                .fontColor($r('app.color.text_twenty_color'))
+                .fontSize(9)
+                .fontColor(ColorHelper.hexWithAlpha(this.primaryColor, '88'))
+                .margin({ bottom: 4 })
+              Column() {
+                Slider({
+                  value: this.settings.eqBands[band.index] + 12,
+                  min: 0,
+                  max: 24,
+                  step: 1,
+                  style: SliderStyle.InSet,
+                  direction: Axis.Vertical,
+                  reverse: true
+                })
+                  .width(6)
+                  .height(110)
+                  .selectedColor(this.primaryColor)
+                  .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.1))
+                  .blockColor(this.primaryColor)
+                  .blockSize({ width: 14, height: 6 })
+                  .onChange((value: number) => {
+                    this.onEqBandChange(band.index, value)
+                  })
+              }
+              .width(28)
+              .height(110)
+              .justifyContent(FlexAlign.End)
+              .borderRadius(4)
+              .clip(true)
+
+              Text(band.freq)
+                .fontSize(10)
+                .fontColor(ColorHelper.darken(this.primaryColor, 0.3))
+                .fontWeight(FontWeight.Medium)
+                .margin({ top: 6 })
             }
             .alignItems(HorizontalAlign.Center)
           }, (band: EqBandInfo) => band.freq)
         }
         .width('100%')
-        .padding({ left: 12, right: 12, top: 4, bottom: 12 })
+        .padding({ left: 8, right: 8, top: 12, bottom: 12 })
         .justifyContent(FlexAlign.SpaceEvenly)
       }
       .width('100%')
-      .backgroundColor($r('app.color.page_background_sm'))
-      .borderRadius(12)
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(10)
     }
   }
 
@@ -327,7 +358,8 @@ struct SettingsDetailPage {
     Row() {
       Text(label)
         .fontSize(14)
-        .fontColor($r('app.color.text_sixty_color'))
+        .fontColor(ColorHelper.darken(this.primaryColor, 0.35))
+        .maxLines(1)
       Blank()
       Toggle({ type: ToggleType.Switch, isOn: checked })
         .selectedColor(this.primaryColor)
@@ -336,7 +368,8 @@ struct SettingsDetailPage {
         })
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+    .height(44)
+    .padding({ left: 14, right: 14 })
     .alignItems(VerticalAlign.Center)
   }
 }

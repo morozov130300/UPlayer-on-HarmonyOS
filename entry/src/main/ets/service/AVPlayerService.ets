@@ -2,6 +2,7 @@ import { media } from '@kit.MediaKit'
 import { fileIo as fs } from '@kit.CoreFileKit'
 import { BusinessError } from '@kit.BasicServicesKit'
 import { common } from '@kit.AbilityKit'
+import { audio } from '@kit.AudioKit'
 import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { AVSessionController } from '../common/utils/mediautils/AVSessionController'
@@ -22,6 +23,7 @@ export class AVPlayerService {
   private fadeStep: number = 0
   private static FADE_STEPS: number = 6
   private static FADE_INTERVAL: number = 50
+  private interruptedWhilePlaying: boolean = false
   public onSongComplete: (() => void) | undefined = undefined
   private sessionController: AVSessionController = AVSessionController.getInstance()
   private liveViewService: LiveViewService = LiveViewService.getInstance()
@@ -64,6 +66,7 @@ export class AVPlayerService {
         }
       } else if (state === 'playing') {
         AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, true)
+        this.interruptedWhilePlaying = false
         this.sessionController.setPlayState(true)
         this.startBackground()
         this.liveViewService.startLiveView()
@@ -109,6 +112,26 @@ export class AVPlayerService {
       if (this.resolvePrepare !== undefined) {
         this.resolvePrepare()
         this.resolvePrepare = undefined
+      }
+    })
+
+    this.avPlayer.on('audioInterrupt', (interruptEvent: audio.InterruptEvent): void => {
+      Logger.info(TAG, `audioInterrupt: forceType=${interruptEvent.forceType}, hintType=${interruptEvent.hintType}`)
+      if (interruptEvent.forceType === audio.InterruptForceType.INTERRUPT_FORCE) {
+        if (interruptEvent.hintType === audio.InterruptHint.INTERRUPT_HINT_PAUSE) {
+          this.interruptedWhilePlaying = true
+          AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, false)
+          this.sessionController.setPlayState(false)
+        }
+      } else if (interruptEvent.forceType === audio.InterruptForceType.INTERRUPT_SHARE) {
+        if (interruptEvent.hintType === audio.InterruptHint.INTERRUPT_HINT_RESUME) {
+          if (this.interruptedWhilePlaying && this.avPlayer !== undefined) {
+            this.interruptedWhilePlaying = false
+            this.avPlayer.play()
+          }
+        } else if (interruptEvent.hintType === audio.InterruptHint.INTERRUPT_HINT_PAUSE) {
+          this.interruptedWhilePlaying = true
+        }
       }
     })
   }
@@ -240,6 +263,7 @@ export class AVPlayerService {
       return
     }
     try {
+      this.stopFade()
       await this.avPlayer.stop()
       this.currentFilePath = ''
       this.isPrepared = false
@@ -287,12 +311,30 @@ export class AVPlayerService {
       return
     }
     try {
+      this.stopFade()
       await this.avPlayer.release()
       this.avPlayer = undefined
       this.currentFilePath = ''
       this.isPrepared = false
     } catch (err) {
       Logger.error(TAG, `release failed: ${JSON.stringify(err)}`)
+    }
+  }
+
+  async onForegroundRestore(): Promise<void> {
+    if (this.avPlayer === undefined) {
+      return
+    }
+    try {
+      const state: string = this.avPlayer.state
+      if (state === 'paused' && this.interruptedWhilePlaying) {
+        this.interruptedWhilePlaying = false
+        this.avPlayer.play()
+      } else if (state === 'playing') {
+        AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, true)
+      }
+    } catch (err) {
+      Logger.error(TAG, `onForegroundRestore failed: ${JSON.stringify(err)}`)
     }
   }
 

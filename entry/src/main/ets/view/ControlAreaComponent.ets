@@ -243,62 +243,84 @@ export struct ControlAreaComponent {
       .margin({ bottom: 12 })
 
       Row() {
-        SymbolGlyph($r('sys.symbol.gobackward_15'))
-          .fontSize(28)
-          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
-          .fontColor([Color.White])
-          .opacity(0.86)
-          .hoverEffect(HoverEffect.Scale)
-          .onClick(() => { this.skipBackward(); })
-        Image($r('app.media.ic_public_forward'))
-          .controlImageBuilder()
-          .width(32)
-          .hoverEffect(HoverEffect.Scale)
-          .onClick(() => {
-            this.playPrevious();
-            this.pageShowTime = 0;
-          })
-        Image(this.isPlay ? $r('app.media.ic_public_play') : $r('app.media.ic_public_pause'))
-          .controlImageBuilder()
-          .width(72)
-          .scale({ x: this.playBtnScale, y: this.playBtnScale })
-          .shadow({ radius: 10, color: ColorHelper.hexWithAlpha(this.primaryColor, '22') })
-          .hoverEffect(HoverEffect.Scale)
-          .onClick(() => {
-            if (this.isPlay) {
-              this.avPlayerService.pause();
-            } else {
-              this.avPlayerService.resume();
-            }
-            this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
-              this.playBtnScale = 0.85;
-            });
-            setTimeout(() => {
+        Column() {
+          SymbolGlyph($r('sys.symbol.gobackward_15'))
+            .fontSize(28)
+            .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+            .fontColor([Color.White])
+            .opacity(0.86)
+            .hoverEffect(HoverEffect.Scale)
+            .onClick(() => { this.skipBackward(); })
+        }
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
+
+        Column() {
+          Image($r('app.media.ic_public_forward'))
+            .controlImageBuilder()
+            .width(32)
+            .hoverEffect(HoverEffect.Scale)
+            .onClick(() => {
+              this.playPrevious();
+              this.pageShowTime = 0;
+            })
+        }
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
+
+        Column() {
+          Image(this.isPlay ? $r('app.media.ic_public_play') : $r('app.media.ic_public_pause'))
+            .controlImageBuilder()
+            .width(72)
+            .scale({ x: this.playBtnScale, y: this.playBtnScale })
+            .shadow({ radius: 10, color: ColorHelper.hexWithAlpha(this.primaryColor, '22') })
+            .hoverEffect(HoverEffect.Scale)
+            .onClick(() => {
+              if (this.isPlay) {
+                this.avPlayerService.pause();
+              } else {
+                this.avPlayerService.resume();
+              }
               this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
-                this.playBtnScale = 1.0;
+                this.playBtnScale = 0.85;
               });
-            }, 100);
-            this.pageShowTime = 0;
-          })
-        Image($r('app.media.ic_public_next'))
-          .controlImageBuilder()
-          .width(32)
-          .hoverEffect(HoverEffect.Scale)
-          .onClick(() => {
-            this.playNext();
-            this.pageShowTime = 0;
-          })
-        SymbolGlyph($r('sys.symbol.goforward_15'))
-          .fontSize(28)
-          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
-          .fontColor([Color.White])
-          .opacity(0.86)
-          .hoverEffect(HoverEffect.Scale)
-          .onClick(() => { this.skipForward(); })
+              setTimeout(() => {
+                this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
+                  this.playBtnScale = 1.0;
+                });
+              }, 100);
+              this.pageShowTime = 0;
+            })
+        }
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
+
+        Column() {
+          Image($r('app.media.ic_public_next'))
+            .controlImageBuilder()
+            .width(32)
+            .hoverEffect(HoverEffect.Scale)
+            .onClick(() => {
+              this.playNext();
+              this.pageShowTime = 0;
+            })
+        }
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
+
+        Column() {
+          SymbolGlyph($r('sys.symbol.goforward_15'))
+            .fontSize(28)
+            .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+            .fontColor([Color.White])
+            .opacity(0.86)
+            .hoverEffect(HoverEffect.Scale)
+            .onClick(() => { this.skipForward(); })
+        }
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
       }
       .width(StyleConstants.FULL_WIDTH)
-      .justifyContent(FlexAlign.SpaceBetween)
-      .padding({ left: $r('app.float.control_padding'), right: $r('app.float.control_padding') })
 
       Row() {
         SymbolGlyph(this.playMode === MusicPlayMode.ORDER ? $r('sys.symbol.order_play') :

@@ -107,16 +107,6 @@ export struct MusicInfoComponent {
           .rotate({ angle: this.glowRotation })
           .opacity(this.isPlay ? 0.8 : 0)
           .animation({ duration: 500, curve: Curve.EaseInOut })
-        Column()
-          .width('101%')
-          .aspectRatio(1)
-          .borderRadius(9)
-          .shadow({
-            radius: this.isPlay ? 30 : 15,
-            color: this.isPlay ? ColorHelper.hexWithAlpha(this.primaryColor, '44') : $r('app.color.shadow_color'),
-            offsetX: 0, offsetY: 0
-          })
-          .animation({ duration: 800, curve: Curve.EaseInOut })
         Image(this.songList && this.selectIndex >= 0 && this.selectIndex < this.songList.length &&
           this.songList[this.selectIndex].albumArtPath.length > 0 && !this.coverArtFailed ?
           'file://' + this.songList[this.selectIndex].albumArtPath : $r('app.media.ic_public_music'))
@@ -124,7 +114,7 @@ export struct MusicInfoComponent {
           .aspectRatio(1)
           .borderRadius(8)
           .constraintSize({ maxWidth: '100%', maxHeight: '50%' })
-          .shadow({ radius: $r('app.float.shadow_radius'), color: $r('app.color.shadow_color'), offsetX: 0, offsetY: 8 })
+          .shadow({ radius: 12, color: 'rgba(0,0,0,0.15)', offsetX: 0, offsetY: 4 })
           .animation({ duration: 500, curve: Curve.EaseInOut })
           .onError(() => { this.coverArtFailed = true })
       }
