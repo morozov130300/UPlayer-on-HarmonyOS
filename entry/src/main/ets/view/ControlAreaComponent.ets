@@ -70,9 +70,10 @@ export struct ControlAreaComponent {
     try {
       const audioManager: audio.AudioManager = audio.getAudioManager();
       const volumeManager: audio.AudioVolumeManager = audioManager.getVolumeManager();
-      volumeManager.on('volumeChange', (volumeEvent: audio.VolumeEvent) => {
+      const streamUsage: audio.StreamUsage = audio.StreamUsage.STREAM_USAGE_MUSIC;
+      volumeManager.on('streamVolumeChange', streamUsage, (streamVolumeEvent: audio.StreamVolumeEvent) => {
         const maxVol: number = 15;
-        const newVol: number = volumeEvent.volume / maxVol;
+        const newVol: number = streamVolumeEvent.volume / maxVol;
         this.volume = newVol;
         AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_VOLUME, newVol);
       });
@@ -125,7 +126,7 @@ export struct ControlAreaComponent {
     const song: SongInfo = this.songList[index];
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, index);
     this.selectIndex = index;
-    await this.avPlayerService.play(song.filePath);
+      await this.avPlayerService.play(song.uri.length > 0 ? song.uri : song.filePath);
   }
 
   private async playNext(): Promise<void> {
@@ -410,7 +411,7 @@ export struct ControlAreaComponent {
       }
       .width(StyleConstants.FULL_WIDTH)
       .justifyContent(FlexAlign.SpaceEvenly)
-      .margin({ top: 16 })
+      .margin({ top: 28 })
     }
   }
 

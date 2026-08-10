@@ -343,6 +343,10 @@
     {
       "name": "song_count",
       "value": "%d 首歌曲"
+    },
+    {
+      "name": "reason_file_access_persist",
+      "value": "持久化访问导入的音乐文件，重启后无需再次选择"
     }
   ]
 }

@@ -176,7 +176,7 @@ export class AVSessionController {
     }
     if (nextIdx < this.songList.length) {
       AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, nextIdx);
-      this.getAvPlayerService().play(this.songList[nextIdx].filePath);
+      this.getAvPlayerService().play(this.songList[nextIdx].uri.length > 0 ? this.songList[nextIdx].uri : this.songList[nextIdx].filePath);
     }
   }
 
@@ -190,7 +190,7 @@ export class AVSessionController {
     }
     if (prevIdx >= 0 && prevIdx < this.songList.length) {
       AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, prevIdx);
-      this.getAvPlayerService().play(this.songList[prevIdx].filePath);
+      this.getAvPlayerService().play(this.songList[prevIdx].uri.length > 0 ? this.songList[prevIdx].uri : this.songList[prevIdx].filePath);
     }
   }
 

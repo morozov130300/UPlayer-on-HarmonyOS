@@ -5,7 +5,8 @@ export class SongInfo {
   title: string = ''          // 歌曲标题（优先使用元数据，回退到文件名）
   artist: string = ''         // 歌手
   album: string = ''          // 专辑
-  filePath: string = ''       // 文件URI路径
+  filePath: string = ''       // 文件URI路径（解码后，用于显示和文件夹提取）
+  uri: string = ''            // 原始编码URI（用于fileShare权限操作和文件读取）
   fileName: string = ''       // 完整文件名
   folderPath: string = ''     // 所在文件夹路径
   folderName: string = ''     // 所在文件夹名称
@@ -27,6 +28,7 @@ export class SongInfo {
   static fromFile(filePath: string, fileName: string): SongInfo {
     const song: SongInfo = new SongInfo();
     song.id = SongInfo.createId();
+    song.uri = filePath
     const decodedPath: string = decodeURIComponent(filePath)
     const decodedName: string = decodeURIComponent(fileName)
     song.filePath = decodedPath

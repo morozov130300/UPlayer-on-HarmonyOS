@@ -102,7 +102,7 @@ export struct LyricsComponent {
       LrcListView({ lyricMilliSecondsTime: this.time, mLrcEntryList: this.mLrcEntryList })
         .layoutWeight(1)
 
-      if (this.isShowControl) {
+      if (this.mainWindowInfo.widthBp === WidthBreakpoint.WIDTH_SM && this.isShowControl) {
         ControlAreaComponent({ mainWindowInfo: this.mainWindowInfo })
           .margin({ top: $r('app.float.control_lyric_margin') })
           .transition({ type: TransitionType.Insert, translate: { x: 0, y: 40 }, opacity: 0 })
@@ -111,6 +111,9 @@ export struct LyricsComponent {
     }
     .onClick(() => {
       this.pageShowTime = 0;
+      if (this.mainWindowInfo.widthBp !== WidthBreakpoint.WIDTH_SM) {
+        return;
+      }
       if (this.isShowControl) {
         this.getUIContext()?.animateTo({ curve: curves.springMotion(0.5, 0.8) }, () => {
           this.isShowControl = false;

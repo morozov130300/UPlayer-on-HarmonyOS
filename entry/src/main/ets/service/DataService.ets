@@ -2,7 +2,7 @@ import { SongInfo } from '../model/SongInfo'
 import { FolderInfo } from '../model/FolderInfo'
 import { PreferencesUtil } from '../common/utils/PreferencesUtil'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
-import { fileIo as fs } from '@kit.CoreFileKit'
+import { fileIo as fs, fileShare } from '@kit.CoreFileKit'
 import Logger from '../common/utils/Logger'
 
 const TAG = 'DataService'
@@ -40,6 +40,8 @@ export class AppSettingsData {
   playSpeed: number = 1
   folderSortMode: string = 'name'
   fadeInOut: boolean = false
+  fontSizeScale: number = 1.0
+  displaySizeScale: number = 1.0
 }
 
 export class DataService {
@@ -82,6 +84,7 @@ export class DataService {
     r['artist'] = song.artist
     r['album'] = song.album
     r['filePath'] = song.filePath
+    r['uri'] = song.uri
     r['fileName'] = song.fileName
     r['folderPath'] = song.folderPath
     r['folderName'] = song.folderName
@@ -109,6 +112,8 @@ export class DataService {
     song.artist = r['artist'] as string
     song.album = r['album'] as string
     song.filePath = r['filePath'] as string
+    let rawUri: Object | undefined = r['uri']
+    song.uri = rawUri !== undefined ? rawUri as string : song.filePath
     song.fileName = r['fileName'] as string
     song.folderPath = r['folderPath'] as string
     song.folderName = r['folderName'] as string
@@ -335,6 +340,10 @@ export class DataService {
       s.folderSortMode = rawFolderSort !== undefined ? rawFolderSort as string : 'name'
       let rawFadeInOut: Object | undefined = r['fadeInOut']
       s.fadeInOut = rawFadeInOut !== undefined ? rawFadeInOut as boolean : false
+      let rawFontSizeScale: Object | undefined = r['fontSizeScale']
+      s.fontSizeScale = rawFontSizeScale !== undefined ? rawFontSizeScale as number : 1.0
+      let rawDisplaySizeScale: Object | undefined = r['displaySizeScale']
+      s.displaySizeScale = rawDisplaySizeScale !== undefined ? rawDisplaySizeScale as number : 1.0
       return s
     } catch (e) {
       return new AppSettingsData()
@@ -353,6 +362,8 @@ export class DataService {
     r['playSpeed'] = settings.playSpeed
     r['folderSortMode'] = settings.folderSortMode
     r['fadeInOut'] = settings.fadeInOut
+    r['fontSizeScale'] = settings.fontSizeScale
+    r['displaySizeScale'] = settings.displaySizeScale
     this.getPref().preferencesPut(KEY_SETTINGS, JSON.stringify(r))
     AppStorage.setOrCreate(KEY_SETTINGS, settings)
     AppStorage.setOrCreate('uplayer_fade_in_out', settings.fadeInOut)
@@ -445,10 +456,11 @@ export class DataService {
   checkSongsAccessibility(): void {
     const songs: SongInfo[] = this.getSongs()
     let changed: boolean = false
-    for (let i = 0; i < songs.length; i++) {
+    for (let i: number = 0; i < songs.length; i++) {
       const prevAvailable: boolean = songs[i].isAvailable
+      const accessPath: string = songs[i].uri.length > 0 ? songs[i].uri : songs[i].filePath
       try {
-        fs.accessSync(songs[i].filePath)
+        fs.accessSync(accessPath)
         songs[i].isAvailable = true
       } catch (e) {
         songs[i].isAvailable = false
@@ -487,5 +499,43 @@ export class DataService {
     AppStorage.setOrCreate('uplayer_show_lyrics', s.showLyrics)
     AppStorage.setOrCreate('uplayer_notification', s.enableNotification)
     AppStorage.setOrCreate('uplayer_fade_in_out', s.fadeInOut)
+    AppStorage.setOrCreate('uplayer_font_size_scale', s.fontSizeScale)
+    AppStorage.setOrCreate('uplayer_display_size_scale', s.displaySizeScale)
+    this.activatePersistedUris()
+  }
+
+  async activatePersistedUris(): Promise<void> {
+    if (!canIUse('SystemCapability.FileManagement.AppFileService.FolderAuthorization')) {
+      Logger.info(TAG, 'activatePersistedUris: FolderAuthorization not supported')
+      return
+    }
+    const songs: SongInfo[] = this.getSongs()
+    if (songs.length === 0) {
+      return
+    }
+    const uris: string[] = []
+    for (let i = 0; i < songs.length; i++) {
+      const uri: string = songs[i].uri
+      if (uri.length > 0) {
+        uris.push(uri)
+      }
+    }
+    if (uris.length === 0) {
+      return
+    }
+    try {
+      const policies: fileShare.PolicyInfo[] = []
+      for (let i = 0; i < uris.length; i++) {
+        const policyInfo: fileShare.PolicyInfo = {
+          uri: uris[i],
+          operationMode: fileShare.OperationMode.READ_MODE,
+        }
+        policies.push(policyInfo)
+      }
+      await fileShare.activatePermission(policies)
+      Logger.info(TAG, `activatePersistedUris: activatePermission success for ${uris.length} URIs`)
+    } catch (err) {
+      Logger.error(TAG, `activatePersistedUris: activatePermission failed: ${JSON.stringify(err)}`)
+    }
   }
 }

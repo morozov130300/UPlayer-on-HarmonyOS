@@ -6,7 +6,7 @@ import { SongScanner } from '../service/SongScanner'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
-import { promptAction, LengthMetrics } from '@kit.ArkUI'
+import { LengthMetrics } from '@kit.ArkUI'
 
 const TAG = 'PlaylistContent'
 const FAVORITES_FOLDER_ID: string = '__favorites__'
@@ -180,7 +180,7 @@ export struct PlaylistContent {
       const result: ImportResult = this.dataService.addSongs(newSongs)
       this.loadData()
       try {
-        promptAction.showToast({
+        this.getUIContext()?.getPromptAction().showToast({
           message: `新增 ${result.newCount} 首` + (result.dupCount > 0 ? `，${result.dupCount} 首已存在` : '')
         })
       } catch (e) {
@@ -280,7 +280,7 @@ export struct PlaylistContent {
             }
 
             if (this.folders.length > 0) {
-              Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.vp(12), cross: LengthMetrics.vp(12) } }) {
+              Column({ space: 12 }) {
                 ForEach(this.folders, (item: FolderInfo) => {
                   this.folderCard(item)
                 }, (item: FolderInfo) => item.id)
@@ -353,6 +353,8 @@ export struct PlaylistContent {
         .position({ bottom: 12, right: 20 })
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
+        .transition({ type: TransitionType.Insert, opacity: 0, scale: { x: 0.5, y: 0.5 } })
+        .transition({ type: TransitionType.Delete, opacity: 0, scale: { x: 0.5, y: 0.5 } })
         .onClick(() => { this.onPlusClick() })
       }
     }
@@ -394,8 +396,8 @@ export struct PlaylistContent {
         .fontColor($r('app.color.text_sixty_color'))
         .margin({ top: 4 })
     }
-    .width('calc(50% - 6vp)')
-    .aspectRatio(1.2)
+    .width('100%')
+    .height(100)
     .justifyContent(FlexAlign.Center)
     .alignItems(HorizontalAlign.Center)
     .backgroundColor(this.isFolderSelected(item) ?

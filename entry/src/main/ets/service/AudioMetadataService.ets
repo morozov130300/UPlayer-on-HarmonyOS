@@ -21,7 +21,7 @@ export class AudioMetadataService {
     let file: fs.File | undefined = undefined
     try {
       extractor = await media.createAVMetadataExtractor()
-      file = fs.openSync(song.filePath, fs.OpenMode.READ_ONLY)
+      file = fs.openSync(song.uri.length > 0 ? song.uri : song.filePath, fs.OpenMode.READ_ONLY)
       // 直接使用 fd 作为数据源
       const avFd: media.AVFileDescriptor = { fd: file.fd, offset: 0, length: 0 }
       extractor.fdSrc = avFd
@@ -85,12 +85,11 @@ export class AudioMetadataService {
     }
 
     let packer: image.ImagePacker = image.createImagePacker()
-    let packingOpt: image.PackingOption = {
-      format: 'image/jpeg',
-      quality: 80
-    }
     try {
-      let packedData: ArrayBuffer = await packer.packing(cover, packingOpt)
+      let packedData: ArrayBuffer = await packer.packToData(cover, {
+        format: 'image/jpeg',
+        quality: 80
+      })
       let coverFile: fs.File = fs.openSync(coverPath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY)
       fs.writeSync(coverFile.fd, packedData)
       fs.closeSync(coverFile)
