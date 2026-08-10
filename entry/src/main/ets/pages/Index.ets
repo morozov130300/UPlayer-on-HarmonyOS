@@ -1,6 +1,7 @@
 import display from '@ohos.display'
 import { curves, window } from '@kit.ArkUI'
 import { common } from '@kit.AbilityKit'
+import { deviceInfo } from '@kit.BasicServicesKit'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { SongInfo } from '../model/SongInfo'
 import { AVPlayerService } from '../service/AVPlayerService'
@@ -45,6 +46,7 @@ struct MainPage {
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
   private windowClass: window.Window | undefined = AppStorage.get('windowClass')
   private abilityContext: common.UIAbilityContext | undefined = AppStorage.get(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
+  private isPC: boolean = deviceInfo.deviceType === '2in1'
 
   aboutToAppear(): void {
     this.dataService.initToAppStorage()
@@ -424,7 +426,7 @@ struct MainPage {
                 .opacity(this.greetingOpacity)
                 .translate({ y: this.greetingOffset })
               Blank()
-              if (this.breakpoint !== 'sm') {
+              if (this.isPC) {
                 this.windowControls()
               }
             }
@@ -435,7 +437,7 @@ struct MainPage {
             .padding({ top: 16 + this.topSafeHeight, left: 16, right: 8 })
           }
           .width('100%')
-          .height(this.breakpoint !== 'sm' ? 56 : 80)
+          .height(this.isPC ? 56 : 80)
           .transition({ type: TransitionType.Insert, opacity: 0, translate: { y: -20 } })
           .transition({ type: TransitionType.Delete, opacity: 0, translate: { y: -20 } })
         }
