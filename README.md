@@ -1,0 +1,184 @@
+# UPlayer
+
+> 为鸿蒙PC打造的轻量级音频播放器，无需拷贝即可列表播放
+
+---
+
+## 目录
+
+- [简介](#简介)
+- [特性](#特性)
+- [快速开始](#快速开始)
+- [使用指南](#使用指南)
+- [高级扩展](#高级扩展)
+- [开发与编译](#开发与编译)
+- [已知局限](#已知局限)
+- [致谢与许可证](#致谢与许可证)
+
+---
+
+## 简介
+
+UPlayer是一位花粉大学生的项目，为了解决鸿蒙电脑上没有软件能够直接播放U盘中音频的问题，作者突发奇想，决定手搓一个播放器软件，同时，专业分流迫使作者选择了软件方向，欲借此机会，增加经验，提高能力。
+
+## 特性
+
+UPlayer 是一款专为鸿蒙PC设计的本地音频播放器，核心定位在于解决外接存储设备（如U盘、移动硬盘等）中音频文件无法直接播放的痛点。鉴于鸿蒙的隐私机制和权限控制，其他播放器均要求文件复制至下载文件夹后方可播放，操作繁琐且占用存储空间，UPlayer 通过直接读取整个列表的方法，允许用户直接导入并列表播放外部存储设备中的音频文件，实现即插即播的流畅体验。
+
+项目由一名在校本科生独立开发，既是满足个人实际使用需求的实践产物，也是软件工程专业学习过程中的系统性工程训练。通过完整经历需求分析、架构设计、编码实现到测试交付的全流程，持续积累工程经验，提升专业综合能力。
+
+> ⚠️项目正处于活跃开发阶段，可能会有诸多不稳定问题，欢迎体验与反馈。
+
+## 快速开始
+
+### 环境要求
+
+#### HarmonyOS
+
+| 项目         | 要求                                                   |
+| :----------- | :----------------------------------------------------- |
+| 系统版本     | HarmonyOS NEXT API 20 及以上                           |
+| 集成开发环境 | 支持 HarmonyOS NEXT API 20 及以上的 DevEco Studio      |
+| 构建工具     | hvigor、ohpm（随 DevEco Studio 内置）                  |
+| 支持设备     | 手机（`phone`）、平板（`tablet`）、二合一 PC（`2in1`） |
+
+- 工程根目录 `build-profile.json5` 中声明的 SDK 信息如下：
+
+```json5
+"products": [
+  {
+    "name": "default",
+    "signingConfig": "default",
+    "targetSdkVersion": "6.1.1(24)",
+    "compatibleSdkVersion": "6.1.1(24)",
+    "runtimeOS": "HarmonyOS"
+  }
+]
+```
+
+### 安装
+
+1. 使用 DevEco Studio 打开工程根目录（`D:/UPlayer`）。
+2. 在 `File > Project Structure > Signing Configs` 中勾选「Automatically generate signature」自动签名，或使用工程内已配置的 `signingConfigs`（debugKey）。
+3. 连接已开启开发者模式的真机，或创建模拟器。
+4. 点击运行按钮，将应用安装到目标设备。
+
+### 第一个示例
+
+1. 打开应用进入首页，点击右下角的 `+` 悬浮按钮，通过系统文件选择器选择音频文件（支持 `mp3`、`flac`、`wav`、`m4a`、`aac`、`ogg`、`wma`、`ape`、`opus`、`aiff` 等常见格式，可多选）。
+2. 导入后，点击列表中的任意歌曲即可开始播放，界面底部有常驻播放条（显示封面、歌名、歌手以及播放/暂停、上一曲/下一曲），点击即可进入播放器。
+3. 切换到「歌单」页，可看到按文件夹自动聚合的歌单卡片；点击「我喜欢的」可查看已收藏歌曲。
+
+## 使用指南
+
+### 基础用法
+
+- **导入歌曲**：通过系统文档选择器（`DocumentViewPicker`）读取外部存储设备中的音频，导入时自动去重，并通过 `fileShare.persistPermission` 持久化文件访问授权，无需把文件拷贝到应用目录即可长期播放。
+- **播放控制**：点击歌曲播放/暂停；支持上一曲/下一曲、进度条拖拽跳转、快退/快进 `15s`。
+- **歌单与文件夹**：首页支持「平铺 / 文件夹」两种视图切换；「歌单」页按文件夹聚合歌曲，支持收藏、单选/多选文件夹。
+- **收藏与下一首**：点击歌曲右侧爱心图标收藏；点击列表图标可将歌曲加入「下一首播放」队列。
+- **批量删除**：长按歌曲或文件夹进入多选/编辑模式，可批量删除。
+
+### 进阶用法
+
+- **歌词**：自动加载同目录下的 `.lrc` / `.krc` 歌词文件，解析后随播放进度滚动高亮，点击任意一行可跳转到对应时间点；无歌词时显示占位提示。
+- **播放模式**：支持顺序播放、随机播放、单曲循环三种模式，循环切换时弹出 Toast 提示。
+- **倍速与音量**：点击控制区的倍速图标弹出滑块，可在 `0.25x` ~ `3x` 之间调节播放速度；音量面板与系统媒体音量实时同步。
+- **封面与氛围**：从音频元数据提取专辑封面并缓存，播放页将封面模糊作为动态背景，并取主色调作为主题色联动界面高亮。
+- **锁屏实时胶囊**：播放时在系统锁屏上显示歌曲信息（封面、歌名、歌手、播放状态），并在播放页/桌面上可通过点击封面的播放信息进入。
+
+### 配置说明
+
+在「设置」页中可进入三组详情配置：
+
+| 分组     | 配置项                                                       |
+| :------- | :----------------------------------------------------------- |
+| 定制条目 | 滚动时隐藏加号按钮、主题模式（跟随系统/深色/浅色）、主题色（6 种）、字体大小、显示大小 |
+| 播放设置 | 显示歌词、通知栏控制、淡入淡出、播放速度                     |
+| 音效设置 | 均衡器开关，以及 `32Hz~16kHz` 共 10 个频段的独立增益调节     |
+
+所有配置通过 `PreferencesUtil` 持久化，重启应用后仍然生效。
+
+## 高级扩展
+
+### 插件开发
+
+项目采用「单 Ability + 单例 Service」的分层架构，各层职责清晰，便于按需扩展：
+
+| 层次   | 关键类                                                       | 职责                                                         |
+| :----- | :----------------------------------------------------------- | :----------------------------------------------------------- |
+| 数据层 | `DataService`、`SongScanner`、`AudioMetadataService`         | 歌曲/歌单/设置的数据读写、文件导入扫描、元数据与封面提取     |
+| 播放层 | `AVPlayerService`                                            | 基于 `AVPlayer` 的播放状态机、进度/时长/错误/中断监听、倍速、音量、淡入淡出 |
+| 会话层 | `AVSessionController`                                        | 对接系统媒体会话，支持控制中心播放/暂停/切歌/收藏            |
+| 视图层 | `Index`、`MusicPlayer`、`HomeContent`、`PlaylistContent`、`SettingsContent` 等 | 各页面与组件 UI                                              |
+
+- 数据持久化依赖 `PreferencesUtil`（`@ohos.data.preferences`），新增设置项只需在 `AppSettingsData` 中增加字段并在 `DataService` 中补充序列化即可。
+- 歌词解析独立在 `LrcUtils`，新增歌词格式（如 `trc`、`srt`）时只需新增解析函数并在 `LyricsComponent` 中按扩展名分发。
+
+### API 参考
+
+| HarmonyOS 能力                                            | 用途                             |
+| :-------------------------------------------------------- | :------------------------------- |
+| `@ohos.multimedia.media`（AVPlayer、AVMetadataExtractor） | 音频播放与元数据/封面提取        |
+| `@ohos.file.picker`（DocumentViewPicker）                 | 选择外部存储中的音频文件与文件夹 |
+| `@ohos.file.fs` + `@ohos.file.fileShare`                  | 文件读写、持久化文件访问授权     |
+| `@ohos.data.preferences`                                  | 歌曲列表、设置等轻量数据持久化   |
+| `@ohos.multimedia.avSession`                              | 系统媒体会话与媒体控制中心       |
+| `@ohos.backgroundTaskManager`                             | 音频播放后台持续任务             |
+| `@ohos.multimedia.liveView`                               | 锁屏实时通知（胶囊）             |
+| `@ohos.multimedia.audio`                                  | 音量获取与流音量变更监听         |
+
+权限声明（`entry/src/main/module.json5`）：`ohos.permission.KEEP_BACKGROUND_RUNNING`、`ohos.permission.FILE_ACCESS_PERSIST`。
+
+## 开发与编译
+
+### 目录结构
+
+```
+entry/src/main/ets
+├── pages/          # 页面：Index(主页)、MusicPlayer(播放器)、HomeContent(首页)、
+│                   #       PlaylistContent(歌单)、SettingsContent/SettingsDetailPage(设置)
+├── view/           # 组件：PlayerInfoComponent、LyricsComponent、LrcListView、
+│                   #       ControlAreaComponent、MusicInfoComponent、WindowControlsComponent
+├── service/        # 服务：AVPlayerService、DataService、SongScanner、
+│                   #       AudioMetadataService、LiveViewService
+├── viewmodel/      # 数据源与歌词条目：SongDataSource、DisplayItemDataSource、LrcEntry
+├── model/          # 数据模型：SongInfo、FolderInfo
+├── liveview/       # 锁屏：LockScreenPage、LiveViewExtAbility
+├── entryability/   # 应用入口：EntryAbility
+└── common/         # 常量、工具（utils/、mediautils/）
+```
+
+### 环境搭建
+
+1. 安装 DevEco Studio 并配置 HarmonyOS SDK `6.1.1(24)`。
+2. 在 `File > Project Structure > SDK` 中确认 SDK 与 `build-profile.json5` 中声明的版本一致。
+3. 如需真机调试，配置应用签名并开启设备开发者模式。
+
+### 构建步骤
+
+- 图形界面：DevEco Studio 菜单 `Build > Build Hap(s)/APP(s)` 生成安装包。
+- 命令行：在工程根目录执行依赖安装与构建：
+
+```bash
+ohpm install
+hvigorw assembleHap
+```
+
+- 单元测试入口位于 `entry/src/test` 与 `entry/src/ohosTest`，可在 DevEco Studio 中直接运行。
+
+## 已知局限
+
+- 音频解码能力取决于设备系统，极少数无损/专有格式（如 `ape`、`dsf` 等）在部分设备上可能无法播放。
+- 后台播放依赖系统「后台任务」授权与常驻通知，若被系统清理或关闭通知权限可能中断。
+- `.krc` 歌词按酷狗字段时间轴解析，个别歌曲的时间点可能存在偏差。
+- 外部存储中的文件被移动、删除或重新插拔后，应用会通过可用性检查标记为「文件不可访问」，需重新导入对应歌曲。
+- 项目仍处于活跃开发阶段，可能存在不稳定问题，欢迎反馈。
+
+## 致谢与许可证
+
+- 作者：莫洛佐夫（工程 `vendor` 字段）
+- 本工程代码以 **Apache License 2.0** 协议开源发布（各源文件头部已标注许可证信息）。
+- 感谢 HarmonyOS / OpenHarmony 开源生态与广大开发者的支持。
+
+> 本项目由作者业余独立开发，仅供学习与交流使用。
