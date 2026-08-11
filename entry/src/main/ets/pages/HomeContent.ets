@@ -28,6 +28,7 @@ export struct HomeContent {
   @State isPlusVisible: boolean = true
   @State settings: AppSettingsData = new AppSettingsData()
   @State isMultiSelectMode: boolean = false
+  @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
   @State selectedIds: string[] = []
   @State failedArtIds: Set<string> = new Set<string>()
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
@@ -207,16 +208,14 @@ export struct HomeContent {
   toggleFavorite(songId: string): void {
     const newFav: boolean = this.dataService.toggleFavorite(songId)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_IS_FAVORITE, newFav)
-    // Update the display item directly without reloading all data
     for (let i = 0; i < this.displayItems.length; i++) {
       const item: DisplayItem = this.displayItems[i]
       if (!item.isHeader && item.song && item.song.id === songId) {
         item.song.isFavorite = newFav
+        this.displayDataSource.notifyDataChange(i)
         break
       }
     }
-    // Notify data source of change
-    this.displayDataSource.notifyDataReload()
   }
 
   onSongTap(item: SongInfo): void {
@@ -346,7 +345,7 @@ export struct HomeContent {
               return 'h_' + item.headerText
             }
             if (!item.isHeader) {
-              return item.song.id
+              return item.song.id + '_' + (item.song.isFavorite ? '1' : '0')
             }
             return 'empty_' + index
           })
@@ -476,24 +475,24 @@ export struct HomeContent {
 
       Column() {
         Text(item.title.length > 0 ? item.title : item.name)
-          .fontSize(15)
+          .fontSize(Math.round(15 * this.fontSizeScale))
           .fontColor(item.isAvailable ? $r('app.color.text_primary') : $r('app.color.text_twenty_color'))
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .width('100%')
         if (!item.isAvailable) {
           Text('文件不可访问，点击重新导入')
-            .fontSize(11)
+            .fontSize(Math.round(11 * this.fontSizeScale))
             .fontColor('#FF3B30')
             .width('100%')
         } else {
           Row() {
             Text(item.artist.length > 0 ? item.artist : '未知歌手')
-              .fontSize(12)
+              .fontSize(Math.round(12 * this.fontSizeScale))
               .fontColor($r('app.color.text_sixty_color'))
             if (item.folderName.length > 0) {
               Text(' · ' + item.folderName)
-                .fontSize(12)
+                .fontSize(Math.round(12 * this.fontSizeScale))
                 .fontColor($r('app.color.text_twenty_color'))
             }
           }

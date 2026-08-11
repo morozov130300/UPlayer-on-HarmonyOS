@@ -397,21 +397,19 @@ export struct ControlAreaComponent {
           .fontColor([Color.White])
           .opacity(0.86)
           .scale({ x: this.volumeScale, y: this.volumeScale })
-          .onClick(() => { this.isShowVolumeBuild = true; })
-          .bindPopup(this.isShowVolumeBuild, {
-            builder: this.volumePopupBuilder,
-            placement: Placement.Top,
-            showInSubWindow: false,
-            onStateChange: (e) => {
-              if (!e.isVisible) {
-                this.isShowVolumeBuild = false;
-              }
-            }
+          .onClick(() => {
+            this.isShowVolumeBuild = !this.isShowVolumeBuild
           })
       }
       .width(StyleConstants.FULL_WIDTH)
       .justifyContent(FlexAlign.SpaceEvenly)
       .margin({ top: 28 })
+
+      AVVolumePanel({
+        volumeLevel: Math.round(this.volume * 15)
+      })
+        .visibility(this.isShowVolumeBuild ? Visibility.Visible : Visibility.Hidden)
+        .height(this.isShowVolumeBuild ? 48 : 0)
     }
   }
 
@@ -436,17 +434,6 @@ export struct ControlAreaComponent {
         endMargin: $r('app.float.list_item_padding')
       })
     }
-  }
-
-  @Builder
-  volumePopupBuilder() {
-    Column() {
-      AVVolumePanel({
-        volumeLevel: Math.round(this.volume * 15)
-      })
-    }
-    .padding(8)
-    .width(260)
   }
 
   @Builder

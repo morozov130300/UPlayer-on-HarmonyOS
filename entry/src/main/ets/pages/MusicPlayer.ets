@@ -57,8 +57,7 @@ struct MusicPlayer {
         .height('100%')
         .width('100%')
       } else {
-        PlayerInfoComponent({ isShowPlay: this.isShowPlay, mainWindowInfo: this.windowUtil?.mainWindowInfo })
-          .scale({ x: this.displaySizeScale, y: this.displaySizeScale })
+        PlayerInfoComponent({ isShowPlay: this.isShowPlay, mainWindowInfo: this.windowUtil?.mainWindowInfo, sizeScale: this.displaySizeScale })
       }
 
       if (this.isPC) {

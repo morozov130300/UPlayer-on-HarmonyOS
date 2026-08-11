@@ -46,9 +46,9 @@ struct SettingsDetailPage {
     { freq: '16k', index: 9 }
   ]
   private titleMap: Record<string, string> = {
-    'customize': '定制条目',
-    'playback': '播放设置',
-    'audio': '音效设置'
+    'customize': '定制',
+    'playback': '播放',
+    'audio': '音效'
   }
 
   aboutToAppear(): void {
@@ -169,11 +169,11 @@ struct SettingsDetailPage {
 
         Scroll() {
           Column({ space: 10 }) {
-            if (this.pageTitle === '定制条目') {
+            if (this.pageTitle === '定制') {
               this.buildCustomizeSection()
-            } else if (this.pageTitle === '播放设置') {
+            } else if (this.pageTitle === '播放') {
               this.buildPlaybackSection()
-            } else if (this.pageTitle === '音效设置') {
+            } else if (this.pageTitle === '音效') {
               this.buildAudioSection()
             }
           }
@@ -197,7 +197,6 @@ struct SettingsDetailPage {
     .width('100%')
     .height('100%')
     .backgroundColor($r('app.color.page_background_other'))
-    .scale({ x: this.displaySizeScale, y: this.displaySizeScale })
   }
 
   @Builder
