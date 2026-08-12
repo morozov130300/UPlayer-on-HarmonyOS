@@ -5,6 +5,9 @@ import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstan
 import { curves } from '@kit.ArkUI';
 import { ColorHelper } from '../common/utils/ColorHelper';
 import { ShareService } from '../service/ShareService';
+import { AVPlayerService } from '../service/AVPlayerService';
+import { SongInfo } from '../model/SongInfo';
+import { KeyCode } from '@kit.InputKit';
 
 const TAG = '[MusicPlayer]';
 
@@ -17,7 +20,9 @@ struct MusicPlayer {
   @StorageLink(AppStorageKeyConstants.KEY_WINDOW_UTIL) windowUtil: WindowUtil | undefined = undefined;
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF';
   @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0;
+  @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) isPlaying: boolean = false;
   private shareService: ShareService = ShareService.getInstance();
+  private avPlayerService: AVPlayerService = AVPlayerService.getInstance();
 
   async aboutToAppear() {
     this.isLoading = false;
@@ -45,6 +50,49 @@ struct MusicPlayer {
       .opacity(0)
   }
 
+  private handleKeyEvent(event: KeyEvent): boolean {
+    if (event.type !== KeyType.Down) {
+      return false;
+    }
+    if (event.keyCode === KeyCode.KEYCODE_SPACE) {
+      if (this.isPlaying) {
+        this.avPlayerService.pause();
+      } else {
+        this.avPlayerService.resume();
+      }
+      return true;
+    }
+    if (event.keyCode === KeyCode.KEYCODE_DPAD_LEFT) {
+      this.playAdjacentSong(false);
+      return true;
+    }
+    if (event.keyCode === KeyCode.KEYCODE_DPAD_RIGHT) {
+      this.playAdjacentSong(true);
+      return true;
+    }
+    return false;
+  }
+
+  private playAdjacentSong(isNext: boolean): void {
+    const songList: SongInfo[] | undefined = AppStorage.get(AppStorageKeyConstants.KEY_SONG_LIST);
+    if (songList === undefined || songList.length === 0) {
+      return;
+    }
+    const currentIndex: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? 0;
+    let targetIndex: number = isNext ? currentIndex + 1 : currentIndex - 1;
+    if (targetIndex >= songList.length) {
+      targetIndex = 0;
+    } else if (targetIndex < 0) {
+      targetIndex = songList.length - 1;
+    }
+    const song: SongInfo = songList[targetIndex];
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, targetIndex);
+    AppStorage.setOrCreate('uplayer_current_title', song.title.length > 0 ? song.title : song.name);
+    AppStorage.setOrCreate('uplayer_current_artist', song.artist);
+    AppStorage.setOrCreate('uplayer_current_album_art', song.albumArtPath);
+    this.avPlayerService.play(song.uri.length > 0 ? song.uri : song.filePath);
+  }
+
   build() {
     Stack() {
       if (this.isLoading) {
@@ -68,5 +116,8 @@ struct MusicPlayer {
     .width('100%')
     .expandSafeArea()
     .opacity(this.bgOpacity)
+    .focusable(true)
+    .defaultFocus(true)
+    .onKeyEvent((event: KeyEvent): boolean => this.handleKeyEvent(event))
   }
 }

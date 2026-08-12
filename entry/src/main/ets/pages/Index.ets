@@ -41,6 +41,7 @@ struct MainPage {
   @StorageLink('uplayer_current_artist') currentSongArtist: string = ''
   @StorageLink('uplayer_current_album_art') @Watch('onAlbumArtChange') currentSongAlbumArt: string = ''
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
+  @StorageLink('uplayer_display_size_scale') @Watch('onDisplaySizeChange') displaySizeScale: number = 1.0
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
   @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
   @State albumArtFailed: boolean = false
@@ -62,6 +63,14 @@ struct MainPage {
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
   private shareService: ShareService = ShareService.getInstance()
   private isPC: boolean = deviceInfo.deviceType === '2in1'
+
+  private scaledSize(size: number): number {
+    return Math.round(size * this.displaySizeScale)
+  }
+
+  onDisplaySizeChange(): void {
+    this.updateIndicatorOffset(this.currentIndex)
+  }
 
   aboutToAppear(): void {
     this.dataService.initToAppStorage()
@@ -86,14 +95,14 @@ struct MainPage {
   customTabBar() {
     Stack({ alignContent: Alignment.BottomStart }) {
       Row()
-        .width(this.tabWidth - 2 * this.indicatorInset)
-        .height(36)
-        .borderRadius(18)
+        .width(this.scaledSize(this.tabWidth - 2 * this.indicatorInset))
+        .height(this.scaledSize(36))
+        .borderRadius(this.scaledSize(18))
         .alignItems(VerticalAlign.Center)
-        .margin({ left: this.indicatorOffset, bottom: 12 })
+        .margin({ left: this.indicatorOffset, bottom: this.scaledSize(12) })
         .shadow({
-          radius: 6,
-          color: $r('app.color.shadow_color'),
+          radius: 10,
+          color: ColorHelper.hexWithAlpha(ColorHelper.darken(this.primaryColor, 0.25), '88'),
           offsetX: 0,
           offsetY: 0
         })
@@ -101,62 +110,62 @@ struct MainPage {
           center: ['50%', '50%'],
           radius: '75%',
           colors: [
-            [ColorHelper.hexWithAlpha(this.primaryColor, 'ED'), 0.0],
-            [this.primaryColor, 0.5],
-            [ColorHelper.darken(this.primaryColor, 0.35), 1.0],
+            [ColorHelper.darken(this.primaryColor, 0.08), 0.0],
+            [ColorHelper.darken(this.primaryColor, 0.22), 0.58],
+            [ColorHelper.darken(this.primaryColor, 0.42), 1.0],
           ]
         })
 
-      Row({ space: this.tabGap }) {
+      Row({ space: this.scaledSize(this.tabGap) }) {
         this.tabItem(0, '首页', $r('app.media.ic_public_home'))
         this.tabItem(1, '歌单', $r('app.media.ic_public_view_list'))
         this.tabItem(2, '设置', $r('app.media.ic_public_settings'))
       }
-      .margin({ bottom: 10 })
-      .height(40)
-      .borderRadius(20)
+      .margin({ bottom: this.scaledSize(10) })
+      .height(this.scaledSize(40))
+      .borderRadius(this.scaledSize(20))
       .backgroundColor('rgba(255,255,255,0.06)')
       .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
       .border({ width: 1, color: 'rgba(255,255,255,0.18)' })
       .shadow({ radius: 50, color: $r('app.color.shadow_color'), offsetX: 0, offsetY: 0 })
     }
     .alignSelf(ItemAlign.Center)
-    .height(60)
+    .height(this.scaledSize(60))
   }
 
   @Builder
   immersiveTabBar() {
     Stack({ alignContent: Alignment.BottomStart }) {
       Row()
-        .width(this.tabWidth - 2 * this.indicatorInset)
-        .height(36)
-        .borderRadius(18)
+        .width(this.scaledSize(this.tabWidth - 2 * this.indicatorInset))
+        .height(this.scaledSize(36))
+        .borderRadius(this.scaledSize(18))
         .alignItems(VerticalAlign.Center)
-        .margin({ left: this.indicatorOffset, bottom: 12 })
+        .margin({ left: this.indicatorOffset, bottom: this.scaledSize(12) })
         .backgroundColor(ColorHelper.hexWithAlpha(this.primaryColor, '33'))
 
-      Row({ space: this.tabGap }) {
+      Row({ space: this.scaledSize(this.tabGap) }) {
         this.immersiveTabItem(0, '首页', $r('app.media.ic_public_home'))
         this.immersiveTabItem(1, '歌单', $r('app.media.ic_public_view_list'))
         this.immersiveTabItem(2, '设置', $r('app.media.ic_public_settings'))
       }
-      .margin({ bottom: 10 })
-      .height(40)
-      .borderRadius(20)
+      .margin({ bottom: this.scaledSize(10) })
+      .height(this.scaledSize(40))
+      .borderRadius(this.scaledSize(20))
       .backgroundColor('rgba(255,255,255,0.08)')
       .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
       .border({ width: 1, color: 'rgba(255,255,255,0.22)' })
       .shadow({ radius: 18, color: ColorHelper.hexWithAlpha(this.primaryColor, '44'), offsetY: 5 })
     }
     .alignSelf(ItemAlign.Center)
-    .height(60)
+    .height(this.scaledSize(60))
   }
 
   @Builder
   tabItem(index: number, name: string, icon: Resource) {
     Column() {
       Image(icon)
-        .height(18)
+        .height(this.scaledSize(18))
         .fillColor(this.currentIndex === index ? '#FFFFFF' : '#666666')
         .scale({
           x: this.currentIndex === index ? 1.15 : 1.0,
@@ -165,13 +174,13 @@ struct MainPage {
       Text(name)
         .fontSize(9)
         .fontColor(this.currentIndex === index ? '#FFFFFF' : '#666666')
-        .margin({ top: 2 })
+        .margin({ top: this.scaledSize(2) })
     }
-    .width(this.tabWidth)
-    .height(40)
+    .width(this.scaledSize(this.tabWidth))
+    .height(this.scaledSize(40))
     .justifyContent(FlexAlign.Center)
     .backgroundColor(this.hoverTabIndex === index ? 'rgba(255,255,255,0.16)' : Color.Transparent)
-    .borderRadius(18)
+    .borderRadius(this.scaledSize(18))
     .shadow({
       radius: this.hoverTabIndex === index ? 14 : 0,
       color: this.hoverTabIndex === index ? ColorHelper.hexWithAlpha(this.primaryColor, '66') : Color.Transparent
@@ -193,7 +202,7 @@ struct MainPage {
   immersiveTabItem(index: number, name: string, icon: Resource) {
     Column() {
       Image(icon)
-        .height(18)
+        .height(this.scaledSize(18))
         .fillColor(this.currentIndex === index ? '#FFFFFF' : 'rgba(255,255,255,0.45)')
         .scale({
           x: this.currentIndex === index ? 1.15 : 1.0,
@@ -202,13 +211,13 @@ struct MainPage {
       Text(name)
         .fontSize(9)
         .fontColor(this.currentIndex === index ? '#FFFFFF' : 'rgba(255,255,255,0.45)')
-        .margin({ top: 2 })
+        .margin({ top: this.scaledSize(2) })
     }
-    .width(this.tabWidth)
-    .height(40)
+    .width(this.scaledSize(this.tabWidth))
+    .height(this.scaledSize(40))
     .justifyContent(FlexAlign.Center)
     .backgroundColor(this.hoverTabIndex === index ? 'rgba(255,255,255,0.18)' : Color.Transparent)
-    .borderRadius(18)
+    .borderRadius(this.scaledSize(18))
     .shadow({
       radius: this.hoverTabIndex === index ? 16 : 0,
       color: this.hoverTabIndex === index ? ColorHelper.hexWithAlpha(this.primaryColor, '77') : Color.Transparent
@@ -230,7 +239,7 @@ struct MainPage {
     this.getUIContext()?.animateTo({
       curve: curves.springMotion(0.4, 0.8)
     }, () => {
-      this.indicatorOffset = this.indicatorInset + index * (this.tabWidth + this.tabGap)
+      this.indicatorOffset = this.scaledSize(this.indicatorInset + index * (this.tabWidth + this.tabGap))
     })
   }
 
@@ -287,19 +296,19 @@ struct MainPage {
 
   @Builder
   playerControl() {
-    Row({ space: 20 }) {
+    Row({ space: this.scaledSize(20) }) {
       if (this.currentSongAlbumArt.length > 0 && !this.albumArtFailed) {
         Image('file://' + this.currentSongAlbumArt)
-          .width(32).height(32)
-          .borderRadius(16)
+          .width(this.scaledSize(32)).height(this.scaledSize(32))
+          .borderRadius(this.scaledSize(16))
           .objectFit(ImageFit.Cover)
           .rotate({ angle: this.rotationAngle })
           .onError(() => { this.albumArtFailed = true })
           .onClick(() => { this.openPlayer() })
       } else {
         Image($r('app.media.ic_public_music'))
-          .width(32).height(32)
-          .borderRadius(16)
+          .width(this.scaledSize(32)).height(this.scaledSize(32))
+          .borderRadius(this.scaledSize(16))
           .rotate({ angle: this.rotationAngle })
           .fillColor($r('app.color.player_icon_color'))
           .onClick(() => { this.openPlayer() })
@@ -336,7 +345,7 @@ struct MainPage {
         }
       }
       .layoutWeight(1)
-      .margin({ left: 8, right: 8 })
+      .margin({ left: this.scaledSize(8), right: this.scaledSize(8) })
       .onClick(() => {
         this.openPlayer()
       })
@@ -353,35 +362,39 @@ struct MainPage {
             .fontColor($r('app.color.text_sixty_color'))
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .margin({ top: 2 })
+            .margin({ top: this.scaledSize(2) })
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
+        .onClick(() => { this.openPlayer() })
       }
       Image($r('app.media.ic_public_play_last'))
-        .width(20)
-        .height(20)
+        .width(this.scaledSize(20))
+        .height(this.scaledSize(20))
         .fillColor($r('app.color.player_icon_color'))
         .onClick(() => { this.playPrevious() })
       Image(this.isPlaying ? $r('app.media.ic_public_play') : $r('app.media.ic_public_pause'))
-        .width(20)
-        .height(20)
+        .width(this.scaledSize(20))
+        .height(this.scaledSize(20))
         .fillColor($r('app.color.player_icon_color'))
         .onClick(() => {
           this.togglePlay()
         })
       Image($r('app.media.ic_public_play_next'))
-        .width(20)
-        .height(20)
+        .width(this.scaledSize(20))
+        .height(this.scaledSize(20))
         .fillColor($r('app.color.player_icon_color'))
         .onClick(() => { this.playNext() })
     }
     .constraintSize({ maxWidth: this.breakpoint === 'sm' || this.breakpoint === 'md' ? '85%' : '42%' })
-    .height(40)
+    .height(this.scaledSize(40))
     .alignSelf(ItemAlign.Center)
-    .padding({ left: 12, right: 16, top: 4, bottom: 4 })
+    .padding({
+      left: this.scaledSize(12), right: this.scaledSize(16),
+      top: this.scaledSize(4), bottom: this.scaledSize(4)
+    })
     .backgroundColor($r('app.color.player_bg_color'))
-    .borderRadius(20)
+    .borderRadius(this.scaledSize(20))
     .shadow({
       radius: this.isGlowing ? 60 : 50,
       color: this.isGlowing ? ColorHelper.hexWithAlpha(this.primaryColor, '66') : $r('app.color.shadow_color'),
