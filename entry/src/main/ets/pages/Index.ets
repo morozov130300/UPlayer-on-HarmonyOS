@@ -1,6 +1,8 @@
 import display from '@ohos.display'
 import { curves, window } from '@kit.ArkUI'
 import { common } from '@kit.AbilityKit'
+import { fileIo as fs } from '@kit.CoreFileKit'
+import { util } from '@kit.ArkTS'
 import { deviceInfo } from '@kit.BasicServicesKit'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { SongInfo } from '../model/SongInfo'
@@ -12,6 +14,10 @@ import { DataService } from '../service/DataService'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import { ShareService } from '../service/ShareService'
 import Logger from '../common/utils/Logger'
+import { LrcEntry } from '../viewmodel/LrcEntry'
+import { parseKrcLyric, parseLrcLyric } from '../common/utils/LrcUtils'
+import { LyricFile } from '../common/constants/LyricConst'
+import { PlayerConstants } from '../common/constants/PlayerConstants'
 
 const TAG = 'Index'
 
@@ -26,7 +32,6 @@ struct MainPage {
   @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) @Watch('onPlayStateChange') isPlaying: boolean = false
   @State rotationAngle: number = 0
   @State isGlowing: boolean = false
-  @State hasAlbumCover: boolean = false
   @State breakpoint: string = 'md'
   @StorageLink(AppStorageKeyConstants.KEY_TOP_HEIGHT) topSafeHeight: number = 0
   @StorageLink(AppStorageKeyConstants.KEY_BOTTOM_HEIGHT) bottomSafeHeight: number = 0
@@ -36,12 +41,17 @@ struct MainPage {
   @StorageLink('uplayer_current_artist') currentSongArtist: string = ''
   @StorageLink('uplayer_current_album_art') @Watch('onAlbumArtChange') currentSongAlbumArt: string = ''
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
-  @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
   @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
   @State albumArtFailed: boolean = false
   @State isTitleMarqueeRunning: boolean = true
   @State isArtistMarqueeRunning: boolean = true
+  @State hoverTabIndex: number = -1
+  @State currentLyricLine: string = ''
+  @State nextLyricLine: string = ''
+  @State lyricEntries: LrcEntry[] = []
+  @StorageLink(AppStorageKeyConstants.KEY_PROGRESS) @Watch('onProgressChange') playProgress: number = 0
+  @StorageLink(AppStorageKeyConstants.KEY_SELECT_INDEX) @Watch('onCurrentSongChange') selectedSongIndex: number = 0
 
   private tabsController: TabsController = new TabsController()
   private tabWidth: number = 72
@@ -58,6 +68,7 @@ struct MainPage {
     this.updateGreeting()
     this.initBreakpoint()
     this.shareService.registerListeners('home')
+    this.loadCurrentLyrics()
     this.getUIContext()?.animateTo({ duration: 800, curve: Curve.EaseOut }, () => {
       this.greetingOpacity = 1
       this.greetingOffset = 0
@@ -105,6 +116,8 @@ struct MainPage {
       .height(40)
       .borderRadius(20)
       .backgroundColor('rgba(255,255,255,0.06)')
+      .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
+      .border({ width: 1, color: 'rgba(255,255,255,0.18)' })
       .shadow({ radius: 50, color: $r('app.color.shadow_color'), offsetX: 0, offsetY: 0 })
     }
     .alignSelf(ItemAlign.Center)
@@ -132,6 +145,8 @@ struct MainPage {
       .borderRadius(20)
       .backgroundColor('rgba(255,255,255,0.08)')
       .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
+      .border({ width: 1, color: 'rgba(255,255,255,0.22)' })
+      .shadow({ radius: 18, color: ColorHelper.hexWithAlpha(this.primaryColor, '44'), offsetY: 5 })
     }
     .alignSelf(ItemAlign.Center)
     .height(60)
@@ -155,6 +170,16 @@ struct MainPage {
     .width(this.tabWidth)
     .height(40)
     .justifyContent(FlexAlign.Center)
+    .backgroundColor(this.hoverTabIndex === index ? 'rgba(255,255,255,0.16)' : Color.Transparent)
+    .borderRadius(18)
+    .shadow({
+      radius: this.hoverTabIndex === index ? 14 : 0,
+      color: this.hoverTabIndex === index ? ColorHelper.hexWithAlpha(this.primaryColor, '66') : Color.Transparent
+    })
+    .scale({ x: this.hoverTabIndex === index ? 1.06 : 1, y: this.hoverTabIndex === index ? 1.06 : 1 })
+    .animation({ duration: 180, curve: Curve.EaseOut })
+    .hoverEffect(HoverEffect.Scale)
+    .onHover((isHover: boolean) => { this.hoverTabIndex = isHover ? index : -1 })
     .onClick(() => {
       this.getUIContext()?.animateTo({ duration: 200, curve: Curve.EaseInOut }, () => {
         this.currentIndex = index
@@ -182,6 +207,16 @@ struct MainPage {
     .width(this.tabWidth)
     .height(40)
     .justifyContent(FlexAlign.Center)
+    .backgroundColor(this.hoverTabIndex === index ? 'rgba(255,255,255,0.18)' : Color.Transparent)
+    .borderRadius(18)
+    .shadow({
+      radius: this.hoverTabIndex === index ? 16 : 0,
+      color: this.hoverTabIndex === index ? ColorHelper.hexWithAlpha(this.primaryColor, '77') : Color.Transparent
+    })
+    .scale({ x: this.hoverTabIndex === index ? 1.06 : 1, y: this.hoverTabIndex === index ? 1.06 : 1 })
+    .animation({ duration: 180, curve: Curve.EaseOut })
+    .hoverEffect(HoverEffect.Scale)
+    .onHover((isHover: boolean) => { this.hoverTabIndex = isHover ? index : -1 })
     .onClick(() => {
       this.getUIContext()?.animateTo({ duration: 200, curve: Curve.EaseInOut }, () => {
         this.currentIndex = index
@@ -274,14 +309,14 @@ struct MainPage {
         if (this.currentSongTitle.length > 0) {
           Column() {
             Marquee({ start: this.isTitleMarqueeRunning, step: 2, loop: -1, fromStart: true, src: this.currentSongTitle })
-              .fontSize(13)
+              .fontSize(Math.round(13 * this.fontSizeScale))
               .fontColor($r('app.color.text_primary'))
               .fontWeight(FontWeight.Medium)
               .width('100%')
               .onFinish(() => { this.isTitleMarqueeRunning = false })
             Marquee({ start: this.isArtistMarqueeRunning, step: 1, loop: -1, fromStart: true,
               src: this.currentSongArtist.length > 0 ? this.currentSongArtist : '未知歌手' })
-              .fontSize(10)
+              .fontSize(Math.round(10 * this.fontSizeScale))
               .fontColor($r('app.color.text_sixty_color'))
               .width('100%')
               .onFinish(() => { this.isArtistMarqueeRunning = false })
@@ -291,7 +326,7 @@ struct MainPage {
         } else {
           Column() {
             Text('未播放')
-              .fontSize(11)
+              .fontSize(Math.round(11 * this.fontSizeScale))
               .fontColor($r('app.color.text_twenty_color'))
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -305,6 +340,24 @@ struct MainPage {
       .onClick(() => {
         this.openPlayer()
       })
+      if (this.isPC && this.currentSongTitle.length > 0 &&
+        (this.currentLyricLine.length > 0 || this.nextLyricLine.length > 0)) {
+        Column() {
+          Text(this.currentLyricLine)
+            .fontSize(Math.round(12 * this.fontSizeScale))
+            .fontColor($r('app.color.text_primary'))
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+          Text(this.nextLyricLine)
+            .fontSize(Math.round(11 * this.fontSizeScale))
+            .fontColor($r('app.color.text_sixty_color'))
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .margin({ top: 2 })
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+      }
       Image($r('app.media.ic_public_play_last'))
         .width(20)
         .height(20)
@@ -345,6 +398,59 @@ struct MainPage {
 
   onAlbumArtChange(): void {
     this.albumArtFailed = false
+  }
+
+  onCurrentSongChange(): void {
+    this.loadCurrentLyrics()
+  }
+
+  onProgressChange(): void {
+    let currentIndex: number = -1
+    for (let i = 0; i < this.lyricEntries.length; i++) {
+      if (this.lyricEntries[i].lineStartTime <= this.playProgress) {
+        currentIndex = i
+      } else {
+        break
+      }
+    }
+    this.currentLyricLine = currentIndex >= 0 ? this.lyricEntries[currentIndex].lineWords : ''
+    this.nextLyricLine = currentIndex >= 0 && currentIndex + 1 < this.lyricEntries.length ?
+      this.lyricEntries[currentIndex + 1].lineWords : ''
+  }
+
+  loadCurrentLyrics(): void {
+    this.lyricEntries = []
+    this.currentLyricLine = ''
+    this.nextLyricLine = ''
+    if (this.currentSongTitle.length === 0) {
+      return
+    }
+    const songs: SongInfo[] = this.dataService.getSongs()
+    if (this.selectedSongIndex < 0 || this.selectedSongIndex >= songs.length) {
+      return
+    }
+    const song: SongInfo = songs[this.selectedSongIndex]
+    const lyricPath: string = song.lyricUri.length > 0 ? song.lyricUri : song.lyricPath
+    if (lyricPath.length === 0) {
+      return
+    }
+    let lyricFile: fs.File | undefined = undefined
+    try {
+      lyricFile = fs.openSync(lyricPath, fs.OpenMode.READ_ONLY)
+      const fileSize: number = fs.statSync(lyricFile.fd).size
+      const lyricBuffer: ArrayBuffer = new ArrayBuffer(fileSize)
+      fs.readSync(lyricFile.fd, lyricBuffer)
+      const decoder = util.TextDecoder.create(PlayerConstants.ENCODING, { ignoreBOM: true })
+      const lyricText: string = decoder.decodeToString(new Uint8Array(lyricBuffer), { stream: false })
+      this.lyricEntries = lyricPath.endsWith(LyricFile.KRC) ? parseKrcLyric(lyricText) : parseLrcLyric(lyricText)
+      this.onProgressChange()
+    } catch (err) {
+      Logger.warn(TAG, `loadCurrentLyrics failed: ${JSON.stringify(err)}`)
+    } finally {
+      if (lyricFile !== undefined) {
+        fs.closeSync(lyricFile)
+      }
+    }
   }
 
   onPlayStateChange(): void {
@@ -469,13 +575,13 @@ struct MainPage {
             .justifyContent(FlexAlign.Start)
             .alignItems(VerticalAlign.Center)
             .padding({
-              top: this.isPC ? 0 : 16 + this.topSafeHeight,
+              top: this.isPC ? 12 : 16 + this.topSafeHeight,
               left: 16,
               right: this.isPC ? this.titleButtonWidth + 12 : 8
             })
           }
           .width('100%')
-          .height(this.isPC ? Math.max(56, this.titleButtonHeight) : 96)
+          .height(this.isPC ? Math.max(76, this.titleButtonHeight + 20) : 96)
           .transition({ type: TransitionType.Insert, opacity: 0, translate: { y: -20 } })
           .transition({ type: TransitionType.Delete, opacity: 0, translate: { y: -20 } })
         }

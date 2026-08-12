@@ -28,6 +28,7 @@ export struct LyricsComponent {
   @Link isShowControl: boolean;
   @StorageLink(AppStorageKeyConstants.KEY_PAGE_SHOW_TIME) pageShowTime: number = 0;
   @State coverArtFailed: boolean = false;
+  @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0;
   private context: common.UIAbilityContext | undefined = AppStorage.get(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT);
 
   aboutToAppear() {
@@ -79,7 +80,7 @@ export struct LyricsComponent {
           Column() {
             Text(this.songList && this.selectIndex >= 0 && this.selectIndex < this.songList.length ?
               this.songList[this.selectIndex].title : '')
-              .fontSize(20).fontColor(Color.White)
+              .fontSize(Math.round(20 * this.fontSizeScale)).fontColor(Color.White)
               .fontWeight(PlayerConstants.FONT_WEIGHT_700)
               .fontFamily(PlayerConstants.FONT_FAMILY_BOLD)
               .maxLines(1)
@@ -87,7 +88,7 @@ export struct LyricsComponent {
             Row() {
               Text(this.songList && this.selectIndex >= 0 && this.selectIndex < this.songList.length ?
                 this.songList[this.selectIndex].artist : '')
-                .fontSize(16)
+                .fontSize(Math.round(16 * this.fontSizeScale))
                 .fontColor($r('sys.color.ohos_id_color_text_hint_contrary'))
                 .fontWeight(PlayerConstants.FONT_WEIGHT_500)
                 .fontFamily(PlayerConstants.FONT_FAMILY_MEDIUM)

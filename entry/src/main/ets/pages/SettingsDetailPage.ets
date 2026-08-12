@@ -30,10 +30,10 @@ struct SettingsDetailPage {
   private context: common.UIAbilityContext | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
   @State settings: AppSettingsData = new AppSettingsData()
   @StorageLink(KEY_PRIMARY_COLOR) primaryColor: string = '#007DFF'
-  @StorageLink(AppStorageKeyConstants.KEY_TOP_HEIGHT) topSafeHeight: number = 0
   @StorageLink(AppStorageKeyConstants.KEY_TITLE_BUTTON_WIDTH) titleButtonWidth: number = 0
   @StorageLink(AppStorageKeyConstants.KEY_TITLE_BUTTON_HEIGHT) titleButtonHeight: number = 0
   @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
+  @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
   @State pageTitle: string = ''
   private dataService: DataService = DataService.getInstance()
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
@@ -92,15 +92,35 @@ struct SettingsDetailPage {
     return this.isDark() ? ColorHelper.hexWithAlpha('#FFFFFF', '99') : ColorHelper.darken(this.primaryColor, 0.4)
   }
 
+  private scaledFont(size: number): number {
+    return Math.round(size * this.fontSizeScale)
+  }
+
+  private scaledSize(size: number): number {
+    return Math.round(size * this.displaySizeScale)
+  }
+
   updateSetting(): void {
     this.dataService.saveSettings(this.settings)
   }
 
   setThemeMode(mode: string): void {
-    this.settings.themeMode = mode
+    this.getUIContext()?.animateTo({ curve: curves.springMotion(0.4, 0.8) }, () => {
+      this.settings.themeMode = mode
+      this.settings = this.settings
+    })
     this.updateSetting()
     AppStorage.setOrCreate('uplayer_theme_mode', mode)
     this.applyThemeMode(mode)
+  }
+
+  setTabStyle(style: string): void {
+    this.getUIContext()?.animateTo({ curve: curves.springMotion(0.4, 0.8) }, () => {
+      this.settings.tabStyle = style
+      this.settings = this.settings
+    })
+    this.updateSetting()
+    AppStorage.setOrCreate('uplayer_tab_style', style)
   }
 
   applyThemeMode(mode: string): void {
@@ -157,19 +177,19 @@ struct SettingsDetailPage {
         Row() {
           Row() {
             SymbolGlyph($r('sys.symbol.chevron_left'))
-              .fontSize(32)
+              .fontSize(this.scaledFont(32))
               .fontColor([this.primaryColor])
               .opacity(0.9)
           }
-          .width(48)
-          .height(48)
+          .width(this.scaledSize(48))
+          .height(this.scaledSize(48))
           .justifyContent(FlexAlign.Center)
-          .borderRadius(24)
+          .borderRadius(this.scaledSize(24))
           .hoverEffect(HoverEffect.Scale)
           .onClick(() => { this.getUIContext()?.getRouter().back() })
 
           Text(this.pageTitle)
-            .fontSize(17)
+            .fontSize(this.scaledFont(17))
             .fontColor(this.settingTextColor())
             .fontWeight(FontWeight.Bold)
             .margin({ left: 4 })
@@ -190,7 +210,10 @@ struct SettingsDetailPage {
             }
           }
           .width('100%')
-          .padding({ left: 12, right: 12, top: 16, bottom: 40 })
+          .padding({
+            left: this.scaledSize(12), right: this.scaledSize(12),
+            top: this.scaledSize(16), bottom: this.scaledSize(40)
+          })
         }
         .width('100%')
         .layoutWeight(1)
@@ -207,11 +230,11 @@ struct SettingsDetailPage {
   @Builder
   sectionTitle(title: string): void {
     Text(title)
-      .fontSize(13)
+      .fontSize(this.scaledFont(13))
       .fontColor(this.isDark() ? ColorHelper.hexWithAlpha('#FFFFFF', '99') : ColorHelper.hexWithAlpha(this.primaryColor, '99'))
       .fontWeight(FontWeight.Medium)
       .width('100%')
-      .padding({ left: 4, top: 6, bottom: 2 })
+      .padding({ left: this.scaledSize(4), top: this.scaledSize(6), bottom: this.scaledSize(2) })
   }
 
   @Builder
@@ -234,12 +257,12 @@ struct SettingsDetailPage {
           ForEach(this.themeOptions, (opt: ThemeOption) => {
             Column() {
               Text(opt.label)
-                .fontSize(11)
+                .fontSize(this.scaledFont(11))
                 .fontColor(this.settings.themeMode === opt.value ? '#FFFFFF' : this.settingInactiveTextColor())
             }
-            .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+            .padding({ left: this.scaledSize(10), right: this.scaledSize(10), top: this.scaledSize(5), bottom: this.scaledSize(5) })
             .backgroundColor(this.settings.themeMode === opt.value ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
-            .borderRadius(14)
+            .borderRadius(this.scaledSize(14))
             .onClick(() => { this.setThemeMode(opt.value) })
           }, (opt: ThemeOption) => opt.value)
         }
@@ -257,16 +280,14 @@ struct SettingsDetailPage {
           ForEach(this.tabStyleOptions, (opt: TabStyleOption) => {
             Column() {
               Text(opt.label)
-                .fontSize(11)
+                .fontSize(this.scaledFont(11))
                 .fontColor(this.settings.tabStyle === opt.value ? '#FFFFFF' : this.settingInactiveTextColor())
             }
-            .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+            .padding({ left: this.scaledSize(10), right: this.scaledSize(10), top: this.scaledSize(5), bottom: this.scaledSize(5) })
             .backgroundColor(this.settings.tabStyle === opt.value ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
-            .borderRadius(14)
+            .borderRadius(this.scaledSize(14))
             .onClick(() => {
-              this.settings.tabStyle = opt.value
-              this.updateSetting()
-              AppStorage.setOrCreate('uplayer_tab_style', opt.value)
+              this.setTabStyle(opt.value)
             })
           }, (opt: TabStyleOption) => opt.value)
         }
@@ -283,8 +304,8 @@ struct SettingsDetailPage {
         Row() {
           ForEach(this.colorOptions, (color: string) => {
             Column()
-              .width(26).height(26)
-              .borderRadius(13)
+              .width(this.scaledSize(26)).height(this.scaledSize(26))
+              .borderRadius(this.scaledSize(13))
               .backgroundColor(color)
               .border({
                 width: this.settings.primaryColor === color ? 2.5 : 0.5,
@@ -306,7 +327,7 @@ struct SettingsDetailPage {
         this.sectionTitle('字体大小')
         Row() {
           Text('A')
-            .fontSize(11)
+            .fontSize(this.scaledFont(11))
             .fontColor(this.settingTextColor())
             .margin({ right: 8 })
           Stack() {
@@ -321,20 +342,22 @@ struct SettingsDetailPage {
               .selectedColor(this.primaryColor)
               .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
               .blockColor('#FFFFFF')
-              .blockSize({ width: 20, height: 20 })
+              .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
               .blockBorderColor(this.primaryColor)
               .blockBorderWidth(3)
-              .onChange((value: number) => {
+              .onChange((value: number, mode: SliderChangeMode) => {
                 this.settings.fontSizeScale = value / 100
-                this.updateSetting()
-                AppStorage.setOrCreate('uplayer_font_size_scale', this.settings.fontSizeScale)
+                this.fontSizeScale = this.settings.fontSizeScale
+                if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+                  this.updateSetting()
+                }
               })
           }
           .width('100%')
           .layoutWeight(1)
           .height(40)
           Text('A')
-            .fontSize(20)
+            .fontSize(this.scaledFont(20))
             .fontColor(this.settingTextColor())
             .margin({ left: 8 })
         }
@@ -350,7 +373,7 @@ struct SettingsDetailPage {
         this.sectionTitle('显示大小')
         Row() {
           Text('小')
-            .fontSize(11)
+            .fontSize(this.scaledFont(11))
             .fontColor(this.settingTextColor())
             .margin({ right: 8 })
           Stack() {
@@ -365,20 +388,22 @@ struct SettingsDetailPage {
               .selectedColor(this.primaryColor)
               .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
               .blockColor('#FFFFFF')
-              .blockSize({ width: 20, height: 20 })
+              .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
               .blockBorderColor(this.primaryColor)
               .blockBorderWidth(3)
-              .onChange((value: number) => {
+              .onChange((value: number, mode: SliderChangeMode) => {
                 this.settings.displaySizeScale = value / 100
-                this.updateSetting()
-                AppStorage.setOrCreate('uplayer_display_size_scale', this.settings.displaySizeScale)
+                this.displaySizeScale = this.settings.displaySizeScale
+                if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+                  this.updateSetting()
+                }
               })
           }
           .width('100%')
           .layoutWeight(1)
           .height(40)
           Text('大')
-            .fontSize(14)
+            .fontSize(this.scaledFont(14))
             .fontColor(this.settingTextColor())
             .margin({ left: 8 })
         }
@@ -422,7 +447,7 @@ struct SettingsDetailPage {
         this.sectionTitle('播放速度')
         Row() {
           Text(this.settings.playSpeed.toFixed(1) + 'x')
-            .fontSize(12)
+            .fontSize(this.scaledFont(12))
             .fontColor(this.settingTextColor())
         }
         .width('100%')
@@ -439,7 +464,7 @@ struct SettingsDetailPage {
             .selectedColor(this.primaryColor)
             .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
             .blockColor('#FFFFFF')
-            .blockSize({ width: 20, height: 20 })
+            .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
             .blockBorderColor(this.primaryColor)
             .blockBorderWidth(3)
             .onChange((value: number) => {
@@ -475,7 +500,7 @@ struct SettingsDetailPage {
             ForEach(this.eqBands, (band: EqBandInfo) => {
               Column() {
                 Text((this.settings.eqBands[band.index] >= 0 ? '+' : '') + this.settings.eqBands[band.index] + 'dB')
-                  .fontSize(9)
+                  .fontSize(this.scaledFont(9))
                   .fontColor(ColorHelper.hexWithAlpha(this.primaryColor, '88'))
                   .margin({ bottom: 4 })
                 Column() {
@@ -488,26 +513,26 @@ struct SettingsDetailPage {
                     direction: Axis.Vertical,
                     reverse: true
                   })
-                    .width(6)
-                    .height(110)
+                    .width(this.scaledSize(6))
+                    .height(this.scaledSize(110))
                     .selectedColor(this.primaryColor)
                     .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.1))
                     .blockColor('#FFFFFF')
-                    .blockSize({ width: 14, height: 6 })
+                    .blockSize({ width: this.scaledSize(14), height: this.scaledSize(6) })
                     .blockBorderColor(this.primaryColor)
                     .blockBorderWidth(1)
                     .onChange((value: number) => {
                       this.onEqBandChange(band.index, value)
                     })
                 }
-                .width(28)
-                .height(110)
+                .width(this.scaledSize(28))
+                .height(this.scaledSize(110))
                 .justifyContent(FlexAlign.End)
                 .borderRadius(4)
                 .clip(true)
 
                 Text(band.freq)
-                  .fontSize(10)
+                  .fontSize(this.scaledFont(10))
                   .fontColor(this.settingSubTextColor())
                   .fontWeight(FontWeight.Medium)
                   .margin({ top: 6 })
@@ -530,7 +555,7 @@ struct SettingsDetailPage {
   toggleRow(toggleLabel: string, isChecked: boolean, onToggleChange: (val: boolean) => void): void {
     Row() {
       Text(toggleLabel)
-        .fontSize(14)
+        .fontSize(this.scaledFont(14))
         .fontColor(this.settingTextColor())
         .maxLines(1)
       Blank()
@@ -541,8 +566,8 @@ struct SettingsDetailPage {
         })
     }
     .width('100%')
-    .height(44)
-    .padding({ left: 14, right: 14 })
+    .height(this.scaledSize(44))
+    .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
     .alignItems(VerticalAlign.Center)
   }
 }
