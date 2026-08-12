@@ -46,6 +46,40 @@ export class WindowUtil {
     (avoidAreaOptions: window.AvoidAreaOptions) => {
       this.setAvoidArea();
     }
+  public onTitleButtonRectChange: (titleButtonRect: window.TitleButtonRect) => void =
+    (titleButtonRect: window.TitleButtonRect) => {
+      this.updateTitleButtonRect(titleButtonRect)
+    }
+
+  private updateTitleButtonRect(titleButtonRect: window.TitleButtonRect): void {
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TITLE_BUTTON_WIDTH, titleButtonRect.width)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TITLE_BUTTON_HEIGHT, titleButtonRect.height)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TOP_HEIGHT, titleButtonRect.height)
+  }
+
+  setupImmersiveTitleButtons(): void {
+    if (!this.mainWindow) {
+      return
+    }
+    try {
+      this.mainWindow.setWindowDecorHeight(56)
+      this.mainWindow.setWindowDecorVisible(false)
+      this.mainWindow.setWindowTitleButtonVisible(true, true, true)
+      this.mainWindow.setWindowTitleMoveEnabled(true)
+      const decorButtonStyle: window.DecorButtonStyle = {
+        buttonBackgroundSize: 40,
+        spacingBetweenButtons: 4,
+        closeButtonRightMargin: 8,
+        buttonIconSize: 18,
+        buttonBackgroundCornerRadius: 8
+      }
+      this.mainWindow.setDecorButtonStyle(decorButtonStyle)
+      this.updateTitleButtonRect(this.mainWindow.getTitleButtonRect())
+      this.mainWindow.on('windowTitleButtonRectChange', this.onTitleButtonRectChange)
+    } catch (err) {
+      Logger.error(TAG, `setupImmersiveTitleButtons failed: ${JSON.stringify(err)}`)
+    }
+  }
 
   setAvoidArea() {
     if (!this.mainWindow) {

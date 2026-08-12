@@ -1,6 +1,7 @@
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { window } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { deviceInfo } from '@kit.BasicServicesKit';
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
 import { WindowUtil } from '../common/utils/WindowUtil';
 import { AVPlayerService } from '../service/AVPlayerService';
@@ -70,8 +71,12 @@ export default class EntryAbility extends UIAbility {
         windowUtil.updateAvoidArea();
         windowUtil.updateWindowInfo();
         try {
-          mainWindow.setWindowDecorVisible(false);
-          mainWindow.setWindowTitleButtonVisible(false, false, false);
+          const isPC: boolean = deviceInfo.deviceType === '2in1';
+          if (isPC) {
+            windowUtil.setupImmersiveTitleButtons();
+          } else {
+            mainWindow.setWindowDecorVisible(false);
+          }
         } catch (e) {
           Logger.error(TAG, 'setWindowDecorVisible failed: ' + JSON.stringify(e));
         }
@@ -80,6 +85,7 @@ export default class EntryAbility extends UIAbility {
       });
 
       windowStage.getMainWindow().then((mainWindow: window.Window) => {
+        const isPC: boolean = deviceInfo.deviceType === '2in1';
         mainWindow.setWindowLayoutFullScreen(true).catch((err: Error) => {
           Logger.error(TAG, `setWindowLayoutFullScreen failed: ${JSON.stringify(err)}`);
         });

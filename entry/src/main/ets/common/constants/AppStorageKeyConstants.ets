@@ -36,6 +36,8 @@ export class AppStorageKeyConstants {
   public static readonly KEY_IS_FAVORITE: string = BaseConstants.KEY_PREFIX + 'IsFavorite'
   public static readonly KEY_TOP_HEIGHT: string = BaseConstants.KEY_PREFIX + 'TopHeight'
   public static readonly KEY_BOTTOM_HEIGHT: string = BaseConstants.KEY_PREFIX + 'BottomHeight'
+  public static readonly KEY_TITLE_BUTTON_WIDTH: string = BaseConstants.KEY_PREFIX + 'TitleButtonWidth'
+  public static readonly KEY_TITLE_BUTTON_HEIGHT: string = BaseConstants.KEY_PREFIX + 'TitleButtonHeight'
   public static readonly KEY_UI_ABILITY_CONTEXT: string = BaseConstants.KEY_PREFIX + 'UIAbilityContext'
   public static readonly KEY_WINDOW: string = BaseConstants.KEY_PREFIX + 'Window'
   public static readonly KEY_TOTAL_BYTE_LENGTH: string = BaseConstants.KEY_PREFIX + 'TotalByteLength'

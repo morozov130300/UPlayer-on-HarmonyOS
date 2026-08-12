@@ -13,7 +13,7 @@ export struct MusicInfoComponent {
   @State currentTabIndex: number = 0;
   @Prop mainWindowInfo: WindowInfo;
   @StorageLink(AppStorageKeyConstants.KEY_SONG_LIST) songList: SongInfo[] = [];
-  @StorageProp(AppStorageKeyConstants.KEY_SELECT_INDEX) selectIndex: number = 0;
+  @StorageProp(AppStorageKeyConstants.KEY_SELECT_INDEX) @Watch('onSongChange') selectIndex: number = 0;
   @State isShowControl: boolean = false;
   @State isFavorite: boolean = false;
   @State favoriteScale: number = 1.0;
@@ -33,6 +33,11 @@ export struct MusicInfoComponent {
 
   aboutToDisappear() {
     this.stopGlowAnimation()
+  }
+
+  onSongChange(): void {
+    this.coverArtFailed = false
+    this.updateFavoriteState()
   }
 
   updateFavoriteState() {

@@ -2,8 +2,6 @@ import { curves, uiAppearance } from '@kit.ArkUI'
 import { DataService, AppSettingsData } from '../service/DataService'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { ColorHelper } from '../common/utils/ColorHelper'
-import { WindowControlsComponent } from '../view/WindowControlsComponent'
-import { deviceInfo } from '@kit.BasicServicesKit'
 import Logger from '../common/utils/Logger'
 
 const TAG = 'SettingsContent'
@@ -20,8 +18,8 @@ export struct SettingsContent {
   @State settings: AppSettingsData = new AppSettingsData()
   @StorageLink(KEY_PRIMARY_COLOR) primaryColor: string = '#007DFF'
   @StorageLink(AppStorageKeyConstants.KEY_TOP_HEIGHT) topSafeHeight: number = 0
+  @StorageLink(AppStorageKeyConstants.KEY_TITLE_BUTTON_WIDTH) titleButtonWidth: number = 0
   private dataService: DataService = DataService.getInstance()
-  private isPC: boolean = deviceInfo.deviceType === '2in1'
   private categories: SettingCategory[] = [
     { title: '定制', description: '界面布局、主题配色等个性化选项', route: 'customize' },
     { title: '播放', description: '播放速度、歌词显示、通知栏控制', route: 'playback' },
@@ -70,7 +68,7 @@ export struct SettingsContent {
           .fontWeight(FontWeight.Bold)
       }
       .width('100%')
-      .padding({ left: 16, right: 16, top: this.topSafeHeight + 8, bottom: 10 })
+      .padding({ left: 16, right: this.titleButtonWidth + 12, top: 8, bottom: 10 })
 
       Column({ space: 8 }) {
         ForEach(this.categories, (cat: SettingCategory) => {

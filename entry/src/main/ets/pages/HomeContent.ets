@@ -42,6 +42,7 @@ export struct HomeContent {
   }
 
   loadData(): void {
+    this.failedArtIds = new Set<string>()
     this.songs = this.dataService.getSongs()
     this.settings = this.dataService.getSettings()
     this.viewMode = this.dataService.getViewMode()
@@ -188,6 +189,7 @@ export struct HomeContent {
     const newSongs: SongInfo[] = await this.songScanner.pickAudioFiles(this.context)
     if (newSongs.length > 0) {
       const result: ImportResult = this.dataService.addSongs(newSongs)
+      this.failedArtIds = new Set<string>()
       this.loadData()
       try {
         this.getUIContext()?.getPromptAction().showToast({
@@ -246,9 +248,42 @@ export struct HomeContent {
     } else {
       this.selectedIds.push(id)
     }
+    this.selectedIds = this.selectedIds.slice()
     if (this.selectedIds.length === 0) {
       this.isMultiSelectMode = false
     }
+  }
+
+  getVisibleSongIds(): string[] {
+    const ids: string[] = []
+    for (let i = 0; i < this.displayItems.length; i++) {
+      const item: DisplayItem = this.displayItems[i]
+      if (!item.isHeader) {
+        ids.push(item.song.id)
+      }
+    }
+    return ids
+  }
+
+  isAllSelected(): boolean {
+    const visibleIds: string[] = this.getVisibleSongIds()
+    if (visibleIds.length === 0 || this.selectedIds.length !== visibleIds.length) {
+      return false
+    }
+    for (let i = 0; i < visibleIds.length; i++) {
+      if (this.selectedIds.indexOf(visibleIds[i]) < 0) {
+        return false
+      }
+    }
+    return true
+  }
+
+  toggleSelectAll(): void {
+    if (this.isAllSelected()) {
+      this.selectedIds = []
+      return
+    }
+    this.selectedIds = this.getVisibleSongIds()
   }
 
   exitMultiSelect(): void {
@@ -374,6 +409,11 @@ export struct HomeContent {
               .fontSize(14)
               .fontColor($r('app.color.text_primary'))
             Blank()
+            Text(this.isAllSelected() ? '取消全选' : '全选')
+              .fontSize(14)
+              .fontColor(this.primaryColor)
+              .margin({ right: 16 })
+              .onClick(() => { this.toggleSelectAll() })
             Text('取消')
               .fontSize(14)
               .fontColor(this.primaryColor)

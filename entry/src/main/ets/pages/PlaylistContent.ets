@@ -24,6 +24,7 @@ export struct PlaylistContent {
   @State selectedFolderPaths: string[] = []
   @State favoritesSelected: boolean = false
   @StorageLink(AppStorageKeyConstants.KEY_TOP_HEIGHT) topSafeHeight: number = 0
+  @StorageLink(AppStorageKeyConstants.KEY_TITLE_BUTTON_WIDTH) titleButtonWidth: number = 0
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
   private dataService: DataService = DataService.getInstance()
@@ -236,7 +237,7 @@ export struct PlaylistContent {
             .onClick(() => { this.cycleSortMode() })
         }
         .width('100%')
-        .padding({ left: 16, right: 16, top: this.topSafeHeight + 8, bottom: 12 })
+        .padding({ left: 16, right: this.titleButtonWidth + 12, top: 8, bottom: 12 })
 
         Scroll(this.scroller) {
           Column() {

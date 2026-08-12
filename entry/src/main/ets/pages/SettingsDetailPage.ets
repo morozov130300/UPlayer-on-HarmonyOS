@@ -4,8 +4,6 @@ import { DataService, AppSettingsData } from '../service/DataService'
 import { AVPlayerService } from '../service/AVPlayerService'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { ColorHelper } from '../common/utils/ColorHelper'
-import { WindowControlsComponent } from '../view/WindowControlsComponent'
-import { deviceInfo } from '@kit.BasicServicesKit'
 import Logger from '../common/utils/Logger'
 
 const TAG = 'SettingsDetailPage'
@@ -33,11 +31,12 @@ struct SettingsDetailPage {
   @State settings: AppSettingsData = new AppSettingsData()
   @StorageLink(KEY_PRIMARY_COLOR) primaryColor: string = '#007DFF'
   @StorageLink(AppStorageKeyConstants.KEY_TOP_HEIGHT) topSafeHeight: number = 0
+  @StorageLink(AppStorageKeyConstants.KEY_TITLE_BUTTON_WIDTH) titleButtonWidth: number = 0
+  @StorageLink(AppStorageKeyConstants.KEY_TITLE_BUTTON_HEIGHT) titleButtonHeight: number = 0
   @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
   @State pageTitle: string = ''
   private dataService: DataService = DataService.getInstance()
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
-  private isPC: boolean = deviceInfo.deviceType === '2in1'
   private themeOptions: ThemeOption[] = [
     { label: '跟随系统', value: 'system' },
     { label: '深色模式', value: 'dark' },
@@ -153,7 +152,7 @@ struct SettingsDetailPage {
   }
 
   build() {
-    Stack({ alignContent: Alignment.TopEnd }) {
+    Stack() {
       Column() {
         Row() {
           Row() {
@@ -176,8 +175,8 @@ struct SettingsDetailPage {
             .margin({ left: 4 })
         }
         .width('100%')
-        .height(52)
-        .padding({ left: 4, right: 16, top: this.topSafeHeight })
+        .height(Math.max(56, this.titleButtonHeight))
+        .padding({ left: 4, right: this.titleButtonWidth + 12 })
         .alignItems(VerticalAlign.Center)
 
         Scroll() {
@@ -199,13 +198,6 @@ struct SettingsDetailPage {
       }
       .width('100%')
       .height('100%')
-
-      if (this.isPC) {
-        Row() {
-          WindowControlsComponent()
-        }
-        .padding({ top: this.topSafeHeight + 4, right: 8 })
-      }
     }
     .width('100%')
     .height('100%')
