@@ -19,12 +19,17 @@ export struct SettingsContent {
   @StorageLink(KEY_PRIMARY_COLOR) primaryColor: string = '#007DFF'
   @StorageLink(AppStorageKeyConstants.KEY_TITLE_BUTTON_WIDTH) titleButtonWidth: number = 0
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
+  @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
   private dataService: DataService = DataService.getInstance()
   private categories: SettingCategory[] = [
     { title: '定制', description: '界面布局、主题配色等个性化选项', route: 'customize' },
     { title: '播放', description: '播放速度、歌词显示、通知栏控制', route: 'playback' },
     { title: '音效', description: '均衡器开关与频段调节', route: 'audio' }
   ]
+
+  private scaledSize(size: number): number {
+    return Math.round(size * this.displaySizeScale)
+  }
 
   aboutToAppear(): void {
     this.settings = this.dataService.getSettings()
@@ -68,9 +73,12 @@ export struct SettingsContent {
           .fontWeight(FontWeight.Bold)
       }
       .width('100%')
-      .padding({ left: 16, right: this.titleButtonWidth + 12, top: 8, bottom: 10 })
+      .padding({
+        left: this.scaledSize(16), right: this.titleButtonWidth + this.scaledSize(12),
+        top: this.scaledSize(8), bottom: this.scaledSize(10)
+      })
 
-      Column({ space: 8 }) {
+      Column({ space: this.scaledSize(8) }) {
         ForEach(this.categories, (cat: SettingCategory) => {
           Column() {
             Text(cat.title)
@@ -82,18 +90,22 @@ export struct SettingsContent {
               .fontSize(Math.round(12 * this.fontSizeScale))
               .fontColor(this.settingSubTextColor())
               .width('100%')
-              .margin({ top: 3 })
+              .margin({ top: this.scaledSize(3) })
           }
           .width('100%')
-          .padding({ left: 16, right: 16, top: 13, bottom: 13 })
+          .padding({
+            left: this.scaledSize(16), right: this.scaledSize(16),
+            top: this.scaledSize(13), bottom: this.scaledSize(13)
+          })
           .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-          .borderRadius(10)
+          .borderRadius(this.scaledSize(10))
+          .constraintSize({ minHeight: this.scaledSize(64), maxHeight: this.scaledSize(120) })
           .alignItems(HorizontalAlign.Start)
           .onClick(() => { this.onCategoryClick(cat) })
         }, (cat: SettingCategory) => cat.route)
       }
       .width('100%')
-      .padding({ left: 12, right: 12 })
+      .padding({ left: this.scaledSize(12), right: this.scaledSize(12) })
     }
     .width('100%')
     .height('100%')

@@ -29,6 +29,7 @@ export struct HomeContent {
   @State settings: AppSettingsData = new AppSettingsData()
   @State isMultiSelectMode: boolean = false
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
+  @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
   @State selectedIds: string[] = []
   @State failedArtIds: Set<string> = new Set<string>()
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
@@ -36,6 +37,10 @@ export struct HomeContent {
   private songScanner: SongScanner = SongScanner.getInstance()
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
   private scroller: Scroller = new Scroller()
+
+  private scaledSize(size: number): number {
+    return Math.round(size * this.displaySizeScale)
+  }
 
   aboutToAppear(): void {
     this.loadData()
@@ -464,7 +469,9 @@ export struct HomeContent {
         .fontSize(Math.round(13 * this.fontSizeScale))
         .fontColor($r('app.color.text_sixty_color'))
         .fontWeight(FontWeight.Medium)
-        .padding({ left: 16, top: 12, bottom: 4 })
+        .padding({
+          left: this.scaledSize(16), top: this.scaledSize(12), bottom: this.scaledSize(4)
+        })
     }
     .width('100%')
     .backgroundColor('rgba(0,0,0,0.02)')
@@ -482,28 +489,28 @@ export struct HomeContent {
               .fontWeight(FontWeight.Bold)
           }
         }
-        .width(22).height(22)
-        .borderRadius(11)
+        .width(this.scaledSize(22)).height(this.scaledSize(22))
+        .borderRadius(this.scaledSize(11))
         .backgroundColor(this.isSelected(item.id) ? this.primaryColor : 'rgba(0,0,0,0.08)')
         .border({ width: 1, color: this.isSelected(item.id) ? this.primaryColor : $r('app.color.list_divider') })
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
-        .margin({ right: 10 })
+        .margin({ right: this.scaledSize(10) })
       }
 
       if (item.albumArtPath.length > 0 && !this.failedArtIds.has(item.id)) {
         Image('file://' + item.albumArtPath)
-          .width(36).height(36)
-          .borderRadius(6)
+          .width(this.scaledSize(36)).height(this.scaledSize(36))
+          .borderRadius(this.scaledSize(6))
           .objectFit(ImageFit.Cover)
-          .margin({ right: 10 })
+          .margin({ right: this.scaledSize(10) })
           .opacity(item.isAvailable ? 1 : 0.35)
           .onError(() => { this.failedArtIds.add(item.id) })
       } else {
         Image($r('app.media.ic_public_music'))
-          .width(36).height(36)
+          .width(this.scaledSize(36)).height(this.scaledSize(36))
           .fillColor($r('app.color.text_sixty_color'))
-          .margin({ right: 10 })
+          .margin({ right: this.scaledSize(10) })
           .opacity(item.isAvailable ? 1 : 0.35)
       }
 
@@ -552,11 +559,11 @@ export struct HomeContent {
               }
             })
         }
-        .margin({ right: 16 })
+        .margin({ right: this.scaledSize(16) })
       }
 
       Image(item.isFavorite ? $r('app.media.heart_fill') : $r('app.media.heart_gap'))
-        .width(22).height(22)
+        .width(this.scaledSize(22)).height(this.scaledSize(22))
         .fillColor(item.isFavorite ? '#FF3B30' : $r('app.color.text_sixty_color'))
         .hitTestBehavior(HitTestMode.Block)
         .onClick(() => {
@@ -564,7 +571,11 @@ export struct HomeContent {
         })
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 10, bottom: 10 })
+    .padding({
+      left: this.scaledSize(16), right: this.scaledSize(16),
+      top: this.scaledSize(10), bottom: this.scaledSize(10)
+    })
+    .constraintSize({ minHeight: this.scaledSize(52), maxHeight: this.scaledSize(96) })
     .alignItems(VerticalAlign.Center)
     .gesture(
       LongPressGesture()
