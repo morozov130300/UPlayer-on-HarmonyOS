@@ -50,28 +50,22 @@ export struct HomeContent {
   }
 
   applyFilters(): void {
-    let result: SongInfo[] = []
+    const isFavFilter: boolean = this.dataService.isFavoritesSelected()
+    const selectedPaths: string[] = this.dataService.getSelectedFolderPaths()
+    const hasFolderFilter: boolean = !isFavFilter && selectedPaths.length > 0
+    const result: SongInfo[] = []
     for (let i = 0; i < this.songs.length; i++) {
-      result.push(this.songs[i])
-    }
-    if (this.dataService.isFavoritesSelected()) {
-      const filtered: SongInfo[] = []
-      for (let i = 0; i < result.length; i++) {
-        if (result[i].isFavorite) {
-          filtered.push(result[i])
+      const song: SongInfo = this.songs[i]
+      if (isFavFilter) {
+        if (song.isFavorite) {
+          result.push(song)
         }
-      }
-      result = filtered
-    } else {
-      const selectedPaths: string[] = this.dataService.getSelectedFolderPaths()
-      if (selectedPaths.length > 0) {
-        const filtered: SongInfo[] = []
-        for (let i = 0; i < result.length; i++) {
-          if (selectedPaths.indexOf(result[i].folderPath) >= 0) {
-            filtered.push(result[i])
-          }
+      } else if (hasFolderFilter) {
+        if (selectedPaths.indexOf(song.folderPath) >= 0) {
+          result.push(song)
         }
-        result = filtered
+      } else {
+        result.push(song)
       }
     }
     const sorted: SongInfo[] = this.sortSongs(result)
@@ -508,7 +502,6 @@ export struct HomeContent {
             .fontSize(18)
             .renderingStrategy(SymbolRenderingStrategy.SINGLE)
             .fontColor([$r('app.color.text_sixty_color')])
-            .margin({ right: 12 })
             .hitTestBehavior(HitTestMode.Block)
             .onClick(() => {
               this.dataService.addToPlayNext(item.id)
@@ -519,12 +512,12 @@ export struct HomeContent {
               }
             })
         }
+        .margin({ right: 16 })
       }
 
       Image(item.isFavorite ? $r('app.media.heart_fill') : $r('app.media.heart_gap'))
         .width(22).height(22)
         .fillColor(item.isFavorite ? '#FF3B30' : $r('app.color.text_sixty_color'))
-        .margin({ right: 12 })
         .hitTestBehavior(HitTestMode.Block)
         .onClick(() => {
           this.toggleFavorite(item.id)

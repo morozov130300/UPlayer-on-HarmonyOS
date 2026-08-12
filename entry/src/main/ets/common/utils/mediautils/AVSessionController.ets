@@ -3,6 +3,7 @@ import { avSession } from '@kit.AVSessionKit';
 import { MediaTools } from './MediaTools';
 import { SongInfo } from '../../../model/SongInfo';
 import { AVPlayerService } from '../../../service/AVPlayerService';
+import { AudioMetadataService } from '../../../service/AudioMetadataService';
 import Logger from '../Logger';
 import { MusicPlayMode } from '../../constants/PlayerConstants';
 import { PreferencesUtil } from '../PreferencesUtil';
@@ -56,10 +57,78 @@ export class AVSessionController {
       Logger.error(TAG, `session create failed: ${JSON.stringify(err)}`);
       return;
     }
+    this.setInitialPlaybackState();
     await this.setAVMetadata();
+    await this.setAVQueueItems();
+    this.setAVQueueTitle();
     this.setLaunchAbility();
     this.setListenerForMesFromController();
     this.getAndUpdateFavoriteState(this.musicIndex.toString());
+  }
+
+  private setInitialPlaybackState(): void {
+    if (!this.AVSession) {
+      return;
+    }
+    const isPlay: boolean = AppStorage.get<boolean>(AppStorageKeyConstants.KEY_IS_PLAY) ?? false;
+    const playbackState: avSession.AVPlaybackState = {
+      state: isPlay ? avSession.PlaybackState.PLAYBACK_STATE_PLAY : avSession.PlaybackState.PLAYBACK_STATE_PAUSE,
+      speed: 1.0,
+      bufferedTime: 0,
+      loopMode: avSession.LoopMode.LOOP_MODE_SEQUENCE,
+      isFavorite: false,
+    };
+    this.AVSession.setAVPlaybackState(playbackState, (err: BusinessError) => {
+      if (err) {
+        Logger.error(TAG, `setInitialPlaybackState BusinessError: code: ${err.code}, message: ${err.message}`);
+      } else {
+        Logger.info(TAG, 'setInitialPlaybackState successfully');
+      }
+    });
+  }
+
+  public async setAVQueueItems(): Promise<void> {
+    if (!this.AVSession) {
+      return;
+    }
+    this.refreshSongList();
+    if (this.songList.length === 0) {
+      return;
+    }
+    try {
+      const queueItems: avSession.AVQueueItem[] = [];
+      for (let i = 0; i < this.songList.length; i++) {
+        const song: SongInfo = this.songList[i];
+        const description: avSession.AVMediaDescription = {
+          assetId: `${i}`,
+          title: song.title,
+          subtitle: song.artist,
+        };
+        const queueItem: avSession.AVQueueItem = {
+          itemId: i + 1,
+          description: description,
+        };
+        queueItems.push(queueItem);
+      }
+      await this.AVSession.setAVQueueItems(queueItems);
+      Logger.info(TAG, 'setAVQueueItems successfully');
+    } catch (err) {
+      const error: BusinessError = err as BusinessError;
+      Logger.error(TAG, `setAVQueueItems failed: ${error.code} ${error.message}`);
+    }
+  }
+
+  public setAVQueueTitle(): void {
+    if (!this.AVSession) {
+      return;
+    }
+    this.AVSession.setAVQueueTitle('UPlayer', (err: BusinessError) => {
+      if (err) {
+        Logger.error(TAG, `setAVQueueTitle BusinessError: code: ${err.code}, message: ${err.message}`);
+      } else {
+        Logger.info(TAG, 'setAVQueueTitle successfully');
+      }
+    });
   }
 
   private setLaunchAbility(): void {
@@ -105,9 +174,12 @@ export class AVSessionController {
     try {
       if (this.context) {
         const song: SongInfo = this.songList[this.musicIndex];
+        // 按需从音频文件提取封面，不再使用缓存文件
         let mediaImage: image.PixelMap | undefined = undefined;
-        if (song.albumArtPath && song.albumArtPath.length > 0) {
+        if (song.albumArtPath.length > 0) {
           mediaImage = await MediaTools.getPixelMapFromFile(song.id, song.albumArtPath);
+        } else {
+          mediaImage = await this.extractCoverFromSong(song);
         }
         const metadata: avSession.AVMetadata = {
           assetId: `${this.musicIndex}`,
@@ -130,6 +202,12 @@ export class AVSessionController {
     } catch (error) {
       Logger.error(TAG, `SetAVMetadata failed, code: ${(error as BusinessError).code}`);
     }
+  }
+
+  // 从音频文件直接提取封面PixelMap
+  private async extractCoverFromSong(song: SongInfo): Promise<image.PixelMap | undefined> {
+    const metadataService: AudioMetadataService = AudioMetadataService.getInstance();
+    return await metadataService.fetchAlbumCover(song);
   }
 
   async setListenerForMesFromController(): Promise<void> {
@@ -276,8 +354,10 @@ export class AVSessionController {
       Logger.error(TAG, 'AVSession is undefined');
       return;
     }
+    const currentIndex: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? 0;
     this.AVSession.setAVPlaybackState({
       state: isPlay ? avSession.PlaybackState.PLAYBACK_STATE_PLAY : avSession.PlaybackState.PLAYBACK_STATE_PAUSE,
+      activeItemId: currentIndex + 1,
     }, (err: BusinessError) => {
       if (err) {
         Logger.error(TAG, `setPlayState BusinessError: code: ${err.code}, message: ${err.message}`);

@@ -38,15 +38,6 @@ export class PreferencesUtil {
     return PreferencesUtil.preferencesUtil;
   }
 
-  // Clear the data of the preferences
-  preferencesFlush(preferences: preferences.Preferences) {
-    preferences.flush((err) => {
-      if (err) {
-        Logger.error(TAG, `Failed to flush. Code:${err.code}, message:${err.message}`);
-      }
-    })
-  }
-
   // Delete the data of the preferences
   preferencesPut(key: string, value: preferences.ValueType) {
     if (!this.preferences) {

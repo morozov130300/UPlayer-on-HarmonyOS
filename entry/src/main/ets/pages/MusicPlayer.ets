@@ -6,6 +6,7 @@ import { curves } from '@kit.ArkUI';
 import { ColorHelper } from '../common/utils/ColorHelper';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { WindowControlsComponent } from '../view/WindowControlsComponent';
+import { ShareService } from '../service/ShareService';
 
 const TAG = '[MusicPlayer]';
 
@@ -19,10 +20,12 @@ struct MusicPlayer {
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF';
   @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0;
   private isPC: boolean = deviceInfo.deviceType === '2in1';
+  private shareService: ShareService = ShareService.getInstance();
   @StorageLink(AppStorageKeyConstants.KEY_TOP_HEIGHT) topSafeHeight: number = 0;
 
   async aboutToAppear() {
     this.isLoading = false;
+    this.shareService.registerListeners('player');
     this.getUIContext()?.animateTo({ duration: 600, curve: Curve.EaseOut }, () => {
       this.bgOpacity = 1
     })
@@ -30,6 +33,11 @@ struct MusicPlayer {
 
   aboutToDisappear() {
     Logger.info(TAG, 'aboutToDisappear');
+    this.shareService.unregisterListeners();
+  }
+
+  onPageHide(): void {
+    this.shareService.unregisterListeners();
   }
 
   pageTransition() {

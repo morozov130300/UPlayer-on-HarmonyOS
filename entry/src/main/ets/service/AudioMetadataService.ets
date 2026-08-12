@@ -22,8 +22,9 @@ export class AudioMetadataService {
     try {
       extractor = await media.createAVMetadataExtractor()
       file = fs.openSync(song.uri.length > 0 ? song.uri : song.filePath, fs.OpenMode.READ_ONLY)
-      // 直接使用 fd 作为数据源
-      const avFd: media.AVFileDescriptor = { fd: file.fd, offset: 0, length: 0 }
+      const sourcePath: string = song.uri.length > 0 ? song.uri : song.filePath
+      const stat = fs.statSync(sourcePath)
+      const avFd: media.AVFileDescriptor = { fd: file.fd, offset: 0, length: stat.size }
       extractor.fdSrc = avFd
 
       // 提取文本元数据（标题、歌手、专辑）
@@ -54,12 +55,17 @@ export class AudioMetadataService {
         }
       }
 
-      // 提取专辑封面并保存为JPEG文件
+      let cover: image.PixelMap | undefined = undefined
       try {
-        let cover: image.PixelMap = await extractor.fetchAlbumCover()
+        cover = await extractor.fetchAlbumCover()
         song.albumArtPath = await this.saveAlbumCover(cover, song.id, context)
       } catch (coverErr) {
+        song.albumArtPath = ''
         Logger.info(TAG, `No album cover for ${song.fileName}`)
+      } finally {
+        if (cover !== undefined) {
+          cover.release()
+        }
       }
     } catch (err) {
       Logger.warn(TAG, `Metadata extraction failed for ${song.fileName}: ${JSON.stringify(err)}`)
@@ -73,31 +79,76 @@ export class AudioMetadataService {
     }
   }
 
-  // 将PixelMap封面编码为JPEG并写入cache/covers/目录
-  private async saveAlbumCover(cover: image.PixelMap, songId: string, context: common.UIAbilityContext): Promise<string> {
-    const coverDir: string = context.cacheDir + '/covers'
+  private async saveAlbumCover(cover: image.PixelMap, songId: string,
+    context: common.UIAbilityContext): Promise<string> {
+    const coverDir: string = context.filesDir + '/covers'
     const coverPath: string = coverDir + '/cover_' + songId + '.jpg'
-
+    let packer: image.ImagePacker | undefined = undefined
+    let coverFile: fs.File | undefined = undefined
     try {
       fs.mkdirSync(coverDir, true)
-    } catch (mkErr) {
-      Logger.warn(TAG, `mkdir error: ${JSON.stringify(mkErr)}`)
-    }
-
-    let packer: image.ImagePacker = image.createImagePacker()
-    try {
-      let packedData: ArrayBuffer = await packer.packToData(cover, {
+      packer = image.createImagePacker()
+      const options: image.PackingOption = {
         format: 'image/jpeg',
         quality: 80
-      })
-      let coverFile: fs.File = fs.openSync(coverPath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY)
+      }
+      let packedData: ArrayBuffer = await packer.packToData(cover, options)
+      coverFile = fs.openSync(coverPath,
+        fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC)
       fs.writeSync(coverFile.fd, packedData)
-      fs.closeSync(coverFile)
-    } catch (packErr) {
-      Logger.warn(TAG, `saveAlbumCover error: ${JSON.stringify(packErr)}`)
+      return coverPath
+    } catch (err) {
+      Logger.warn(TAG, `saveAlbumCover error: ${JSON.stringify(err)}`)
+      return ''
+    } finally {
+      if (coverFile !== undefined) {
+        fs.closeSync(coverFile)
+      }
+      if (packer !== undefined) {
+        packer.release()
+      }
     }
-    packer.release()
+  }
 
-    return coverPath
+  // 按需从音频文件提取封面PixelMap（用于AVSession等场景）
+  async fetchAlbumCover(song: SongInfo): Promise<image.PixelMap | undefined> {
+    let extractor: media.AVMetadataExtractor | undefined = undefined
+    let file: fs.File | undefined = undefined
+    try {
+      extractor = await media.createAVMetadataExtractor()
+      file = fs.openSync(song.uri.length > 0 ? song.uri : song.filePath, fs.OpenMode.READ_ONLY)
+      const sourcePath: string = song.uri.length > 0 ? song.uri : song.filePath
+      const stat = fs.statSync(sourcePath)
+      const avFd: media.AVFileDescriptor = { fd: file.fd, offset: 0, length: stat.size }
+      extractor.fdSrc = avFd
+      let cover: image.PixelMap = await extractor.fetchAlbumCover()
+      return cover
+    } catch (err) {
+      Logger.info(TAG, `No album cover for ${song.fileName}`)
+      return undefined
+    } finally {
+      if (extractor !== undefined) {
+        extractor.release()
+      }
+      if (file !== undefined) {
+        fs.closeSync(file)
+      }
+    }
+  }
+
+  async repairAlbumCovers(songs: SongInfo[], context: common.UIAbilityContext): Promise<boolean> {
+    let changed: boolean = false
+    for (let i = 0; i < songs.length; i++) {
+      const song: SongInfo = songs[i]
+      if (song.albumArtPath.length > 0 && fs.accessSync(song.albumArtPath)) {
+        continue
+      }
+      const oldPath: string = song.albumArtPath
+      await this.extractAndSaveMetadata(song, context)
+      if (song.albumArtPath !== oldPath) {
+        changed = true
+      }
+    }
+    return changed
   }
 }

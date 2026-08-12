@@ -21,6 +21,11 @@ interface ThemeOption {
   value: string
 }
 
+interface TabStyleOption {
+  label: string
+  value: string
+}
+
 @Entry
 @Component
 struct SettingsDetailPage {
@@ -37,6 +42,10 @@ struct SettingsDetailPage {
     { label: '跟随系统', value: 'system' },
     { label: '深色模式', value: 'dark' },
     { label: '浅色模式', value: 'light' }
+  ]
+  private tabStyleOptions: TabStyleOption[] = [
+    { label: '经典', value: 'classic' },
+    { label: '沉浸', value: 'immersive' }
   ]
   private colorOptions: string[] = ['#007DFF', '#FF3B30', '#34C759', '#FF9500', '#AF52DE', '#5AC8FA']
   private eqBands: EqBandInfo[] = [
@@ -78,6 +87,10 @@ struct SettingsDetailPage {
 
   private settingSubTextColor(): ResourceColor {
     return this.isDark() ? ColorHelper.hexWithAlpha('#FFFFFF', '88') : ColorHelper.darken(this.primaryColor, 0.3)
+  }
+
+  private settingInactiveTextColor(): ResourceColor {
+    return this.isDark() ? ColorHelper.hexWithAlpha('#FFFFFF', '99') : ColorHelper.darken(this.primaryColor, 0.4)
   }
 
   updateSetting(): void {
@@ -203,7 +216,7 @@ struct SettingsDetailPage {
   sectionTitle(title: string): void {
     Text(title)
       .fontSize(13)
-      .fontColor(ColorHelper.hexWithAlpha(this.primaryColor, '99'))
+      .fontColor(this.isDark() ? ColorHelper.hexWithAlpha('#FFFFFF', '99') : ColorHelper.hexWithAlpha(this.primaryColor, '99'))
       .fontWeight(FontWeight.Medium)
       .width('100%')
       .padding({ left: 4, top: 6, bottom: 2 })
@@ -230,13 +243,40 @@ struct SettingsDetailPage {
             Column() {
               Text(opt.label)
                 .fontSize(11)
-                .fontColor(this.settings.themeMode === opt.value ? '#FFFFFF' : ColorHelper.darken(this.primaryColor, 0.4))
+                .fontColor(this.settings.themeMode === opt.value ? '#FFFFFF' : this.settingInactiveTextColor())
             }
             .padding({ left: 10, right: 10, top: 5, bottom: 5 })
             .backgroundColor(this.settings.themeMode === opt.value ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
             .borderRadius(14)
             .onClick(() => { this.setThemeMode(opt.value) })
           }, (opt: ThemeOption) => opt.value)
+        }
+        .padding({ left: 12, right: 12, top: 2, bottom: 10 })
+        .width('100%')
+        .justifyContent(FlexAlign.End)
+      }
+      .width('100%')
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(10)
+
+      Column() {
+        this.sectionTitle('Tab栏样式')
+        Row() {
+          ForEach(this.tabStyleOptions, (opt: TabStyleOption) => {
+            Column() {
+              Text(opt.label)
+                .fontSize(11)
+                .fontColor(this.settings.tabStyle === opt.value ? '#FFFFFF' : this.settingInactiveTextColor())
+            }
+            .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+            .backgroundColor(this.settings.tabStyle === opt.value ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+            .borderRadius(14)
+            .onClick(() => {
+              this.settings.tabStyle = opt.value
+              this.updateSetting()
+              AppStorage.setOrCreate('uplayer_tab_style', opt.value)
+            })
+          }, (opt: TabStyleOption) => opt.value)
         }
         .padding({ left: 12, right: 12, top: 2, bottom: 10 })
         .width('100%')

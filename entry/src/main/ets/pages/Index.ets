@@ -11,6 +11,7 @@ import { SettingsContent } from './SettingsContent'
 import { DataService } from '../service/DataService'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import { WindowControlsComponent } from '../view/WindowControlsComponent'
+import { ShareService } from '../service/ShareService'
 import Logger from '../common/utils/Logger'
 
 const TAG = 'Index'
@@ -36,6 +37,7 @@ struct MainPage {
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
   @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
+  @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
   @State albumArtFailed: boolean = false
   @State isTitleMarqueeRunning: boolean = true
   @State isArtistMarqueeRunning: boolean = true
@@ -47,12 +49,14 @@ struct MainPage {
   private rotationTimer: number = -1
   private dataService: DataService = DataService.getInstance()
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
+  private shareService: ShareService = ShareService.getInstance()
   private isPC: boolean = deviceInfo.deviceType === '2in1'
 
   aboutToAppear(): void {
     this.dataService.initToAppStorage()
     this.updateGreeting()
     this.initBreakpoint()
+    this.shareService.registerListeners('home')
     this.getUIContext()?.animateTo({ duration: 800, curve: Curve.EaseOut }, () => {
       this.greetingOpacity = 1
       this.greetingOffset = 0
@@ -107,6 +111,32 @@ struct MainPage {
   }
 
   @Builder
+  immersiveTabBar() {
+    Stack({ alignContent: Alignment.BottomStart }) {
+      Row()
+        .width(this.tabWidth - 2 * this.indicatorInset)
+        .height(36)
+        .borderRadius(18)
+        .alignItems(VerticalAlign.Center)
+        .margin({ left: this.indicatorOffset, bottom: 12 })
+        .backgroundColor(ColorHelper.hexWithAlpha(this.primaryColor, '33'))
+
+      Row({ space: this.tabGap }) {
+        this.immersiveTabItem(0, '首页', $r('app.media.ic_public_home'))
+        this.immersiveTabItem(1, '歌单', $r('app.media.ic_public_view_list'))
+        this.immersiveTabItem(2, '设置', $r('app.media.ic_public_settings'))
+      }
+      .margin({ bottom: 10 })
+      .height(40)
+      .borderRadius(20)
+      .backgroundColor('rgba(255,255,255,0.08)')
+      .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
+    }
+    .alignSelf(ItemAlign.Center)
+    .height(60)
+  }
+
+  @Builder
   tabItem(index: number, name: string, icon: Resource) {
     Column() {
       Image(icon)
@@ -119,6 +149,33 @@ struct MainPage {
       Text(name)
         .fontSize(9)
         .fontColor(this.currentIndex === index ? '#FFFFFF' : '#666666')
+        .margin({ top: 2 })
+    }
+    .width(this.tabWidth)
+    .height(40)
+    .justifyContent(FlexAlign.Center)
+    .onClick(() => {
+      this.getUIContext()?.animateTo({ duration: 200, curve: Curve.EaseInOut }, () => {
+        this.currentIndex = index
+      })
+      this.tabsController.changeIndex(index)
+      this.updateIndicatorOffset(index)
+    })
+  }
+
+  @Builder
+  immersiveTabItem(index: number, name: string, icon: Resource) {
+    Column() {
+      Image(icon)
+        .height(18)
+        .fillColor(this.currentIndex === index ? '#FFFFFF' : 'rgba(255,255,255,0.45)')
+        .scale({
+          x: this.currentIndex === index ? 1.15 : 1.0,
+          y: this.currentIndex === index ? 1.15 : 1.0
+        })
+      Text(name)
+        .fontSize(9)
+        .fontColor(this.currentIndex === index ? '#FFFFFF' : 'rgba(255,255,255,0.45)')
         .margin({ top: 2 })
     }
     .width(this.tabWidth)
@@ -197,58 +254,54 @@ struct MainPage {
     Row({ space: 20 }) {
       if (this.currentSongAlbumArt.length > 0 && !this.albumArtFailed) {
         Image('file://' + this.currentSongAlbumArt)
-          .width(25).height(25)
+          .width(32).height(32)
           .borderRadius(16)
           .objectFit(ImageFit.Cover)
           .rotate({ angle: this.rotationAngle })
           .onError(() => { this.albumArtFailed = true })
-          .onClick(() => {
-            this.getUIContext().getRouter().pushUrl({ url: 'pages/MusicPlayer' })
-          })
       } else {
         Image($r('app.media.ic_public_music'))
-          .width(25).height(25)
+          .width(32).height(32)
           .borderRadius(16)
           .rotate({ angle: this.rotationAngle })
           .fillColor($r('app.color.player_icon_color'))
-          .onClick(() => {
-            this.getUIContext().getRouter().pushUrl({ url: 'pages/MusicPlayer' })
-          })
       }
 
-      if (this.currentSongTitle.length > 0) {
-        Column() {
-          Marquee({ start: this.isTitleMarqueeRunning, step: 2, loop: -1, fromStart: true, src: this.currentSongTitle })
-            .fontSize(13)
-            .fontColor($r('app.color.text_primary'))
-            .fontWeight(FontWeight.Medium)
-            .width('100%')
-            .onFinish(() => { this.isTitleMarqueeRunning = false })
-          Marquee({ start: this.isArtistMarqueeRunning, step: 1, loop: -1, fromStart: true,
-            src: this.currentSongArtist.length > 0 ? this.currentSongArtist : '未知歌手' })
-            .fontSize(10)
-            .fontColor($r('app.color.text_sixty_color'))
-            .width('100%')
-            .onFinish(() => { this.isArtistMarqueeRunning = false })
+      Column() {
+        if (this.currentSongTitle.length > 0) {
+          Column() {
+            Marquee({ start: this.isTitleMarqueeRunning, step: 2, loop: -1, fromStart: true, src: this.currentSongTitle })
+              .fontSize(13)
+              .fontColor($r('app.color.text_primary'))
+              .fontWeight(FontWeight.Medium)
+              .width('100%')
+              .onFinish(() => { this.isTitleMarqueeRunning = false })
+            Marquee({ start: this.isArtistMarqueeRunning, step: 1, loop: -1, fromStart: true,
+              src: this.currentSongArtist.length > 0 ? this.currentSongArtist : '未知歌手' })
+              .fontSize(10)
+              .fontColor($r('app.color.text_sixty_color'))
+              .width('100%')
+              .onFinish(() => { this.isArtistMarqueeRunning = false })
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+        } else {
+          Column() {
+            Text('未播放')
+              .fontSize(11)
+              .fontColor($r('app.color.text_twenty_color'))
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
         }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start)
-        .margin({ left: 8, right: 8 })
-        .onClick(() => {
-          this.getUIContext().getRouter().pushUrl({ url: 'pages/MusicPlayer' })
-        })
-      } else {
-        Column() {
-          Text('未播放')
-            .fontSize(11)
-            .fontColor($r('app.color.text_twenty_color'))
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-        }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start)
-        .margin({ left: 8 })
       }
+      .layoutWeight(1)
+      .margin({ left: 8, right: 8 })
+      .onClick(() => {
+        this.getUIContext().getRouter().pushUrl({ url: 'pages/MusicPlayer' })
+      })
       Image($r('app.media.ic_public_play_last'))
         .width(20)
         .height(20)
@@ -315,7 +368,11 @@ struct MainPage {
     let idx: number = this.currentIndex >= 0 ? (AppStorage.get<number>(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? 0) : 0
     idx = idx <= 0 ? songList.length - 1 : idx - 1
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, idx)
-    this.avPlayerService.play(songList[idx].uri.length > 0 ? songList[idx].uri : songList[idx].filePath)
+    const song: SongInfo = songList[idx]
+    AppStorage.setOrCreate('uplayer_current_title', song.title.length > 0 ? song.title : song.name)
+    AppStorage.setOrCreate('uplayer_current_artist', song.artist)
+    AppStorage.setOrCreate('uplayer_current_album_art', song.albumArtPath)
+    this.avPlayerService.play(song.uri.length > 0 ? song.uri : song.filePath)
   }
 
   playNext(): void {
@@ -326,7 +383,11 @@ struct MainPage {
     let idx: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? 0
     idx = idx >= songList.length - 1 ? 0 : idx + 1
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, idx)
-    this.avPlayerService.play(songList[idx].uri.length > 0 ? songList[idx].uri : songList[idx].filePath)
+    const song: SongInfo = songList[idx]
+    AppStorage.setOrCreate('uplayer_current_title', song.title.length > 0 ? song.title : song.name)
+    AppStorage.setOrCreate('uplayer_current_artist', song.artist)
+    AppStorage.setOrCreate('uplayer_current_album_art', song.albumArtPath)
+    this.avPlayerService.play(song.uri.length > 0 ? song.uri : song.filePath)
   }
 
   startRotation() {
@@ -345,6 +406,11 @@ struct MainPage {
 
   aboutToDisappear(): void {
     this.stopRotation()
+    this.shareService.unregisterListeners()
+  }
+
+  onPageHide(): void {
+    this.shareService.unregisterListeners()
   }
 
   pageTransition() {
@@ -415,14 +481,22 @@ struct MainPage {
         if (this.breakpoint === 'sm' || this.breakpoint === 'md') {
           Column({ space: 8 }) {
             this.playerControl()
-            this.customTabBar()
+            if (this.tabStyle === 'immersive') {
+              this.immersiveTabBar()
+            } else {
+              this.customTabBar()
+            }
           }
           .alignItems(HorizontalAlign.Center)
           .width('100%')
           .padding({ bottom: this.bottomSafeHeight })
         } else {
           Row() {
-            this.customTabBar()
+            if (this.tabStyle === 'immersive') {
+              this.immersiveTabBar()
+            } else {
+              this.customTabBar()
+            }
             Blank()
             this.playerControl()
           }

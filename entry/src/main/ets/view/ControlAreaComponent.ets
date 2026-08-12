@@ -43,7 +43,7 @@ export struct ControlAreaComponent {
   @State isShowSpeedBuild: boolean = false;
   @State isShowVolumeBuild: boolean = false;
   @State songTimeFontSize: number = 10;
-  @State songTimeFontColor: Resource = $r('app.color.play_text_color');
+  @State songTimeFontColor: ResourceColor = $r('app.color.play_text_color');
   @State trackThickness: number = 6;
   @State playBtnScale: number = 1.0;
   @State sliderGlow: number = 0;
@@ -110,11 +110,11 @@ export struct ControlAreaComponent {
     return Math.random();
   }
 
-  private setRandom(): number {
+  private setRandom(retryCount: number = 0): number {
     let random0To1 = this.getSecureRandom0To1();
     let num = Math.round(random0To1 * (this.songList.length - 1));
-    if (this.selectIndex === num) {
-      return this.setRandom();
+    if (this.selectIndex === num && this.songList.length > 1 && retryCount < 5) {
+      return this.setRandom(retryCount + 1);
     }
     return num;
   }
@@ -126,7 +126,10 @@ export struct ControlAreaComponent {
     const song: SongInfo = this.songList[index];
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, index);
     this.selectIndex = index;
-      await this.avPlayerService.play(song.uri.length > 0 ? song.uri : song.filePath);
+    AppStorage.setOrCreate('uplayer_current_title', song.title.length > 0 ? song.title : song.name);
+    AppStorage.setOrCreate('uplayer_current_artist', song.artist);
+    AppStorage.setOrCreate('uplayer_current_album_art', song.albumArtPath);
+    await this.avPlayerService.play(song.uri.length > 0 ? song.uri : song.filePath);
   }
 
   private async playNext(): Promise<void> {
@@ -199,8 +202,8 @@ export struct ControlAreaComponent {
           min: 0, max: this.max, step: 1, style: SliderStyle.NONE, value: this.value
         })
           .trackThickness(this.trackThickness)
-          .selectedColor($r('app.color.slider_select'))
-          .trackColor($r('app.color.slider_track'))
+          .selectedColor(this.primaryColor)
+          .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.2))
           .enabled(this.max > 0)
           .shadow({ radius: this.sliderGlow, color: ColorHelper.hexWithAlpha(this.primaryColor, '33') })
           .onChange((value: number, mode: SliderChangeMode) => {
@@ -218,7 +221,7 @@ export struct ControlAreaComponent {
               this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
                 this.trackThickness = 10;
                 this.songTimeFontSize = 12;
-                this.songTimeFontColor = $r('app.color.slider_select');
+                this.songTimeFontColor = this.primaryColor;
                 this.sliderGlow = 8;
               });
             }
@@ -379,7 +382,17 @@ export struct ControlAreaComponent {
           .fontColor([Color.White])
           .opacity(0.86)
           .scale({ x: this.speedScale, y: this.speedScale })
-          .onClick(() => { this.isShowSpeedBuild = true; })
+          .onClick(() => {
+            this.getUIContext()?.animateTo({ duration: 150, curve: Curve.EaseInOut }, () => {
+              this.speedScale = 0.8;
+            });
+            setTimeout(() => {
+              this.getUIContext()?.animateTo({ duration: 250, curve: curves.springMotion() }, () => {
+                this.speedScale = 1.0;
+              });
+            }, 120);
+            this.isShowSpeedBuild = true;
+          })
           .bindPopup(this.isShowSpeedBuild, {
             builder: this.speedPopupBuilder,
             placement: Placement.Top,
@@ -398,6 +411,14 @@ export struct ControlAreaComponent {
           .opacity(0.86)
           .scale({ x: this.volumeScale, y: this.volumeScale })
           .onClick(() => {
+            this.getUIContext()?.animateTo({ duration: 150, curve: Curve.EaseInOut }, () => {
+              this.volumeScale = 0.8;
+            });
+            setTimeout(() => {
+              this.getUIContext()?.animateTo({ duration: 250, curve: curves.springMotion() }, () => {
+                this.volumeScale = 1.0;
+              });
+            }, 120);
             this.isShowVolumeBuild = !this.isShowVolumeBuild
           })
       }
@@ -406,10 +427,15 @@ export struct ControlAreaComponent {
       .margin({ top: 28 })
 
       AVVolumePanel({
-        volumeLevel: Math.round(this.volume * 15)
+        volumeLevel: Math.round(this.volume * 15),
+        volumeParameter: {
+          position: {
+            x: this.isShowVolumeBuild ? 100 : -1,
+            y: 200
+          }
+        }
       })
-        .visibility(this.isShowVolumeBuild ? Visibility.Visible : Visibility.Hidden)
-        .height(this.isShowVolumeBuild ? 48 : 0)
+        .height(1)
     }
   }
 
@@ -446,7 +472,7 @@ export struct ControlAreaComponent {
           .fontWeight(FontWeight.Bold)
         Text(`${this.speed.toFixed(2)}x`)
           .fontSize(14)
-          .fontColor($r('app.color.slider_select'))
+          .fontColor(this.primaryColor)
           .fontWeight(FontWeight.Bold)
           .margin({ left: 8 })
       }
@@ -459,7 +485,12 @@ export struct ControlAreaComponent {
         .showSteps(true)
         .showTips(false)
         .width('100%')
-        .selectedColor($r('app.color.slider_select'))
+        .selectedColor(this.primaryColor)
+        .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+        .blockColor('#FFFFFF')
+        .blockSize({ width: 20, height: 20 })
+        .blockBorderColor(this.primaryColor)
+        .blockBorderWidth(3)
         .onChange((value: number, mode: SliderChangeMode) => {
           this.speed = Math.round(value * 4) / 4
           AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_SPEED, this.speed)
@@ -467,27 +498,13 @@ export struct ControlAreaComponent {
         })
 
       Row() {
-        Text('0.25')
-          .fontSize(9)
-          .fontColor($r('app.color.text_sixty_color'))
-        Text('0.5')
-          .fontSize(9)
-          .fontColor($r('app.color.text_sixty_color'))
-        Text('1.0')
-          .fontSize(9)
-          .fontColor($r('app.color.text_sixty_color'))
-        Text('1.5')
-          .fontSize(9)
-          .fontColor($r('app.color.text_sixty_color'))
-        Text('2.0')
-          .fontSize(9)
-          .fontColor($r('app.color.text_sixty_color'))
-        Text('2.5')
-          .fontSize(9)
-          .fontColor($r('app.color.text_sixty_color'))
-        Text('3.0')
-          .fontSize(9)
-          .fontColor($r('app.color.text_sixty_color'))
+        Text('0.25').fontSize(9).fontColor($r('app.color.text_sixty_color'))
+        Text('0.5').fontSize(9).fontColor($r('app.color.text_sixty_color'))
+        Text('1.0').fontSize(9).fontColor($r('app.color.text_sixty_color'))
+        Text('1.5').fontSize(9).fontColor($r('app.color.text_sixty_color'))
+        Text('2.0').fontSize(9).fontColor($r('app.color.text_sixty_color'))
+        Text('2.5').fontSize(9).fontColor($r('app.color.text_sixty_color'))
+        Text('3.0').fontSize(9).fontColor($r('app.color.text_sixty_color'))
       }
       .width('100%')
       .justifyContent(FlexAlign.SpaceBetween)
@@ -564,6 +581,9 @@ struct MusicListContainer {
       .onClick(() => {
         const avService: AVPlayerService = AVPlayerService.getInstance();
         AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, this.index);
+        AppStorage.setOrCreate('uplayer_current_title', this.item.title.length > 0 ? this.item.title : this.item.name);
+        AppStorage.setOrCreate('uplayer_current_artist', this.item.artist);
+        AppStorage.setOrCreate('uplayer_current_album_art', this.item.albumArtPath);
         avService.play(this.item.filePath);
       })
       .height($r('app.float.list_item_height'))

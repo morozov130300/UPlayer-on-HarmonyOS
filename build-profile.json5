@@ -32,23 +32,30 @@
       {
         "name": "default",
         "signingConfig": "debug",
-        "targetSdkVersion": "6.1.1(24)",
+        "targetSdkVersion":   "6.1.1(24)",
         "compatibleSdkVersion": "6.1.1(24)",
         "runtimeOS": "HarmonyOS",
         "buildOption": {
           "strictMode": {
             "caseSensitiveCheck": true,
             "useNormalizedOHMUrl": true
-          }
+          },
+          "debuggable": true
         }
       }
     ],
     "buildModeSet": [
       {
-        "name": "debug"
+        "name": "debug",
+        "buildOption": {
+          "debuggable": true
+        }
       },
       {
-        "name": "release"
+        "name": "release",
+        "buildOption": {
+          "debuggable": false
+        }
       }
     ]
   },

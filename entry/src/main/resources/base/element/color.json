@@ -58,7 +58,7 @@
     },
     {
       "name": "page_background_other",
-      "value": "#F6F9FC"
+      "value": "#FFFFFF"
     },
     {
       "name": "list_divider",
@@ -86,11 +86,11 @@
     },
     {
       "name": "slider_select",
-      "value": "#DBFFFFFF"
+      "value": "#007DFF"
     },
     {
       "name": "slider_track",
-      "value": "#33FFFFFF"
+      "value": "#0C007DFF"
     },
     {
       "name": "play_text_color",
