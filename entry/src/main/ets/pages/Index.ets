@@ -1,17 +1,16 @@
-import { display } from '@kit.ArkUI';
+import display from '@ohos.display'
 
 @Entry
 @Component
 struct MainPage {
   // 状态变量
   @State currentIndex: number = 0
-  @State indicatorOffset: number = 20
+  @State indicatorOffset: number = 4
   @State greetingTitle: string = "加载中……"
   @State isPlaying: boolean = false
   @State rotationAngle: number = 0
   @State hasAlbumCover: boolean = false
-  @StorageProp('isDarkMode') isDarkMode: boolean = false
-  @State isWideScreen: boolean = false
+  @State breakpoint: string = 'md' // 屏幕断点：sm/md/lg/xl/xxl
   // 私有属性
   private tabsController: TabsController = new TabsController()
   private tabWidth: number = 100
@@ -19,7 +18,7 @@ struct MainPage {
   private indicatorInset: number = 4
   private rotationTimer: number = -1
 
-  // 自定义底部导航栏
+  // 自定义底部导航栏（居中）
   @Builder
   customTabBar() {
     Stack({ alignContent: Alignment.BottomStart }) {
@@ -31,31 +30,35 @@ struct MainPage {
         .borderRadius(18)
         .alignItems(VerticalAlign.Center)
         .margin({ left: this.indicatorOffset, bottom: 12, })
-        .shadow({ radius: 6, color: '#33000000', offsetY: 4, offsetX: 0 })
+        .shadow({
+          radius: 6,
+          color: $r('app.color.shadow_color'),
+          offsetY: 4,
+          offsetX: 0
+        })
         .radialGradient({
           center: ['50%', '50%'], // 径向渐变中心
-          radius: '75%',           // 渐变半径覆盖整体
+          radius: '75%', // 渐变半径覆盖整体
           colors: [
-            ['#ed007dff', 0.0],    // 中心高亮 → 凸起感
-            ['#007DFF', 0.5],    // 主体蓝色
-            ['#0044AA', 1.0],    // 边缘加深 → 凹陷感
+            ['#ed007dff', 0.0], // 中心高亮 → 凸起感
+            ['#007DFF', 0.5], // 主体蓝色
+            ['#0044AA', 1.0],// 边缘加深 → 凹陷感
           ]
         })
 
-      // Tab项
+      // Tab
       Row({ space: this.tabGap }) {
         this.tabItem(0, '首页', $r('app.media.ic_public_home'))
         this.tabItem(1, '歌单', $r('app.media.ic_public_view_list'))
         this.tabItem(2, '设置', $r('app.media.ic_public_settings'))
       }
-      .margin({ left: 16, right: 16, bottom: 10 })
+      .margin({ bottom: 10 })
       .height(40)
       .borderRadius(20)
-      .shadow({ radius: 50, color: '#33000000', offsetY: 10 })
+      .shadow({ radius: 50, color: $r('app.color.shadow_color'), offsetY: 10 })
 
     }
-    .width(this.isWideScreen ? '33.33%' : '100%')
-    .alignSelf(this.isWideScreen ? ItemAlign.Start : ItemAlign.Center)
+    .alignSelf(ItemAlign.Center)
     .height(60)
   }
 
@@ -88,14 +91,50 @@ struct MainPage {
       duration: 300,
       curve: Curve.EaseInOut
     }, () => {
-      this.indicatorOffset = 16 + this.indicatorInset + index * (this.tabWidth + this.tabGap)
+      this.indicatorOffset = this.indicatorInset + index * (this.tabWidth + this.tabGap)
     })
   }
 
   // 页面即将显示时的初始化
   aboutToAppear(): void {
     this.updateGreeting()
-    this.initWindowSize()
+    this.initBreakpoint()
+  }
+
+  // 获取屏幕宽度（vp）并计算断点
+  initBreakpoint() {
+    try {
+      const displayInfo = display.getDefaultDisplaySync()
+      this.updateBreakpoint(displayInfo.width)
+
+      display.on('change', () => {
+        try {
+          const newDisplayInfo = display.getDefaultDisplaySync()
+          this.updateBreakpoint(newDisplayInfo.width)
+        } catch (err) {
+          console.error('Failed to get display info', JSON.stringify(err))
+        }
+      })
+    } catch (err) {
+      console.error('Failed to init breakpoint', JSON.stringify(err))
+    }
+  }
+
+  // 根据屏幕像素宽度计算断点
+  updateBreakpoint(pxWidth: number) {
+    const vpWidth = this.getUIContext().px2vp(pxWidth)
+    if (vpWidth < 320) {
+      this.breakpoint = 'sm'
+    } else if (vpWidth < 600) {
+      this.breakpoint = 'md'
+    } else if (vpWidth < 840) {
+      this.breakpoint = 'lg'
+    } else if (vpWidth < 1280) {
+      this.breakpoint = 'xl'
+    } else {
+      this.breakpoint = 'xxl'
+    }
+    console.log('breakpoint:', this.breakpoint)
   }
 
   // 根据时段更新问候语
@@ -117,22 +156,7 @@ struct MainPage {
     }
   }
 
-  // 初始化窗口尺寸并监听变化（适配折叠屏/大屏）
-  initWindowSize(): void {
-    try {
-      let defaultDisplay = display.getDefaultDisplaySync()
-      this.isWideScreen = this.getUIContext().px2vp(defaultDisplay.width) > 600
-
-      display.on('change', () => {
-        let updatedDisplay = display.getDefaultDisplaySync()
-        this.isWideScreen = this.getUIContext().px2vp(updatedDisplay.width) > 600
-      })
-    } catch (err) {
-      console.error('Failed to get display info', JSON.stringify(err))
-    }
-  }
-
-  // 播控中心胶囊组件（专辑封面 + 控制按钮）
+  //播控条
   @Builder
   playerControl() {
     Row({ space: 20 }) {
@@ -143,7 +167,7 @@ struct MainPage {
         .borderRadius(16)
         .rotate({ angle: this.rotationAngle })
         .backgroundColor('#00ffffff')
-        .fillColor(this.isDarkMode ? '#FFFFFF' : '#333333')
+        .fillColor($r('app.color.player_icon_color'))
 
       Blank()
 
@@ -151,13 +175,13 @@ struct MainPage {
       Image($r('app.media.ic_public_play_last'))
         .width(20)
         .height(20)
-        .fillColor(this.isDarkMode ? '#FFFFFF' : '#333333')
+        .fillColor($r('app.color.player_icon_color'))
 
       // 播放/暂停
       Image(this.isPlaying ? $r('app.media.ic_public_pause') : $r('app.media.ic_public_play'))
         .width(20)
         .height(20)
-        .fillColor(this.isDarkMode ? '#FFFFFF' : '#333333')
+        .fillColor($r('app.color.player_icon_color'))
         .onClick(() => {
           this.togglePlay()
         })
@@ -166,7 +190,7 @@ struct MainPage {
       Image($r('app.media.ic_public_play_next'))
         .width(20)
         .height(20)
-        .fillColor(this.isDarkMode ? '#FFFFFF' : '#333333')
+        .fillColor($r('app.color.player_icon_color'))
     }
     .height(40)
     .padding({
@@ -175,9 +199,9 @@ struct MainPage {
       top: 4,
       bottom: 4
     })
-    .backgroundColor(this.isDarkMode ? '#CC333333' : '#F5F5F5')
+    .backgroundColor($r('app.color.player_bg_color'))
     .borderRadius(20)
-    .shadow({ radius: 50, color: '#33000000', offsetY: 5 })
+    .shadow({ radius: 50, color: $r('app.color.shadow_color'), offsetY: 5 })
   }
 
   // 切换播放/暂停状态
@@ -209,11 +233,6 @@ struct MainPage {
   // 页面销毁前的清理
   aboutToDisappear(): void {
     this.stopRotation()
-    try {
-      display.off('change')
-    } catch (err) {
-      console.error('Failed to unregister display listener', JSON.stringify(err))
-    }
   }
 
   // 主页面布局
@@ -228,7 +247,7 @@ struct MainPage {
               Text(this.greetingTitle)
                 .fontWeight(FontWeight.Bolder)
                 .fontSize(28)
-                .fontColor(this.isDarkMode ? '#FFFFFF' : '#333333')
+                .fontColor($r('app.color.text_primary'))
             }
             .width('100%')
             .height('100%')
@@ -244,17 +263,42 @@ struct MainPage {
         }
         .layoutWeight(1)
 
-        // 自定义底部导航栏
-        this.customTabBar()
+        if (this.breakpoint === 'sm' || this.breakpoint === 'md') {
+
+          // 小屏：播控条 + 导航栏，竖直居中摞起来
+          Column() {
+            // 播控条
+            this.playerControl()
+
+            // 自定义底部导航栏
+            this.customTabBar()
+          }
+          .alignItems(HorizontalAlign.Center)
+          .width('100%')
+          .padding({ bottom: 8 })
+        } else {
+
+          // 大屏：播控条 + 导航栏，水平横排
+          Row() {
+            // 自定义底部导航栏
+            this.customTabBar()
+
+            Blank()
+
+            // 播控条
+            this.playerControl()
+
+          }
+          .width("100%")
+          .padding({ left: 16, right: 16, bottom: 8 })
+          .alignItems(VerticalAlign.Center)
+
+        }
+
       }
       .width('100%')
       .height('100%')
 
-      // 播控中心 - 右下角浮动胶囊
-      Row() {
-        this.playerControl()
-      }
-      .position({ bottom: 10, right: 16 })
     }
     .width('100%')
     .height('100%')
