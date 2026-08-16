@@ -68,6 +68,19 @@ struct MainPage {
     return Math.round(size * this.displaySizeScale)
   }
 
+  private isSongInfoShort(): boolean {
+    const artistLength: number = this.currentSongArtist.length > 0 ? this.currentSongArtist.length : 4
+    return this.currentSongTitle.length + artistLength <= 16
+  }
+
+  private songInfoWeight(): number {
+    return this.isPC && this.isSongInfoShort() ? 2 : 3
+  }
+
+  private lyricInfoWeight(): number {
+    return this.isSongInfoShort() ? 4 : 3
+  }
+
   onDisplaySizeChange(): void {
     this.updateIndicatorOffset(this.currentIndex)
   }
@@ -101,8 +114,8 @@ struct MainPage {
         .alignItems(VerticalAlign.Center)
         .margin({ left: this.indicatorOffset, bottom: this.scaledSize(12) })
         .shadow({
-          radius: 10,
-          color: ColorHelper.hexWithAlpha(ColorHelper.darken(this.primaryColor, 0.25), '88'),
+          radius: 14,
+          color: ColorHelper.hexWithAlpha(ColorHelper.darken(this.primaryColor, 0.32), 'CC'),
           offsetX: 0,
           offsetY: 0
         })
@@ -110,9 +123,9 @@ struct MainPage {
           center: ['50%', '50%'],
           radius: '75%',
           colors: [
-            [ColorHelper.darken(this.primaryColor, 0.08), 0.0],
-            [ColorHelper.darken(this.primaryColor, 0.22), 0.58],
-            [ColorHelper.darken(this.primaryColor, 0.42), 1.0],
+            [ColorHelper.darken(this.primaryColor, 0.18), 0.0],
+            [ColorHelper.darken(this.primaryColor, 0.34), 0.58],
+            [ColorHelper.darken(this.primaryColor, 0.52), 1.0],
           ]
         })
 
@@ -344,7 +357,7 @@ struct MainPage {
           .alignItems(HorizontalAlign.Start)
         }
       }
-      .layoutWeight(1)
+      .layoutWeight(this.songInfoWeight())
       .margin({ left: this.scaledSize(8), right: this.scaledSize(8) })
       .onClick(() => {
         this.openPlayer()
@@ -364,7 +377,7 @@ struct MainPage {
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .margin({ top: this.scaledSize(2) })
         }
-        .layoutWeight(1)
+        .layoutWeight(this.lyricInfoWeight())
         .alignItems(HorizontalAlign.Start)
         .onClick(() => { this.openPlayer() })
       }

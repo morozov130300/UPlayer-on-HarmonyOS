@@ -43,7 +43,7 @@ export struct ControlAreaComponent {
   @State isShowSpeedBuild: boolean = false;
   @State isShowVolumeBuild: boolean = false;
   @State songTimeFontSize: number = 10;
-  @State songTimeFontColor: ResourceColor = $r('app.color.play_text_color');
+  @State songTimeFontColor: ResourceColor = '#B3FFFFFF';
   @State trackThickness: number = 6;
   @State playBtnScale: number = 1.0;
   @State sliderGlow: number = 0;
@@ -202,17 +202,17 @@ export struct ControlAreaComponent {
           min: 0, max: this.max, step: 1, style: SliderStyle.NONE, value: this.value
         })
           .trackThickness(this.trackThickness)
-          .selectedColor(this.imageColor.length > 0 ? this.imageColor : '#FFFFFF')
-          .trackColor('#33FFFFFF')
+          .selectedColor('#FFFFFF')
+          .trackColor('#B3FFFFFF')
           .enabled(this.max > 0)
-          .shadow({ radius: this.sliderGlow, color: '#66FFFFFF' })
+          .shadow({ radius: this.sliderGlow, color: '#B3FFFFFF' })
           .onChange((value: number, mode: SliderChangeMode) => {
             if (mode === SliderChangeMode.End) {
               this.avPlayerService.seek(value);
               this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
                 this.trackThickness = 6;
                 this.songTimeFontSize = 10;
-                this.songTimeFontColor = $r('app.color.play_text_color');
+                this.songTimeFontColor = '#B3FFFFFF';
                 this.sliderGlow = 0;
               });
             }
