@@ -45,6 +45,7 @@ struct SettingsDetailPage {
   @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
   @StorageLink('uplayer_glass_blur_strength') glassBlurStrength: number = 25
+  @StorageLink('uplayer_tab_indicator_opacity') tabIndicatorOpacity: number = 100
   @State pageTitle: string = ''
   @State previewOnRight: boolean = false
   @State showColorPicker: boolean = false
@@ -175,11 +176,21 @@ struct SettingsDetailPage {
       .width(this.scaledSize(68))
       .height(this.scaledSize(36))
       .borderRadius(this.scaledSize(18))
-      .backgroundColor(this.primaryColor)
+      .backgroundColor(this.tabIndicatorPreviewColor())
       .shadow({
         radius: 14,
-        color: ColorHelper.hexWithAlpha(this.primaryColor, 'CC')
+        color: this.tabIndicatorPreviewShadowColor()
       })
+  }
+
+  private tabIndicatorPreviewColor(): ResourceColor {
+    const alpha: number = Math.round(this.tabIndicatorOpacity * 255 / 100)
+    return ColorHelper.hexWithAlpha(this.primaryColor, alpha.toString(16).padStart(2, '0'))
+  }
+
+  private tabIndicatorPreviewShadowColor(): ResourceColor {
+    const alpha: number = Math.round(this.tabIndicatorOpacity * 0.8 * 255 / 100)
+    return ColorHelper.hexWithAlpha(this.primaryColor, alpha.toString(16).padStart(2, '0'))
   }
 
   private isDark(): boolean {
@@ -539,7 +550,7 @@ struct SettingsDetailPage {
           if (!this.previewOnRight) {
             this.tabIndicatorPreview()
           }
-          Text('指示器始终使用纯主题色，不叠加黑白蒙版或深浅渐变')
+          Text('指示器始终使用主题色，可调节深浅（透明度）')
             .fontSize(this.scaledFont(11))
             .fontColor(this.settingSubTextColor())
             .layoutWeight(1)
@@ -551,6 +562,44 @@ struct SettingsDetailPage {
             Blank().width(this.scaledSize(14))
             this.tabIndicatorPreview()
           }
+        }
+        .padding({
+          left: this.scaledSize(12), right: this.scaledSize(12),
+          top: this.scaledSize(2), bottom: this.scaledSize(4)
+        })
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+
+        Row() {
+          Text('浅')
+            .fontSize(this.scaledFont(11))
+            .fontColor(this.settingTextColor())
+            .margin({ right: this.scaledSize(8) })
+          Slider({
+            value: this.settings.tabIndicatorOpacity,
+            min: 0,
+            max: 100,
+            step: 1,
+            style: SliderStyle.OutSet
+          })
+            .layoutWeight(1)
+            .selectedColor(this.primaryColor)
+            .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+            .blockColor('#FFFFFF')
+            .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
+            .blockBorderColor(this.primaryColor)
+            .blockBorderWidth(3)
+            .onChange((value: number, mode: SliderChangeMode) => {
+              this.settings.tabIndicatorOpacity = value
+              this.tabIndicatorOpacity = value
+              if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+                this.updateSetting()
+              }
+            })
+          Text('深')
+            .fontSize(this.scaledFont(11))
+            .fontColor(this.settingTextColor())
+            .margin({ left: this.scaledSize(8) })
         }
         .padding({
           left: this.scaledSize(12), right: this.scaledSize(12),
