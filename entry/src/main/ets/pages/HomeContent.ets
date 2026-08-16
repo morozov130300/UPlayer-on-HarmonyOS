@@ -366,55 +366,57 @@ export struct HomeContent {
         .width('100%')
         .padding({ left: 16, right: 16, top: 8, bottom: 8 })
 
-        List({ space: 0, scroller: this.scroller }) {
-          LazyForEach(this.displayDataSource, (item: DisplayItem, index: number) => {
-            ListItem() {
-              if (item.isHeader) {
-                this.folderHeaderRow(item.headerText)
-              } else if (!item.isHeader) {
-                this.songItemRow(item.song)
+        Stack() {
+          List({ space: 0, scroller: this.scroller }) {
+            LazyForEach(this.displayDataSource, (item: DisplayItem, index: number) => {
+              ListItem() {
+                if (item.isHeader) {
+                  this.folderHeaderRow(item.headerText)
+                } else if (!item.isHeader) {
+                  this.songItemRow(item.song)
+                }
               }
+              .reuseId(item.isHeader ? 'header' : 'song')
+            }, (item: DisplayItem, index: number) => {
+              if (item.isHeader) {
+                return 'h_' + item.headerText
+              }
+              if (!item.isHeader) {
+                return item.song.id + '_' + (item.song.isFavorite ? '1' : '0')
+              }
+              return 'empty_' + index
+            })
+
+            ListItem() {
+              Row()
+                .width('100%')
+                .height(this.bottomContentPadding)
             }
-            .reuseId(item.isHeader ? 'header' : 'song')
-          }, (item: DisplayItem, index: number) => {
-            if (item.isHeader) {
-              return 'h_' + item.headerText
+          }
+          .width('100%')
+          .height('100%')
+          .edgeEffect(EdgeEffect.Spring)
+          .onDidScroll(() => {
+            const offset = this.scroller.currentOffset()
+            const yOffset: number = offset.yOffset
+            if (yOffset > this.lastScrollY && (yOffset - this.lastScrollY) > 10) {
+              this.isPlusVisible = false
+            } else if (yOffset < this.lastScrollY) {
+              this.isPlusVisible = true
             }
-            if (!item.isHeader) {
-              return item.song.id + '_' + (item.song.isFavorite ? '1' : '0')
-            }
-            return 'empty_' + index
+            this.lastScrollY = yOffset
           })
 
-          ListItem() {
-            Row()
-              .width('100%')
-              .height(this.bottomContentPadding)
+          if (this.displayItems.length === 0) {
+            Text('暂无歌曲，点击添加')
+              .fontSize(Math.round(14 * this.fontSizeScale))
+              .fontColor($r('app.color.text_twenty_color'))
+              .textAlign(TextAlign.Center)
+              .onClick(() => { this.onPlusClick() })
           }
         }
         .width('100%')
         .layoutWeight(1)
-        .edgeEffect(EdgeEffect.Spring)
-        .onDidScroll(() => {
-          const offset = this.scroller.currentOffset()
-          const yOffset: number = offset.yOffset
-          if (yOffset > this.lastScrollY && (yOffset - this.lastScrollY) > 10) {
-            this.isPlusVisible = false
-          } else if (yOffset < this.lastScrollY) {
-            this.isPlusVisible = true
-          }
-          this.lastScrollY = yOffset
-        })
-
-        if (this.displayItems.length === 0) {
-          Text('暂无歌曲，点击添加')
-            .fontSize(Math.round(14 * this.fontSizeScale))
-            .fontColor($r('app.color.text_twenty_color'))
-            .width('100%')
-            .height(200)
-            .textAlign(TextAlign.Center)
-            .onClick(() => { this.onPlusClick() })
-        }
 
         if (this.isMultiSelectMode) {
           Row() {

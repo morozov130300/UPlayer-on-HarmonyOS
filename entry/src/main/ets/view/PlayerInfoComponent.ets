@@ -22,7 +22,7 @@ export struct PlayerInfoComponent {
   @ObjectLink @Watch('mainWindowInfoChange') mainWindowInfo: WindowInfo;
   @StorageLink(AppStorageKeyConstants.KEY_SONG_LIST) songList: SongInfo[] = [];
   @StorageProp(AppStorageKeyConstants.KEY_SELECT_INDEX) @Watch('getImageColor') selectIndex: number = 0;
-  @StorageLink(AppStorageKeyConstants.KEY_IMAGE_COLOR) imageColor: string = 'rgba(0, 0, 2, 1.00)';
+  @StorageLink(AppStorageKeyConstants.KEY_IMAGE_COLOR) @Watch('onImageColorChange') imageColor: string = 'rgba(0, 0, 2, 1.00)';
   @StorageLink(AppStorageKeyConstants.KEY_TOP_HEIGHT) topHeight: number = 0;
   @StorageLink(AppStorageKeyConstants.KEY_BOTTOM_HEIGHT) @Watch('bottomHeightChange') bottomHeight: number = 0;
   @State imageLabel: PixelMap | Resource = $r('app.media.ic_public_music');
@@ -47,6 +47,10 @@ export struct PlayerInfoComponent {
   bottomHeightChange() {
   }
 
+  onImageColorChange(): void {
+    ColorConversion.setSysBarLightBackground(this.isBackgroundDark(this.imageColor));
+  }
+
   mainWindowInfoChange() {
     Logger.info(
       `windowUtil is change,current width breakpoint is ${this.mainWindowInfo?.widthBp},height breakpoint is ${this.mainWindowInfo?.heightBp}`)
@@ -59,6 +63,7 @@ export struct PlayerInfoComponent {
   }
 
   aboutToAppear(): void {
+    ColorConversion.setSysBarLightBackground(this.isBackgroundDark(this.imageColor));
     this.getImageColor();
   }
 
@@ -68,6 +73,13 @@ export struct PlayerInfoComponent {
 
   build() {
     Stack() {
+      Column()
+        .width('100%')
+        .height(this.topHeight)
+        .backgroundColor(this.imageColor)
+        .position({ top: 0 })
+        .zIndex(1)
+
       Image(this.prevImageLabel)
         .size(this.mainWindowInfo.heightBp !== HeightBreakpoint.HEIGHT_LG ?
           { width: PlayerConstants.BACK_IMAGE, height: '100%' } :
@@ -280,13 +292,17 @@ export struct PlayerInfoComponent {
     .animation({ duration: 800, curve: Curve.EaseInOut })
   }
 
+  private isBackgroundDark(colorStr: string): boolean {
+    return !this.isBackgroundLight(colorStr);
+  }
+
   private isBackgroundLight(colorStr: string): boolean {
-    const match = colorStr.match(new RegExp('rgba\\((\\d+),\\s*(\\d+),\\s*(\\d+)'));
+    const match = colorStr.match(new RegExp('rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)'));
     if (match) {
       const r = parseInt(match[1]);
       const g = parseInt(match[2]);
       const b = parseInt(match[3]);
-      return 0.299 * r + 0.587 * g + 0.114 * b > 128;
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b > 140;
     }
     return false;
   }

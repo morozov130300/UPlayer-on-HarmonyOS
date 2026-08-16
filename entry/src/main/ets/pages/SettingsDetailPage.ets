@@ -7,6 +7,7 @@ import { ColorHelper } from '../common/utils/ColorHelper'
 import Logger from '../common/utils/Logger'
 import { deviceInfo } from '@kit.BasicServicesKit'
 import { motion } from '@kit.MultimodalAwarenessKit'
+import { ColorConversion } from '../common/utils/ColorConversion'
 
 const TAG = 'SettingsDetailPage'
 const KEY_PRIMARY_COLOR = 'uplayer_primary_color'
@@ -39,6 +40,7 @@ struct SettingsDetailPage {
   @StorageLink(KEY_PRIMARY_COLOR) primaryColor: string = '#007DFF'
   @StorageLink(AppStorageKeyConstants.KEY_TITLE_BUTTON_WIDTH) titleButtonWidth: number = 0
   @StorageLink(AppStorageKeyConstants.KEY_TITLE_BUTTON_HEIGHT) titleButtonHeight: number = 0
+  @StorageLink(AppStorageKeyConstants.KEY_TOP_HEIGHT) topSafeHeight: number = 0
   @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
   @StorageLink('uplayer_tab_indicator_depth') tabIndicatorDepth: number = 50
@@ -93,6 +95,7 @@ struct SettingsDetailPage {
     const params = this.getUIContext()?.getRouter().getParams() as Record<string, string>
     const route: string = params?.category ?? 'customize'
     this.pageTitle = this.titleMap[route] ?? '设置'
+    ColorConversion.setSysBarLightBackground(this.isDark())
     this.registerHoldingHandListener()
   }
 
@@ -239,6 +242,7 @@ struct SettingsDetailPage {
     this.updateSetting()
     AppStorage.setOrCreate('uplayer_theme_mode', mode)
     this.applyThemeMode(mode)
+    ColorConversion.setSysBarLightBackground(this.isDark())
   }
 
   setTabStyle(style: string): void {
@@ -359,8 +363,12 @@ struct SettingsDetailPage {
             .margin({ left: 4 })
         }
         .width('100%')
-        .height(Math.max(56, this.titleButtonHeight))
-        .padding({ left: 4, right: this.titleButtonWidth + 12 })
+        .height(Math.max(56, this.titleButtonHeight) + (this.isPC ? 0 : this.topSafeHeight))
+        .padding({
+          left: 4,
+          right: this.titleButtonWidth + 12,
+          top: this.isPC ? 0 : this.topSafeHeight
+        })
         .alignItems(VerticalAlign.Center)
 
         Stack({ alignContent: Alignment.Center }) {

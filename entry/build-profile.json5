@@ -3,7 +3,7 @@
   "buildOption": {
     "externalNativeOptions": {
       "path": "./src/main/cpp/CMakeLists.txt",
-      "arguments": "",
+      "arguments": "-DOHOS_STL=c++_static",
       "cppFlags": "-std=c++17"
     },
     "arkOptions": {
@@ -25,7 +25,7 @@
       "arkOptions": {
         "obfuscation": {
           "ruleOptions": {
-            "enable": false,
+            "enable": true,
             "files": [
               "./obfuscation-rules.txt"
             ]

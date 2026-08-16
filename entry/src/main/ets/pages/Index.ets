@@ -1,6 +1,6 @@
 import display from '@ohos.display'
 import { curves, window } from '@kit.ArkUI'
-import { common } from '@kit.AbilityKit'
+import { common, ConfigurationConstant } from '@kit.AbilityKit'
 import { fileIo as fs } from '@kit.CoreFileKit'
 import { util } from '@kit.ArkTS'
 import { deviceInfo } from '@kit.BasicServicesKit'
@@ -18,6 +18,7 @@ import { parseKrcLyric, parseLrcLyric } from '../common/utils/LrcUtils'
 import { LyricFile } from '../common/constants/LyricConst'
 import { PlayerConstants } from '../common/constants/PlayerConstants'
 import { AlbumCover } from '../component/AlbumCover'
+import { ColorConversion } from '../common/utils/ColorConversion'
 
 const TAG = 'Index'
 
@@ -41,6 +42,7 @@ struct MainPage {
   @StorageLink('uplayer_current_artist') currentSongArtist: string = ''
   @StorageLink('uplayer_current_album_art') @Watch('onAlbumArtChange') currentSongAlbumArt: string = ''
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
+  @StorageLink('uplayer_theme_mode') themeMode: string = 'system'
   @StorageLink('uplayer_display_size_scale') @Watch('onDisplaySizeChange') displaySizeScale: number = 1.0
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
   @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
@@ -56,7 +58,7 @@ struct MainPage {
   @StorageLink(AppStorageKeyConstants.KEY_PROGRESS) @Watch('onProgressChange') playProgress: number = 0
   @StorageLink(AppStorageKeyConstants.KEY_SELECT_INDEX) @Watch('onCurrentSongChange') selectedSongIndex: number = 0
 
-  private tabsController: TabsController = new TabsController()
+  private swiperController: SwiperController = new SwiperController()
   private tabWidth: number = 72
   private tabGap: number = 6
   private indicatorInset: number = 4
@@ -65,6 +67,26 @@ struct MainPage {
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
   private isPC: boolean = deviceInfo.deviceType === '2in1'
   private lyricLoadRequestId: number = 0
+
+  private isDarkTheme(): boolean {
+    if (this.themeMode === 'dark') {
+      return true
+    }
+    if (this.themeMode === 'system') {
+      const context: common.UIAbilityContext | undefined = AppStorage.get<common.UIAbilityContext>(
+        AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
+      return context?.config.colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK
+    }
+    return false
+  }
+
+  private topContentInset(): number {
+    return this.isPC ? Math.max(this.topSafeHeight, this.titleButtonHeight) : this.topSafeHeight
+  }
+
+  private homeHeaderHeight(): number {
+    return this.isPC ? Math.max(76, this.topContentInset() + 56) : this.topContentInset() + 72
+  }
 
   private scaledSize(size: number): number {
     return Math.round(size * this.displaySizeScale)
@@ -113,6 +135,7 @@ struct MainPage {
 
   aboutToAppear(): void {
     this.dataService.initToAppStorage()
+    ColorConversion.setSysBarLightBackground(this.isDarkTheme())
     this.updateGreeting()
     this.initBreakpoint()
     this.loadCurrentLyrics()
@@ -122,11 +145,20 @@ struct MainPage {
     })
   }
 
+  private switchPage(index: number): void {
+    if (index < 0 || index > 2 || index === this.currentIndex) {
+      return
+    }
+    this.swiperController.changeIndex(index, true)
+  }
+
+  private onPageChange(index: number): void {
+    this.currentIndex = index
+    this.updateIndicatorOffset(index)
+  }
+
   onFolderClick(): void {
-    this.getUIContext()?.animateTo({ duration: 200, curve: Curve.EaseInOut }, () => {
-      this.currentIndex = 0
-      this.updateIndicatorOffset(0)
-    })
+    this.switchPage(0)
   }
 
   @Builder
@@ -246,11 +278,7 @@ struct MainPage {
     .hoverEffect(HoverEffect.Scale)
     .onHover((isHover: boolean) => { this.hoverTabIndex = isHover ? index : -1 })
     .onClick(() => {
-      this.getUIContext()?.animateTo({ duration: 200, curve: Curve.EaseInOut }, () => {
-        this.currentIndex = index
-      })
-      this.tabsController.changeIndex(index)
-      this.updateIndicatorOffset(index)
+      this.switchPage(index)
     })
   }
 
@@ -283,11 +311,7 @@ struct MainPage {
     .hoverEffect(HoverEffect.Scale)
     .onHover((isHover: boolean) => { this.hoverTabIndex = isHover ? index : -1 })
     .onClick(() => {
-      this.getUIContext()?.animateTo({ duration: 200, curve: Curve.EaseInOut }, () => {
-        this.currentIndex = index
-      })
-      this.tabsController.changeIndex(index)
-      this.updateIndicatorOffset(index)
+      this.switchPage(index)
     })
   }
 
@@ -359,12 +383,17 @@ struct MainPage {
           .rotate({ angle: this.rotationAngle })
           .onClick(() => { this.openPlayer() })
       } else {
-        Image($r('app.media.ic_public_music'))
-          .width(this.scaledSize(32)).height(this.scaledSize(32))
-          .borderRadius(this.scaledSize(16))
-          .rotate({ angle: this.rotationAngle })
-          .fillColor($r('app.color.player_icon_color'))
-          .onClick(() => { this.openPlayer() })
+        Stack() {
+          Image($r('app.media.ic_public_music'))
+            .width(this.scaledSize(24))
+            .height(this.scaledSize(24))
+            .fillColor($r('app.color.player_icon_color'))
+        }
+        .width(this.scaledSize(32))
+        .height(this.scaledSize(32))
+        .borderRadius(this.scaledSize(16))
+        .rotate({ angle: this.rotationAngle })
+        .onClick(() => { this.openPlayer() })
       }
 
       Column() {
@@ -624,8 +653,8 @@ struct MainPage {
 
   build() {
     Stack() {
-      Column() {
-        if (this.currentIndex === 0) {
+      Swiper(this.swiperController) {
+        Column() {
           Stack() {
             Column()
               .width('140%')
@@ -655,33 +684,47 @@ struct MainPage {
             .justifyContent(FlexAlign.Start)
             .alignItems(VerticalAlign.Center)
             .padding({
-              top: this.isPC ? 12 : 16 + this.topSafeHeight,
+              top: this.topContentInset(),
               left: 16,
               right: this.isPC ? this.titleButtonWidth + 12 : 8
             })
           }
           .width('100%')
-          .height(this.isPC ? Math.max(76, this.titleButtonHeight + 20) : 96)
-          .transition({ type: TransitionType.Insert, opacity: 0, translate: { y: -20 } })
-          .transition({ type: TransitionType.Delete, opacity: 0, translate: { y: -20 } })
-        }
+          .height(this.homeHeaderHeight())
 
-        if (this.currentIndex === 0) {
           HomeContent({ bottomContentPadding: this.bottomOverlayInset() })
             .layoutWeight(1)
-        } else if (this.currentIndex === 1) {
-          PlaylistContent({
-            bottomContentPadding: this.bottomOverlayInset(),
-            onNavigateToHome: (): void => {
-              this.onFolderClick()
-            }
-          })
-            .layoutWeight(1)
-        } else {
-          SettingsContent({ bottomContentPadding: this.bottomOverlayInset() })
-            .layoutWeight(1)
         }
+        .width('100%')
+        .height('100%')
+
+        PlaylistContent({
+          topContentPadding: this.topContentInset(),
+          bottomContentPadding: this.bottomOverlayInset(),
+          onNavigateToHome: (): void => {
+            this.onFolderClick()
+          }
+        })
+          .width('100%')
+          .height('100%')
+
+        SettingsContent({
+          topContentPadding: this.topContentInset(),
+          bottomContentPadding: this.bottomOverlayInset()
+        })
+          .width('100%')
+          .height('100%')
       }
+      .index(this.currentIndex)
+      .indicator(false)
+      .loop(false)
+      .disableSwipe(false)
+      .cachedCount(3)
+      .duration(260)
+      .curve(Curve.EaseInOut)
+      .onChange((index: number) => {
+        this.onPageChange(index)
+      })
       .width('100%')
       .height('100%')
 

@@ -102,26 +102,22 @@ export class ColorConversion {
    * Set the status bar to dark color .
    * @param isDarkBackground
    */
-  public static async setSysBarLightBackground(isDarkBackground: boolean) {
+  public static async setSysBarLightBackground(isDarkBackground: boolean): Promise<void> {
     Logger.info(TAG, 'setSysBarLightBackground isDarkBackground is: ' + isDarkBackground);
-    let window: window.Window | undefined = AppStorage.get(AppStorageKeyConstants.KEY_WINDOW);
-    if (!window) {
+    const mainWindow: window.Window | undefined = AppStorage.get(AppStorageKeyConstants.KEY_WINDOW);
+    if (!mainWindow) {
       return;
     }
-    let systemBarProperties: window.SystemBarProperties = {
-      statusBarContentColor: '#ffffff',
+    const contentColor: string = isDarkBackground ? '#FFFFFF' : '#000000';
+    const systemBarProperties: window.SystemBarProperties = {
+      statusBarColor: '#00000000',
+      statusBarContentColor: contentColor,
+      isStatusBarLightIcon: isDarkBackground
     };
-    if (!isDarkBackground) {
-      Logger.info(TAG, 'current background is Dark ');
-      systemBarProperties = {
-        statusBarContentColor: '#000000',
-      }
-    }
 
     try {
-      window.setWindowSystemBarProperties(systemBarProperties).then(() => {
-        Logger.info(TAG, 'setWindowSystemBarProperties success ');
-      })
+      await mainWindow.setWindowSystemBarProperties(systemBarProperties);
+      Logger.info(TAG, 'setWindowSystemBarProperties success');
     } catch (err) {
       Logger.error(TAG, `setWindowSystemBarProperties failed: ${JSON.stringify(err)}`);
     }

@@ -14,6 +14,7 @@ const FAVORITES_FOLDER_ID: string = '__favorites__'
 
 @Component
 export struct PlaylistContent {
+  topContentPadding: number = 0
   bottomContentPadding: number = 0
   onNavigateToHome: () => void = (): void => {}
   private context: common.UIAbilityContext | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
@@ -247,7 +248,12 @@ export struct PlaylistContent {
             .onClick(() => { this.cycleSortMode() })
         }
         .width('100%')
-        .padding({ left: 16, right: this.titleButtonWidth + 12, top: 8, bottom: 12 })
+        .padding({
+          left: 16,
+          right: this.titleButtonWidth + 12,
+          top: this.topContentPadding + 8,
+          bottom: 12
+        })
 
         Scroll(this.scroller) {
           Column() {
