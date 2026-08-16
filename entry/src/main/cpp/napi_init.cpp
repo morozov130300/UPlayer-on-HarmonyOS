@@ -394,6 +394,9 @@ public:
         firstPcmReady_ = false;
         currentPositionMs_ = 0;
         durationMs_ = 0;
+        measurementSquareSum_ = 0.0;
+        measurementSampleCount_ = 0;
+        measurementPeak_ = 0;
     }
 
     bool SetEnabled(bool enabled)
