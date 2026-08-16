@@ -3,6 +3,7 @@ import { PlayerInfoComponent } from '../view/PlayerInfoComponent';
 import { WindowUtil } from '../common/utils/WindowUtil';
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
 import { curves } from '@kit.ArkUI';
+import { ColorHelper } from '../common/utils/ColorHelper';
 
 const TAG = '[MusicPlayer]';
 
@@ -17,6 +18,7 @@ struct MusicPlayer {
   @State isLoading: boolean = true;
   /** 窗口工具（从 AppStorage 同步，含窗口大小、安全区信息） */
   @StorageLink(AppStorageKeyConstants.KEY_WINDOW_UTIL) windowUtil: WindowUtil | undefined = undefined;
+  @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF';
 
   /** 页面初始化：初始化媒体引擎 → 取消加载态 → 背景淡入 */
   async aboutToAppear() {
@@ -52,7 +54,7 @@ struct MusicPlayer {
           LoadingProgress()
             .width(48)
             .height(48)
-            .color('#007DFF')
+            .color(this.primaryColor)
         }
         .height('100%')
         .width('100%')

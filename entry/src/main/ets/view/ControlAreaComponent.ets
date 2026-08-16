@@ -9,6 +9,7 @@ import { ResourceConversion } from '../common/utils/ResourceConversion';
 import { SongInfo } from '../model/SongInfo';
 import { SongDataSource } from '../viewmodel/SongDataSource';
 import { AVPlayerService } from '../service/AVPlayerService';
+import { ColorHelper } from '../common/utils/ColorHelper';
 import { common } from '@kit.AbilityKit';
 import { PreferencesUtil } from '../common/utils/PreferencesUtil';
 import { MediaTools } from '../common/utils/mediautils/MediaTools';
@@ -55,6 +56,7 @@ export struct ControlAreaComponent {
   @State playModeScale: number = 1.0;
   @State speedScale: number = 1.0;
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance();
+  @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF';
 
   switchPlayMode() {
     if (this.playModeIndex === PlayModeSwitchList.length - 1) {
@@ -208,7 +210,7 @@ export struct ControlAreaComponent {
             .controlImageBuilder()
             .width(72)
             .scale({ x: this.playBtnScale, y: this.playBtnScale })
-            .shadow({ radius: 10, color: '#22007DFF' })
+            .shadow({ radius: 10, color: ColorHelper.hexWithAlpha(this.primaryColor, '22') })
             .hoverEffect(HoverEffect.Scale)
             .onClick(() => {
               this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
@@ -461,6 +463,7 @@ struct MusicListContainer {
   @StorageLink(AppStorageKeyConstants.KEY_SELECT_INDEX) selectIndex: number = 0;
   item: SongInfo = new SongInfo();
   index: number = 0;
+  @State listItemArtFailed: boolean = false;
 
   build() {
     Column() {
@@ -473,10 +476,12 @@ struct MusicListContainer {
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
           Row() {
-            Image(this.item.albumArtPath.length > 0 ? this.item.albumArtPath : $r('app.media.ic_public_music'))
+            Image(this.item.albumArtPath.length > 0 && !this.listItemArtFailed ?
+              'file://' + this.item.albumArtPath : $r('app.media.ic_public_music'))
               .width($r('app.float.list_item_image_size'))
               .height($r('app.float.list_item_image_size'))
               .margin({ right: $r('app.float.list_item_image_margin') })
+              .onError(() => { this.listItemArtFailed = true })
             Text(this.item.artist)
               .opacity($r('app.float.singer_opacity'))
               .fontColor(this.selectIndex === this.index && this.isPlay ? Color.Red : $r('app.color.text_primary'))

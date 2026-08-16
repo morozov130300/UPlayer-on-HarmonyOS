@@ -27,6 +27,7 @@ export struct LyricsComponent {
   @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) isPlay: boolean = false;
   @Link isShowControl: boolean;
   @StorageLink(AppStorageKeyConstants.KEY_PAGE_SHOW_TIME) pageShowTime: number = 0;
+  @State coverArtFailed: boolean = false;
   private context: common.UIAbilityContext | undefined = AppStorage.get(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT);
 
   aboutToAppear() {
@@ -66,11 +67,12 @@ export struct LyricsComponent {
       if (this.mainWindowInfo.widthBp === WidthBreakpoint.WIDTH_SM) {
         Row() {
           Image(this.songList && this.selectIndex >= 0 && this.selectIndex < this.songList.length &&
-            this.songList[this.selectIndex].albumArtPath.length > 0 ?
-            this.songList[this.selectIndex].albumArtPath : $r('app.media.ic_public_music'))
+            this.songList[this.selectIndex].albumArtPath.length > 0 && !this.coverArtFailed ?
+            'file://' + this.songList[this.selectIndex].albumArtPath : $r('app.media.ic_public_music'))
             .width(48).height(48)
             .borderRadius($r('app.float.label_border'))
             .margin({ right: 16 })
+            .onError(() => { this.coverArtFailed = true })
           Column() {
             Text(this.songList && this.selectIndex >= 0 && this.selectIndex < this.songList.length ?
               this.songList[this.selectIndex].title : '')

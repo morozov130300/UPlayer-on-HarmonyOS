@@ -3,6 +3,8 @@ import { SongInfo } from '../model/SongInfo'
 import { DataService, AppSettingsData } from '../service/DataService'
 import { SongScanner } from '../service/SongScanner'
 import { AVPlayerService } from '../service/AVPlayerService'
+import { ColorHelper } from '../common/utils/ColorHelper'
+import { DisplayItemDataSource } from '../viewmodel/DisplayItemDataSource'
 import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 
@@ -11,7 +13,8 @@ const TAG = 'HomeContent'
 class DisplayItem {
   isHeader: boolean = false
   headerText: string = ''
-  song: SongInfo | null = null
+  song: SongInfo = new SongInfo()
+  key: string = ''
 }
 
 @Component
@@ -19,6 +22,7 @@ export struct HomeContent {
   private context: common.UIAbilityContext | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
   @State songs: SongInfo[] = []
   @State displayItems: DisplayItem[] = []
+  private displayDataSource: DisplayItemDataSource = new DisplayItemDataSource([])
   @State listMode: string = 'all'
   @State viewMode: string = 'flat'
   @State sortMode: string = 'name'
@@ -26,6 +30,7 @@ export struct HomeContent {
   @State settings: AppSettingsData = new AppSettingsData()
   @State isMultiSelectMode: boolean = false
   @State selectedIds: string[] = []
+  @State failedArtIds: Set<string> = new Set<string>()
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
   private dataService: DataService = DataService.getInstance()
   private songScanner: SongScanner = SongScanner.getInstance()
@@ -50,15 +55,25 @@ export struct HomeContent {
     for (let i = 0; i < this.songs.length; i++) {
       result.push(this.songs[i])
     }
-    const activeFolder: string = this.dataService.getActiveFolderFilter()
-    if (activeFolder.length > 0) {
+    if (this.listMode === 'favorites') {
       const filtered: SongInfo[] = []
       for (let i = 0; i < result.length; i++) {
-        if (result[i].folderPath === activeFolder) {
+        if (result[i].isFavorite) {
           filtered.push(result[i])
         }
       }
       result = filtered
+    } else {
+      const activeFolder: string = this.dataService.getActiveFolderFilter()
+      if (activeFolder.length > 0 && this.listMode === 'current') {
+        const filtered: SongInfo[] = []
+        for (let i = 0; i < result.length; i++) {
+          if (result[i].folderPath === activeFolder) {
+            filtered.push(result[i])
+          }
+        }
+        result = filtered
+      }
     }
     const sorted: SongInfo[] = this.sortSongs(result)
     this.buildDisplayItems(sorted)
@@ -100,6 +115,7 @@ export struct HomeContent {
       }
     }
     this.displayItems = items
+    this.displayDataSource.reloadData(items)
   }
 
   sortSongs(songs: SongInfo[]): SongInfo[] {
@@ -248,15 +264,6 @@ export struct HomeContent {
     return '自定义'
   }
 
-  onScroll(xOffset: number, yOffset: number): void {
-    if (yOffset > this.lastScrollY && yOffset > 10) {
-      this.isPlusVisible = false
-    } else if (yOffset < this.lastScrollY) {
-      this.isPlusVisible = true
-    }
-    this.lastScrollY = yOffset
-  }
-
   @State lastScrollY: number = 0
 
   build() {
@@ -264,13 +271,13 @@ export struct HomeContent {
       Column() {
         Row() {
           Row() {
-            Text(this.listMode === 'all' ? '全部歌曲' : '当前播放')
+            Text(this.listMode === 'all' ? '全部歌曲' : this.listMode === 'favorites' ? '我喜欢的' : '当前播放')
               .fontSize(14)
               .fontColor($r('app.color.text_primary'))
               .fontWeight(FontWeight.Bold)
           }
           .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-          .backgroundColor(this.listMode === 'all' ? ('rgba(0,125,255,0.12)') : ('rgba(0,0,0,0.05)'))
+          .backgroundColor(this.listMode === 'all' ? ColorHelper.hexToRgba(this.primaryColor, 0.12) : 'rgba(0,0,0,0.05)')
           .borderRadius(16)
           .onClick(() => { this.toggleListMode() })
 
@@ -303,20 +310,21 @@ export struct HomeContent {
         .width('100%')
         .padding({ left: 16, right: 16, top: 8, bottom: 8 })
 
-        List({ space: 0 }) {
-          ForEach(this.displayItems, (item: DisplayItem, index: number) => {
+        List({ space: 0, scroller: this.scroller }) {
+          LazyForEach(this.displayDataSource, (item: DisplayItem, index: number) => {
             ListItem() {
               if (item.isHeader) {
                 this.folderHeaderRow(item.headerText)
-              } else if (item.song !== null) {
+              } else if (!item.isHeader) {
                 this.songItemRow(item.song)
               }
             }
+            .reuseId(item.isHeader ? 'header' : 'song')
           }, (item: DisplayItem, index: number) => {
             if (item.isHeader) {
               return 'h_' + item.headerText
             }
-            if (item.song !== null) {
+            if (!item.isHeader) {
               return item.song.id
             }
             return 'empty_' + index
@@ -325,15 +333,25 @@ export struct HomeContent {
         .width('100%')
         .layoutWeight(1)
         .edgeEffect(EdgeEffect.Spring)
-        .onScroll((xOffset: number, yOffset: number) => { this.onScroll(xOffset, yOffset) })
+        .onDidScroll(() => {
+          const offset = this.scroller.currentOffset()
+          const yOffset: number = offset.yOffset
+          if (yOffset > this.lastScrollY && (yOffset - this.lastScrollY) > 10) {
+            this.isPlusVisible = false
+          } else if (yOffset < this.lastScrollY) {
+            this.isPlusVisible = true
+          }
+          this.lastScrollY = yOffset
+        })
 
         if (this.displayItems.length === 0) {
-          Text('暂无歌曲，点击右下角 + 添加')
+          Text('暂无歌曲，点击添加')
             .fontSize(14)
             .fontColor($r('app.color.text_twenty_color'))
             .width('100%')
             .height(200)
             .textAlign(TextAlign.Center)
+            .onClick(() => { this.onPlusClick() })
         }
 
         if (this.isMultiSelectMode) {
@@ -362,7 +380,7 @@ export struct HomeContent {
       .width('100%')
       .height('100%')
 
-      if (!this.isMultiSelectMode && this.settings.plusButtonVisible && this.isPlusVisible) {
+      if (!this.isMultiSelectMode && (this.isPlusVisible || !this.settings.plusButtonScrollHide)) {
         Row() {
           Text('+')
             .fontSize(32)
@@ -372,7 +390,7 @@ export struct HomeContent {
         .width(40).height(40)
         .borderRadius(20)
         .backgroundColor(this.primaryColor)
-        .shadow({ radius: 10, color: '#44007DFF', offsetY: 4 })
+        .shadow({ radius: 10, color: ColorHelper.hexWithAlpha(this.primaryColor, '44'), offsetY: 4 })
         .position({ bottom: 12, right: 20 })
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
@@ -417,12 +435,13 @@ export struct HomeContent {
         .margin({ right: 10 })
       }
 
-      if (item.albumArtPath.length > 0) {
-        Image(item.albumArtPath)
+      if (item.albumArtPath.length > 0 && !this.failedArtIds.has(item.id)) {
+        Image('file://' + item.albumArtPath)
           .width(36).height(36)
           .borderRadius(6)
           .objectFit(ImageFit.Cover)
           .margin({ right: 10 })
+          .onError(() => { this.failedArtIds.add(item.id) })
       } else {
         Image($r('app.media.ic_public_music'))
           .width(36).height(36)

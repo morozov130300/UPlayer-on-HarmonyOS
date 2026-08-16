@@ -8,6 +8,7 @@ import { PlaylistContent } from './PlaylistContent'
 import { SettingsContent } from './SettingsContent'
 import { DataService } from '../service/DataService'
 import { FolderInfo } from '../model/FolderInfo'
+import { ColorHelper } from '../common/utils/ColorHelper'
 
 @Entry
 @Component
@@ -28,6 +29,9 @@ struct MainPage {
   @StorageLink('uplayer_current_artist') currentSongArtist: string = ''
   @StorageLink('uplayer_current_album_art') currentSongAlbumArt: string = ''
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
+  @State albumArtFailed: boolean = false
+  @State isTitleMarqueeRunning: boolean = true
+  @State isArtistMarqueeRunning: boolean = true
 
   private tabsController: TabsController = new TabsController()
   private tabWidth: number = 72
@@ -73,9 +77,9 @@ struct MainPage {
           center: ['50%', '50%'],
           radius: '75%',
           colors: [
-            ['#ed007dff', 0.0],
+            [ColorHelper.hexWithAlpha(this.primaryColor, 'ED'), 0.0],
             [this.primaryColor, 0.5],
-            ['#0044AA', 1.0],
+            [ColorHelper.darken(this.primaryColor, 0.35), 1.0],
           ]
         })
 
@@ -183,12 +187,13 @@ struct MainPage {
   @Builder
   playerControl() {
     Row({ space: 20 }) {
-      if (this.currentSongAlbumArt.length > 0) {
-        Image(this.currentSongAlbumArt)
+      if (this.currentSongAlbumArt.length > 0 && !this.albumArtFailed) {
+        Image('file://' + this.currentSongAlbumArt)
           .width(25).height(25)
           .borderRadius(16)
           .objectFit(ImageFit.Cover)
           .rotate({ angle: this.rotationAngle })
+          .onError(() => { this.albumArtFailed = true })
           .onClick(() => {
             this.getUIContext().getRouter().pushUrl({ url: 'pages/MusicPlayer' })
           })
@@ -205,21 +210,18 @@ struct MainPage {
 
       if (this.currentSongTitle.length > 0) {
         Column() {
-          Text(this.currentSongTitle)
+          Marquee({ start: this.isTitleMarqueeRunning, step: 4, loop: -1, fromStart: true, src: this.currentSongTitle })
             .fontSize(13)
             .fontColor($r('app.color.text_primary'))
             .fontWeight(FontWeight.Medium)
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
             .width('100%')
-            .textAlign(TextAlign.Start)
-          Text(this.currentSongArtist.length > 0 ? this.currentSongArtist : '未知歌手')
+            .onFinish(() => { this.isTitleMarqueeRunning = false })
+          Marquee({ start: this.isArtistMarqueeRunning, step: 3, loop: -1, fromStart: true,
+            src: this.currentSongArtist.length > 0 ? this.currentSongArtist : '未知歌手' })
             .fontSize(10)
             .fontColor($r('app.color.text_sixty_color'))
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
             .width('100%')
-            .textAlign(TextAlign.Start)
+            .onFinish(() => { this.isArtistMarqueeRunning = false })
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
@@ -252,7 +254,7 @@ struct MainPage {
         .height(20)
         .fillColor($r('app.color.player_icon_color'))
     }
-    .constraintSize({ maxWidth: this.breakpoint === 'sm' || this.breakpoint === 'md' ? '85%' : '36%' })
+    .constraintSize({ maxWidth: this.breakpoint === 'sm' || this.breakpoint === 'md' ? '85%' : '42%' })
     .height(40)
     .alignSelf(ItemAlign.Center)
     .padding({ left: 12, right: 16, top: 4, bottom: 4 })
@@ -260,7 +262,7 @@ struct MainPage {
     .borderRadius(20)
     .shadow({
       radius: this.isGlowing ? 60 : 50,
-      color: this.isGlowing ? '#66007DFF' : $r('app.color.shadow_color'),
+      color: this.isGlowing ? ColorHelper.hexWithAlpha(this.primaryColor, '66') : $r('app.color.shadow_color'),
       offsetY: 5
     })
   }
@@ -333,9 +335,9 @@ struct MainPage {
                 center: ['50%', '50%'],
                 radius: '80%',
                 colors: [
-                  ['rgba(0,125,255,0.04)', 0.0],
-                  ['rgba(0,125,255,0.01)', 0.6],
-                  ['rgba(0,125,255,0)', 1.0],
+                  [ColorHelper.hexToRgba(this.primaryColor, 0.04), 0.0],
+                  [ColorHelper.hexToRgba(this.primaryColor, 0.01), 0.6],
+                  [ColorHelper.hexToRgba(this.primaryColor, 0), 1.0],
                 ]
               })
             Column() {

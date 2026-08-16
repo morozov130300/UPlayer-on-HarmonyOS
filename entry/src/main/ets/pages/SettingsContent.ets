@@ -2,6 +2,7 @@ import { common, ConfigurationConstant } from '@kit.AbilityKit'
 import { DataService, AppSettingsData } from '../service/DataService'
 import { AVPlayerService } from '../service/AVPlayerService'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
+import { ColorHelper } from '../common/utils/ColorHelper'
 import Logger from '../common/utils/Logger'
 
 const TAG = 'SettingsContent'
@@ -17,6 +18,7 @@ export struct SettingsContent {
   private context: common.UIAbilityContext | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
   @State settings: AppSettingsData = new AppSettingsData()
   @StorageLink(KEY_PRIMARY_COLOR) primaryColor: string = '#007DFF'
+  @StorageLink(AppStorageKeyConstants.KEY_TOP_HEIGHT) topSafeHeight: number = 0
   private dataService: DataService = DataService.getInstance()
   private themeOptions: ThemeOption[] = [
     { label: '跟随系统', value: 'system' },
@@ -107,13 +109,13 @@ export struct SettingsContent {
           .fontWeight(FontWeight.Bold)
       }
       .width('100%')
-      .padding({ left: 16, right: 16, top: 8, bottom: 12 })
+      .padding({ left: 16, right: 16, top: this.topSafeHeight + 8, bottom: 12 })
 
       Scroll() {
         Column() {
           this.sectionHeader('界面控制')
-          this.toggleRow('显示加号按钮', this.settings.plusButtonVisible, (val: boolean) => {
-            this.settings.plusButtonVisible = val
+          this.toggleRow('滚动隐藏加号按钮', this.settings.plusButtonScrollHide, (val: boolean) => {
+            this.settings.plusButtonScrollHide = val
             this.updateSetting()
           })
 
@@ -132,7 +134,7 @@ export struct SettingsContent {
                   .fontColor(this.settings.themeMode === opt.value ? this.primaryColor : $r('app.color.text_sixty_color'))
               }
               .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-              .backgroundColor(this.settings.themeMode === opt.value ? ('rgba(0,125,255,0.12)') : ('rgba(0,0,0,0.05)'))
+              .backgroundColor(this.settings.themeMode === opt.value ? ColorHelper.hexToRgba(this.primaryColor, 0.12) : 'rgba(0,0,0,0.05)')
               .borderRadius(16)
               .onClick(() => { this.setThemeMode(opt.value) })
             }, (opt: ThemeOption) => opt.value)
@@ -250,7 +252,7 @@ export struct SettingsContent {
                   .fontColor(this.settings.audioEffect === effect ? this.primaryColor : $r('app.color.text_sixty_color'))
               }
               .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-              .backgroundColor(this.settings.audioEffect === effect ? ('rgba(0,125,255,0.12)') : ('rgba(0,0,0,0.03)'))
+              .backgroundColor(this.settings.audioEffect === effect ? ColorHelper.hexToRgba(this.primaryColor, 0.12) : 'rgba(0,0,0,0.03)')
               .borderRadius(12)
               .margin({ right: 6 })
               .onClick(() => {
@@ -312,6 +314,7 @@ export struct SettingsContent {
         .fontColor($r('app.color.text_sixty_color'))
       Blank()
       Toggle({ type: ToggleType.Switch, isOn: checked })
+        .selectedColor(this.primaryColor)
         .onChange((isOn: boolean) => {
           onChange(isOn)
         })

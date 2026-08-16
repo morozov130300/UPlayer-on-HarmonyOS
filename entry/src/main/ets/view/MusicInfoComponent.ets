@@ -5,6 +5,7 @@ import { StyleConstants } from '../common/constants/StyleConstants';
 import { WindowInfo } from '../common/utils/WindowUtil';
 import { SongInfo } from '../model/SongInfo';
 import { ControlAreaComponent } from './ControlAreaComponent';
+import { ColorHelper } from '../common/utils/ColorHelper';
 
 @Component
 export struct MusicInfoComponent {
@@ -17,8 +18,10 @@ export struct MusicInfoComponent {
   @StorageLink(AppStorageKeyConstants.KEY_IS_FAVORITE) isFavorite: boolean = false;
   @State favoriteScale: number = 1.0;
   @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) isPlay: boolean = false;
+  @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF';
   @State glowRotation: number = 0;
   @State glowTimer: number = -1;
+  @State coverArtFailed: boolean = false;
 
   build() {
     Column() {
@@ -82,19 +85,20 @@ export struct MusicInfoComponent {
           .borderRadius(9)
           .shadow({
             radius: this.isPlay ? 30 : 15,
-            color: this.isPlay ? '#44007DFF' : $r('app.color.shadow_color'),
+            color: this.isPlay ? ColorHelper.hexWithAlpha(this.primaryColor, '44') : $r('app.color.shadow_color'),
             offsetX: 0, offsetY: 0
           })
           .animation({ duration: 800, curve: Curve.EaseInOut })
         Image(this.songList && this.selectIndex >= 0 && this.selectIndex < this.songList.length &&
-          this.songList[this.selectIndex].albumArtPath.length > 0 ?
-          this.songList[this.selectIndex].albumArtPath : $r('app.media.ic_public_music'))
+          this.songList[this.selectIndex].albumArtPath.length > 0 && !this.coverArtFailed ?
+          'file://' + this.songList[this.selectIndex].albumArtPath : $r('app.media.ic_public_music'))
           .width('100%')
           .aspectRatio(1)
           .borderRadius(8)
           .constraintSize({ maxWidth: '100%', maxHeight: '50%' })
           .shadow({ radius: $r('app.float.shadow_radius'), color: $r('app.color.shadow_color'), offsetX: 0, offsetY: 8 })
           .animation({ duration: 500, curve: Curve.EaseInOut })
+          .onError(() => { this.coverArtFailed = true })
       }
       .width('100%')
       .constraintSize({ maxWidth: '100%', maxHeight: '50%' })
