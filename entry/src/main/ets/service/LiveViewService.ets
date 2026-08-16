@@ -22,10 +22,19 @@ interface CapsuleData {
   backgroundColor?: string;
 }
 
+interface LiveViewLayoutData {
+  layoutType: liveViewManager.LayoutType;
+  title: string;
+  content: string;
+  underlineColor?: string;
+  descPic?: string;
+}
+
 interface PrimaryData {
   title: string;
   content: LiveViewTextItem[];
   keepTime: number;
+  layoutData: LiveViewLayoutData;
   clickAction?: WantAgent;
   liveViewLockScreenAbilityName?: string;
   liveViewLockScreenAbilityParameters?: Record<string, string>;
@@ -99,6 +108,13 @@ export class LiveViewService {
         title: title,
         content: [textItem1, textItem2],
         keepTime: 0,
+        layoutData: {
+          layoutType: liveViewManager.LayoutType.LAYOUT_TYPE_PICKUP,
+          title: title,
+          content: artist.length > 0 ? artist : '未知歌手',
+          underlineColor: '#007DFF',
+          descPic: 'ic_public_music',
+        },
         clickAction: clickAction ?? undefined,
         liveViewLockScreenAbilityName: 'LiveViewExtAbility',
         liveViewLockScreenAbilityParameters: {},
@@ -147,6 +163,13 @@ export class LiveViewService {
         title: title,
         content: [textItem1, textItem2],
         keepTime: 0,
+        layoutData: {
+          layoutType: liveViewManager.LayoutType.LAYOUT_TYPE_PICKUP,
+          title: title,
+          content: artist.length > 0 ? artist : '未知歌手',
+          underlineColor: '#007DFF',
+          descPic: 'ic_public_music',
+        },
         clickAction: clickAction ?? undefined,
         liveViewLockScreenAbilityName: 'LiveViewExtAbility',
         liveViewLockScreenAbilityParameters: {},
@@ -185,6 +208,12 @@ export class LiveViewService {
         title: '',
         content: [],
         keepTime: 0,
+        layoutData: {
+          layoutType: liveViewManager.LayoutType.LAYOUT_TYPE_PICKUP,
+          title: '',
+          content: '',
+          underlineColor: '#007DFF',
+        },
       };
       const data: LiveViewData = {
         capsule: capsule,

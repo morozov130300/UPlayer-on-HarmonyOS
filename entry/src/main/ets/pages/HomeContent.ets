@@ -57,6 +57,13 @@ export struct HomeContent {
   loadData(): void {
     this.failedArtIds = new Set<string>()
     this.songs = this.dataService.getSongs()
+    // 只预取首屏可见区域，避免一打开就触发全部歌曲的封面解码
+    const visible: SongInfo[] = []
+    const prefetchCount: number = Math.min(this.songs.length, 12)
+    for (let i = 0; i < prefetchCount; i++) {
+      if (this.songs[i].isAvailable) visible.push(this.songs[i])
+    }
+    AudioMetadataService.getInstance().prefetchAlbumCovers(visible, AlbumCoverSize.SMALL)
     this.settings = this.dataService.getSettings()
     this.viewMode = this.dataService.getViewMode()
     this.sortMode = this.dataService.getSortMode()
@@ -123,7 +130,6 @@ export struct HomeContent {
     }
     this.displayItems = items
     this.displayDataSource.reloadData(items)
-    this.prefetchDisplayRange(0, Math.min(items.length - 1, 10))
   }
 
   sortSongs(songs: SongInfo[]): SongInfo[] {
@@ -322,20 +328,6 @@ export struct HomeContent {
     return '自定义'
   }
 
-  private prefetchDisplayRange(start: number, end: number): void {
-    if (this.displayItems.length === 0) {
-      return
-    }
-    const songs: SongInfo[] = []
-    const from: number = Math.max(0, start - 4)
-    const to: number = Math.min(this.displayItems.length - 1, end + 8)
-    for (let i = from; i <= to; i++) {
-      const item: DisplayItem = this.displayItems[i]
-      if (!item.isHeader) songs.push(item.song)
-    }
-    AudioMetadataService.getInstance().prefetchAlbumCovers(songs, AlbumCoverSize.SMALL)
-  }
-
   @State lastScrollY: number = 0
 
   build() {
@@ -413,9 +405,6 @@ export struct HomeContent {
           .height('100%')
           .edgeEffect(EdgeEffect.Spring)
           .cachedCount(8)
-          .onScrollIndex((start: number, end: number) => {
-            this.prefetchDisplayRange(start, end)
-          })
           .onDidScroll(() => {
             const offset = this.scroller.currentOffset()
             const yOffset: number = offset.yOffset

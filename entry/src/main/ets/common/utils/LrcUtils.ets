@@ -86,8 +86,6 @@ export function parseLrcLyric(text: string): Array<LrcEntry> {
         lrc[i].lineDuration = lrc[i+1].lineStartTime - lrc[i].lineStartTime;
       }
     }
-  } else {
-    Logger.error('Failed to parse the lyrics.');
   }
   return lrc;
 }

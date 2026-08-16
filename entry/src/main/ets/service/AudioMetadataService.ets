@@ -11,6 +11,7 @@ const TAG = 'AudioMetadataService'
 const COVER_MAX_EDGE: number = 640
 const COVER_CACHE_MAX_ENTRIES: number = 40
 const COVER_CACHE_MAX_BYTES: number = 32 * 1024 * 1024
+const COVER_EXTRACTION_CONCURRENCY: number = 2
 
 export enum AlbumCoverSize {
   SMALL = 96,
@@ -50,7 +51,8 @@ export class AlbumCoverLease {
 
 export class AudioMetadataService {
   private static instance: AudioMetadataService = new AudioMetadataService()
-  private coverExtractionTail: Promise<void> = Promise.resolve()
+  private coverExtractionActive: number = 0
+  private coverExtractionQueue: Array<() => void> = []
   private coverCache: Map<string, AlbumCoverCacheEntry> = new Map<string, AlbumCoverCacheEntry>()
   private pendingCovers: Map<string, Promise<AlbumCoverCacheEntry | undefined>> =
     new Map<string, Promise<AlbumCoverCacheEntry | undefined>>()
@@ -243,27 +245,54 @@ export class AudioMetadataService {
       if (file !== undefined) fs.closeSync(file)
     }
 
-    const previousTask: Promise<void> = this.coverExtractionTail
     const fallbackTask: Promise<image.PixelMap | undefined> =
-      this.fetchFallbackCoverAfter(previousTask, song, sourcePath, maxEdge)
-    this.coverExtractionTail = this.continueCoverQueue(fallbackTask)
+      this.scheduleFallbackCover(song, sourcePath, maxEdge)
     return await fallbackTask
   }
 
-  private async fetchFallbackCoverAfter(previousTask: Promise<void>, song: SongInfo,
-    sourcePath: string, maxEdge: number): Promise<image.PixelMap | undefined> {
-    await previousTask
-    return await this.fetchFallbackCover(song, sourcePath, maxEdge)
+  // 有界并发调度 fallback 封面提取，避免串行排队导致首屏大量占位图
+  private scheduleFallbackCover(song: SongInfo, sourcePath: string,
+    maxEdge: number): Promise<image.PixelMap | undefined> {
+    return new Promise<image.PixelMap | undefined>((resolve: (value: image.PixelMap | undefined) => void): void => {
+      const run: () => void = (): void => {
+        this.coverExtractionActive++
+        this.fetchFallbackCover(song, sourcePath, maxEdge).then((cover: image.PixelMap | undefined) => {
+          resolve(cover)
+        }).catch(() => {
+          resolve(undefined)
+        }).finally(() => {
+          this.coverExtractionActive--
+          this.drainCoverQueue()
+        })
+      }
+      if (this.coverExtractionActive < COVER_EXTRACTION_CONCURRENCY) {
+        run()
+      } else {
+        this.coverExtractionQueue.push(run)
+      }
+    })
   }
 
-  private async continueCoverQueue(task: Promise<image.PixelMap | undefined>): Promise<void> {
-    try {
-      await task
-    } catch (_) {
+  private drainCoverQueue(): void {
+    while (this.coverExtractionActive < COVER_EXTRACTION_CONCURRENCY && this.coverExtractionQueue.length > 0) {
+      const next: (() => void) | undefined = this.coverExtractionQueue.shift()
+      if (next !== undefined) {
+        next()
+      }
     }
   }
 
   private async fetchFallbackCover(song: SongInfo, sourcePath: string,
+    maxEdge: number): Promise<image.PixelMap | undefined> {
+    // 系统 avmetadatahelper 服务可能启动慢，首次失败时重试一次
+    let cover: image.PixelMap | undefined = await this.tryFetchFallbackCover(song, sourcePath, maxEdge)
+    if (cover === undefined) {
+      cover = await this.tryFetchFallbackCover(song, sourcePath, maxEdge)
+    }
+    return cover
+  }
+
+  private async tryFetchFallbackCover(song: SongInfo, sourcePath: string,
     maxEdge: number): Promise<image.PixelMap | undefined> {
     let file: fs.File | undefined = undefined
     let extractor: media.AVMetadataExtractor | undefined = undefined

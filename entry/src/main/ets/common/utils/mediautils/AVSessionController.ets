@@ -22,6 +22,8 @@ export class AVSessionController {
   private avPlayerService: AVPlayerService | undefined = undefined;
   private metadataRequestId: number = 0;
   private metadataCoverLease: AlbumCoverLease | undefined = undefined;
+  private lastProgressReportTime: number = 0;
+  private lastProgressReportPosition: number = -1;
 
   private getAvPlayerService(): AVPlayerService {
     if (this.avPlayerService === undefined) {
@@ -73,11 +75,19 @@ export class AVSessionController {
       return;
     }
     const isPlay: boolean = AppStorage.get<boolean>(AppStorageKeyConstants.KEY_IS_PLAY) ?? false;
+    const playMode: MusicPlayMode = AppStorage.get<MusicPlayMode>(AppStorageKeyConstants.KEY_PLAY_MODE) ??
+      MusicPlayMode.ORDER;
+    let loopMode: avSession.LoopMode = avSession.LoopMode.LOOP_MODE_SEQUENCE;
+    if (playMode === MusicPlayMode.SINGLE_CYCLE) {
+      loopMode = avSession.LoopMode.LOOP_MODE_SINGLE;
+    } else if (playMode === MusicPlayMode.RANDOM) {
+      loopMode = avSession.LoopMode.LOOP_MODE_SHUFFLE;
+    }
     const playbackState: avSession.AVPlaybackState = {
       state: isPlay ? avSession.PlaybackState.PLAYBACK_STATE_PLAY : avSession.PlaybackState.PLAYBACK_STATE_PAUSE,
       speed: 1.0,
       bufferedTime: 0,
-      loopMode: avSession.LoopMode.LOOP_MODE_SEQUENCE,
+      loopMode: loopMode,
       isFavorite: false,
     };
     this.AVSession.setAVPlaybackState(playbackState, (err: BusinessError) => {
@@ -251,15 +261,33 @@ export class AVSessionController {
     this.getAvPlayerService().pause();
   }
 
+  private randomSongIndex(currentIndex: number, songCount: number): number {
+    if (songCount <= 1) {
+      return currentIndex;
+    }
+    let nextIndex: number = currentIndex;
+    for (let i = 0; i < 5 && nextIndex === currentIndex; i++) {
+      nextIndex = Math.floor(Math.random() * songCount);
+    }
+    return nextIndex === currentIndex ? (currentIndex + 1) % songCount : nextIndex;
+  }
+
   private onPlayNext: () => void = () => {
     Logger.info(TAG, `on playNext , do playNext task`);
     this.refreshSongList();
-    const currentIdx: number = AppStorage.get(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? 0;
-    let nextIdx: number = currentIdx + 1;
-    if (nextIdx >= this.songList.length) {
-      nextIdx = 0;
+    if (this.songList.length === 0) {
+      return;
     }
-    if (nextIdx < this.songList.length) {
+    const currentIdx: number = AppStorage.get(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? 0;
+    const playMode: MusicPlayMode = AppStorage.get<MusicPlayMode>(AppStorageKeyConstants.KEY_PLAY_MODE) ??
+      MusicPlayMode.ORDER;
+    let nextIdx: number = currentIdx;
+    if (playMode === MusicPlayMode.RANDOM) {
+      nextIdx = this.randomSongIndex(currentIdx, this.songList.length);
+    } else if (playMode === MusicPlayMode.ORDER) {
+      nextIdx = currentIdx >= this.songList.length - 1 ? 0 : currentIdx + 1;
+    }
+    if (nextIdx >= 0 && nextIdx < this.songList.length) {
       this.getAvPlayerService().playSong(this.songList[nextIdx], nextIdx);
     }
   }
@@ -267,10 +295,17 @@ export class AVSessionController {
   private onPlayPrevious: () => void = () => {
     Logger.info(TAG, `on playPrevious , do playPrevious task`);
     this.refreshSongList();
+    if (this.songList.length === 0) {
+      return;
+    }
     const currentIdx: number = AppStorage.get(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? 0;
-    let prevIdx: number = currentIdx - 1;
-    if (prevIdx < 0) {
-      prevIdx = this.songList.length - 1;
+    const playMode: MusicPlayMode = AppStorage.get<MusicPlayMode>(AppStorageKeyConstants.KEY_PLAY_MODE) ??
+      MusicPlayMode.ORDER;
+    let prevIdx: number = currentIdx;
+    if (playMode === MusicPlayMode.RANDOM) {
+      prevIdx = this.randomSongIndex(currentIdx, this.songList.length);
+    } else if (playMode === MusicPlayMode.ORDER) {
+      prevIdx = currentIdx <= 0 ? this.songList.length - 1 : currentIdx - 1;
     }
     if (prevIdx >= 0 && prevIdx < this.songList.length) {
       this.getAvPlayerService().playSong(this.songList[prevIdx], prevIdx);
@@ -298,7 +333,7 @@ export class AVSessionController {
       default:
         break;
     }
-    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PLAY_MODE, playMode);
+    DataService.getInstance().setPlayMode(playMode);
   }
 
   private onToggleFavorite: (assetId: string) => void = (assetId: string) => {
@@ -338,20 +373,27 @@ export class AVSessionController {
   }
 
   public setProgressState(ms: number): void {
-    if (this.AVSession) {
-      this.AVSession.setAVPlaybackState({
-        position: {
-          elapsedTime: ms,
-          updateTime: new Date().getTime()
-        }
-      }, (err: BusinessError) => {
-        if (err) {
-          Logger.error(TAG, `setProgressState BusinessError: code: ${err.code}, message: ${err.message}`);
-        } else {
-          Logger.info(TAG, 'setProgressState successfully');
-        }
-      });
+    if (!this.AVSession) {
+      return;
     }
+    const now: number = new Date().getTime();
+    const positionChanged: boolean = this.lastProgressReportPosition < 0 ||
+      Math.abs(ms - this.lastProgressReportPosition) >= 1000 || ms < this.lastProgressReportPosition;
+    if (!positionChanged && now - this.lastProgressReportTime < 1000) {
+      return;
+    }
+    this.lastProgressReportTime = now;
+    this.lastProgressReportPosition = ms;
+    this.AVSession.setAVPlaybackState({
+      position: {
+        elapsedTime: ms,
+        updateTime: now
+      }
+    }, (err: BusinessError) => {
+      if (err) {
+        Logger.error(TAG, `setProgressState BusinessError: code: ${err.code}, message: ${err.message}`);
+      }
+    });
   }
 
   public setPlayState(isPlay: boolean): void {
@@ -360,6 +402,8 @@ export class AVSessionController {
       return;
     }
     const currentIndex: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? 0;
+    this.lastProgressReportTime = 0;
+    this.lastProgressReportPosition = -1;
     this.AVSession.setAVPlaybackState({
       state: isPlay ? avSession.PlaybackState.PLAYBACK_STATE_PLAY : avSession.PlaybackState.PLAYBACK_STATE_PAUSE,
       activeItemId: currentIndex + 1,

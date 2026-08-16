@@ -21,6 +21,9 @@ const TAG = 'BackgroundUtil';
 
 // [Start BackgroundUtil]
 export class BackgroundUtil {
+  private static isStarting: boolean = false;
+  private static isRunning: boolean = false;
+
   /**
    * Start background task.
    *
@@ -31,7 +34,11 @@ export class BackgroundUtil {
       Logger.error(TAG, 'startContinuousTask failed', `context undefined`);
       return;
     }
-    let wantAgentInfo: wantAgent.WantAgentInfo = {
+    if (BackgroundUtil.isStarting || BackgroundUtil.isRunning) {
+      return;
+    }
+    BackgroundUtil.isStarting = true;
+    const wantAgentInfo: wantAgent.WantAgentInfo = {
       wants: [
         {
           bundleName: context.abilityInfo.bundleName,
@@ -44,20 +51,16 @@ export class BackgroundUtil {
     };
 
     wantAgent.getWantAgent(wantAgentInfo).then((wantAgentObj: Object) => {
-      try {
-        backgroundTaskManager.startBackgroundRunning(context,
-          backgroundTaskManager.BackgroundMode.AUDIO_PLAYBACK, wantAgentObj).then(() => {
-          Logger.info(TAG, 'startBackgroundRunning succeeded');
-        }).catch((error: BusinessError) => {
-          Logger.error(TAG, `startBackgroundRunning failed Cause: code ${error.code}`);
-        });
-      } catch (error) {
-        Logger.error(TAG, `startBackgroundRunning failed.message ${(error as BusinessError).message}`);
-      }
-    })
-      .catch((error: BusinessError) => {
-        Logger.error('this audioRenderer: ', `getWantAgent failed Cause: code ${error.code}`);
-      });
+      return backgroundTaskManager.startBackgroundRunning(context,
+        backgroundTaskManager.BackgroundMode.AUDIO_PLAYBACK, wantAgentObj);
+    }).then(() => {
+      BackgroundUtil.isRunning = true;
+      Logger.info(TAG, 'startBackgroundRunning succeeded');
+    }).catch((error: BusinessError) => {
+      Logger.error(TAG, `startBackgroundRunning failed Cause: code ${error.code}`);
+    }).finally(() => {
+      BackgroundUtil.isStarting = false;
+    });
   }
 
   /**
@@ -65,16 +68,17 @@ export class BackgroundUtil {
    *
    * @param context
    */
-  public static stopContinuousTask(context: common.UIAbilityContext): void {
-    try {
-      backgroundTaskManager.stopBackgroundRunning(context).then(() => {
-        Logger.info('this audioRenderer: ', 'stopBackgroundRunning succeeded');
-      }).catch((error: BusinessError) => {
-        Logger.error('this audioRenderer: ', `stopBackgroundRunning failed Cause: code ${error.code}`);
-      });
-    } catch (error) {
-      Logger.error(TAG, `stopBackgroundRunning failed. message ${error}`);
+  public static stopContinuousTask(context?: common.UIAbilityContext): void {
+    if (!context || (!BackgroundUtil.isStarting && !BackgroundUtil.isRunning)) {
+      return;
     }
+    BackgroundUtil.isStarting = false;
+    backgroundTaskManager.stopBackgroundRunning(context).then(() => {
+      BackgroundUtil.isRunning = false;
+      Logger.info(TAG, 'stopBackgroundRunning succeeded');
+    }).catch((error: BusinessError) => {
+      Logger.error(TAG, `stopBackgroundRunning failed Cause: code ${error.code}`);
+    });
   }
 }
 

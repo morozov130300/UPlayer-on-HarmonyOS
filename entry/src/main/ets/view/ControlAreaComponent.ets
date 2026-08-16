@@ -18,6 +18,7 @@ import { WindowInfo } from '../common/utils/WindowUtil';
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
 import { audio } from '@kit.AudioKit';
 import { AlbumCover } from '../component/AlbumCover';
+import { AVSessionController } from '../common/utils/mediautils/AVSessionController';
 
 const TAG = 'ControlAreaComponent';
 const SKIP_MS: number = 15000;
@@ -122,6 +123,7 @@ export struct ControlAreaComponent {
     }
     this.playMode = PlayModeSwitchList[this.playModeIndex];
     DataService.getInstance().setPlayMode(this.playMode);
+    AVSessionController.getInstance().setPlayModeToAVSession(this.playMode);
     Logger.info(TAG, 'playModeIndex is' + this.playModeIndex);
     try {
       this.promptAction.openToast({

@@ -248,6 +248,8 @@ public:
         bool supported = false;
         OH_AudioSuite_Result result = OH_AudioSuiteEngine_IsNodeTypeSupported(
             EFFECT_NODE_TYPE_EQUALIZER, &supported);
+        OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "isEqualizerSupported result=%d supported=%d", static_cast<int>(result), supported ? 1 : 0);
         return result == AUDIOSUITE_SUCCESS && supported;
     }
 
@@ -259,7 +261,7 @@ public:
                 std::chrono::steady_clock::now() - startedAt).count();
         };
         Stop();
-        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+        OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "native startup stage=stop elapsedMs=%{public}lld", elapsedMs());
         if (requestId != latestPlayRequest.load()) {
             return false;
@@ -285,31 +287,31 @@ public:
             Stop();
             return false;
         }
-        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+        OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "native startup stage=source elapsedMs=%{public}lld", elapsedMs());
         if (!ConfigureTrack()) {
             Stop();
             return false;
         }
-        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+        OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "native startup stage=track elapsedMs=%{public}lld", elapsedMs());
         if (!ConfigureDecoder()) {
             Stop();
             return false;
         }
-        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+        OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "native startup stage=decoder elapsedMs=%{public}lld", elapsedMs());
         if (!ConfigureEffects()) {
             Stop();
             return false;
         }
-        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+        OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "native startup stage=effects elapsedMs=%{public}lld", elapsedMs());
         if (!ConfigureRenderer()) {
             Stop();
             return false;
         }
-        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+        OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "native startup stage=renderer-config elapsedMs=%{public}lld", elapsedMs());
         if (requestId != latestPlayRequest.load()) {
             Stop();
@@ -334,13 +336,17 @@ public:
             currentPositionMs_ = targetPositionMs;
         }
         activeEqEnabled_ = requestedEqEnabled_.load();
+        resampleInputRate_ = sampleRate_;
+        resamplePos_ = 0.0;
+        resampleLeft_.clear();
+        resampleRight_.clear();
         decoderThread_ = std::thread(&NativeAudioPlayer::DecoderLoop, this);
         if (OH_AudioRenderer_Start(renderer_) != AUDIOSTREAM_SUCCESS) {
             OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG, "renderer start failed");
             Stop();
             return false;
         }
-        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+        OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "native startup stage=started elapsedMs=%{public}lld", elapsedMs());
         return true;
     }
@@ -387,13 +393,26 @@ public:
             pcmQueue_.clear();
         }
         queueCondition_.notify_all();
+        // 先 join 解码线程，让它在 stopRequested_ 置位后自然退出（QueryInputBuffer/
+        // QueryOutputBuffer 的 20ms 超时会让它快速返回并检查循环条件）。
+        // 注意：不能在解码线程还在运行时调用 OH_AudioCodec_Stop，否则会与解码线程
+        // 正在执行的 QueryInputBuffer/QueryOutputBuffer 并发，导致解码器进入非同步状态
+        // 而解码线程仍在其内部访问，造成 "not in sync mode" 疯狂刷屏。
+        if (decoderThread_.joinable()) {
+            const auto joinStart = std::chrono::steady_clock::now();
+            decoderThread_.join();
+            const auto joinMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - joinStart).count();
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "decoder thread joined elapsedMs=%{public}lld", static_cast<long long>(joinMs));
+        }
+        if (decoder_ != nullptr) {
+            OH_AudioCodec_Stop(decoder_);
+        }
         if (renderer_ != nullptr) {
             OH_AudioRenderer_Pause(renderer_);
             OH_AudioRenderer_Flush(renderer_);
             OH_AudioRenderer_Stop(renderer_);
-        }
-        if (decoderThread_.joinable()) {
-            decoderThread_.join();
         }
         if (renderer_ != nullptr) {
             OH_AudioRenderer_Release(renderer_);
@@ -423,7 +442,6 @@ public:
             engine_ = nullptr;
         }
         if (decoder_ != nullptr) {
-            OH_AudioCodec_Stop(decoder_);
             OH_AudioCodec_Destroy(decoder_);
             decoder_ = nullptr;
         }
@@ -610,7 +628,7 @@ private:
         for (size_t i = 0; i < bands.size(); i++) {
             matched = matched && current.gains[i] == bands[i];
         }
-        OH_LOG_Print(LOG_APP, matched ? LOG_INFO : LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+        OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "equalizer bands applied matched=%{public}d bypassed=%{public}d requested=%{public}d,%{public}d,"
             "%{public}d,%{public}d,%{public}d,%{public}d,%{public}d,%{public}d,%{public}d,%{public}d "
             "actual=%{public}d,%{public}d,%{public}d,%{public}d,%{public}d,%{public}d,%{public}d,%{public}d,"
@@ -693,6 +711,9 @@ private:
             return false;
         }
         OH_AVFormat_SetIntValue(trackFormat_, OH_MD_KEY_AUDIO_SAMPLE_FORMAT, SAMPLE_S16LE);
+        // QueryInputBuffer/QueryOutputBuffer 仅允许在同步模式使用。同步模式必须在
+        // Configure 阶段通过 OH_MD_KEY_ENABLE_SYNC_MODE 显式启用，默认值 0 是异步模式。
+        OH_AVFormat_SetIntValue(trackFormat_, OH_MD_KEY_ENABLE_SYNC_MODE, 1);
         OH_AVErrCode configureResult = OH_AudioCodec_Configure(decoder_, trackFormat_);
         bool configured = configureResult == AV_ERR_OK;
         OH_AVFormat_Destroy(trackFormat_);
@@ -721,9 +742,9 @@ private:
             return false;
         }
         OH_AudioFormat inputFormat = {};
-        inputFormat.samplingRate = static_cast<OH_Audio_SampleRate>(sampleRate_);
-        inputFormat.channelLayout = channelCount_ == 1 ? CH_LAYOUT_MONO : CH_LAYOUT_STEREO;
-        inputFormat.channelCount = static_cast<uint32_t>(channelCount_);
+        inputFormat.samplingRate = SAMPLE_RATE_48000;
+        inputFormat.channelLayout = CH_LAYOUT_STEREO;
+        inputFormat.channelCount = 2;
         inputFormat.encodingType = AUDIO_ENCODING_TYPE_RAW;
         inputFormat.sampleFormat = AUDIO_SAMPLE_S16LE;
         OH_AudioSuiteNodeBuilder_SetNodeType(builder, INPUT_NODE_TYPE_DEFAULT);
@@ -794,6 +815,9 @@ private:
                 {
                     std::lock_guard<std::mutex> lock(queueMutex_);
                     pcmQueue_.clear();
+                    resampleLeft_.clear();
+                    resampleRight_.clear();
+                    resamplePos_ = 0.0;
                 }
                 firstPcmReady_ = false;
                 decoderFailed_ = false;
@@ -805,7 +829,8 @@ private:
             }
             if (!inputEnded) {
                 uint32_t inputIndex = 0;
-                if (OH_AudioCodec_QueryInputBuffer(decoder_, &inputIndex, 20) == AV_ERR_OK) {
+                OH_AVErrCode inputResult = OH_AudioCodec_QueryInputBuffer(decoder_, &inputIndex, 20000);
+                if (inputResult == AV_ERR_OK) {
                     OH_AVBuffer* inputBuffer = OH_AudioCodec_GetInputBuffer(decoder_, inputIndex);
                     if (inputBuffer != nullptr && OH_AVDemuxer_ReadSampleBuffer(
                         demuxer_, trackIndex_, inputBuffer) == AV_ERR_OK) {
@@ -814,10 +839,17 @@ private:
                         inputEnded = (attr.flags & AVCODEC_BUFFER_FLAGS_EOS) != 0;
                         OH_AudioCodec_PushInputBuffer(decoder_, inputIndex);
                     }
+                } else if (inputResult != AV_ERR_TRY_AGAIN_LATER) {
+                    // 解码器异常（如 not in sync mode）时 Query 立即返回错误，这里记录错误码并
+                    // 短暂休眠，避免循环快速重试导致系统疯狂刷屏。
+                    OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                        "decoder QueryInputBuffer failed code=%{public}d stop=%{public}d",
+                        static_cast<int>(inputResult), stopRequested_ ? 1 : 0);
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
                 }
             }
             uint32_t outputIndex = 0;
-            OH_AVErrCode outputResult = OH_AudioCodec_QueryOutputBuffer(decoder_, &outputIndex, 20);
+            OH_AVErrCode outputResult = OH_AudioCodec_QueryOutputBuffer(decoder_, &outputIndex, 20000);
             if (outputResult == AV_ERR_STREAM_CHANGED) {
                 OH_AVFormat* outputFormat = OH_AudioCodec_GetOutputDescription(decoder_);
                 if (outputFormat != nullptr) {
@@ -848,6 +880,12 @@ private:
                     outputEnded = (attr.flags & AVCODEC_BUFFER_FLAGS_EOS) != 0;
                     OH_AudioCodec_FreeOutputBuffer(decoder_, outputIndex);
                 }
+            } else if (outputResult != AV_ERR_TRY_AGAIN_LATER) {
+                // 解码器异常时 Query 立即返回错误，记录错误码并短暂休眠避免刷屏。
+                OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                    "decoder QueryOutputBuffer failed code=%{public}d stop=%{public}d",
+                    static_cast<int>(outputResult), stopRequested_ ? 1 : 0);
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
         }
         if (!stopRequested_) {
@@ -862,16 +900,87 @@ private:
         if (audioData == nullptr || audioDataSize <= 0 || finished == nullptr) {
             return 0;
         }
-        std::lock_guard<std::mutex> lock(queueMutex_);
-        int32_t readSize = std::min<int32_t>(audioDataSize, static_cast<int32_t>(pcmQueue_.size()));
-        uint8_t* destination = static_cast<uint8_t*>(audioData);
-        for (int32_t i = 0; i < readSize; i++) {
-            destination[i] = pcmQueue_.front();
-            pcmQueue_.pop_front();
+        int16_t* out = static_cast<int16_t*>(audioData);
+        int32_t outSamples = audioDataSize / 4; // 立体声 S16LE，每采样点 4 字节
+        int32_t written = 0;
+        const double ratio = static_cast<double>(resampleInputRate_) / static_cast<double>(resampleOutputRate_);
+        // 循环填充，直到写满请求的采样点数或解码结束。
+        // 不能在持有 queueMutex_ 时等待，否则解码线程无法填充 pcmQueue_ 造成死锁。
+        while (written < outSamples) {
+            std::unique_lock<std::mutex> lock(queueMutex_);
+            // 从 pcmQueue_ 读取源采样率 PCM（立体声 S16LE，每采样点 4 字节）到重采样缓冲
+            while (pcmQueue_.size() >= 4 && resampleLeft_.size() < 4096) {
+                int16_t left = static_cast<int16_t>((pcmQueue_[0] & 0xFF) | (pcmQueue_[1] << 8));
+                int16_t right = static_cast<int16_t>((pcmQueue_[2] & 0xFF) | (pcmQueue_[3] << 8));
+                resampleLeft_.push_back(left);
+                resampleRight_.push_back(right);
+                pcmQueue_.pop_front();
+                pcmQueue_.pop_front();
+                pcmQueue_.pop_front();
+                pcmQueue_.pop_front();
+            }
+            // 数据不足且解码未结束：释放锁等待解码线程产出数据（带超时，防止偶发卡死）
+            if (resampleLeft_.size() < 2 && !decodingEnded_.load()) {
+                queueCondition_.wait_for(lock, std::chrono::milliseconds(50), [this]() {
+                    return stopRequested_.load() || decodingEnded_.load() ||
+                        resampleLeft_.size() >= 2 || pcmQueue_.size() >= 4;
+                });
+                if (stopRequested_.load()) {
+                    *finished = true;
+                    return written * 4;
+                }
+                continue;
+            }
+            // 线性插值重采样：源采样率 -> 48000
+            while (written < outSamples && resampleLeft_.size() >= 2) {
+                double pos = resamplePos_;
+                int32_t idx = static_cast<int32_t>(pos);
+                if (idx + 1 >= static_cast<int32_t>(resampleLeft_.size())) {
+                    // resamplePos_ 已指向缓冲末尾，消费掉已越过的采样点后回到缓冲开头继续
+                    int32_t skip = static_cast<int32_t>(resampleLeft_.size()) - 1;
+                    for (int32_t i = 0; i < skip && !resampleLeft_.empty(); i++) {
+                        resampleLeft_.pop_front();
+                        resampleRight_.pop_front();
+                    }
+                    resamplePos_ -= skip;
+                    continue;
+                }
+                double frac = pos - idx;
+                int16_t l0 = resampleLeft_[idx];
+                int16_t l1 = resampleLeft_[idx + 1];
+                int16_t r0 = resampleRight_[idx];
+                int16_t r1 = resampleRight_[idx + 1];
+                out[written * 2] = static_cast<int16_t>(l0 + (l1 - l0) * frac);
+                out[written * 2 + 1] = static_cast<int16_t>(r0 + (r1 - r0) * frac);
+                written++;
+                resamplePos_ += ratio;
+                // 消费已越过的输入采样点
+                int32_t consumed = static_cast<int32_t>(resamplePos_);
+                if (consumed > 0) {
+                    for (int32_t i = 0; i < consumed && !resampleLeft_.empty(); i++) {
+                        resampleLeft_.pop_front();
+                        resampleRight_.pop_front();
+                    }
+                    resamplePos_ -= consumed;
+                }
+            }
+            // 解码结束且缓冲耗尽：标记 finished
+            if (decodingEnded_.load() && pcmQueue_.empty() && resampleLeft_.size() < 2) {
+                *finished = true;
+                queueCondition_.notify_all();
+                return written * 4;
+            }
+            // 若本次未写满但仍有数据可继续，回到循环顶部继续填充
+            if (resampleLeft_.size() < 2 && decodingEnded_.load()) {
+                *finished = true;
+                queueCondition_.notify_all();
+                return written * 4;
+            }
+            queueCondition_.notify_all();
         }
-        *finished = decodingEnded_.load() && pcmQueue_.empty();
+        *finished = false;
         queueCondition_.notify_all();
-        return readSize;
+        return written * 4;
     }
 
     static int32_t InputDataCallback(OH_AudioNode*, void* userData, void* audioData,
@@ -924,6 +1033,9 @@ private:
         OH_AudioSuite_Result result = OH_AudioSuiteEngine_RenderFrame(
             pipeline_, audioData, audioDataSize, &responseSize, &finished);
         if (result != AUDIOSUITE_SUCCESS) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "RenderFrame failed result=%d responseSize=%d finished=%d inputSize=%d",
+                static_cast<int>(result), responseSize, finished ? 1 : 0, audioDataSize);
             return false;
         }
         if (responseSize < audioDataSize) {
@@ -956,7 +1068,7 @@ private:
         measurementPeak_ = std::max(measurementPeak_, peak);
         if (measurementSampleCount_ >= 48000 * 2) {
             double rms = std::sqrt(measurementSquareSum_ / static_cast<double>(measurementSampleCount_));
-            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                 "output level eq=%{public}d peak=%{public}.1f rms=%{public}.1f samples=%{public}llu",
                 equalizerEnabled ? 1 : 0, static_cast<double>(measurementPeak_), rms,
                 static_cast<unsigned long long>(measurementSampleCount_));
@@ -1058,6 +1170,12 @@ private:
     std::mutex pcmCallbackMutex_;
     std::mutex effectMutex_;
     napi_threadsafe_function pcmCaptureFunction_ = nullptr;
+    // 重采样状态：解码器输出源采样率 PCM，均衡器管线固定 48000
+    double resamplePos_ = 0.0;
+    int32_t resampleInputRate_ = 44100;
+    int32_t resampleOutputRate_ = 48000;
+    std::deque<int16_t> resampleLeft_ = {};
+    std::deque<int16_t> resampleRight_ = {};
 };
 
 napi_value BooleanValue(napi_env env, bool value)

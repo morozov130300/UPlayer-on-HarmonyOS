@@ -332,7 +332,7 @@ struct SettingsDetailPage {
     this.settings = this.settings
     const applied: boolean = this.avPlayerService.updateEqualizerBands(bands)
     if (!applied && (mode === SliderChangeMode.End || mode === SliderChangeMode.Click)) {
-      Logger.warn(TAG, `equalizer change not applied by native backend index=${bandIndex} value=${bands[bandIndex]}`)
+      Logger.error(TAG, `equalizer change not applied by native backend index=${bandIndex} value=${bands[bandIndex]}`)
     }
     if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
       this.updateSetting()

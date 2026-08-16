@@ -24,6 +24,8 @@ export struct AlbumCover {
   }
 
   private onSongChange(): void {
+    this.requestId++
+    this.releaseCover()
     this.load()
   }
 
@@ -31,17 +33,23 @@ export struct AlbumCover {
     const requestId: number = ++this.requestId
     const songId: string = this.song.id
     const songPath: string = this.song.uri.length > 0 ? this.song.uri : this.song.filePath
-    const loaded: AlbumCoverLease | undefined =
-      await AudioMetadataService.getInstance().acquireAlbumCover(this.song, this.decodeSize)
-    const currentPath: string = this.song.uri.length > 0 ? this.song.uri : this.song.filePath
-    if (requestId !== this.requestId || songId !== this.song.id || songPath !== currentPath) {
-      loaded?.release()
-      return
+    try {
+      const loaded: AlbumCoverLease | undefined =
+        await AudioMetadataService.getInstance().acquireAlbumCover(this.song, this.decodeSize)
+      const currentPath: string = this.song.uri.length > 0 ? this.song.uri : this.song.filePath
+      if (requestId !== this.requestId || songId !== this.song.id || songPath !== currentPath) {
+        loaded?.release()
+        return
+      }
+      const previousLease: AlbumCoverLease | undefined = this.coverLease
+      this.coverLease = loaded
+      this.cover = loaded?.pixelMap
+      previousLease?.release()
+    } catch (_) {
+      if (requestId === this.requestId) {
+        this.releaseCover()
+      }
     }
-    const previousLease: AlbumCoverLease | undefined = this.coverLease
-    this.coverLease = loaded
-    this.cover = loaded?.pixelMap
-    previousLease?.release()
   }
 
   private releaseCover(): void {
