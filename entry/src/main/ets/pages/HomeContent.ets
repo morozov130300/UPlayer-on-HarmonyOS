@@ -321,7 +321,7 @@ export struct HomeContent {
         Row() {
           Row() {
              Text(this.getFilterLabel())
-               .fontSize(14)
+               .fontSize(Math.round(14 * this.fontSizeScale))
                .fontColor($r('app.color.text_primary'))
                .fontWeight(FontWeight.Bold)
            }
@@ -337,7 +337,7 @@ export struct HomeContent {
               .width(16).height(16)
               .fillColor($r('app.color.text_primary'))
             Text(this.getSortLabel())
-              .fontSize(12)
+              .fontSize(Math.round(12 * this.fontSizeScale))
               .fontColor($r('app.color.text_primary'))
               .margin({ left: 4 })
           }
@@ -348,7 +348,7 @@ export struct HomeContent {
 
           Row() {
             Text(this.viewMode === 'flat' ? '平铺' : '文件夹')
-              .fontSize(12)
+              .fontSize(Math.round(12 * this.fontSizeScale))
               .fontColor($r('app.color.text_primary'))
           }
           .padding({ left: 10, right: 10, top: 6, bottom: 6 })
@@ -395,7 +395,7 @@ export struct HomeContent {
 
         if (this.displayItems.length === 0) {
           Text('暂无歌曲，点击添加')
-            .fontSize(14)
+            .fontSize(Math.round(14 * this.fontSizeScale))
             .fontColor($r('app.color.text_twenty_color'))
             .width('100%')
             .height(200)
@@ -406,21 +406,21 @@ export struct HomeContent {
         if (this.isMultiSelectMode) {
           Row() {
             Text('已选 ' + this.selectedIds.length + ' 首')
-              .fontSize(14)
+              .fontSize(Math.round(14 * this.fontSizeScale))
               .fontColor($r('app.color.text_primary'))
             Blank()
             Text(this.isAllSelected() ? '取消全选' : '全选')
-              .fontSize(14)
+              .fontSize(Math.round(14 * this.fontSizeScale))
               .fontColor(this.primaryColor)
               .margin({ right: 16 })
               .onClick(() => { this.toggleSelectAll() })
             Text('取消')
-              .fontSize(14)
+              .fontSize(Math.round(14 * this.fontSizeScale))
               .fontColor(this.primaryColor)
               .margin({ right: 16 })
               .onClick(() => { this.exitMultiSelect() })
             Text('删除')
-              .fontSize(14)
+              .fontSize(Math.round(14 * this.fontSizeScale))
               .fontColor('#FF3B30')
               .onClick(() => { this.deleteSelected() })
           }
@@ -461,7 +461,7 @@ export struct HomeContent {
   folderHeaderRow(title: string): void {
     Row() {
       Text(title)
-        .fontSize(13)
+        .fontSize(Math.round(13 * this.fontSizeScale))
         .fontColor($r('app.color.text_sixty_color'))
         .fontWeight(FontWeight.Medium)
         .padding({ left: 16, top: 12, bottom: 4 })
@@ -477,7 +477,7 @@ export struct HomeContent {
         Row() {
           if (this.isSelected(item.id)) {
             Text('✓')
-              .fontSize(14)
+              .fontSize(Math.round(14 * this.fontSizeScale))
               .fontColor('#FFFFFF')
               .fontWeight(FontWeight.Bold)
           }
@@ -539,7 +539,7 @@ export struct HomeContent {
       if (item.isAvailable) {
         Row() {
           SymbolGlyph($r('sys.symbol.list_bullet'))
-            .fontSize(18)
+            .fontSize(Math.round(18 * this.fontSizeScale))
             .renderingStrategy(SymbolRenderingStrategy.SINGLE)
             .fontColor([$r('app.color.text_sixty_color')])
             .hitTestBehavior(HitTestMode.Block)

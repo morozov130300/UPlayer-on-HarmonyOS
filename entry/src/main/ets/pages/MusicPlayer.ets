@@ -18,7 +18,6 @@ struct MusicPlayer {
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF';
   @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0;
   private shareService: ShareService = ShareService.getInstance();
-  @StorageLink(AppStorageKeyConstants.KEY_TOP_HEIGHT) topSafeHeight: number = 0;
 
   async aboutToAppear() {
     this.isLoading = false;

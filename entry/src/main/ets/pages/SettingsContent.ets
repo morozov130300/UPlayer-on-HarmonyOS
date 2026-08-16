@@ -17,8 +17,8 @@ interface SettingCategory {
 export struct SettingsContent {
   @State settings: AppSettingsData = new AppSettingsData()
   @StorageLink(KEY_PRIMARY_COLOR) primaryColor: string = '#007DFF'
-  @StorageLink(AppStorageKeyConstants.KEY_TOP_HEIGHT) topSafeHeight: number = 0
   @StorageLink(AppStorageKeyConstants.KEY_TITLE_BUTTON_WIDTH) titleButtonWidth: number = 0
+  @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
   private dataService: DataService = DataService.getInstance()
   private categories: SettingCategory[] = [
     { title: '定制', description: '界面布局、主题配色等个性化选项', route: 'customize' },
@@ -63,7 +63,7 @@ export struct SettingsContent {
     Column() {
       Row() {
         Text('设置')
-          .fontSize(18)
+          .fontSize(Math.round(18 * this.fontSizeScale))
           .fontColor(this.settingTextColor())
           .fontWeight(FontWeight.Bold)
       }
@@ -74,12 +74,12 @@ export struct SettingsContent {
         ForEach(this.categories, (cat: SettingCategory) => {
           Column() {
             Text(cat.title)
-              .fontSize(16)
+              .fontSize(Math.round(16 * this.fontSizeScale))
               .fontColor(this.settingTextColor())
               .fontWeight(FontWeight.Medium)
               .width('100%')
             Text(cat.description)
-              .fontSize(12)
+              .fontSize(Math.round(12 * this.fontSizeScale))
               .fontColor(this.settingSubTextColor())
               .width('100%')
               .margin({ top: 3 })

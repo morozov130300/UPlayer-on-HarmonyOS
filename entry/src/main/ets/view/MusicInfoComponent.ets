@@ -19,6 +19,7 @@ export struct MusicInfoComponent {
   @State favoriteScale: number = 1.0;
   @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) isPlay: boolean = false;
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF';
+  @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0;
   @State glowRotation: number = 0;
   @State glowTimer: number = -1;
   @State coverArtFailed: boolean = false;
@@ -137,7 +138,7 @@ export struct MusicInfoComponent {
         Row() {
           Text(this.songList && this.selectIndex >= 0 && this.selectIndex < this.songList.length ?
             this.songList[this.selectIndex].title : '')
-            .fontSize($r('app.float.title_font_play'))
+            .fontSize(Math.round(24 * this.fontSizeScale))
             .fontColor(Color.White).opacity(0.86)
             .fontWeight(FontWeight.Bold)
             .fontFamily(PlayerConstants.FONT_FAMILY_BOLD)
@@ -149,7 +150,7 @@ export struct MusicInfoComponent {
           Text(this.songList && this.selectIndex >= 0 && this.selectIndex < this.songList.length ?
             this.songList[this.selectIndex].artist : '')
             .textAlign(TextAlign.Start)
-            .fontSize(16)
+            .fontSize(Math.round(16 * this.fontSizeScale))
             .fontColor($r('app.color.play_text_color'))
             .fontFamily(PlayerConstants.FONT_FAMILY_BLACK)
             .fontWeight(FontWeight.Regular)

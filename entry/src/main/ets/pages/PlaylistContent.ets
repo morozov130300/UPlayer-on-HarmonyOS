@@ -23,7 +23,6 @@ export struct PlaylistContent {
   @State lastScrollY: number = 0
   @State selectedFolderPaths: string[] = []
   @State favoritesSelected: boolean = false
-  @StorageLink(AppStorageKeyConstants.KEY_TOP_HEIGHT) topSafeHeight: number = 0
   @StorageLink(AppStorageKeyConstants.KEY_TITLE_BUTTON_WIDTH) titleButtonWidth: number = 0
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
@@ -232,7 +231,7 @@ export struct PlaylistContent {
             .fontWeight(FontWeight.Bold)
           Blank()
           Text(this.sortModeLabel())
-            .fontSize(12)
+            .fontSize(Math.round(12 * this.fontSizeScale))
             .fontColor($r('app.color.text_sixty_color'))
             .onClick(() => { this.cycleSortMode() })
         }
@@ -247,7 +246,7 @@ export struct PlaylistContent {
                   Row() {
                     if (this.isEditSelected(FAVORITES_FOLDER_ID)) {
                       Text('✓')
-                        .fontSize(12)
+                        .fontSize(Math.round(12 * this.fontSizeScale))
                         .fontColor('#FFFFFF')
                         .fontWeight(FontWeight.Bold)
                     }
@@ -348,12 +347,12 @@ export struct PlaylistContent {
               .fontColor($r('app.color.text_primary'))
             Blank()
             Text('取消')
-              .fontSize(14)
+              .fontSize(Math.round(14 * this.fontSizeScale))
               .fontColor(this.primaryColor)
               .margin({ right: 16 })
               .onClick(() => { this.exitEditMode() })
             Text('删除')
-              .fontSize(14)
+              .fontSize(Math.round(14 * this.fontSizeScale))
               .fontColor('#FF3B30')
               .onClick(() => { this.deleteEditSelected() })
           }
@@ -397,7 +396,7 @@ export struct PlaylistContent {
         Row() {
           if (this.isEditSelected(item.id)) {
             Text('✓')
-              .fontSize(12)
+              .fontSize(Math.round(12 * this.fontSizeScale))
               .fontColor('#FFFFFF')
               .fontWeight(FontWeight.Bold)
           }
@@ -415,7 +414,7 @@ export struct PlaylistContent {
         .fillColor($r('app.color.text_sixty_color'))
         .margin({ bottom: 6 })
       Text(item.name)
-        .fontSize(12)
+        .fontSize(Math.round(12 * this.fontSizeScale))
         .fontColor($r('app.color.text_primary'))
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
