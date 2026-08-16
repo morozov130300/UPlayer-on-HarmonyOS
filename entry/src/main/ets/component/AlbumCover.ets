@@ -1,6 +1,6 @@
 import { image } from '@kit.ImageKit'
 import { SongInfo } from '../model/SongInfo'
-import { AudioMetadataService } from '../service/AudioMetadataService'
+import { AlbumCoverLease, AlbumCoverSize, AudioMetadataService } from '../service/AudioMetadataService'
 
 @Component
 export struct AlbumCover {
@@ -9,7 +9,9 @@ export struct AlbumCover {
   @Prop coverHeight: Length = 48
   @Prop coverRadius: Length = 0
   @Prop fit: ImageFit = ImageFit.Cover
+  @Prop decodeSize: number = AlbumCoverSize.SMALL
   @State cover: image.PixelMap | undefined = undefined
+  private coverLease: AlbumCoverLease | undefined = undefined
   private requestId: number = 0
 
   aboutToAppear(): void {
@@ -29,23 +31,23 @@ export struct AlbumCover {
     const requestId: number = ++this.requestId
     const songId: string = this.song.id
     const songPath: string = this.song.uri.length > 0 ? this.song.uri : this.song.filePath
-    this.releaseCover()
-    const loaded: image.PixelMap | undefined = await AudioMetadataService.getInstance().fetchAlbumCover(this.song)
+    const loaded: AlbumCoverLease | undefined =
+      await AudioMetadataService.getInstance().acquireAlbumCover(this.song, this.decodeSize)
     const currentPath: string = this.song.uri.length > 0 ? this.song.uri : this.song.filePath
     if (requestId !== this.requestId || songId !== this.song.id || songPath !== currentPath) {
-      if (loaded !== undefined) {
-        loaded.release()
-      }
+      loaded?.release()
       return
     }
-    this.cover = loaded
+    const previousLease: AlbumCoverLease | undefined = this.coverLease
+    this.coverLease = loaded
+    this.cover = loaded?.pixelMap
+    previousLease?.release()
   }
 
   private releaseCover(): void {
-    if (this.cover !== undefined) {
-      this.cover.release()
-      this.cover = undefined
-    }
+    this.cover = undefined
+    this.coverLease?.release()
+    this.coverLease = undefined
   }
 
   build() {

@@ -6,6 +6,7 @@ import { fileIo as fs, fileShare } from '@kit.CoreFileKit'
 import Logger from '../common/utils/Logger'
 import { common } from '@kit.AbilityKit'
 import { AudioMetadataService } from './AudioMetadataService'
+import { MusicPlayMode } from '../common/constants/PlayerConstants'
 
 const TAG = 'DataService'
 
@@ -17,6 +18,7 @@ const KEY_VIEW_MODE: string = 'uplayer_view_mode'
 const KEY_SELECTED_FOLDERS: string = 'uplayer_selected_folders'
 const KEY_FAVORITES_SELECTED: string = 'uplayer_favorites_selected'
 const KEY_PLAY_NEXT_QUEUE: string = 'uplayer_play_next_queue'
+const KEY_PLAY_MODE: string = 'uplayer_play_mode'
 const EQUALIZER_MIN_GAIN_DB: number = -10
 const EQUALIZER_MAX_GAIN_DB: number = 10
 

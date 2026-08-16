@@ -8,6 +8,7 @@ import { DisplayItemDataSource } from '../viewmodel/DisplayItemDataSource'
 import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { AlbumCover } from '../component/AlbumCover'
+import { AlbumCoverSize, AudioMetadataService } from '../service/AudioMetadataService'
 
 const TAG = 'HomeContent'
 
@@ -122,6 +123,7 @@ export struct HomeContent {
     }
     this.displayItems = items
     this.displayDataSource.reloadData(items)
+    this.prefetchDisplayRange(0, Math.min(items.length - 1, 10))
   }
 
   sortSongs(songs: SongInfo[]): SongInfo[] {
@@ -320,6 +322,20 @@ export struct HomeContent {
     return '自定义'
   }
 
+  private prefetchDisplayRange(start: number, end: number): void {
+    if (this.displayItems.length === 0) {
+      return
+    }
+    const songs: SongInfo[] = []
+    const from: number = Math.max(0, start - 4)
+    const to: number = Math.min(this.displayItems.length - 1, end + 8)
+    for (let i = from; i <= to; i++) {
+      const item: DisplayItem = this.displayItems[i]
+      if (!item.isHeader) songs.push(item.song)
+    }
+    AudioMetadataService.getInstance().prefetchAlbumCovers(songs, AlbumCoverSize.SMALL)
+  }
+
   @State lastScrollY: number = 0
 
   build() {
@@ -396,6 +412,10 @@ export struct HomeContent {
           .width('100%')
           .height('100%')
           .edgeEffect(EdgeEffect.Spring)
+          .cachedCount(8)
+          .onScrollIndex((start: number, end: number) => {
+            this.prefetchDisplayRange(start, end)
+          })
           .onDidScroll(() => {
             const offset = this.scroller.currentOffset()
             const yOffset: number = offset.yOffset
@@ -510,7 +530,7 @@ export struct HomeContent {
       }
 
       AlbumCover({ song: item, coverWidth: this.scaledSize(36), coverHeight: this.scaledSize(36),
-        coverRadius: this.scaledSize(6) })
+        coverRadius: this.scaledSize(6), decodeSize: AlbumCoverSize.SMALL })
         .margin({ right: this.scaledSize(10) })
         .opacity(item.isAvailable ? 1 : 0.35)
 

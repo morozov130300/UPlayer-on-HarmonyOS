@@ -13,7 +13,6 @@ import { AVPlayerService } from '../service/AVPlayerService';
 import { DataService } from '../service/DataService';
 import { ColorHelper } from '../common/utils/ColorHelper';
 import { common } from '@kit.AbilityKit';
-import { PreferencesUtil } from '../common/utils/PreferencesUtil';
 import { MediaTools } from '../common/utils/mediautils/MediaTools';
 import { WindowInfo } from '../common/utils/WindowUtil';
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
@@ -74,6 +73,7 @@ export struct ControlAreaComponent {
       this.playNext();
     };
     this.songDataSource.reloadData(this.songList);
+    this.syncPlayModeIndex();
     this.syncSystemVolume();
   }
 

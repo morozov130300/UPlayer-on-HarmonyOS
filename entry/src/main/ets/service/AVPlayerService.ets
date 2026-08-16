@@ -10,6 +10,8 @@ import { BackgroundUtil } from '../common/utils/BackgroundUtil'
 import { LiveViewService } from '../service/LiveViewService'
 import nativeAudio from 'libuplayer.so'
 import { SongInfo } from '../model/SongInfo'
+import { AlbumCoverSize, AudioMetadataService } from './AudioMetadataService'
+import { DataService } from './DataService'
 
 const TAG = 'AVPlayerService'
 
@@ -180,6 +182,7 @@ export class AVPlayerService {
   }
 
   async playSong(song: SongInfo, index: number): Promise<void> {
+    this.prefetchSongCovers(index)
     AppStorage.setOrCreate('uplayer_current_title', song.title.length > 0 ? song.title : song.name)
     AppStorage.setOrCreate('uplayer_current_artist', song.artist)
     AppStorage.setOrCreate('uplayer_current_album_art', song.albumArtPath)
@@ -191,6 +194,21 @@ export class AVPlayerService {
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TOTAL_TIME, this.formatTime(song.duration))
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, index)
     await this.play(song.uri.length > 0 ? song.uri : song.filePath)
+  }
+
+  private prefetchSongCovers(index: number): void {
+    const songs: SongInfo[] = DataService.getInstance().getSongs()
+    if (songs.length === 0 || index < 0 || index >= songs.length) {
+      return
+    }
+    const previousIndex: number = index <= 0 ? songs.length - 1 : index - 1
+    const nextIndex: number = index >= songs.length - 1 ? 0 : index + 1
+    const covers: AudioMetadataService = AudioMetadataService.getInstance()
+    covers.prefetchAlbumCover(songs[index], AlbumCoverSize.LARGE)
+    if (previousIndex !== index) covers.prefetchAlbumCover(songs[previousIndex], AlbumCoverSize.LARGE)
+    if (nextIndex !== index && nextIndex !== previousIndex) {
+      covers.prefetchAlbumCover(songs[nextIndex], AlbumCoverSize.LARGE)
+    }
   }
 
   private async stopAvPlayerForNative(requestId: number): Promise<void> {

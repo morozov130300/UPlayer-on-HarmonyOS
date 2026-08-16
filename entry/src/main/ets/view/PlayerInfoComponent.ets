@@ -13,7 +13,7 @@ import { ColorConversion } from '../common/utils/ColorConversion';
 import { WindowInfo } from '../common/utils/WindowUtil';
 import { PromptActionClassNew } from '../viewmodel/PromptActionClassNew';
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
-import { AudioMetadataService } from '../service/AudioMetadataService';
+import { AlbumCoverLease, AlbumCoverSize, AudioMetadataService } from '../service/AudioMetadataService';
 
 const TAG = 'PlayerInfoComponent'
 
@@ -43,6 +43,7 @@ export struct PlayerInfoComponent {
   @State currentSwiperIndex: number = 0;
   private context: common.UIAbilityContext | undefined = AppStorage.get(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT);
   private imageLoadRequestId: number = 0;
+  private backgroundCoverLease: AlbumCoverLease | undefined = undefined;
 
   bottomHeightChange() {
   }
@@ -69,6 +70,9 @@ export struct PlayerInfoComponent {
 
   aboutToDisappear(): void {
     clearInterval(this.intervalID);
+    this.imageLoadRequestId++;
+    this.backgroundCoverLease?.release();
+    this.backgroundCoverLease = undefined;
   }
 
   build() {
