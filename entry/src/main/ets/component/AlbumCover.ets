@@ -27,14 +27,17 @@ export struct AlbumCover {
 
   private async load(): Promise<void> {
     const requestId: number = ++this.requestId
+    const songId: string = this.song.id
+    const songPath: string = this.song.uri.length > 0 ? this.song.uri : this.song.filePath
+    this.releaseCover()
     const loaded: image.PixelMap | undefined = await AudioMetadataService.getInstance().fetchAlbumCover(this.song)
-    if (requestId !== this.requestId) {
+    const currentPath: string = this.song.uri.length > 0 ? this.song.uri : this.song.filePath
+    if (requestId !== this.requestId || songId !== this.song.id || songPath !== currentPath) {
       if (loaded !== undefined) {
         loaded.release()
       }
       return
     }
-    this.releaseCover()
     this.cover = loaded
   }
 
