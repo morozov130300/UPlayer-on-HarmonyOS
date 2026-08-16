@@ -89,6 +89,10 @@ struct MainPage {
     return false
   }
 
+  private selectedTabContentColor(): ResourceColor {
+    return this.isDarkTheme() ? '#FFFFFF' : ColorHelper.darken(this.primaryColor, 0.35)
+  }
+
   private topContentInset(): number {
     return this.isPC ? Math.max(this.topSafeHeight, this.titleButtonHeight) : this.topSafeHeight
   }
@@ -249,7 +253,7 @@ struct MainPage {
     Column() {
       Image(icon)
         .height(this.scaledSize(18))
-        .fillColor(this.currentIndex === index ? $r('app.color.tab_content_primary') :
+        .fillColor(this.currentIndex === index ? this.selectedTabContentColor() :
           $r('app.color.tab_content_secondary'))
         .scale({
           x: this.currentIndex === index ? 1.15 : 1.0,
@@ -257,7 +261,7 @@ struct MainPage {
         })
       Text(name)
         .fontSize(9)
-        .fontColor(this.currentIndex === index ? $r('app.color.tab_content_primary') :
+        .fontColor(this.currentIndex === index ? this.selectedTabContentColor() :
           $r('app.color.tab_content_secondary'))
         .margin({ top: this.scaledSize(2) })
     }
@@ -284,7 +288,7 @@ struct MainPage {
     Column() {
       Image(icon)
         .height(this.scaledSize(18))
-        .fillColor(this.currentIndex === index ? $r('app.color.tab_content_primary') :
+        .fillColor(this.currentIndex === index ? this.selectedTabContentColor() :
           $r('app.color.tab_content_secondary'))
         .scale({
           x: this.currentIndex === index ? 1.15 : 1.0,
@@ -292,7 +296,7 @@ struct MainPage {
         })
       Text(name)
         .fontSize(9)
-        .fontColor(this.currentIndex === index ? $r('app.color.tab_content_primary') :
+        .fontColor(this.currentIndex === index ? this.selectedTabContentColor() :
           $r('app.color.tab_content_secondary'))
         .margin({ top: this.scaledSize(2) })
     }
