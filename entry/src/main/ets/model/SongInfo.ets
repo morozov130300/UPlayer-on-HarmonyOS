@@ -17,7 +17,8 @@ export class SongInfo {
   addedTime: number = Date.now()  // 添加时间戳
   isFavorite: boolean = false // 是否收藏
   isAvailable: boolean = true // 文件是否可用
-  lyricPath: string = ''      // 歌词文件路径
+  lyricPath: string = ''      // 歌词文件路径（解码后）
+  lyricUri: string = ''       // 歌词文件URI（原始编码，用于权限操作和文件读取）
 
   // 生成唯一ID
   static createId(): string {
@@ -59,6 +60,8 @@ export class SongInfo {
     const pathDotIdx: number = decodedPath.lastIndexOf('.')
     const lyricPath: string = pathDotIdx > 0 ? decodedPath.substring(0, pathDotIdx) + '.lrc' : ''
     song.lyricPath = lyricPath
+    const uriDotIdx: number = filePath.lastIndexOf('.')
+    song.lyricUri = uriDotIdx > 0 ? filePath.substring(0, uriDotIdx) + '.lrc' : ''
     return song
   }
 }

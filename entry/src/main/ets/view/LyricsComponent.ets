@@ -40,20 +40,22 @@ export struct LyricsComponent {
       return;
     }
     const song: SongInfo = this.songList[this.selectIndex];
-    if (!song.lyricPath || song.lyricPath.length === 0) {
+    if ((!song.lyricUri || song.lyricUri.length === 0) && (!song.lyricPath || song.lyricPath.length === 0)) {
       return;
     }
     try {
-      const file: fs.File = fs.openSync(song.lyricPath, fs.OpenMode.READ_ONLY);
-      const stat = fs.statSync(song.lyricPath);
+      const lyricAccessPath: string = song.lyricUri.length > 0 ? song.lyricUri : song.lyricPath
+      const file: fs.File = fs.openSync(lyricAccessPath, fs.OpenMode.READ_ONLY);
+      const stat = fs.statSync(lyricAccessPath);
       const buffer: ArrayBuffer = new ArrayBuffer(stat.size);
       fs.readSync(file.fd, buffer);
       fs.closeSync(file);
       const textDecoder = util.TextDecoder.create(PlayerConstants.ENCODING, { ignoreBOM: true });
       const stringData: string = textDecoder.decodeToString(new Uint8Array(buffer), { stream: false });
-      if (song.lyricPath.endsWith(LyricFile.KRC)) {
+      const lyricCheckPath: string = song.lyricPath.length > 0 ? song.lyricPath : song.lyricUri
+      if (lyricCheckPath.endsWith(LyricFile.KRC)) {
         this.mLrcEntryList = parseKrcLyric(stringData);
-      } else if (song.lyricPath.endsWith(LyricFile.LRC)) {
+      } else if (lyricCheckPath.endsWith(LyricFile.LRC)) {
         this.mLrcEntryList = parseLrcLyric(stringData);
       }
       Logger.info('mLrcEntryList', `mLrcEntryList: ${JSON.stringify(this.mLrcEntryList)}`);

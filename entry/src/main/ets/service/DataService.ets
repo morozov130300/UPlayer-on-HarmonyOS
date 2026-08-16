@@ -96,6 +96,7 @@ export class DataService {
     r['isFavorite'] = song.isFavorite
     r['isAvailable'] = song.isAvailable
     r['lyricPath'] = song.lyricPath
+    r['lyricUri'] = song.lyricUri
     return r
   }
 
@@ -128,6 +129,8 @@ export class DataService {
     song.isFavorite = r['isFavorite'] as boolean
     song.isAvailable = r['isAvailable'] as boolean
     song.lyricPath = r['lyricPath'] as string
+    let rawLyricUri: Object | undefined = r['lyricUri']
+    song.lyricUri = rawLyricUri !== undefined ? rawLyricUri as string : ''
     return song
   }
 
@@ -465,7 +468,14 @@ export class DataService {
       } catch (e) {
         songs[i].isAvailable = false
       }
-      if (songs[i].lyricPath.length > 0) {
+      if (songs[i].lyricUri.length > 0) {
+        try {
+          fs.accessSync(songs[i].lyricUri)
+        } catch (e) {
+          songs[i].lyricPath = ''
+          songs[i].lyricUri = ''
+        }
+      } else if (songs[i].lyricPath.length > 0) {
         try {
           fs.accessSync(songs[i].lyricPath)
         } catch (e) {
@@ -518,6 +528,9 @@ export class DataService {
       const uri: string = songs[i].uri
       if (uri.length > 0) {
         uris.push(uri)
+      }
+      if (songs[i].lyricUri.length > 0) {
+        uris.push(songs[i].lyricUri)
       }
     }
     if (uris.length === 0) {
