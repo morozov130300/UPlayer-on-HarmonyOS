@@ -41,6 +41,7 @@ struct PlayAsyncContext {
     napi_deferred deferred = nullptr;
     int32_t fd = -1;
     int64_t size = 0;
+    int64_t startPositionMs = 0;
     uint64_t requestId = 0;
     bool result = false;
 };
@@ -248,9 +249,12 @@ public:
         return result == AUDIOSUITE_SUCCESS && supported;
     }
 
-    bool Play(int32_t fd, int64_t size)
+    bool Play(int32_t fd, int64_t size, int64_t startPositionMs, uint64_t requestId)
     {
         Stop();
+        if (requestId != latestPlayRequest.load()) {
+            return false;
+        }
         sourceFd_ = dup(fd);
         if (sourceFd_ < 0) {
             OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG, "dup fd failed");
@@ -260,6 +264,10 @@ public:
         if (source_ == nullptr) {
             OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG, "create source failed");
             ReleaseSource();
+            return false;
+        }
+        if (requestId != latestPlayRequest.load()) {
+            Stop();
             return false;
         }
         demuxer_ = OH_AVDemuxer_CreateWithSource(source_);
@@ -272,14 +280,29 @@ public:
             Stop();
             return false;
         }
+        if (requestId != latestPlayRequest.load()) {
+            Stop();
+            return false;
+        }
         stopRequested_ = false;
         paused_ = false;
         completed_ = false;
         currentPositionMs_ = 0;
         firstPcmReady_ = false;
         decoderFailed_ = false;
+        if (startPositionMs > 0) {
+            int64_t targetPositionMs = std::min(startPositionMs, durationMs_.load());
+            OH_AVErrCode seekResult = OH_AVDemuxer_SeekToTime(demuxer_, targetPositionMs, SEEK_MODE_CLOSEST_SYNC);
+            if (seekResult != AV_ERR_OK) {
+                OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                    "initial seek failed code=%{public}d position=%{public}lld", seekResult,
+                    static_cast<long long>(targetPositionMs));
+                Stop();
+                return false;
+            }
+            currentPositionMs_ = targetPositionMs;
+        }
         activeEqEnabled_ = requestedEqEnabled_.load();
-        switchPhase_ = 0;
         decoderThread_ = std::thread(&NativeAudioPlayer::DecoderLoop, this);
         {
             std::unique_lock<std::mutex> lock(queueMutex_);
@@ -330,9 +353,15 @@ public:
         return true;
     }
 
-    void Stop()
+    void RequestStop()
     {
         stopRequested_ = true;
+        queueCondition_.notify_all();
+    }
+
+    void Stop()
+    {
+        RequestStop();
         {
             std::lock_guard<std::mutex> lock(queueMutex_);
             pcmQueue_.clear();
@@ -407,9 +436,6 @@ public:
         requestedEqEnabled_ = enabled;
         if (renderer_ == nullptr) {
             activeEqEnabled_ = enabled;
-            switchPhase_ = 0;
-        } else if (activeEqEnabled_ != enabled) {
-            switchPhase_ = 1;
         }
         return true;
     }
@@ -679,6 +705,8 @@ private:
                     std::lock_guard<std::mutex> lock(queueMutex_);
                     pcmQueue_.clear();
                 }
+                firstPcmReady_ = false;
+                decoderFailed_ = false;
                 currentPositionMs_ = seekPosition;
                 inputEnded = false;
                 completed_ = false;
@@ -775,21 +803,13 @@ private:
         bool useEqualizer = player->activeEqEnabled_.load();
         if (!player->RenderAudio(audioData, audioDataSize, useEqualizer)) {
             std::memset(audioData, 0, static_cast<size_t>(audioDataSize));
-            player->switchPhase_ = 0;
+            player->decoderFailed_ = true;
+            player->paused_ = true;
             OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                "render frame failed; returned silence and kept renderer alive");
+                "render frame failed; marked native playback failed");
             return AUDIO_DATA_CALLBACK_RESULT_VALID;
         }
         player->MeasureOutput(audioData, audioDataSize, useEqualizer);
-        int32_t phase = player->switchPhase_.load();
-        if (phase == 1) {
-            player->ApplyGainRamp(audioData, audioDataSize, 1.0f, 0.0f);
-            player->activeEqEnabled_ = player->requestedEqEnabled_.load();
-            player->switchPhase_ = 2;
-        } else if (phase == 2) {
-            player->ApplyGainRamp(audioData, audioDataSize, 0.0f, 1.0f);
-            player->switchPhase_ = 0;
-        }
         return AUDIO_DATA_CALLBACK_RESULT_VALID;
     }
 
@@ -853,20 +873,6 @@ private:
             measurementSquareSum_ = 0.0;
             measurementSampleCount_ = 0;
             measurementPeak_ = 0;
-        }
-    }
-
-    void ApplyGainRamp(void* audioData, int32_t audioDataSize, float startGain, float endGain)
-    {
-        int16_t* samples = static_cast<int16_t*>(audioData);
-        int32_t sampleCount = audioDataSize / static_cast<int32_t>(sizeof(int16_t));
-        if (sampleCount <= 0) {
-            return;
-        }
-        for (int32_t i = 0; i < sampleCount; i++) {
-            float progress = static_cast<float>(i) / static_cast<float>(sampleCount);
-            float gain = startGain + (endGain - startGain) * progress;
-            samples[i] = static_cast<int16_t>(static_cast<float>(samples[i]) * gain);
         }
     }
 
@@ -953,7 +959,6 @@ private:
     std::atomic<int64_t> durationMs_ = 0;
     std::atomic<bool> requestedEqEnabled_ = false;
     std::atomic<bool> activeEqEnabled_ = false;
-    std::atomic<int32_t> switchPhase_ = 0;
     float playbackSpeed_ = 1.0f;
     float volume_ = 1.0f;
     double measurementSquareSum_ = 0.0;
@@ -989,7 +994,8 @@ void ExecutePlay(napi_env, void* data)
     if (context->requestId != latestPlayRequest.load()) {
         return;
     }
-    context->result = NativeAudioPlayer::Instance().Play(context->fd, context->size);
+    context->result = NativeAudioPlayer::Instance().Play(
+        context->fd, context->size, context->startPositionMs, context->requestId);
     if (context->result && context->requestId != latestPlayRequest.load()) {
         NativeAudioPlayer::Instance().Stop();
         context->result = false;
@@ -1010,13 +1016,15 @@ void CompletePlay(napi_env env, napi_status status, void* data)
 
 napi_value Play(napi_env env, napi_callback_info info)
 {
-    size_t argc = 2;
-    napi_value args[2] = { nullptr, nullptr };
+    size_t argc = 3;
+    napi_value args[3] = { nullptr, nullptr, nullptr };
     napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
     int32_t fd = -1;
     int64_t size = 0;
-    if (argc != 2 || napi_get_value_int32(env, args[0], &fd) != napi_ok ||
-        napi_get_value_int64(env, args[1], &size) != napi_ok) {
+    int64_t startPositionMs = 0;
+    if (argc < 2 || argc > 3 || napi_get_value_int32(env, args[0], &fd) != napi_ok ||
+        napi_get_value_int64(env, args[1], &size) != napi_ok ||
+        (argc == 3 && napi_get_value_int64(env, args[2], &startPositionMs) != napi_ok)) {
         napi_value promise = nullptr;
         napi_deferred deferred = nullptr;
         napi_create_promise(env, &deferred, &promise);
@@ -1028,7 +1036,9 @@ napi_value Play(napi_env env, napi_callback_info info)
     context->env = env;
     context->fd = fd;
     context->size = size;
+    context->startPositionMs = std::max<int64_t>(0, startPositionMs);
     context->requestId = latestPlayRequest.fetch_add(1) + 1;
+    NativeAudioPlayer::Instance().RequestStop();
     napi_value promise = nullptr;
     napi_create_promise(env, &context->deferred, &promise);
     napi_value resourceName = nullptr;
@@ -1059,6 +1069,7 @@ napi_value Pause(napi_env env, napi_callback_info)
 napi_value Stop(napi_env env, napi_callback_info)
 {
     latestPlayRequest.fetch_add(1);
+    NativeAudioPlayer::Instance().RequestStop();
     std::lock_guard<std::mutex> lock(playerOperationMutex);
     NativeAudioPlayer::Instance().Stop();
     return BooleanValue(env, true);

@@ -1,4 +1,4 @@
-export const play: (fd: number, size: number) => Promise<boolean>
+export const play: (fd: number, size: number, startPositionMs?: number) => Promise<boolean>
 export const resume: () => boolean
 export const pause: () => boolean
 export const stop: () => boolean
