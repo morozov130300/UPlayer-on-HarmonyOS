@@ -103,6 +103,14 @@
     {
       "name": "select_swiper",
       "value": "#DBFFFFFF"
+    },
+    {
+      "name": "tab_content_primary",
+      "value": "#333333"
+    },
+    {
+      "name": "tab_content_secondary",
+      "value": "#666666"
     }
   ]
 }

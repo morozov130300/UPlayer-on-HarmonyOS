@@ -44,7 +44,6 @@ struct SettingsDetailPage {
   @StorageLink(AppStorageKeyConstants.KEY_TOP_HEIGHT) topSafeHeight: number = 0
   @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
-  @StorageLink('uplayer_tab_indicator_depth') tabIndicatorDepth: number = 50
   @StorageLink('uplayer_glass_blur_strength') glassBlurStrength: number = 25
   @State pageTitle: string = ''
   @State previewOnRight: boolean = false
@@ -131,11 +130,6 @@ struct SettingsDetailPage {
     }
   }
 
-  private indicatorDarken(base: number, range: number): number {
-    const depth: number = this.tabIndicatorDepth
-    return Math.min(0.75, base + range * depth / 100)
-  }
-
   private glassBlurRadius(): number {
     return this.glassBlurStrength * 0.5
   }
@@ -181,19 +175,10 @@ struct SettingsDetailPage {
       .width(this.scaledSize(68))
       .height(this.scaledSize(36))
       .borderRadius(this.scaledSize(18))
+      .backgroundColor(this.primaryColor)
       .shadow({
         radius: 14,
-        color: ColorHelper.hexWithAlpha(
-          ColorHelper.darken(this.primaryColor, this.indicatorDarken(0.12, 0.4)), 'CC')
-      })
-      .radialGradient({
-        center: ['50%', '50%'],
-        radius: '75%',
-        colors: [
-          [ColorHelper.darken(this.primaryColor, this.indicatorDarken(0.02, 0.32)), 0.0],
-          [ColorHelper.darken(this.primaryColor, this.indicatorDarken(0.12, 0.48)), 0.58],
-          [ColorHelper.darken(this.primaryColor, this.indicatorDarken(0.25, 0.5)), 1.0]
-        ]
+        color: ColorHelper.hexWithAlpha(this.primaryColor, 'CC')
       })
   }
 
@@ -549,44 +534,19 @@ struct SettingsDetailPage {
       .borderRadius(this.scaledSize(10))
 
       Column() {
-        this.sectionTitle('经典 Tab 指示器深浅')
+        this.sectionTitle('经典 Tab 指示器')
         Row() {
           if (!this.previewOnRight) {
             this.tabIndicatorPreview()
           }
-          Text('浅')
+          Text('指示器始终使用纯主题色，不叠加黑白蒙版或深浅渐变')
             .fontSize(this.scaledFont(11))
-            .fontColor(this.settingTextColor())
+            .fontColor(this.settingSubTextColor())
+            .layoutWeight(1)
             .margin({
               left: this.previewOnRight ? 0 : this.scaledSize(14),
               right: this.scaledSize(8)
             })
-          Slider({
-            value: this.settings.tabIndicatorDepth,
-            min: 0,
-            max: 100,
-            step: 1,
-            style: SliderStyle.OutSet
-          })
-            .width('55%')
-            .layoutWeight(1)
-            .selectedColor(this.primaryColor)
-            .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-            .blockColor('#FFFFFF')
-            .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
-            .blockBorderColor(this.primaryColor)
-            .blockBorderWidth(3)
-            .onChange((value: number, mode: SliderChangeMode) => {
-              this.settings.tabIndicatorDepth = value
-              this.tabIndicatorDepth = value
-              if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-                this.updateSetting()
-              }
-            })
-          Text('深')
-            .fontSize(this.scaledFont(11))
-            .fontColor(this.settingTextColor())
-            .margin({ left: this.scaledSize(8) })
           if (this.previewOnRight) {
             Blank().width(this.scaledSize(14))
             this.tabIndicatorPreview()

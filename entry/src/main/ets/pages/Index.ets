@@ -47,7 +47,6 @@ struct MainPage {
   @StorageLink('uplayer_display_size_scale') @Watch('onDisplaySizeChange') displaySizeScale: number = 1.0
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
   @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
-  @StorageLink('uplayer_tab_indicator_depth') tabIndicatorDepth: number = 50
   @StorageLink('uplayer_glass_blur_strength') glassBlurStrength: number = 25
   @State albumArtFailed: boolean = false
   @State isTitleMarqueeRunning: boolean = true
@@ -134,11 +133,6 @@ struct MainPage {
     return this.isSongInfoShort() ? 4 : 3
   }
 
-  private indicatorDarken(base: number, range: number): number {
-    const depth: number = this.tabIndicatorDepth
-    return Math.min(0.75, base + range * depth / 100)
-  }
-
   onDisplaySizeChange(): void {
     this.updateIndicatorOffset(this.currentIndex)
   }
@@ -195,21 +189,12 @@ struct MainPage {
         .borderRadius(this.scaledSize(18))
         .alignItems(VerticalAlign.Center)
         .margin({ left: this.indicatorOffset, bottom: this.scaledSize(12) })
+        .backgroundColor(this.primaryColor)
         .shadow({
           radius: 14,
-          color: ColorHelper.hexWithAlpha(
-            ColorHelper.darken(this.primaryColor, this.indicatorDarken(0.12, 0.4)), 'CC'),
+          color: ColorHelper.hexWithAlpha(this.primaryColor, 'CC'),
           offsetX: 0,
           offsetY: 0
-        })
-        .radialGradient({
-          center: ['50%', '50%'],
-          radius: '75%',
-          colors: [
-            [ColorHelper.darken(this.primaryColor, this.indicatorDarken(0.02, 0.32)), 0.0],
-            [ColorHelper.darken(this.primaryColor, this.indicatorDarken(0.12, 0.48)), 0.58],
-            [ColorHelper.darken(this.primaryColor, this.indicatorDarken(0.25, 0.5)), 1.0],
-          ]
         })
         .zIndex(1)
 
@@ -264,14 +249,16 @@ struct MainPage {
     Column() {
       Image(icon)
         .height(this.scaledSize(18))
-        .fillColor(this.currentIndex === index ? '#FFFFFF' : '#666666')
+        .fillColor(this.currentIndex === index ? $r('app.color.tab_content_primary') :
+          $r('app.color.tab_content_secondary'))
         .scale({
           x: this.currentIndex === index ? 1.15 : 1.0,
           y: this.currentIndex === index ? 1.15 : 1.0
         })
       Text(name)
         .fontSize(9)
-        .fontColor(this.currentIndex === index ? '#FFFFFF' : '#666666')
+        .fontColor(this.currentIndex === index ? $r('app.color.tab_content_primary') :
+          $r('app.color.tab_content_secondary'))
         .margin({ top: this.scaledSize(2) })
     }
     .width(this.scaledSize(this.tabWidth))
@@ -297,14 +284,16 @@ struct MainPage {
     Column() {
       Image(icon)
         .height(this.scaledSize(18))
-        .fillColor(this.currentIndex === index ? '#FFFFFF' : 'rgba(255,255,255,0.45)')
+        .fillColor(this.currentIndex === index ? $r('app.color.tab_content_primary') :
+          $r('app.color.tab_content_secondary'))
         .scale({
           x: this.currentIndex === index ? 1.15 : 1.0,
           y: this.currentIndex === index ? 1.15 : 1.0
         })
       Text(name)
         .fontSize(9)
-        .fontColor(this.currentIndex === index ? '#FFFFFF' : 'rgba(255,255,255,0.45)')
+        .fontColor(this.currentIndex === index ? $r('app.color.tab_content_primary') :
+          $r('app.color.tab_content_secondary'))
         .margin({ top: this.scaledSize(2) })
     }
     .width(this.scaledSize(this.tabWidth))

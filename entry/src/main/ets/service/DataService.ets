@@ -49,7 +49,6 @@ export class AppSettingsData {
   fontSizeScale: number = 1.0
   displaySizeScale: number = 1.0
   tabStyle: string = 'classic'
-  tabIndicatorDepth: number = 50
   glassBlurStrength: number = 25
 }
 
@@ -383,8 +382,6 @@ export class DataService {
       s.displaySizeScale = rawDisplaySizeScale !== undefined ? rawDisplaySizeScale as number : 1.0
       let rawTabStyle: Object | undefined = r['tabStyle']
       s.tabStyle = rawTabStyle !== undefined ? rawTabStyle as string : 'classic'
-      let rawTabIndicatorDepth: Object | undefined = r['tabIndicatorDepth']
-      s.tabIndicatorDepth = rawTabIndicatorDepth !== undefined ? rawTabIndicatorDepth as number : 50
       let rawGlassBlurStrength: Object | undefined = r['glassBlurStrength']
       s.glassBlurStrength = rawGlassBlurStrength !== undefined ? rawGlassBlurStrength as number : 25
       if (eqBandsMigrated) {
@@ -416,7 +413,6 @@ export class DataService {
     r['fontSizeScale'] = settings.fontSizeScale
     r['displaySizeScale'] = settings.displaySizeScale
     r['tabStyle'] = settings.tabStyle
-    r['tabIndicatorDepth'] = settings.tabIndicatorDepth
     r['glassBlurStrength'] = settings.glassBlurStrength
     this.getPref().preferencesPut(KEY_SETTINGS, JSON.stringify(r))
     AppStorage.setOrCreate(KEY_SETTINGS, settings)
@@ -577,7 +573,6 @@ export class DataService {
     AppStorage.setOrCreate('uplayer_font_size_scale', settings.fontSizeScale)
     AppStorage.setOrCreate('uplayer_display_size_scale', settings.displaySizeScale)
     AppStorage.setOrCreate('uplayer_tab_style', settings.tabStyle)
-    AppStorage.setOrCreate('uplayer_tab_indicator_depth', settings.tabIndicatorDepth)
     AppStorage.setOrCreate('uplayer_glass_blur_strength', settings.glassBlurStrength)
     this.activatePersistedUris()
     return settings
