@@ -23,9 +23,9 @@ export struct SettingsContent {
   private dataService: DataService = DataService.getInstance()
   private isPC: boolean = deviceInfo.deviceType === '2in1'
   private categories: SettingCategory[] = [
-    { title: '定制条目', description: '界面布局、主题配色等个性化选项', route: 'customize' },
-    { title: '播放设置', description: '播放速度、歌词显示、通知栏控制', route: 'playback' },
-    { title: '音效设置', description: '均衡器开关与频段调节', route: 'audio' }
+    { title: '定制', description: '界面布局、主题配色等个性化选项', route: 'customize' },
+    { title: '播放', description: '播放速度、歌词显示、通知栏控制', route: 'playback' },
+    { title: '音效', description: '均衡器开关与频段调节', route: 'audio' }
   ]
 
   aboutToAppear(): void {

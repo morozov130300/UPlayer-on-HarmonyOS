@@ -34,6 +34,7 @@ export struct PlayerInfoComponent {
   @StorageLink('uplayer_theme_mode') themeMode: string = 'system';
   @State intervalID: number = 0;
   @Link isShowPlay: boolean;
+  @Prop sizeScale: number = 1.0;
   @State message: Resource = $r('app.string.no_operate');
   @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) isPlay: boolean = false;
   @State particleOpacity: number = 0;
@@ -142,10 +143,10 @@ export struct PlayerInfoComponent {
                 .fontColor([Color.White])
                 .opacity(0.8)
             }
-            .width(56)
-            .height(56)
+            .width(Math.round(56 * this.sizeScale))
+            .height(Math.round(56 * this.sizeScale))
             .justifyContent(FlexAlign.Center)
-            .borderRadius(28)
+            .borderRadius(Math.round(28 * this.sizeScale))
             .hoverEffect(HoverEffect.Scale)
             .onClick(() => {
               this.getUIContext()?.getRouter().back()
@@ -154,7 +155,7 @@ export struct PlayerInfoComponent {
             Blank()
           }
           .width('100%')
-          .height(56)
+          .height(Math.round(56 * this.sizeScale))
 
           Row() {
             Column() {
@@ -191,10 +192,10 @@ export struct PlayerInfoComponent {
                   .fontColor([Color.White])
                   .opacity(0.8)
               }
-              .width(56)
-              .height(56)
+              .width(Math.round(56 * this.sizeScale))
+              .height(Math.round(56 * this.sizeScale))
               .justifyContent(FlexAlign.Center)
-              .borderRadius(28)
+              .borderRadius(Math.round(28 * this.sizeScale))
               .hoverEffect(HoverEffect.Scale)
               .onClick(() => {
                 this.getUIContext()?.getRouter().back()
@@ -221,10 +222,10 @@ export struct PlayerInfoComponent {
                   .fontColor([Color.White])
                   .opacity(0.8)
               }
-              .width(40)
-              .height(56)
+              .width(Math.round(40 * this.sizeScale))
+              .height(Math.round(56 * this.sizeScale))
               .justifyContent(FlexAlign.Center)
-              .borderRadius(28)
+              .borderRadius(Math.round(28 * this.sizeScale))
               .hoverEffect(HoverEffect.Scale)
               .onClick(() => {
                 this.getUIContext()?.getRouter().back()

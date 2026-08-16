@@ -35,6 +35,7 @@ struct MainPage {
   @StorageLink('uplayer_current_album_art') currentSongAlbumArt: string = ''
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
   @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
+  @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
   @State albumArtFailed: boolean = false
   @State isTitleMarqueeRunning: boolean = true
   @State isArtistMarqueeRunning: boolean = true
@@ -377,7 +378,7 @@ struct MainPage {
             Row() {
               Text(this.greetingTitle)
                 .fontWeight(FontWeight.Bolder)
-                .fontSize(28)
+                .fontSize(Math.round(28 * this.fontSizeScale))
                 .fontColor($r('app.color.text_primary'))
                 .opacity(this.greetingOpacity)
                 .translate({ y: this.greetingOffset })
@@ -432,7 +433,6 @@ struct MainPage {
       }
       .width('100%')
       .height('100%')
-      .scale({ x: this.displaySizeScale, y: this.displaySizeScale })
     }
     .width('100%')
     .height('100%')

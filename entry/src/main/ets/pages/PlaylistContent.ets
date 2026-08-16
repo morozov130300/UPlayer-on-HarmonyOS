@@ -24,6 +24,7 @@ export struct PlaylistContent {
   @State favoritesSelected: boolean = false
   @StorageLink(AppStorageKeyConstants.KEY_TOP_HEIGHT) topSafeHeight: number = 0
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
+  @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
   private dataService: DataService = DataService.getInstance()
   private songScanner: SongScanner = SongScanner.getInstance()
   private scroller: Scroller = new Scroller()
@@ -204,7 +205,7 @@ export struct PlaylistContent {
       Column() {
         Row() {
           Text('我的歌单')
-            .fontSize(18)
+            .fontSize(Math.round(18 * this.fontSizeScale))
             .fontColor($r('app.color.text_primary'))
             .fontWeight(FontWeight.Bold)
           Blank()
@@ -242,12 +243,12 @@ export struct PlaylistContent {
                   .fillColor(this.favoritesSelected ? Color.Red : this.primaryColor)
                   .margin({ right: 8 })
                 Text('我喜欢的')
-                  .fontSize(14)
+                  .fontSize(Math.round(14 * this.fontSizeScale))
                   .fontColor($r('app.color.text_primary'))
                   .fontWeight(FontWeight.Medium)
                 Blank()
                 Text(this.getFavoriteCount() + ' 首')
-                  .fontSize(11)
+                  .fontSize(Math.round(11 * this.fontSizeScale))
                   .fontColor($r('app.color.text_sixty_color'))
               }
               .width('100%')
@@ -289,7 +290,7 @@ export struct PlaylistContent {
               .width('100%')
             } else {
               Text('暂无歌单，点击添加歌曲')
-                .fontSize(14)
+                .fontSize(Math.round(14 * this.fontSizeScale))
                 .fontColor($r('app.color.text_twenty_color'))
                 .width('100%')
                 .height(200)
@@ -316,7 +317,7 @@ export struct PlaylistContent {
         if (this.isEditMode) {
           Row() {
             Text('已选 ' + this.editSelectedFolderIds.length + ' 个')
-              .fontSize(14)
+              .fontSize(Math.round(14 * this.fontSizeScale))
               .fontColor($r('app.color.text_primary'))
             Blank()
             Text('取消')
