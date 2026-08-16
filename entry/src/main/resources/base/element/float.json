@@ -598,11 +598,11 @@
     },
     {
       "name": "music_component_top",
-      "value": "72vp"
+      "value": "64vp"
     },
     {
       "name": "music_component_bottom",
-      "value": "20vp"
+      "value": "64vp"
     },
     {
       "name": "title_font_play_md",

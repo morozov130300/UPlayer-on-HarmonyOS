@@ -77,7 +77,8 @@ export struct PlayerInfoComponent {
 
   /** 窗口信息变化时：若为手机竖屏中等高度，弹出提示对话框 */
   mainWindowInfoChange() {
-    Logger.info(`windowUtil is change,current width breakpoint is ${this.mainWindowInfo?.widthBp},height breakpoint is ${this.mainWindowInfo?.heightBp}`)
+    Logger.info(
+      `windowUtil is change,current width breakpoint is ${this.mainWindowInfo?.widthBp},height breakpoint is ${this.mainWindowInfo?.heightBp}`)
     if (this.mainWindowInfo.heightBp === HeightBreakpoint.HEIGHT_MD &&
       this.mainWindowInfo.widthBp === WidthBreakpoint.WIDTH_SM) {
       PromptActionClassNew.openDialog();
@@ -169,40 +170,36 @@ export struct PlayerInfoComponent {
         .position({ bottom: 0 })
         .opacity(0.6)
 
-      // 统一容器：返回按钮 + 指示器 + 内容区，确保三者在同一层级不重叠
+      // 统一容器：按断点不同处理顶部栏
       Column() {
-        // 顶部栏：固定高度 56vp，仅返回按钮靠左
-        Row() {
-          // 返回按钮：始终显示，56x56 圆形触摸区域
-          Row() {
-            SymbolGlyph($r('sys.symbol.chevron_left'))
-              .fontSize(32)
-              .fontColor([Color.White])
-              .opacity(0.8)
-          }
-          .width(56)
-          .height(56)
-          .justifyContent(FlexAlign.Center)
-          .borderRadius(28)
-          .onClick(() => {
-            this.getUIContext()?.getRouter().back()
-          })
-
-          Blank()
-        }
-        .width('100%')
-        .height(56)
-
-        // MD+ 断点：左右双栏布局，左栏专辑封面 + 歌曲信息，右栏歌词
+        // MD+ 断点：全局顶部栏 + 左右双栏
         if (this.mainWindowInfo.widthBp !== WidthBreakpoint.WIDTH_SM) {
           Row() {
-            // 左栏：专辑封面 + 歌曲信息（50% 宽度）
+            Row() {
+              SymbolGlyph($r('sys.symbol.chevron_left'))
+                .fontSize(32)
+                .fontColor([Color.White])
+                .opacity(0.8)
+            }
+            .width(56)
+            .height(56)
+            .justifyContent(FlexAlign.Center)
+            .borderRadius(28)
+            .onClick(() => {
+              this.getUIContext()?.getRouter().back()
+            })
+
+            Blank()
+          }
+          .width('100%')
+          .height(56)
+
+          Row() {
             Column() {
               MusicInfoComponent({ mainWindowInfo: this.mainWindowInfo })
             }
             .padding(this.mainWindowInfo.widthBp === WidthBreakpoint.WIDTH_MD ? 24 : 80)
             .width('50%')
-            // 右栏：歌词组件（50% 宽度）
             Column() {
               LyricsComponent({ isShowControl: this.isShowControlLg, mainWindowInfo: this.mainWindowInfo })
             }
@@ -212,38 +209,76 @@ export struct PlayerInfoComponent {
           .layoutWeight(1)
           .width('100%')
         } else {
-          // SM 断点：Swiper 左右滑页，第一页专辑封面，第二页歌词
+          // SM 断点：Swiper + 浮动返回按钮 + 指示器（同容器，可对齐）
           Swiper() {
-            // 第一页：专辑封面 + 歌曲信息
-            Column() {
-              MusicInfoComponent({ mainWindowInfo: this.mainWindowInfo, isReverse: true })
+            // 第一页：专辑封面 + 浮动返回按钮
+            Stack() {
+              Column() {
+                MusicInfoComponent({ mainWindowInfo: this.mainWindowInfo, isReverse: true })
+              }
+              .padding({
+                top: $r('app.float.music_component_top'),
+                bottom: $r('app.float.music_component_bottom'),
+                left: $r('app.float.common_padding'),
+                right: $r('app.float.common_padding')
+              })
+              .width('100%')
+              .height('100%')
+
+              // 浮动返回按钮，绝对定位无左侧额外留白
+              Row() {
+                SymbolGlyph($r('sys.symbol.chevron_left'))
+                  .fontSize(32)
+                  .fontColor([Color.White])
+                  .opacity(0.8)
+              }
+              .width(56)
+              .height(56)
+              .justifyContent(FlexAlign.Center)
+              .borderRadius(28)
+              .onClick(() => {
+                this.getUIContext()?.getRouter().back()
+              })
+              .position({ x: 8, y: 0 })
             }
-            .padding({
-              bottom: $r('app.float.music_component_bottom'),
-              left: $r('app.float.common_padding'),
-              right: $r('app.float.common_padding')
-            })
-            .width('100%')
-            .height('100%')
-            // 第二页：歌词组件
-            Column() {
-              LyricsComponent({ isShowControl: this.isShowControl, mainWindowInfo: this.mainWindowInfo })
+
+            // 第二页：歌词组件 + 浮动返回按钮
+            Stack() {
+              Column() {
+                LyricsComponent({ isShowControl: this.isShowControl, mainWindowInfo: this.mainWindowInfo })
+              }
+              .padding({
+                top: $r('app.float.music_component_top'),
+                left: $r('app.float.common_padding'),
+                right: $r('app.float.common_padding'),
+                bottom: $r('app.float.music_component_bottom'),
+              })
+              .width('100%')
+              .height('100%')
+
+              Row() {
+                SymbolGlyph($r('sys.symbol.chevron_left'))
+                  .fontSize(32)
+                  .fontColor([Color.White])
+                  .opacity(0.8)
+              }
+              .width(40)
+              .height(56)
+              .justifyContent(FlexAlign.Center)
+              .borderRadius(28)
+              .onClick(() => {
+                this.getUIContext()?.getRouter().back()
+              })
+              .position({ x: 8, y: 0 })
             }
-            .padding({
-              left: $r('app.float.common_padding'),
-              right: $r('app.float.common_padding'),
-              bottom: $r('app.float.music_component_bottom'),
-            })
-            .width('100%')
-            .height('100%')
-          }.layoutWeight(1)
+          }
+          .layoutWeight(1)
           .loop(false)
-          .clip(false)
           .curve(curves.springMotion(0.5, 0.8))
-          //指示器，作为swiper的子组件显示
+          //指示器，与浮动返回按钮同排（y=0）
           .indicator(
             new DotIndicator()
-              .top(-16) 
+              .top(8)
               .color(this.getDotColor(false))
               .selectedColor(this.getDotColor(true))
               .itemWidth(6)
@@ -251,16 +286,19 @@ export struct PlayerInfoComponent {
               .selectedItemWidth(14)
               .selectedItemHeight(6)
           )
-          // 切页回调：切到歌词页显示控制栏，5 秒无操作自动隐藏
-          //TODO: 此处应加上动画，最好是非线性的
+          // 切页回调：切到歌词页显示控制栏，5 秒无操作自动隐藏（带弹性动画）
           .onChange((index: number) => {
             this.currentSwiperIndex = index;
             if (index === 1) {
-              this.isShowControl = true;
+              this.getUIContext()?.animateTo({ curve: curves.springMotion(0.5, 0.8) }, () => {
+                this.isShowControl = true;
+              })
               this.intervalID = setInterval(() => {
                 this.pageShowTime += 1;
                 if (this.pageShowTime > 5) {
-                  this.isShowControl = false;
+                  this.getUIContext()?.animateTo({ curve: curves.springMotion(0.5, 0.8) }, () => {
+                    this.isShowControl = false;
+                  })
                   clearInterval(this.intervalID);
                 }
               }, 1000);
@@ -273,7 +311,7 @@ export struct PlayerInfoComponent {
       }
       .padding({
         bottom: this.bottomHeight,
-        top: this.mainWindowInfo.widthBp === WidthBreakpoint.WIDTH_SM ? this.topHeight : Math.max(this.topHeight, 56)
+        top: this.topHeight
       })
     }
     .height(StyleConstants.FULL_HEIGHT)
