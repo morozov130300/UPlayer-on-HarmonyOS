@@ -41,6 +41,7 @@ export class AVPlayerService {
   private nativeStartupTimer: number = -1
   private playRequestId: number = 0
   private backendMigrationId: number = 0
+  private nativeFallbackRequestId: number = -1
 
   public static getInstance(): AVPlayerService {
     return AVPlayerService.instance
@@ -152,6 +153,7 @@ export class AVPlayerService {
 
   async play(fileUri: string, startPositionMs: number = 0): Promise<void> {
     const requestId: number = ++this.playRequestId
+    this.nativeFallbackRequestId = -1
     this.cancelPrepare()
     const useNativePlayer: boolean = this.equalizerEnabled && nativeAudio.isEqualizerSupported()
     if (useNativePlayer) {
@@ -167,7 +169,8 @@ export class AVPlayerService {
       if (nativeStarted) {
         return
       }
-      Logger.warn(TAG, 'native player failed, fallback to AVPlayer')
+      Logger.warn(TAG, `native player unavailable request=${requestId}, fallback to AVPlayer`)
+      this.clearNativeSession()
     } else if (this.nativeMode) {
       nativeAudio.stop()
       this.stopNativeProgressTimer()
@@ -425,23 +428,20 @@ export class AVPlayerService {
     this.playRequestId++
     this.cancelPrepare()
     nativeAudio.stop()
-    if (this.nativeMode) {
-      this.stopNativeProgressTimer()
-      this.stopNativeStartupCheck()
-      this.nativeMode = false
-      this.currentFilePath = ''
-      AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, false)
-      this.sessionController.setPlayState(false)
-      this.stopBackground()
-      return
-    }
+    this.clearNativeSession()
+    AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, false)
+    this.sessionController.setPlayState(false)
+    this.currentFilePath = ''
     if (this.avPlayer === undefined) {
       this.stopBackground()
       return
     }
     try {
       this.stopFade()
-      await this.avPlayer.stop()
+      const state: string = this.avPlayer.state
+      if (state === 'playing' || state === 'paused' || state === 'prepared' || state === 'completed') {
+        await this.avPlayer.stop()
+      }
       this.currentFilePath = ''
       this.isPrepared = false
       this.sessionController.setPlayState(false)
@@ -503,11 +503,7 @@ export class AVPlayerService {
     this.playRequestId++
     this.cancelPrepare()
     nativeAudio.stop()
-    if (this.nativeMode) {
-      this.stopNativeProgressTimer()
-      this.stopNativeStartupCheck()
-      this.nativeMode = false
-    }
+    this.clearNativeSession()
     if (this.avPlayer === undefined) {
       this.stopBackground()
       return
@@ -657,6 +653,24 @@ export class AVPlayerService {
     }
   }
 
+  private clearNativeSession(): void {
+    this.stopNativeProgressTimer()
+    this.stopNativeStartupCheck()
+    this.nativeMode = false
+    this.isPrepared = false
+  }
+
+  private fallbackFromNative(fileUri: string, requestId: number, position: number, reason: string): void {
+    if (requestId !== this.playRequestId || this.nativeFallbackRequestId === requestId) {
+      return
+    }
+    this.nativeFallbackRequestId = requestId
+    nativeAudio.stop()
+    this.clearNativeSession()
+    Logger.warn(TAG, `${reason}, fallback to AVPlayer request=${requestId}`)
+    this.playWithAvPlayer(fileUri, requestId, position)
+  }
+
   private startNativeProgressTimer(fileUri: string, requestId: number): void {
     this.stopNativeProgressTimer()
     this.nativeProgressTimer = setInterval(() => {
@@ -669,13 +683,7 @@ export class AVPlayerService {
       AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_TIME, this.formatTime(position))
       this.sessionController.setProgressState(position)
       if (nativeAudio.hasFailed()) {
-        this.stopNativeProgressTimer()
-        const failedPosition: number = position
-        nativeAudio.stop()
-        this.nativeMode = false
-        this.isPrepared = false
-        Logger.warn(TAG, 'native render failed, fallback to AVPlayer')
-        this.playWithAvPlayer(fileUri, requestId, failedPosition)
+        this.fallbackFromNative(fileUri, requestId, position, 'native runtime failed')
         return
       }
       if (nativeAudio.isCompleted()) {
@@ -709,15 +717,10 @@ export class AVPlayerService {
         this.stopNativeStartupCheck()
         return
       }
-      if (nativeAudio.hasFailed() || checkCount >= 20) {
-        this.stopNativeStartupCheck()
+      if (nativeAudio.hasFailed() || checkCount >= 30) {
         const position: number = nativeAudio.getPosition()
-        nativeAudio.stop()
-        this.stopNativeProgressTimer()
-        this.nativeMode = false
-        this.isPrepared = false
-        Logger.warn(TAG, 'native startup timeout, fallback to AVPlayer')
-        this.playWithAvPlayer(fileUri, requestId, position)
+        this.fallbackFromNative(fileUri, requestId, position,
+          nativeAudio.hasFailed() ? 'native startup failed' : 'native startup timeout')
       }
     }, 100)
   }

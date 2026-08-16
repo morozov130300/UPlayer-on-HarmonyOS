@@ -24,6 +24,11 @@ export class AVSessionController {
   private lastProgressPosition: number = -1;
   private progressUpdateInFlight: boolean = false;
   private pendingProgressPosition: number | undefined = undefined;
+  private playbackUpdateInFlight: boolean = false;
+  private pendingPlayState: boolean | undefined = undefined;
+  private sessionGeneration: number = 0;
+  private destroyed: boolean = false;
+  private currentMediaImage: image.PixelMap | undefined = undefined;
   private static readonly PROGRESS_UPDATE_INTERVAL_MS: number = 1000;
 
   private getAvPlayerService(): AVPlayerService {
@@ -49,13 +54,20 @@ export class AVSessionController {
   }
 
   public async initAVSession(): Promise<void> {
+    this.destroyed = false;
+    const generation: number = ++this.sessionGeneration;
     this.context = AppStorage.get(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT);
     if (!this.context) {
       Logger.info(TAG, `session create failed, context is undefined`);
       return;
     }
     try {
-      this.AVSession = await avSession.createAVSession(this.context, "PLAY_AUDIO", 'audio');
+      const session: avSession.AVSession = await avSession.createAVSession(this.context, "PLAY_AUDIO", 'audio');
+      if (this.destroyed || generation !== this.sessionGeneration) {
+        session.destroy();
+        return;
+      }
+      this.AVSession = session;
       await this.AVSession.activate();
       Logger.info(TAG, `session create succeeded : sessionId : ${this.AVSession.sessionId}`);
     } catch (err) {
@@ -195,18 +207,31 @@ export class AVSessionController {
           assetId: `${this.musicIndex}`,
           title: song.title,
           artist: song.artist,
-          mediaImage: mediaImage,
           duration: this.getDuration(),
           avQueueName: 'AudioRendererQueue',
-          avQueueId: 'AudioRendererQueueId',
-          avQueueImage: mediaImage
+          avQueueId: 'AudioRendererQueueId'
         };
-        if (this.AVSession) {
-          this.AVSession.setAVMetadata(metadata).then(() => {
-            Logger.info(TAG, 'SetAVMetadata successfully');
-          }).catch((err: BusinessError) => {
-            Logger.error(TAG, `SetAVMetadata BusinessError: code: ${err.code}, message: ${err.message}`);
-          });
+        if (mediaImage !== undefined) {
+          metadata.mediaImage = mediaImage;
+          metadata.avQueueImage = mediaImage;
+        }
+        const session: avSession.AVSession | undefined = this.AVSession;
+        if (session && !this.destroyed) {
+          await session.setAVMetadata(metadata);
+          if (requestId !== this.metadataRequestId || session !== this.AVSession || this.destroyed) {
+            if (mediaImage !== undefined) {
+              mediaImage.release();
+            }
+            return;
+          }
+          const previousImage: image.PixelMap | undefined = this.currentMediaImage;
+          this.currentMediaImage = mediaImage;
+          if (previousImage !== undefined && previousImage !== mediaImage) {
+            previousImage.release();
+          }
+          Logger.info(TAG, 'SetAVMetadata successfully');
+        } else if (mediaImage !== undefined) {
+          mediaImage.release();
         }
       }
     } catch (error) {
@@ -358,17 +383,23 @@ export class AVSessionController {
   }
 
   private sendProgressState(ms: number, updateTime: number): void {
-    if (!this.AVSession) {
+    if (!this.AVSession || this.destroyed) {
       return;
     }
+    const session: avSession.AVSession = this.AVSession;
+    const generation: number = this.sessionGeneration;
     this.progressUpdateInFlight = true;
-    this.AVSession.setAVPlaybackState({
+    session.setAVPlaybackState({
       position: {
         elapsedTime: ms,
         updateTime: updateTime
       }
     }, (err: BusinessError) => {
       this.progressUpdateInFlight = false;
+      if (generation !== this.sessionGeneration || session !== this.AVSession || this.destroyed) {
+        this.pendingProgressPosition = undefined;
+        return;
+      }
       if (err) {
         Logger.error(TAG, `setProgressState BusinessError: code: ${err.code}, message: ${err.message}`);
       } else {
@@ -384,21 +415,36 @@ export class AVSessionController {
   }
 
   public setPlayState(isPlay: boolean): void {
-    if (!this.AVSession) {
-      Logger.error(TAG, 'AVSession is undefined');
+    if (!this.AVSession || this.destroyed) {
       return;
     }
+    if (this.playbackUpdateInFlight) {
+      this.pendingPlayState = isPlay;
+      return;
+    }
+    const session: avSession.AVSession = this.AVSession;
+    const generation: number = this.sessionGeneration;
     const currentIndex: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? 0;
-    this.AVSession.setAVPlaybackState({
+    this.playbackUpdateInFlight = true;
+    session.setAVPlaybackState({
       state: isPlay ? avSession.PlaybackState.PLAYBACK_STATE_PLAY : avSession.PlaybackState.PLAYBACK_STATE_PAUSE,
       activeItemId: currentIndex + 1,
     }, (err: BusinessError) => {
+      this.playbackUpdateInFlight = false;
+      if (generation !== this.sessionGeneration || session !== this.AVSession || this.destroyed) {
+        this.pendingPlayState = undefined;
+        return;
+      }
       if (err) {
         Logger.error(TAG, `setPlayState BusinessError: code: ${err.code}, message: ${err.message}`);
       } else {
-        Logger.info(TAG, 'setPlayState successfully');
         const position: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_PROGRESS) ?? 0;
         this.setProgressState(position, true);
+      }
+      const pendingState: boolean | undefined = this.pendingPlayState;
+      this.pendingPlayState = undefined;
+      if (pendingState !== undefined && pendingState !== isPlay) {
+        this.setPlayState(pendingState);
       }
     });
   }
@@ -439,18 +485,31 @@ export class AVSessionController {
   }
 
   async unregisterSessionListener(): Promise<void> {
-    if (!this.AVSession) {
+    const session: avSession.AVSession | undefined = this.AVSession;
+    if (!session) {
       return;
     }
+    this.destroyed = true;
+    this.sessionGeneration++;
+    this.metadataRequestId++;
+    this.AVSession = undefined;
+    this.pendingPlayState = undefined;
+    this.pendingProgressPosition = undefined;
+    this.playbackUpdateInFlight = false;
+    this.progressUpdateInFlight = false;
     try {
-      this.AVSession.off('play');
-      this.AVSession.off('pause');
-      this.AVSession.off('playNext');
-      this.AVSession.off('playPrevious');
-      this.AVSession.off('setLoopMode');
-      this.AVSession.off('seek');
-      this.AVSession.off('toggleFavorite');
-      this.AVSession.destroy();
+      session.off('play');
+      session.off('pause');
+      session.off('playNext');
+      session.off('playPrevious');
+      session.off('setLoopMode');
+      session.off('seek');
+      session.off('toggleFavorite');
+      session.destroy();
+      if (this.currentMediaImage !== undefined) {
+        this.currentMediaImage.release();
+        this.currentMediaImage = undefined;
+      }
     } catch (err) {
       Logger.error(TAG, `unregisterSessionListener failed: ${JSON.stringify(err)}`);
     }

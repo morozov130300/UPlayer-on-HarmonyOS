@@ -73,13 +73,6 @@ export struct PlayerInfoComponent {
 
   build() {
     Stack() {
-      Column()
-        .width('100%')
-        .height(this.topHeight)
-        .backgroundColor(this.imageColor)
-        .position({ top: 0 })
-        .zIndex(1)
-
       Image(this.prevImageLabel)
         .size(this.mainWindowInfo.heightBp !== HeightBreakpoint.HEIGHT_LG ?
           { width: PlayerConstants.BACK_IMAGE, height: '100%' } :
