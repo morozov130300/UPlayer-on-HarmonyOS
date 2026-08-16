@@ -7,11 +7,11 @@
         "material": {
           "certpath": "C:\\Users\\JiHuanyu\\.ohos\\config\\default_UPlayer_96SQCdxCEjOFzywLQBJbqR6teqVtp2PoO2U-gRnqqEU=.cer",
           "keyAlias": "debugKey",
-          "keyPassword": "0000001B2BE2E70BE99150EB678913B55A75D4BF08F7860BBAE828E0204D6EE116F8FD204550A799E243A0",
+          "keyPassword": "0000001B2F22F492053982C7F5864681DB8883D6EA438473ED8FB066C8E8A0C7AF76C70BEFD4530F9C1F0D",
           "profile": "C:\\Users\\JiHuanyu\\.ohos\\config\\default_UPlayer_96SQCdxCEjOFzywLQBJbqR6teqVtp2PoO2U-gRnqqEU=.p7b",
           "signAlg": "SHA256withECDSA",
           "storeFile": "C:\\Users\\JiHuanyu\\.ohos\\config\\default_UPlayer_96SQCdxCEjOFzywLQBJbqR6teqVtp2PoO2U-gRnqqEU=.p12",
-          "storePassword": "0000001B51FA0C4D200E7A831842AE108E02F585B3D3C11171A2C14CE7EC046DC28276626FACD1F1219671"
+          "storePassword": "0000001B7597F09B8B1FE0E11C7C77D364D6F4F08960E55CFF1E56ECC3B92C518F449EA756040C265957AB"
         }
       }
     ],

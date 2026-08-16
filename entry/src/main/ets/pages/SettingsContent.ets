@@ -1,6 +1,6 @@
 import { common, ConfigurationConstant } from '@kit.AbilityKit'
 import { DataService, AppSettingsData } from '../service/DataService'
-import { MediaControlCenter } from '../common/utils/mediautils/MediaControlCenter'
+import { AVPlayerService } from '../service/AVPlayerService'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import Logger from '../common/utils/Logger'
 
@@ -16,14 +16,15 @@ interface ThemeOption {
 export struct SettingsContent {
   private context: common.UIAbilityContext | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
   @State settings: AppSettingsData = new AppSettingsData()
+  @StorageLink(KEY_PRIMARY_COLOR) primaryColor: string = '#007DFF'
   private dataService: DataService = DataService.getInstance()
   private themeOptions: ThemeOption[] = [
     { label: '跟随系统', value: 'system' },
     { label: '深色模式', value: 'dark' },
-    { label: '浅色模式', value: 'light' },
-    { label: '自定义', value: 'custom' }
+    { label: '浅色模式', value: 'light' }
   ]
   private colorOptions: string[] = ['#007DFF', '#FF3B30', '#34C759', '#FF9500', '#AF52DE', '#5AC8FA']
+  private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
 
   aboutToAppear(): void {
     this.settings = this.dataService.getSettings()
@@ -68,7 +69,7 @@ export struct SettingsContent {
     this.settings.playSpeed = 0.5 + value / 100
     this.updateSetting()
     try {
-      MediaControlCenter.getInstance().setSpeed(this.settings.playSpeed)
+      this.avPlayerService.setSpeed(this.settings.playSpeed)
     } catch (e) {
       Logger.error(TAG, 'setSpeed failed: ' + JSON.stringify(e))
     }
@@ -79,7 +80,7 @@ export struct SettingsContent {
     this.updateSetting()
     const vol: number = Math.max(0, Math.min(1, (value - 20 + 20) / 40))
     try {
-      MediaControlCenter.getInstance().setVolume(vol)
+      this.avPlayerService.setVolume(vol)
     } catch (e) {
       Logger.error(TAG, 'setVolume failed: ' + JSON.stringify(e))
     }
@@ -97,15 +98,8 @@ export struct SettingsContent {
     AppStorage.setOrCreate('uplayer_notification', val)
   }
 
-  onBackgroundPlaybackChange(val: boolean): void {
-    this.settings.backgroundPlayback = val
-    this.updateSetting()
-    AppStorage.setOrCreate('uplayer_background', val)
-  }
-
   build() {
     Column() {
-      // Header
       Row() {
         Text('设置')
           .fontSize(18)
@@ -117,7 +111,6 @@ export struct SettingsContent {
 
       Scroll() {
         Column() {
-          // Section: 界面控制
           this.sectionHeader('界面控制')
           this.toggleRow('显示加号按钮', this.settings.plusButtonVisible, (val: boolean) => {
             this.settings.plusButtonVisible = val
@@ -126,7 +119,6 @@ export struct SettingsContent {
 
           this.divider()
 
-          // Section: 主题与配色
           this.sectionHeader('主题与配色')
           Text('主题模式')
             .fontSize(14)
@@ -137,10 +129,10 @@ export struct SettingsContent {
               Column() {
                 Text(opt.label)
                   .fontSize(12)
-                  .fontColor(this.settings.themeMode === opt.value ? '#007DFF' : $r('app.color.text_sixty_color'))
+                  .fontColor(this.settings.themeMode === opt.value ? this.primaryColor : $r('app.color.text_sixty_color'))
               }
               .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-              .backgroundColor(this.settings.themeMode === opt.value ? 'rgba(0,125,255,0.12)' : 'rgba(0,0,0,0.05)')
+              .backgroundColor(this.settings.themeMode === opt.value ? ('rgba(0,125,255,0.12)') : ('rgba(0,0,0,0.05)'))
               .borderRadius(16)
               .onClick(() => { this.setThemeMode(opt.value) })
             }, (opt: ThemeOption) => opt.value)
@@ -160,7 +152,7 @@ export struct SettingsContent {
                 .backgroundColor(color)
                 .border({
                   width: this.settings.primaryColor === color ? 3 : 1,
-                  color: this.settings.primaryColor === color ? '#007DFF' : $r('app.color.list_divider')
+                  color: this.settings.primaryColor === color ? this.primaryColor : $r('app.color.list_divider')
                 })
                 .margin({ right: 10 })
                 .onClick(() => { this.setPrimaryColor(color) })
@@ -171,7 +163,6 @@ export struct SettingsContent {
 
           this.divider()
 
-          // Section: 播放设置
           this.sectionHeader('播放设置')
           this.toggleRow('显示歌词', this.settings.showLyrics, (val: boolean) => {
             this.onShowLyricsChange(val)
@@ -179,13 +170,9 @@ export struct SettingsContent {
           this.toggleRow('通知栏控制', this.settings.enableNotification, (val: boolean) => {
             this.onNotificationChange(val)
           })
-          this.toggleRow('后台播放', this.settings.backgroundPlayback, (val: boolean) => {
-            this.onBackgroundPlaybackChange(val)
-          })
 
           this.divider()
 
-          // Section: 音效设置
           this.sectionHeader('音效设置')
           this.toggleRow('均衡器', this.settings.eqEnabled, (val: boolean) => {
             this.settings.eqEnabled = val
@@ -212,7 +199,7 @@ export struct SettingsContent {
           })
             .width('100%')
             .padding({ left: 16, right: 16 })
-            .selectedColor('#007DFF')
+            .selectedColor(this.primaryColor)
             .trackColor($r('app.color.list_divider'))
             .onChange((value: number) => {
               this.onVolumeGainChange(value)
@@ -238,7 +225,7 @@ export struct SettingsContent {
           })
             .width('100%')
             .padding({ left: 16, right: 16 })
-            .selectedColor('#007DFF')
+            .selectedColor(this.primaryColor)
             .trackColor($r('app.color.list_divider'))
             .onChange((value: number) => {
               this.onSpeedChange(value)
@@ -260,10 +247,10 @@ export struct SettingsContent {
               Column() {
                 Text(this.getEffectLabel(effect))
                   .fontSize(11)
-                  .fontColor(this.settings.audioEffect === effect ? '#007DFF' : $r('app.color.text_sixty_color'))
+                  .fontColor(this.settings.audioEffect === effect ? this.primaryColor : $r('app.color.text_sixty_color'))
               }
               .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-              .backgroundColor(this.settings.audioEffect === effect ? 'rgba(0,125,255,0.12)' : 'rgba(0,0,0,0.03)')
+              .backgroundColor(this.settings.audioEffect === effect ? ('rgba(0,125,255,0.12)') : ('rgba(0,0,0,0.03)'))
               .borderRadius(12)
               .margin({ right: 6 })
               .onClick(() => {
@@ -302,7 +289,7 @@ export struct SettingsContent {
   sectionHeader(title: string): void {
     Text(title)
       .fontSize(13)
-      .fontColor('#007DFF')
+      .fontColor(this.primaryColor)
       .fontWeight(FontWeight.Medium)
       .width('100%')
       .padding({ left: 16, right: 16, top: 16, bottom: 4 })

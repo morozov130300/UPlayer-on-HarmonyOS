@@ -1,5 +1,4 @@
 import Logger from '../common/utils/Logger';
-import { MediaControlCenter } from '../common/utils/mediautils/MediaControlCenter';
 import { PlayerInfoComponent } from '../view/PlayerInfoComponent';
 import { WindowUtil } from '../common/utils/WindowUtil';
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
@@ -21,16 +20,10 @@ struct MusicPlayer {
 
   /** 页面初始化：初始化媒体引擎 → 取消加载态 → 背景淡入 */
   async aboutToAppear() {
-    try {
-      await MediaControlCenter.getInstance().init();
-      this.isLoading = false;
-      this.getUIContext()?.animateTo({ duration: 600, curve: Curve.EaseOut }, () => {
-        this.bgOpacity = 1
-      })
-    } catch (error) {
-      Logger.error(TAG, `MediaControlCenter init error: ${JSON.stringify(error)}`);
-      this.isLoading = false;
-    }
+    this.isLoading = false;
+    this.getUIContext()?.animateTo({ duration: 600, curve: Curve.EaseOut }, () => {
+      this.bgOpacity = 1
+    })
   }
 
   aboutToDisappear() {

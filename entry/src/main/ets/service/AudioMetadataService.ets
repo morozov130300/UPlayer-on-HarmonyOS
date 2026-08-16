@@ -1,3 +1,4 @@
+// 音频元数据提取服务，使用AVMetadataExtractor读取歌曲标题、歌手、专辑封面等
 import { media } from '@kit.MediaKit'
 import { fileIo as fs } from '@kit.CoreFileKit'
 import { image } from '@kit.ImageKit'
@@ -14,46 +15,46 @@ export class AudioMetadataService {
     return AudioMetadataService.instance
   }
 
+  // 提取元数据并更新SongInfo，封面保存到cache目录
   async extractAndSaveMetadata(song: SongInfo, context: common.UIAbilityContext): Promise<void> {
     let extractor: media.AVMetadataExtractor | undefined = undefined
     let file: fs.File | undefined = undefined
     try {
       extractor = await media.createAVMetadataExtractor()
-      file = fs.openSync(song.filePath)
-      let fileSize: number = 0
-      try {
-        fileSize = fs.statSync(song.filePath).size
-      } catch (statErr) {
-        Logger.warn(TAG, `statSync failed for ${song.fileName}: ${JSON.stringify(statErr)}`)
-      }
-      let avFile: media.AVFileDescriptor = {
-        fd: file.fd,
-        offset: 0,
-        length: fileSize
-      }
-      extractor.fdSrc = avFile
+      file = fs.openSync(song.filePath, fs.OpenMode.READ_ONLY)
+      // 直接使用 fd 作为数据源
+      const avFd: media.AVFileDescriptor = { fd: file.fd, offset: 0, length: 0 }
+      extractor.fdSrc = avFd
 
+      // 提取文本元数据（标题、歌手、专辑）
       let metadata: media.AVMetadata = await extractor.fetchMetadata()
 
       if (metadata.title !== undefined) {
-        let metaTitle: string = metadata.title as string
+        let metaTitle: string = '' + metadata.title
         if (metaTitle.length > 0) {
           song.title = metaTitle
         }
       }
       if (metadata.artist !== undefined) {
-        let metaArtist: string = metadata.artist as string
+        let metaArtist: string = '' + metadata.artist
         if (metaArtist.length > 0) {
           song.artist = metaArtist
         }
       }
       if (metadata.album !== undefined) {
-        let metaAlbum: string = metadata.album as string
+        let metaAlbum: string = '' + metadata.album
         if (metaAlbum.length > 0) {
           song.album = metaAlbum
         }
       }
+      if (metadata.duration !== undefined) {
+        let metaDuration: number = Number(metadata.duration)
+        if (metaDuration > 0) {
+          song.duration = metaDuration
+        }
+      }
 
+      // 提取专辑封面并保存为JPEG文件
       try {
         let cover: image.PixelMap = await extractor.fetchAlbumCover()
         song.albumArtPath = await this.saveAlbumCover(cover, song.id, context)
@@ -72,6 +73,7 @@ export class AudioMetadataService {
     }
   }
 
+  // 将PixelMap封面编码为JPEG并写入cache/covers/目录
   private async saveAlbumCover(cover: image.PixelMap, songId: string, context: common.UIAbilityContext): Promise<string> {
     const coverDir: string = context.cacheDir + '/covers'
     const coverPath: string = coverDir + '/cover_' + songId + '.jpg'

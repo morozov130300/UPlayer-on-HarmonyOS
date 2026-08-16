@@ -17,6 +17,8 @@ export struct PlaylistContent {
   @State settings: AppSettingsData = new AppSettingsData()
   @State isPlusVisible: boolean = true
   @State lastScrollY: number = 0
+  @StorageLink(AppStorageKeyConstants.KEY_TOP_HEIGHT) topSafeHeight: number = 0
+  @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
   private dataService: DataService = DataService.getInstance()
   private songScanner: SongScanner = SongScanner.getInstance()
   private scroller: Scroller = new Scroller()
@@ -94,7 +96,7 @@ export struct PlaylistContent {
             .fontWeight(FontWeight.Bold)
         }
         .width('100%')
-        .padding({ left: 16, right: 16, top: 8, bottom: 12 })
+        .padding({ left: 16, right: 16, top: this.topSafeHeight + 8, bottom: 12 })
 
         // Folder grid
         Scroll(this.scroller) {
@@ -141,7 +143,7 @@ export struct PlaylistContent {
         }
         .width(40).height(40)
         .borderRadius(20)
-        .backgroundColor('rgba(0,125,255,0.9)')
+        .backgroundColor(this.primaryColor)
         .shadow({ radius: 10, color: '#44007DFF', offsetY: 4 })
         .position({ bottom: 12, right: 20 })
         .justifyContent(FlexAlign.Center)
