@@ -2,11 +2,11 @@
   "string": [
     {
       "name": "module_desc",
-      "value": "module description"
+      "value": "项目处于初始开发阶段，功能尚未完善"
     },
     {
       "name": "EntryAbility_desc",
-      "value": "description"
+      "value": "UPlayer 初始开发版本"
     },
     {
       "name": "EntryAbility_label",
