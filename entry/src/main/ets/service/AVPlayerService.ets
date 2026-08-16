@@ -543,6 +543,14 @@ export class AVPlayerService {
     return minStr + ':' + secStr
   }
 
+  updateEqualizerBands(bands: number[]): boolean {
+    this.equalizerBands = bands.slice(0, 10)
+    if (!this.equalizerEnabled) {
+      return false
+    }
+    return nativeAudio.setEqualizerBands(this.equalizerBands)
+  }
+
   async applyEqualizer(enabled: boolean, bands: number[]): Promise<void> {
     const previousEnabled: boolean = this.equalizerEnabled
     this.equalizerEnabled = enabled

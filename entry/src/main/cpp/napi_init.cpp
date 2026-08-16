@@ -445,6 +445,7 @@ public:
         if (!requestedEqEnabled_) {
             return true;
         }
+        std::lock_guard<std::mutex> lock(effectMutex_);
         bands_ = bands;
         if (eqNode_ == nullptr) {
             return IsEqualizerSupported();
@@ -453,7 +454,12 @@ public:
         for (size_t i = 0; i < bands.size(); i++) {
             gains.gains[i] = bands[i];
         }
-        return OH_AudioSuiteEngine_SetEqualizerFrequencyBandGains(eqNode_, gains) == AUDIOSUITE_SUCCESS;
+        OH_AudioSuite_Result result = OH_AudioSuiteEngine_SetEqualizerFrequencyBandGains(eqNode_, gains);
+        if (result != AUDIOSUITE_SUCCESS) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "set equalizer bands failed code=%{public}d", result);
+        }
+        return result == AUDIOSUITE_SUCCESS;
     }
 
     bool IsEqualizerEnabled() const

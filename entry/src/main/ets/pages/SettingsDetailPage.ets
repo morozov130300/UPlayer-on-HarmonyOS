@@ -325,10 +325,18 @@ struct SettingsDetailPage {
     }
   }
 
-  onEqBandChange(bandIndex: number, value: number): void {
-    this.settings.eqBands[bandIndex] = value - 12
-    this.updateSetting()
-    this.avPlayerService.applyEqualizer(this.settings.eqEnabled, this.settings.eqBands)
+  onEqBandChange(bandIndex: number, value: number, mode: SliderChangeMode): void {
+    const bands: number[] = this.settings.eqBands.slice()
+    bands[bandIndex] = Math.round(value) - 12
+    this.settings.eqBands = bands
+    this.settings = this.settings
+    const applied: boolean = this.avPlayerService.updateEqualizerBands(bands)
+    if (!applied) {
+      Logger.error(TAG, `set equalizer band failed index=${bandIndex} value=${bands[bandIndex]}`)
+    }
+    if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+      this.updateSetting()
+    }
   }
 
   pageTransition() {
@@ -973,40 +981,38 @@ struct SettingsDetailPage {
 
       if (this.settings.eqEnabled) {
         Column() {
-          Row() {
-            ForEach(this.eqBands, (band: EqBandInfo) => {
-              Column() {
-                Text((this.settings.eqBands[band.index] >= 0 ? '+' : '') + this.settings.eqBands[band.index] + 'dB')
+          Scroll() {
+            Row({ space: this.scaledSize(4) }) {
+              ForEach(this.eqBands, (band: EqBandInfo) => {
+                Column() {
+                  Text((this.settings.eqBands[band.index] >= 0 ? '+' : '') + this.settings.eqBands[band.index] + 'dB')
                   .fontSize(this.scaledFont(9))
                   .fontColor(ColorHelper.hexWithAlpha(this.primaryColor, '88'))
                   .margin({ bottom: 4 })
-                Column() {
+                Stack({ alignContent: Alignment.Center }) {
                   Slider({
                     value: this.settings.eqBands[band.index] + 12,
                     min: 0,
                     max: 24,
                     step: 1,
-                    style: SliderStyle.InSet,
+                    style: SliderStyle.OutSet,
                     direction: Axis.Vertical,
                     reverse: true
                   })
-                    .width(this.scaledSize(6))
-                    .height(this.scaledSize(110))
+                    .width(this.scaledSize(40))
+                    .height(this.scaledSize(180))
                     .selectedColor(this.primaryColor)
-                    .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.1))
+                    .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.16))
                     .blockColor('#FFFFFF')
-                    .blockSize({ width: this.scaledSize(14), height: this.scaledSize(6) })
+                    .blockSize({ width: this.scaledSize(26), height: this.scaledSize(14) })
                     .blockBorderColor(this.primaryColor)
-                    .blockBorderWidth(1)
-                    .onChange((value: number) => {
-                      this.onEqBandChange(band.index, value)
+                    .blockBorderWidth(2)
+                    .onChange((value: number, mode: SliderChangeMode) => {
+                      this.onEqBandChange(band.index, value, mode)
                     })
                 }
-                .width(this.scaledSize(28))
-                .height(this.scaledSize(110))
-                .justifyContent(FlexAlign.End)
-                .borderRadius(4)
-                .clip(true)
+                .width(this.scaledSize(44))
+                .height(this.scaledSize(180))
 
                 Text(band.freq)
                   .fontSize(this.scaledFont(10))
@@ -1016,10 +1022,12 @@ struct SettingsDetailPage {
               }
               .alignItems(HorizontalAlign.Center)
             }, (band: EqBandInfo) => band.freq)
+            }
+            .padding({ left: 8, right: 8, top: 12, bottom: 12 })
           }
           .width('100%')
-          .padding({ left: 8, right: 8, top: 12, bottom: 12 })
-          .justifyContent(FlexAlign.SpaceEvenly)
+          .scrollable(ScrollDirection.Horizontal)
+          .scrollBar(BarState.Auto)
         }
         .width('100%')
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
