@@ -1,8 +1,4 @@
 import display from '@ohos.display'
-import { songList } from '../model/SongListData'
-import { SongItem } from '../model/SongData'
-import { AVPlayerManager } from '../common/AVPlayerManager'
-import { PlayerPage } from '../view/PlayerPage'
 
 @Entry
 @Component
@@ -15,16 +11,12 @@ struct MainPage {
   @State rotationAngle: number = 0
   @State hasAlbumCover: boolean = false
   @State breakpoint: string = 'md' // 屏幕断点：sm/md/lg/xl/xxl
-  @State showPlayer: boolean = false
-  @State songIndex: number = 0
-  @State songList: SongItem[] = songList
   // 私有属性
   private tabsController: TabsController = new TabsController()
   private tabWidth: number = 100
   private tabGap: number = 8
   private indicatorInset: number = 4
   private rotationTimer: number = -1
-  private avPlayer: AVPlayerManager = AVPlayerManager.getInstance()
 
   // 自定义底部导航栏（居中）
   @Builder
@@ -107,7 +99,6 @@ struct MainPage {
   aboutToAppear(): void {
     this.updateGreeting()
     this.initBreakpoint()
-    this.avPlayer.init()
   }
 
   // 获取屏幕宽度（vp）并计算断点
@@ -169,7 +160,7 @@ struct MainPage {
   @Builder
   playerControl() {
     Row({ space: 20 }) {
-      // 专辑封面缩略图（圆形，播放时缓慢旋转，点击弹出播放器）
+      // 专辑封面缩略图（圆形，播放时缓慢旋转）
       Image($r('app.media.ic_public_music'))
         .width(25)
         .height(25)
@@ -177,9 +168,6 @@ struct MainPage {
         .rotate({ angle: this.rotationAngle })
         .backgroundColor('#00ffffff')
         .fillColor($r('app.color.player_icon_color'))
-        .onClick(() => {
-          this.showPlayer = true
-        })
 
       Blank()
 
@@ -245,7 +233,6 @@ struct MainPage {
   // 页面销毁前的清理
   aboutToDisappear(): void {
     this.stopRotation()
-    this.avPlayer.release()
   }
 
   // 主页面布局
@@ -312,28 +299,8 @@ struct MainPage {
       .width('100%')
       .height('100%')
 
-      // 全屏播放器 Overlay（底部弹入动画）
-      if (this.showPlayer) {
-        Stack() {
-          PlayerPage({
-            isShow: this.showPlayer,
-            currentIndex: this.songIndex,
-            isPlaying: this.isPlaying,
-            rotationAngle: this.rotationAngle,
-            songList: this.songList,
-          })
-        }
-        .transition(
-          TransitionEffect.asymmetric(
-            TransitionEffect.move(TransitionEdge.BOTTOM).animation({ duration: 350, curve: Curve.Friction }),
-            TransitionEffect.move(TransitionEdge.BOTTOM).animation({ duration: 250, curve: Curve.Friction })
-          )
-        )
-      }
-
     }
     .width('100%')
     .height('100%')
-    .clip(false)
   }
 }
