@@ -7,7 +7,6 @@ import { HomeContent } from './HomeContent'
 import { PlaylistContent } from './PlaylistContent'
 import { SettingsContent } from './SettingsContent'
 import { DataService } from '../service/DataService'
-import { FolderInfo } from '../model/FolderInfo'
 import { ColorHelper } from '../common/utils/ColorHelper'
 
 @Entry
@@ -51,7 +50,7 @@ struct MainPage {
     })
   }
 
-  onFolderClick(folder: FolderInfo): void {
+  onFolderClick(): void {
     this.getUIContext()?.animateTo({ duration: 200, curve: Curve.EaseInOut }, () => {
       this.currentIndex = 0
       this.updateIndicatorOffset(0)
@@ -364,8 +363,8 @@ struct MainPage {
           HomeContent()
             .layoutWeight(1)
         } else if (this.currentIndex === 1) {
-          PlaylistContent({ onNavigateToHome: (folder: FolderInfo): void => {
-            this.onFolderClick(folder)
+          PlaylistContent({ onNavigateToHome: (): void => {
+            this.onFolderClick()
           }})
             .layoutWeight(1)
         } else {

@@ -4,6 +4,7 @@ import { PlayerConstants } from '../common/constants/PlayerConstants';
 import { StyleConstants } from '../common/constants/StyleConstants';
 import { WindowInfo } from '../common/utils/WindowUtil';
 import { SongInfo } from '../model/SongInfo';
+import { DataService } from '../service/DataService';
 import { ControlAreaComponent } from './ControlAreaComponent';
 import { ColorHelper } from '../common/utils/ColorHelper';
 
@@ -11,53 +12,80 @@ import { ColorHelper } from '../common/utils/ColorHelper';
 export struct MusicInfoComponent {
   @State currentTabIndex: number = 0;
   @Prop mainWindowInfo: WindowInfo;
-  @Prop isReverse: boolean = false;
   @StorageLink(AppStorageKeyConstants.KEY_SONG_LIST) songList: SongInfo[] = [];
   @StorageProp(AppStorageKeyConstants.KEY_SELECT_INDEX) selectIndex: number = 0;
   @State isShowControl: boolean = false;
-  @StorageLink(AppStorageKeyConstants.KEY_IS_FAVORITE) isFavorite: boolean = false;
+  @State isFavorite: boolean = false;
   @State favoriteScale: number = 1.0;
   @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) isPlay: boolean = false;
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF';
   @State glowRotation: number = 0;
   @State glowTimer: number = -1;
   @State coverArtFailed: boolean = false;
+  private dataService: DataService = DataService.getInstance()
+
+  aboutToAppear() {
+    this.updateFavoriteState()
+    if (this.isPlay) {
+      this.startGlowAnimation()
+    }
+  }
+
+  aboutToDisappear() {
+    this.stopGlowAnimation()
+  }
+
+  updateFavoriteState() {
+    if (this.songList && this.selectIndex >= 0 && this.selectIndex < this.songList.length) {
+      this.isFavorite = this.songList[this.selectIndex].isFavorite
+    } else {
+      this.isFavorite = false
+    }
+  }
+
+  toggleFavorite() {
+    if (!this.songList || this.selectIndex < 0 || this.selectIndex >= this.songList.length) {
+      return
+    }
+    const song: SongInfo = this.songList[this.selectIndex]
+    this.dataService.toggleFavorite(song.id)
+    this.isFavorite = !this.isFavorite
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_IS_FAVORITE, this.isFavorite)
+    this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
+      this.favoriteScale = 1.3
+    })
+    setTimeout(() => {
+      this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
+        this.favoriteScale = 1.0
+      })
+    }, 150)
+  }
+
+  startGlowAnimation() {
+    this.stopGlowAnimation()
+    this.glowTimer = setInterval(() => {
+      this.getUIContext()?.animateTo({ duration: 3000, curve: Curve.Linear }, () => {
+        this.glowRotation = (this.glowRotation + 360) % 360
+      })
+    }, 3000)
+  }
+
+  stopGlowAnimation() {
+    if (this.glowTimer !== -1) {
+      clearInterval(this.glowTimer)
+      this.glowTimer = -1
+    }
+  }
 
   build() {
     Column() {
       this.CoverInfo()
       this.MusicInfo()
       Blank()
-      ControlAreaComponent({ isReverse: this.isReverse, mainWindowInfo: this.mainWindowInfo })
+      ControlAreaComponent({ mainWindowInfo: this.mainWindowInfo })
     }
     .height(StyleConstants.FULL_HEIGHT)
     .width(StyleConstants.FULL_HEIGHT)
-  }
-
-  aboutToAppear() {
-    if (this.isPlay) {
-      this.startGlowAnimation();
-    }
-  }
-
-  aboutToDisappear() {
-    this.stopGlowAnimation();
-  }
-
-  startGlowAnimation() {
-    this.stopGlowAnimation();
-    this.glowTimer = setInterval(() => {
-      this.getUIContext()?.animateTo({ duration: 3000, curve: Curve.Linear }, () => {
-        this.glowRotation = (this.glowRotation + 360) % 360;
-      });
-    }, 3000);
-  }
-
-  stopGlowAnimation() {
-    if (this.glowTimer !== -1) {
-      clearInterval(this.glowTimer);
-      this.glowTimer = -1;
-    }
   }
 
   @Builder
@@ -141,20 +169,10 @@ export struct MusicInfoComponent {
       SymbolGlyph(this.isFavorite ? $r('sys.symbol.heart_fill') : $r('sys.symbol.heart'))
         .fontSize(26)
         .renderingStrategy(SymbolRenderingStrategy.SINGLE)
-        .fontColor([this.isFavorite ? Color.Red : Color.White])
+        .fontColor([this.isFavorite ? Color.Red : $r('app.color.play_text_color')])
         .opacity(0.86)
         .scale({ x: this.favoriteScale, y: this.favoriteScale })
-        .onClick(() => {
-          this.isFavorite = !this.isFavorite;
-          this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
-            this.favoriteScale = 1.3;
-          });
-          setTimeout(() => {
-            this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
-              this.favoriteScale = 1.0;
-            });
-          }, 150);
-        })
+        .onClick(() => { this.toggleFavorite() })
     }
     .width('100%')
     .justifyContent(FlexAlign.SpaceBetween)

@@ -174,7 +174,7 @@ export struct PlayerInfoComponent {
           Swiper() {
             Stack() {
               Column() {
-                MusicInfoComponent({ mainWindowInfo: this.mainWindowInfo, isReverse: true })
+                MusicInfoComponent({ mainWindowInfo: this.mainWindowInfo })
               }
               .padding({
                 top: $r('app.float.music_component_top'),
