@@ -203,6 +203,146 @@
     {
       "name": "Spatial_audio",
       "value": "Spatial audio"
+    },
+    {
+      "name": "all_songs",
+      "value": "全部歌曲"
+    },
+    {
+      "name": "current_playlist",
+      "value": "当前播放"
+    },
+    {
+      "name": "sort_by_name",
+      "value": "名称排序"
+    },
+    {
+      "name": "sort_by_date",
+      "value": "添加时间"
+    },
+    {
+      "name": "sort_custom",
+      "value": "自定义"
+    },
+    {
+      "name": "flat_view",
+      "value": "平铺"
+    },
+    {
+      "name": "folder_view",
+      "value": "文件夹"
+    },
+    {
+      "name": "my_playlists",
+      "value": "我的歌单"
+    },
+    {
+      "name": "no_songs",
+      "value": "暂无歌曲，点击右下角 + 添加"
+    },
+    {
+      "name": "no_playlists",
+      "value": "暂无歌单，点击右下角 + 添加文件夹"
+    },
+    {
+      "name": "settings_title",
+      "value": "设置"
+    },
+    {
+      "name": "plus_button_visible",
+      "value": "显示加号按钮"
+    },
+    {
+      "name": "theme_mode",
+      "value": "主题模式"
+    },
+    {
+      "name": "theme_system",
+      "value": "跟随系统"
+    },
+    {
+      "name": "theme_dark",
+      "value": "深色模式"
+    },
+    {
+      "name": "theme_light",
+      "value": "浅色模式"
+    },
+    {
+      "name": "theme_custom",
+      "value": "自定义"
+    },
+    {
+      "name": "primary_color",
+      "value": "主题色"
+    },
+    {
+      "name": "playback_settings",
+      "value": "播放设置"
+    },
+    {
+      "name": "show_lyrics",
+      "value": "显示歌词"
+    },
+    {
+      "name": "notification_control",
+      "value": "通知栏控制"
+    },
+    {
+      "name": "background_playback",
+      "value": "后台播放"
+    },
+    {
+      "name": "audio_effects",
+      "value": "音效设置"
+    },
+    {
+      "name": "equalizer",
+      "value": "均衡器"
+    },
+    {
+      "name": "volume_gain",
+      "value": "音量增益"
+    },
+    {
+      "name": "playback_speed_setting",
+      "value": "播放速度"
+    },
+    {
+      "name": "audio_enhancement",
+      "value": "音效增强"
+    },
+    {
+      "name": "effect_off",
+      "value": "关闭"
+    },
+    {
+      "name": "effect_pop",
+      "value": "流行"
+    },
+    {
+      "name": "effect_rock",
+      "value": "摇滚"
+    },
+    {
+      "name": "effect_classical",
+      "value": "古典"
+    },
+    {
+      "name": "effect_jazz",
+      "value": "爵士"
+    },
+    {
+      "name": "effect_bass",
+      "value": "重低音"
+    },
+    {
+      "name": "unknown_singer",
+      "value": "未知歌手"
+    },
+    {
+      "name": "song_count",
+      "value": "%d 首歌曲"
     }
   ]
 }
