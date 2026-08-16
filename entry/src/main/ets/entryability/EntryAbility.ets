@@ -1,9 +1,12 @@
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { window } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { AudioPlayerManager } from '../pages/MusicPlayer';
+import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
+import { WindowUtil } from '../common/utils/WindowUtil';
+import Logger from '../common/utils/Logger';
 
 const DOMAIN = 0x0000;
+const TAG = '[EntryAbility]';
 
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
@@ -13,16 +16,14 @@ export default class EntryAbility extends UIAbility {
       hilog.error(DOMAIN, 'testTag', 'Failed to set colorMode. Cause: %{public}s', JSON.stringify(err));
     }
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate');
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT, this.context);
   }
 
   onDestroy(): void {
-    // 应用销毁时释放全局播放器资源
-    AudioPlayerManager.getInstance().release();
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onDestroy');
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
-    // Main window is created, set main page for this ability
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageCreate');
 
     windowStage.loadContent('pages/Index', (err) => {
@@ -31,6 +32,26 @@ export default class EntryAbility extends UIAbility {
         return;
       }
       hilog.info(DOMAIN, 'testTag', 'Succeeded in loading the content.');
+
+      // 初始化 WindowUtil
+      windowStage.getMainWindow().then((mainWindow: window.Window) => {
+        let uiContext = windowStage.getMainWindowSync().getUIContext();
+        let windowUtil = new WindowUtil(mainWindow, uiContext);
+        AppStorage.setOrCreate(AppStorageKeyConstants.KEY_WINDOW_UTIL, windowUtil);
+        AppStorage.setOrCreate(AppStorageKeyConstants.KEY_WINDOW, mainWindow);
+        windowUtil.setAvoidArea();
+        windowUtil.updateAvoidArea();
+        windowUtil.updateWindowInfo();
+      }).catch((error: Error) => {
+        Logger.error(TAG, `getMainWindow failed: ${JSON.stringify(error)}`);
+      });
+
+      // 设置全屏布局
+      windowStage.getMainWindow().then((mainWindow: window.Window) => {
+        mainWindow.setWindowLayoutFullScreen(true).catch((err: Error) => {
+          Logger.error(TAG, `setWindowLayoutFullScreen failed: ${JSON.stringify(err)}`);
+        });
+      });
     });
   }
 
