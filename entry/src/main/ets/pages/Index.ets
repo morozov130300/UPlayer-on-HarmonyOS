@@ -46,6 +46,7 @@ struct MainPage {
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
   @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
   @StorageLink('uplayer_tab_indicator_depth') tabIndicatorDepth: number = 50
+  @StorageLink('uplayer_glass_blur_strength') glassBlurStrength: number = 25
   @State albumArtFailed: boolean = false
   @State isTitleMarqueeRunning: boolean = true
   @State isArtistMarqueeRunning: boolean = true
@@ -69,6 +70,25 @@ struct MainPage {
 
   private scaledSize(size: number): number {
     return Math.round(size * this.displaySizeScale)
+  }
+
+  private bottomOverlayInset(): number {
+    if (this.breakpoint === 'sm' || this.breakpoint === 'md') {
+      return this.scaledSize(116) + this.bottomSafeHeight
+    }
+    return this.scaledSize(76) + this.bottomSafeHeight
+  }
+
+  private glassBlurRadius(): number {
+    return this.glassBlurStrength * 0.5
+  }
+
+  private glassSaturation(): number {
+    return 1 + this.glassBlurStrength * 0.0035
+  }
+
+  private glassBrightness(): number {
+    return 1 + this.glassBlurStrength * 0.0008
   }
 
   private isSongInfoShort(): boolean {
@@ -120,10 +140,14 @@ struct MainPage {
         .height(this.scaledSize(40))
         .margin({ bottom: this.scaledSize(10) })
         .borderRadius(this.scaledSize(20))
-        .backgroundColor('rgba(255,255,255,0.06)')
-        .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
-        .border({ width: 1, color: 'rgba(255,255,255,0.18)' })
-        .shadow({ radius: 50, color: $r('app.color.shadow_color'), offsetX: 0, offsetY: 0 })
+        .backgroundColor(Color.Transparent)
+        .backgroundEffect({
+          radius: this.glassBlurRadius(),
+          saturation: this.glassSaturation(),
+          brightness: this.glassBrightness()
+        })
+        .border({ width: 1, color: 'rgba(255,255,255,0.22)' })
+        .shadow({ radius: 18, color: ColorHelper.hexWithAlpha(this.primaryColor, '44'), offsetY: 5 })
         .zIndex(0)
 
       Row()
@@ -183,8 +207,12 @@ struct MainPage {
       .margin({ bottom: this.scaledSize(10) })
       .height(this.scaledSize(40))
       .borderRadius(this.scaledSize(20))
-      .backgroundColor('rgba(255,255,255,0.08)')
-      .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
+      .backgroundColor(Color.Transparent)
+      .backgroundEffect({
+        radius: this.glassBlurRadius(),
+        saturation: this.glassSaturation(),
+        brightness: this.glassBrightness()
+      })
       .border({ width: 1, color: 'rgba(255,255,255,0.22)' })
       .shadow({ radius: 18, color: ColorHelper.hexWithAlpha(this.primaryColor, '44'), offsetY: 5 })
     }
@@ -421,7 +449,16 @@ struct MainPage {
       left: this.scaledSize(12), right: this.scaledSize(16),
       top: this.scaledSize(4), bottom: this.scaledSize(4)
     })
-    .backgroundColor($r('app.color.player_bg_color'))
+    .backgroundColor(Color.Transparent)
+    .backgroundEffect({
+      radius: this.glassBlurRadius(),
+      saturation: this.glassSaturation(),
+      brightness: this.glassBrightness()
+    })
+    .border({
+      width: 1,
+      color: 'rgba(255,255,255,0.22)'
+    })
     .borderRadius(this.scaledSize(20))
     .shadow({
       radius: this.isGlowing ? 60 : 50,
@@ -638,48 +675,54 @@ struct MainPage {
         }
 
         if (this.currentIndex === 0) {
-          HomeContent()
+          HomeContent({ bottomContentPadding: this.bottomOverlayInset() })
             .layoutWeight(1)
         } else if (this.currentIndex === 1) {
-          PlaylistContent({ onNavigateToHome: (): void => {
-            this.onFolderClick()
-          }})
+          PlaylistContent({
+            bottomContentPadding: this.bottomOverlayInset(),
+            onNavigateToHome: (): void => {
+              this.onFolderClick()
+            }
+          })
             .layoutWeight(1)
         } else {
-          SettingsContent()
+          SettingsContent({ bottomContentPadding: this.bottomOverlayInset() })
             .layoutWeight(1)
-        }
-
-        if (this.breakpoint === 'sm' || this.breakpoint === 'md') {
-          Column({ space: 8 }) {
-            this.playerControl()
-            if (this.tabStyle === 'immersive') {
-              this.immersiveTabBar()
-            } else {
-              this.customTabBar()
-            }
-          }
-          .alignItems(HorizontalAlign.Center)
-          .width('100%')
-          .padding({ bottom: this.bottomSafeHeight })
-        } else {
-          Row() {
-            if (this.tabStyle === 'immersive') {
-              this.immersiveTabBar()
-            } else {
-              this.customTabBar()
-            }
-            Blank()
-            this.playerControl()
-          }
-          .width('100%')
-          .padding({ left: 16, right: 16, bottom: this.bottomSafeHeight + 16 })
-          .alignItems(VerticalAlign.Center)
         }
       }
       .width('100%')
       .height('100%')
+
+      if (this.breakpoint === 'sm' || this.breakpoint === 'md') {
+        Column({ space: 8 }) {
+          this.playerControl()
+          if (this.tabStyle === 'immersive') {
+            this.immersiveTabBar()
+          } else {
+            this.customTabBar()
+          }
+        }
+        .alignItems(HorizontalAlign.Center)
+        .width('100%')
+        .padding({ bottom: this.bottomSafeHeight })
+        .zIndex(10)
+      } else {
+        Row() {
+          if (this.tabStyle === 'immersive') {
+            this.immersiveTabBar()
+          } else {
+            this.customTabBar()
+          }
+          Blank()
+          this.playerControl()
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, bottom: this.bottomSafeHeight + 16 })
+        .alignItems(VerticalAlign.Center)
+        .zIndex(10)
+      }
     }
+    .alignContent(Alignment.Bottom)
     .width('100%')
     .height('100%')
   }

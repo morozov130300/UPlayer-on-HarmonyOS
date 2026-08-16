@@ -15,6 +15,7 @@ interface SettingCategory {
 
 @Component
 export struct SettingsContent {
+  bottomContentPadding: number = 0
   @State settings: AppSettingsData = new AppSettingsData()
   @StorageLink(KEY_PRIMARY_COLOR) primaryColor: string = '#007DFF'
   @StorageLink(AppStorageKeyConstants.KEY_TITLE_BUTTON_WIDTH) titleButtonWidth: number = 0
@@ -105,7 +106,10 @@ export struct SettingsContent {
         }, (cat: SettingCategory) => cat.route)
       }
       .width('100%')
-      .padding({ left: this.scaledSize(12), right: this.scaledSize(12) })
+      .padding({
+        left: this.scaledSize(12), right: this.scaledSize(12),
+        bottom: this.bottomContentPadding
+      })
     }
     .width('100%')
     .height('100%')

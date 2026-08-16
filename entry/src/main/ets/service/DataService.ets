@@ -45,6 +45,7 @@ export class AppSettingsData {
   displaySizeScale: number = 1.0
   tabStyle: string = 'classic'
   tabIndicatorDepth: number = 50
+  glassBlurStrength: number = 25
 }
 
 export class DataService {
@@ -375,6 +376,8 @@ export class DataService {
       s.tabStyle = rawTabStyle !== undefined ? rawTabStyle as string : 'classic'
       let rawTabIndicatorDepth: Object | undefined = r['tabIndicatorDepth']
       s.tabIndicatorDepth = rawTabIndicatorDepth !== undefined ? rawTabIndicatorDepth as number : 50
+      let rawGlassBlurStrength: Object | undefined = r['glassBlurStrength']
+      s.glassBlurStrength = rawGlassBlurStrength !== undefined ? rawGlassBlurStrength as number : 25
       return s
     } catch (e) {
       return new AppSettingsData()
@@ -396,6 +399,7 @@ export class DataService {
     r['displaySizeScale'] = settings.displaySizeScale
     r['tabStyle'] = settings.tabStyle
     r['tabIndicatorDepth'] = settings.tabIndicatorDepth
+    r['glassBlurStrength'] = settings.glassBlurStrength
     this.getPref().preferencesPut(KEY_SETTINGS, JSON.stringify(r))
     AppStorage.setOrCreate(KEY_SETTINGS, settings)
     AppStorage.setOrCreate('uplayer_fade_in_out', settings.fadeInOut)
@@ -542,6 +546,7 @@ export class DataService {
     AppStorage.setOrCreate('uplayer_display_size_scale', s.displaySizeScale)
     AppStorage.setOrCreate('uplayer_tab_style', s.tabStyle)
     AppStorage.setOrCreate('uplayer_tab_indicator_depth', s.tabIndicatorDepth)
+    AppStorage.setOrCreate('uplayer_glass_blur_strength', s.glassBlurStrength)
     this.activatePersistedUris()
   }
 

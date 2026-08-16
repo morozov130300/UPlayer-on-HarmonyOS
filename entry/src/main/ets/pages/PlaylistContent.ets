@@ -14,6 +14,7 @@ const FAVORITES_FOLDER_ID: string = '__favorites__'
 
 @Component
 export struct PlaylistContent {
+  bottomContentPadding: number = 0
   onNavigateToHome: () => void = (): void => {}
   private context: common.UIAbilityContext | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
   @State folders: FolderInfo[] = []
@@ -333,6 +334,9 @@ export struct PlaylistContent {
                 .textAlign(TextAlign.Center)
                 .onClick(() => { this.onPlusClick() })
             }
+            Blank()
+              .width('100%')
+              .height(this.bottomContentPadding)
           }
           .width('100%')
         }
@@ -371,6 +375,7 @@ export struct PlaylistContent {
           .padding({ left: 16, right: 16 })
           .backgroundColor($r('app.color.page_background_sm'))
           .border({ width: 1, color: $r('app.color.list_divider') })
+          .margin({ bottom: this.bottomContentPadding })
         }
       }
       .width('100%')
@@ -387,7 +392,7 @@ export struct PlaylistContent {
         .borderRadius(this.scaledSize(20))
         .backgroundColor(this.primaryColor)
         .shadow({ radius: 10, color: ColorHelper.hexWithAlpha(this.primaryColor, '44'), offsetY: 4 })
-        .position({ bottom: this.scaledSize(12), right: this.scaledSize(20) })
+        .position({ bottom: this.bottomContentPadding + this.scaledSize(12), right: this.scaledSize(20) })
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
         .transition({ type: TransitionType.Insert, opacity: 0, scale: { x: 0.5, y: 0.5 } })

@@ -37,6 +37,7 @@ struct SettingsDetailPage {
   @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
   @StorageLink('uplayer_tab_indicator_depth') tabIndicatorDepth: number = 50
+  @StorageLink('uplayer_glass_blur_strength') glassBlurStrength: number = 25
   @State pageTitle: string = ''
   @State previewOnRight: boolean = false
   private dataService: DataService = DataService.getInstance()
@@ -106,6 +107,45 @@ struct SettingsDetailPage {
   private indicatorDarken(base: number, range: number): number {
     const depth: number = 100 - this.tabIndicatorDepth
     return Math.min(0.75, base + range * depth / 100)
+  }
+
+  private glassBlurRadius(): number {
+    return this.glassBlurStrength * 0.5
+  }
+
+  private glassSaturation(): number {
+    return 1 + this.glassBlurStrength * 0.0035
+  }
+
+  private glassBrightness(): number {
+    return 1 + this.glassBlurStrength * 0.0008
+  }
+
+  @Builder
+  glassBlurPreview(): void {
+    Stack({ alignContent: Alignment.Center }) {
+      Text('沉浸光感')
+        .fontSize(this.scaledFont(12))
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.primaryColor)
+        .letterSpacing(this.scaledSize(1))
+      Row()
+        .width('100%')
+        .height('100%')
+        .borderRadius(this.scaledSize(18))
+        .backgroundColor(Color.Transparent)
+        .backgroundEffect({
+          radius: this.glassBlurRadius(),
+          saturation: this.glassSaturation(),
+          brightness: this.glassBrightness()
+        })
+        .border({ width: 1, color: 'rgba(255,255,255,0.28)' })
+        .shadow({ radius: 12, color: ColorHelper.hexWithAlpha(this.primaryColor, '44') })
+    }
+    .width(this.scaledSize(82))
+    .height(this.scaledSize(36))
+    .borderRadius(this.scaledSize(18))
+    .clip(true)
   }
 
   @Builder
@@ -363,6 +403,61 @@ struct SettingsDetailPage {
       .width('100%')
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(10)
+
+      Column() {
+        this.sectionTitle('Tab栏与播控条玻璃模糊强度')
+        Row() {
+          if (!this.previewOnRight) {
+            this.glassBlurPreview()
+          }
+          Text('弱')
+            .fontSize(this.scaledFont(11))
+            .fontColor(this.settingTextColor())
+            .margin({
+              left: this.previewOnRight ? 0 : this.scaledSize(14),
+              right: this.scaledSize(8)
+            })
+          Slider({
+            value: this.settings.glassBlurStrength,
+            min: 0,
+            max: 100,
+            step: 1,
+            style: SliderStyle.OutSet
+          })
+            .width('55%')
+            .layoutWeight(1)
+            .selectedColor(this.primaryColor)
+            .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+            .blockColor('#FFFFFF')
+            .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
+            .blockBorderColor(this.primaryColor)
+            .blockBorderWidth(3)
+            .onChange((value: number, mode: SliderChangeMode) => {
+              this.settings.glassBlurStrength = value
+              this.glassBlurStrength = value
+              if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+                this.updateSetting()
+              }
+            })
+          Text('强')
+            .fontSize(this.scaledFont(11))
+            .fontColor(this.settingTextColor())
+            .margin({ left: this.scaledSize(8) })
+          if (this.previewOnRight) {
+            Blank().width(this.scaledSize(14))
+            this.glassBlurPreview()
+          }
+        }
+        .padding({
+          left: this.scaledSize(12), right: this.scaledSize(12),
+          top: this.scaledSize(2), bottom: this.scaledSize(10)
+        })
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+      }
+      .width('100%')
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
 
       Column() {
         this.sectionTitle('经典 Tab 指示器深浅')
