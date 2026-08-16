@@ -44,6 +44,7 @@ struct MainPage {
   @StorageLink('uplayer_display_size_scale') @Watch('onDisplaySizeChange') displaySizeScale: number = 1.0
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
   @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
+  @StorageLink('uplayer_tab_indicator_depth') tabIndicatorDepth: number = 50
   @State albumArtFailed: boolean = false
   @State isTitleMarqueeRunning: boolean = true
   @State isArtistMarqueeRunning: boolean = true
@@ -81,6 +82,10 @@ struct MainPage {
     return this.isSongInfoShort() ? 4 : 3
   }
 
+  private indicatorDarken(base: number, range: number): number {
+    return Math.min(0.75, base + range * this.tabIndicatorDepth / 100)
+  }
+
   onDisplaySizeChange(): void {
     this.updateIndicatorOffset(this.currentIndex)
   }
@@ -108,6 +113,17 @@ struct MainPage {
   customTabBar() {
     Stack({ alignContent: Alignment.BottomStart }) {
       Row()
+        .width(this.scaledSize(this.tabWidth * 3 + this.tabGap * 2))
+        .height(this.scaledSize(40))
+        .margin({ bottom: this.scaledSize(10) })
+        .borderRadius(this.scaledSize(20))
+        .backgroundColor('rgba(255,255,255,0.06)')
+        .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
+        .border({ width: 1, color: 'rgba(255,255,255,0.18)' })
+        .shadow({ radius: 50, color: $r('app.color.shadow_color'), offsetX: 0, offsetY: 0 })
+        .zIndex(0)
+
+      Row()
         .width(this.scaledSize(this.tabWidth - 2 * this.indicatorInset))
         .height(this.scaledSize(36))
         .borderRadius(this.scaledSize(18))
@@ -115,7 +131,8 @@ struct MainPage {
         .margin({ left: this.indicatorOffset, bottom: this.scaledSize(12) })
         .shadow({
           radius: 14,
-          color: ColorHelper.hexWithAlpha(ColorHelper.darken(this.primaryColor, 0.32), 'CC'),
+          color: ColorHelper.hexWithAlpha(
+            ColorHelper.darken(this.primaryColor, this.indicatorDarken(0.12, 0.4)), 'CC'),
           offsetX: 0,
           offsetY: 0
         })
@@ -123,11 +140,12 @@ struct MainPage {
           center: ['50%', '50%'],
           radius: '75%',
           colors: [
-            [ColorHelper.darken(this.primaryColor, 0.18), 0.0],
-            [ColorHelper.darken(this.primaryColor, 0.34), 0.58],
-            [ColorHelper.darken(this.primaryColor, 0.52), 1.0],
+            [ColorHelper.darken(this.primaryColor, this.indicatorDarken(0.02, 0.32)), 0.0],
+            [ColorHelper.darken(this.primaryColor, this.indicatorDarken(0.12, 0.48)), 0.58],
+            [ColorHelper.darken(this.primaryColor, this.indicatorDarken(0.25, 0.5)), 1.0],
           ]
         })
+        .zIndex(1)
 
       Row({ space: this.scaledSize(this.tabGap) }) {
         this.tabItem(0, '首页', $r('app.media.ic_public_home'))
@@ -137,10 +155,7 @@ struct MainPage {
       .margin({ bottom: this.scaledSize(10) })
       .height(this.scaledSize(40))
       .borderRadius(this.scaledSize(20))
-      .backgroundColor('rgba(255,255,255,0.06)')
-      .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
-      .border({ width: 1, color: 'rgba(255,255,255,0.18)' })
-      .shadow({ radius: 50, color: $r('app.color.shadow_color'), offsetX: 0, offsetY: 0 })
+      .zIndex(2)
     }
     .alignSelf(ItemAlign.Center)
     .height(this.scaledSize(60))

@@ -43,6 +43,7 @@ export class AppSettingsData {
   fontSizeScale: number = 1.0
   displaySizeScale: number = 1.0
   tabStyle: string = 'classic'
+  tabIndicatorDepth: number = 50
 }
 
 export class DataService {
@@ -369,6 +370,8 @@ export class DataService {
       s.displaySizeScale = rawDisplaySizeScale !== undefined ? rawDisplaySizeScale as number : 1.0
       let rawTabStyle: Object | undefined = r['tabStyle']
       s.tabStyle = rawTabStyle !== undefined ? rawTabStyle as string : 'classic'
+      let rawTabIndicatorDepth: Object | undefined = r['tabIndicatorDepth']
+      s.tabIndicatorDepth = rawTabIndicatorDepth !== undefined ? rawTabIndicatorDepth as number : 50
       return s
     } catch (e) {
       return new AppSettingsData()
@@ -390,6 +393,7 @@ export class DataService {
     r['fontSizeScale'] = settings.fontSizeScale
     r['displaySizeScale'] = settings.displaySizeScale
     r['tabStyle'] = settings.tabStyle
+    r['tabIndicatorDepth'] = settings.tabIndicatorDepth
     this.getPref().preferencesPut(KEY_SETTINGS, JSON.stringify(r))
     AppStorage.setOrCreate(KEY_SETTINGS, settings)
     AppStorage.setOrCreate('uplayer_fade_in_out', settings.fadeInOut)
@@ -535,6 +539,7 @@ export class DataService {
     AppStorage.setOrCreate('uplayer_font_size_scale', s.fontSizeScale)
     AppStorage.setOrCreate('uplayer_display_size_scale', s.displaySizeScale)
     AppStorage.setOrCreate('uplayer_tab_style', s.tabStyle)
+    AppStorage.setOrCreate('uplayer_tab_indicator_depth', s.tabIndicatorDepth)
     this.activatePersistedUris()
   }
 

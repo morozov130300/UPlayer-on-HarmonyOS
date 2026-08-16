@@ -34,6 +34,7 @@ struct SettingsDetailPage {
   @StorageLink(AppStorageKeyConstants.KEY_TITLE_BUTTON_HEIGHT) titleButtonHeight: number = 0
   @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
+  @StorageLink('uplayer_tab_indicator_depth') tabIndicatorDepth: number = 50
   @State pageTitle: string = ''
   private dataService: DataService = DataService.getInstance()
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
@@ -298,6 +299,50 @@ struct SettingsDetailPage {
       .width('100%')
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(10)
+
+      Column() {
+        this.sectionTitle('经典 Tab 指示器深浅')
+        Row() {
+          Text('浅')
+            .fontSize(this.scaledFont(11))
+            .fontColor(this.settingTextColor())
+            .margin({ right: this.scaledSize(8) })
+          Slider({
+            value: this.settings.tabIndicatorDepth,
+            min: 0,
+            max: 100,
+            step: 1,
+            style: SliderStyle.OutSet
+          })
+            .layoutWeight(1)
+            .selectedColor(this.primaryColor)
+            .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+            .blockColor('#FFFFFF')
+            .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
+            .blockBorderColor(this.primaryColor)
+            .blockBorderWidth(3)
+            .onChange((value: number, mode: SliderChangeMode) => {
+              this.settings.tabIndicatorDepth = value
+              this.tabIndicatorDepth = value
+              if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+                this.updateSetting()
+              }
+            })
+          Text('深')
+            .fontSize(this.scaledFont(11))
+            .fontColor(this.settingTextColor())
+            .margin({ left: this.scaledSize(8) })
+        }
+        .padding({
+          left: this.scaledSize(12), right: this.scaledSize(12),
+          top: this.scaledSize(2), bottom: this.scaledSize(10)
+        })
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+      }
+      .width('100%')
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
 
       Column() {
         this.sectionTitle('主题色')
