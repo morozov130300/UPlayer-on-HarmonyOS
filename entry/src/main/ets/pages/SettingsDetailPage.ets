@@ -550,31 +550,13 @@ struct SettingsDetailPage {
           if (!this.previewOnRight) {
             this.tabIndicatorPreview()
           }
-          Text('指示器始终使用主题色，可调节深浅（透明度）')
+          Text('浅')
             .fontSize(this.scaledFont(11))
-            .fontColor(this.settingSubTextColor())
-            .layoutWeight(1)
+            .fontColor(this.settingTextColor())
             .margin({
               left: this.previewOnRight ? 0 : this.scaledSize(14),
               right: this.scaledSize(8)
             })
-          if (this.previewOnRight) {
-            Blank().width(this.scaledSize(14))
-            this.tabIndicatorPreview()
-          }
-        }
-        .padding({
-          left: this.scaledSize(12), right: this.scaledSize(12),
-          top: this.scaledSize(2), bottom: this.scaledSize(4)
-        })
-        .width('100%')
-        .alignItems(VerticalAlign.Center)
-
-        Row() {
-          Text('浅')
-            .fontSize(this.scaledFont(11))
-            .fontColor(this.settingTextColor())
-            .margin({ right: this.scaledSize(8) })
           Slider({
             value: this.settings.tabIndicatorOpacity,
             min: 0,
@@ -582,6 +564,7 @@ struct SettingsDetailPage {
             step: 1,
             style: SliderStyle.OutSet
           })
+            .width('55%')
             .layoutWeight(1)
             .selectedColor(this.primaryColor)
             .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
@@ -600,6 +583,10 @@ struct SettingsDetailPage {
             .fontSize(this.scaledFont(11))
             .fontColor(this.settingTextColor())
             .margin({ left: this.scaledSize(8) })
+          if (this.previewOnRight) {
+            Blank().width(this.scaledSize(14))
+            this.tabIndicatorPreview()
+          }
         }
         .padding({
           left: this.scaledSize(12), right: this.scaledSize(12),
