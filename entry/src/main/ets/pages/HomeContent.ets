@@ -500,6 +500,7 @@ export struct HomeContent {
             .renderingStrategy(SymbolRenderingStrategy.SINGLE)
             .fontColor([$r('app.color.text_sixty_color')])
             .margin({ right: 12 })
+            .hitTestBehavior(HitTestMode.Block)
             .onClick(() => {
               this.dataService.addToPlayNext(item.id)
               try {
@@ -515,6 +516,7 @@ export struct HomeContent {
         .width(22).height(22)
         .fillColor(item.isFavorite ? '#FF3B30' : $r('app.color.text_sixty_color'))
         .margin({ right: 12 })
+        .hitTestBehavior(HitTestMode.Block)
         .onClick(() => {
           this.toggleFavorite(item.id)
         })

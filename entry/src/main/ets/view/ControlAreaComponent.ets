@@ -1,6 +1,7 @@
 import {
   curves, LengthMetrics, PromptAction, SymbolGlyphModifier
 } from '@kit.ArkUI';
+import { AVVolumePanel } from '@kit.AudioKit';
 import { ContentConstants } from '../common/constants/ContentConstants';
 import { MusicPlayMode, PlayerConstants, PlayModeSwitchList, VOLUME_ID } from '../common/constants/PlayerConstants';
 import { StyleConstants } from '../common/constants/StyleConstants';
@@ -409,7 +410,7 @@ export struct ControlAreaComponent {
       }
       .width(StyleConstants.FULL_WIDTH)
       .justifyContent(FlexAlign.SpaceEvenly)
-      .padding({ top: $r('app.float.slider_margin_top') })
+      .margin({ top: 16 })
     }
   }
 
@@ -439,40 +440,12 @@ export struct ControlAreaComponent {
   @Builder
   volumePopupBuilder() {
     Column() {
-      Row() {
-        Text('音量')
-          .fontSize(14)
-          .fontColor($r('app.color.text_primary'))
-          .fontWeight(FontWeight.Bold)
-      }
-      .width('100%')
-      .margin({ bottom: 8 })
-      Row() {
-        Slider({
-          value: this.volume * 15, min: 0, max: 15, step: 1, style: SliderStyle.OutSet
-        })
-          .showSteps(true)
-          .showTips(false)
-          .layoutWeight(1)
-          .onChange((value: number, mode: SliderChangeMode) => {
-            this.volume = value / 15;
-            AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_VOLUME, this.volume);
-            this.avPlayerService.setVolume(this.volume);
-            if (this.volume === 0) {
-              this.isSilentMode = true;
-            } else {
-              this.isSilentMode = false;
-            }
-          })
-        Text(`${Math.round(this.volume * 100)}%`)
-          .fontSize(14)
-          .fontColor($r('app.color.text_primary'))
-          .width(40)
-          .textAlign(TextAlign.Center)
-      }
+      AVVolumePanel({
+        volumeLevel: Math.round(this.volume * 15)
+      })
     }
-    .padding(16)
-    .width(240)
+    .padding(8)
+    .width(260)
   }
 
   @Builder
