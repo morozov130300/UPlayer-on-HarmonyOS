@@ -53,6 +53,8 @@ export class AppSettingsData {
 export class DataService {
   private static instance: DataService = new DataService()
   private songsCache: SongInfo[] | undefined = undefined
+  private uriActivationInFlight: boolean = false
+  private uriActivationCompleted: boolean = false
 
   public static getInstance(): DataService {
     return DataService.instance
@@ -566,41 +568,52 @@ export class DataService {
     return settings
   }
 
+  private isPersistedAuthorizationUri(uri: string): boolean {
+    const schemeEnd: number = uri.indexOf('://')
+    if (schemeEnd <= 0) {
+      return false
+    }
+    const scheme: string = uri.substring(0, schemeEnd).toLowerCase()
+    return scheme === 'file' || scheme === 'datashare'
+  }
+
   async activatePersistedUris(): Promise<void> {
+    if (this.uriActivationInFlight || this.uriActivationCompleted) {
+      return
+    }
     if (!canIUse('SystemCapability.FileManagement.AppFileService.FolderAuthorization')) {
       Logger.info(TAG, 'activatePersistedUris: FolderAuthorization not supported')
+      this.uriActivationCompleted = true
       return
     }
     const songs: SongInfo[] = this.getSongs()
-    if (songs.length === 0) {
-      return
-    }
-    const uris: string[] = []
+    const uriSet: Set<string> = new Set<string>()
     for (let i = 0; i < songs.length; i++) {
-      const uri: string = songs[i].uri
-      if (uri.length > 0) {
-        uris.push(uri)
+      if (this.isPersistedAuthorizationUri(songs[i].uri)) {
+        uriSet.add(songs[i].uri)
       }
-      if (songs[i].lyricUri.length > 0) {
-        uris.push(songs[i].lyricUri)
+      if (this.isPersistedAuthorizationUri(songs[i].lyricUri)) {
+        uriSet.add(songs[i].lyricUri)
       }
     }
+    const uris: string[] = Array.from(uriSet)
     if (uris.length === 0) {
+      this.uriActivationCompleted = true
       return
     }
-    try {
-      const policies: fileShare.PolicyInfo[] = []
-      for (let i = 0; i < uris.length; i++) {
-        const policyInfo: fileShare.PolicyInfo = {
-          uri: uris[i],
-          operationMode: fileShare.OperationMode.READ_MODE,
-        }
-        policies.push(policyInfo)
+    this.uriActivationInFlight = true
+    for (let i = 0; i < uris.length; i++) {
+      const policyInfo: fileShare.PolicyInfo = {
+        uri: uris[i],
+        operationMode: fileShare.OperationMode.READ_MODE,
       }
-      await fileShare.activatePermission(policies)
-      Logger.info(TAG, `activatePersistedUris: activatePermission success for ${uris.length} URIs`)
-    } catch (err) {
-      Logger.error(TAG, `activatePersistedUris: activatePermission failed: ${JSON.stringify(err)}`)
+      try {
+        await fileShare.activatePermission([policyInfo])
+      } catch (err) {
+        Logger.warn(TAG, `activatePersistedUris: skip invalid URI ${uris[i]}: ${JSON.stringify(err)}`)
+      }
     }
+    this.uriActivationInFlight = false
+    this.uriActivationCompleted = true
   }
 }

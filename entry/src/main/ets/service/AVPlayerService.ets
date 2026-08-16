@@ -119,6 +119,9 @@ export class AVPlayerService {
       AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TOTAL_MS_TIME, duration)
       AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PROGRESS_MAX, duration)
       AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TOTAL_TIME, this.formatTime(duration))
+      if (duration > 0) {
+        this.sessionController.setAVMetadata()
+      }
     })
 
     this.avPlayer.on('error', (err: BusinessError): void => {
@@ -157,7 +160,6 @@ export class AVPlayerService {
     this.cancelPrepare()
     const useNativePlayer: boolean = this.equalizerEnabled && nativeAudio.isEqualizerSupported()
     if (useNativePlayer) {
-      nativeAudio.stop()
       await this.stopAvPlayerForNative(requestId)
       if (requestId !== this.playRequestId) {
         return
@@ -234,7 +236,6 @@ export class AVPlayerService {
         this.avPlayer.seek(startPositionMs)
       }
       this.avPlayer.play()
-      this.sessionController.setAVMetadata()
       return
     }
     this.currentFilePath = fileUri
@@ -280,7 +281,6 @@ export class AVPlayerService {
         this.avPlayer.seek(startPositionMs)
       }
       this.avPlayer.play()
-      this.sessionController.setAVMetadata()
     } catch (err) {
       Logger.error(TAG, `play failed: ${JSON.stringify(err)}`)
       this.finishPrepare(false)
@@ -351,7 +351,7 @@ export class AVPlayerService {
       }
       return
     }
-    if (this.avPlayer === undefined) {
+    if (this.avPlayer === undefined || this.avPlayer.state !== 'playing') {
       return
     }
     try {
@@ -388,6 +388,7 @@ export class AVPlayerService {
 
   private fadeOut(): void {
     this.stopFade()
+    const fadeRequestId: number = this.playRequestId
     const startVol: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_CURRENT_VOLUME) ?? 1
     this.fadeStep = 0
     this.fadeTimer = setInterval(() => {
@@ -398,7 +399,8 @@ export class AVPlayerService {
       }
       if (this.fadeStep >= AVPlayerService.FADE_STEPS) {
         this.stopFade()
-        if (this.avPlayer !== undefined) {
+        if (fadeRequestId === this.playRequestId && !this.nativeMode && this.avPlayer !== undefined &&
+          this.avPlayer.state === 'playing') {
           this.avPlayer.pause()
         }
       }
@@ -431,7 +433,6 @@ export class AVPlayerService {
     this.clearNativeSession()
     AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, false)
     this.sessionController.setPlayState(false)
-    this.currentFilePath = ''
     if (this.avPlayer === undefined) {
       this.stopBackground()
       return
@@ -444,7 +445,6 @@ export class AVPlayerService {
       }
       this.currentFilePath = ''
       this.isPrepared = false
-      this.sessionController.setPlayState(false)
       this.stopBackground()
     } catch (err) {
       Logger.error(TAG, `stop failed: ${JSON.stringify(err)}`)

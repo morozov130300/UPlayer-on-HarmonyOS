@@ -395,16 +395,10 @@ public:
             decoderThread_.join();
         }
         if (renderer_ != nullptr) {
-            if (rendererState_ == RendererState::STARTED) {
-                OH_AudioRenderer_Pause(renderer_);
-                rendererState_ = RendererState::PAUSED;
-            }
-            if (rendererState_ == RendererState::PAUSED) {
-                OH_AudioRenderer_Flush(renderer_);
-            }
             if (rendererState_ == RendererState::STARTED || rendererState_ == RendererState::PAUSED) {
-                OH_AudioRenderer_Stop(renderer_);
-                rendererState_ = RendererState::STOPPED;
+                if (OH_AudioRenderer_Stop(renderer_) == AUDIOSTREAM_SUCCESS) {
+                    rendererState_ = RendererState::STOPPED;
+                }
             }
             OH_AudioRenderer_Release(renderer_);
             renderer_ = nullptr;
@@ -876,18 +870,26 @@ private:
                     inputBuffers_.clear();
                     outputBuffers_.clear();
                 }
-                OH_AVErrCode flushResult = codecState_ == CodecState::STARTED ?
-                    OH_AudioCodec_Flush(decoder_) : static_cast<OH_AVErrCode>(-1);
-                int64_t seekPosition = seekPositionMs_.load();
-                OH_AVErrCode seekResult = flushResult == AV_ERR_OK ?
-                    OH_AVDemuxer_SeekToTime(demuxer_, seekPosition, SEEK_MODE_CLOSEST_SYNC) : flushResult;
-                if (flushResult != AV_ERR_OK || seekResult != AV_ERR_OK) {
-                    FailDecoder("seek reset", flushResult, seekResult);
+                if (codecState_ != CodecState::STARTED) {
+                    FailDecoder("seek state", static_cast<int32_t>(codecState_.load()), 0);
                     break;
                 }
-                OH_AVErrCode restartResult = OH_AudioCodec_Start(decoder_);
-                if (restartResult != AV_ERR_OK) {
-                    FailDecoder("seek restart", restartResult, AV_ERR_OK);
+                OH_AVErrCode stopResult = OH_AudioCodec_Stop(decoder_);
+                if (stopResult != AV_ERR_OK) {
+                    FailDecoder("seek stop", stopResult, 0);
+                    break;
+                }
+                codecState_ = CodecState::STOPPED;
+                OH_AVErrCode seekResult = OH_AVDemuxer_SeekToTime(
+                    demuxer_, seekPositionMs_.load(), SEEK_MODE_CLOSEST_SYNC);
+                OH_AVErrCode prepareResult = seekResult == AV_ERR_OK ? OH_AudioCodec_Prepare(decoder_) : seekResult;
+                if (prepareResult == AV_ERR_OK) {
+                    codecState_ = CodecState::PREPARED;
+                }
+                OH_AVErrCode restartResult = prepareResult == AV_ERR_OK ? OH_AudioCodec_Start(decoder_) : prepareResult;
+                int64_t seekPosition = seekPositionMs_.load();
+                if (seekResult != AV_ERR_OK || prepareResult != AV_ERR_OK || restartResult != AV_ERR_OK) {
+                    FailDecoder("seek reset", seekResult, restartResult);
                     break;
                 }
                 codecState_ = CodecState::STARTED;
