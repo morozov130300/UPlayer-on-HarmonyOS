@@ -77,7 +77,6 @@ export class WindowUtil {
         buttonBackgroundCornerRadius: 8
       }
       this.mainWindow.setDecorButtonStyle(decorButtonStyle)
-      this.updateTitleButtonRect(this.mainWindow.getTitleButtonRect())
       this.mainWindow.on('windowTitleButtonRectChange', this.onTitleButtonRectChange)
     } catch (err) {
       Logger.error(TAG, `setupImmersiveTitleButtons failed: ${JSON.stringify(err)}`)

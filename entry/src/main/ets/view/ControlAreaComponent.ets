@@ -386,6 +386,7 @@ export struct ControlAreaComponent {
             title: this.playListTitle(),
             showClose: true,
             preferType: SheetType.CENTER,
+            radius: LengthMetrics.vp(24),
             onWillAppear: () => {
               Logger.info(TAG, 'musicListBuilder');
               this.scroller.scrollToIndex(this.selectIndex, false, ScrollAlign.CENTER);
