@@ -4,8 +4,6 @@ import { WindowUtil } from '../common/utils/WindowUtil';
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
 import { curves } from '@kit.ArkUI';
 import { ColorHelper } from '../common/utils/ColorHelper';
-import { deviceInfo } from '@kit.BasicServicesKit';
-import { WindowControlsComponent } from '../view/WindowControlsComponent';
 import { ShareService } from '../service/ShareService';
 
 const TAG = '[MusicPlayer]';
@@ -19,7 +17,6 @@ struct MusicPlayer {
   @StorageLink(AppStorageKeyConstants.KEY_WINDOW_UTIL) windowUtil: WindowUtil | undefined = undefined;
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF';
   @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0;
-  private isPC: boolean = deviceInfo.deviceType === '2in1';
   private shareService: ShareService = ShareService.getInstance();
   @StorageLink(AppStorageKeyConstants.KEY_TOP_HEIGHT) topSafeHeight: number = 0;
 
@@ -50,7 +47,7 @@ struct MusicPlayer {
   }
 
   build() {
-    Stack({ alignContent: Alignment.TopEnd }) {
+    Stack() {
       if (this.isLoading) {
         Stack() {
           Column()
@@ -66,13 +63,6 @@ struct MusicPlayer {
         .width('100%')
       } else {
         PlayerInfoComponent({ isShowPlay: this.isShowPlay, mainWindowInfo: this.windowUtil?.mainWindowInfo, sizeScale: this.displaySizeScale })
-      }
-
-      if (this.isPC) {
-        Row() {
-          WindowControlsComponent()
-        }
-        .padding({ top: this.topSafeHeight + 4, right: 8 })
       }
     }
     .height('100%')

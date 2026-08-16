@@ -10,7 +10,6 @@ import { PlaylistContent } from './PlaylistContent'
 import { SettingsContent } from './SettingsContent'
 import { DataService } from '../service/DataService'
 import { ColorHelper } from '../common/utils/ColorHelper'
-import { WindowControlsComponent } from '../view/WindowControlsComponent'
 import { ShareService } from '../service/ShareService'
 import Logger from '../common/utils/Logger'
 
@@ -31,9 +30,11 @@ struct MainPage {
   @State breakpoint: string = 'md'
   @StorageLink(AppStorageKeyConstants.KEY_TOP_HEIGHT) topSafeHeight: number = 0
   @StorageLink(AppStorageKeyConstants.KEY_BOTTOM_HEIGHT) bottomSafeHeight: number = 0
+  @StorageLink(AppStorageKeyConstants.KEY_TITLE_BUTTON_WIDTH) titleButtonWidth: number = 0
+  @StorageLink(AppStorageKeyConstants.KEY_TITLE_BUTTON_HEIGHT) titleButtonHeight: number = 0
   @StorageLink('uplayer_current_title') currentSongTitle: string = ''
   @StorageLink('uplayer_current_artist') currentSongArtist: string = ''
-  @StorageLink('uplayer_current_album_art') currentSongAlbumArt: string = ''
+  @StorageLink('uplayer_current_album_art') @Watch('onAlbumArtChange') currentSongAlbumArt: string = ''
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
   @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
@@ -259,12 +260,14 @@ struct MainPage {
           .objectFit(ImageFit.Cover)
           .rotate({ angle: this.rotationAngle })
           .onError(() => { this.albumArtFailed = true })
+          .onClick(() => { this.openPlayer() })
       } else {
         Image($r('app.media.ic_public_music'))
           .width(32).height(32)
           .borderRadius(16)
           .rotate({ angle: this.rotationAngle })
           .fillColor($r('app.color.player_icon_color'))
+          .onClick(() => { this.openPlayer() })
       }
 
       Column() {
@@ -300,7 +303,7 @@ struct MainPage {
       .layoutWeight(1)
       .margin({ left: 8, right: 8 })
       .onClick(() => {
-        this.getUIContext().getRouter().pushUrl({ url: 'pages/MusicPlayer' })
+        this.openPlayer()
       })
       Image($r('app.media.ic_public_play_last'))
         .width(20)
@@ -331,6 +334,17 @@ struct MainPage {
       color: this.isGlowing ? ColorHelper.hexWithAlpha(this.primaryColor, '66') : $r('app.color.shadow_color'),
       offsetY: 5
     })
+  }
+
+  openPlayer(): void {
+    if (this.currentSongTitle.length === 0) {
+      return
+    }
+    this.getUIContext().getRouter().pushUrl({ url: 'pages/MusicPlayer' })
+  }
+
+  onAlbumArtChange(): void {
+    this.albumArtFailed = false
   }
 
   onPlayStateChange(): void {
@@ -449,18 +463,19 @@ struct MainPage {
                 .opacity(this.greetingOpacity)
                 .translate({ y: this.greetingOffset })
               Blank()
-              if (this.isPC) {
-                WindowControlsComponent()
-              }
             }
             .width('100%')
             .height('100%')
             .justifyContent(FlexAlign.Start)
             .alignItems(VerticalAlign.Center)
-            .padding({ top: 16 + this.topSafeHeight, left: 16, right: 8 })
+            .padding({
+              top: this.isPC ? 0 : 16 + this.topSafeHeight,
+              left: 16,
+              right: this.isPC ? this.titleButtonWidth + 12 : 8
+            })
           }
           .width('100%')
-          .height(this.isPC ? 64 : 96)
+          .height(this.isPC ? Math.max(56, this.titleButtonHeight) : 96)
           .transition({ type: TransitionType.Insert, opacity: 0, translate: { y: -20 } })
           .transition({ type: TransitionType.Delete, opacity: 0, translate: { y: -20 } })
         }

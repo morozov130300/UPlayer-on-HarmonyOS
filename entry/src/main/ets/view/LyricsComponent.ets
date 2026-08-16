@@ -35,6 +35,7 @@ export struct LyricsComponent {
   }
 
   getLrcEntryList() {
+    this.coverArtFailed = false;
     this.mLrcEntryList = [];
     if (!this.songList || this.selectIndex < 0 || this.selectIndex >= this.songList.length) {
       return;

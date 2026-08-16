@@ -22,9 +22,8 @@ export class AudioMetadataService {
     try {
       extractor = await media.createAVMetadataExtractor()
       file = fs.openSync(song.uri.length > 0 ? song.uri : song.filePath, fs.OpenMode.READ_ONLY)
-      const sourcePath: string = song.uri.length > 0 ? song.uri : song.filePath
-      const stat = fs.statSync(sourcePath)
-      const avFd: media.AVFileDescriptor = { fd: file.fd, offset: 0, length: stat.size }
+      const fileSize: number = fs.statSync(file.fd).size
+      const avFd: media.AVFileDescriptor = { fd: file.fd, offset: 0, length: fileSize }
       extractor.fdSrc = avFd
 
       // 提取文本元数据（标题、歌手、专辑）
@@ -61,7 +60,7 @@ export class AudioMetadataService {
         song.albumArtPath = await this.saveAlbumCover(cover, song.id, context)
       } catch (coverErr) {
         song.albumArtPath = ''
-        Logger.info(TAG, `No album cover for ${song.fileName}`)
+        Logger.warn(TAG, `Album cover extraction failed for ${song.fileName}: ${JSON.stringify(coverErr)}`)
       } finally {
         if (cover !== undefined) {
           cover.release()
@@ -86,7 +85,9 @@ export class AudioMetadataService {
     let packer: image.ImagePacker | undefined = undefined
     let coverFile: fs.File | undefined = undefined
     try {
-      fs.mkdirSync(coverDir, true)
+      if (!fs.accessSync(coverDir, fs.AccessModeType.EXIST)) {
+        fs.mkdirSync(coverDir, true)
+      }
       packer = image.createImagePacker()
       const options: image.PackingOption = {
         format: 'image/jpeg',
@@ -96,6 +97,7 @@ export class AudioMetadataService {
       coverFile = fs.openSync(coverPath,
         fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC)
       fs.writeSync(coverFile.fd, packedData)
+      fs.fsyncSync(coverFile.fd)
       return coverPath
     } catch (err) {
       Logger.warn(TAG, `saveAlbumCover error: ${JSON.stringify(err)}`)
@@ -117,14 +119,13 @@ export class AudioMetadataService {
     try {
       extractor = await media.createAVMetadataExtractor()
       file = fs.openSync(song.uri.length > 0 ? song.uri : song.filePath, fs.OpenMode.READ_ONLY)
-      const sourcePath: string = song.uri.length > 0 ? song.uri : song.filePath
-      const stat = fs.statSync(sourcePath)
-      const avFd: media.AVFileDescriptor = { fd: file.fd, offset: 0, length: stat.size }
+      const fileSize: number = fs.statSync(file.fd).size
+      const avFd: media.AVFileDescriptor = { fd: file.fd, offset: 0, length: fileSize }
       extractor.fdSrc = avFd
       let cover: image.PixelMap = await extractor.fetchAlbumCover()
       return cover
     } catch (err) {
-      Logger.info(TAG, `No album cover for ${song.fileName}`)
+      Logger.warn(TAG, `Album cover extraction failed for ${song.fileName}: ${JSON.stringify(err)}`)
       return undefined
     } finally {
       if (extractor !== undefined) {
@@ -134,21 +135,5 @@ export class AudioMetadataService {
         fs.closeSync(file)
       }
     }
-  }
-
-  async repairAlbumCovers(songs: SongInfo[], context: common.UIAbilityContext): Promise<boolean> {
-    let changed: boolean = false
-    for (let i = 0; i < songs.length; i++) {
-      const song: SongInfo = songs[i]
-      if (song.albumArtPath.length > 0 && fs.accessSync(song.albumArtPath)) {
-        continue
-      }
-      const oldPath: string = song.albumArtPath
-      await this.extractAndSaveMetadata(song, context)
-      if (song.albumArtPath !== oldPath) {
-        changed = true
-      }
-    }
-    return changed
   }
 }

@@ -199,6 +199,18 @@ export class DataService {
     const result: ImportResult = new ImportResult()
     for (let i = 0; i < newSongs.length; i++) {
       if (existingPaths.has(newSongs[i].filePath)) {
+        for (let j = 0; j < songs.length; j++) {
+          if (songs[j].filePath === newSongs[i].filePath) {
+            songs[j].title = newSongs[i].title
+            songs[j].artist = newSongs[i].artist
+            songs[j].album = newSongs[i].album
+            songs[j].duration = newSongs[i].duration
+            songs[j].uri = newSongs[i].uri
+            songs[j].albumArtPath = newSongs[i].albumArtPath
+            songs[j].isAvailable = true
+            break
+          }
+        }
         result.dupCount++
       } else {
         songs.push(newSongs[i])
