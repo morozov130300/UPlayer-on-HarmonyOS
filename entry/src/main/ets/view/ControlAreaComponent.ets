@@ -31,33 +31,50 @@ import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstan
 
 const TAG = 'ControlAreaComponent';
 
+/**
+ * ✅ 播放器控制区域组件
+ * 包含：进度条、时间显示、播放/暂停、上下曲、播放模式、歌单、静音、倍速、音量
+ */
 @Component
 export struct ControlAreaComponent {
   @Prop mainWindowInfo: WindowInfo;
+  /** 是否正在播放（与 MediaControlCenter 联动） */
   @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) isPlay: boolean = false;
+  /** 当前播放时间（文本格式 mm:ss） */
   @StorageLink(AppStorageKeyConstants.KEY_CURRENT_TIME) currentTime: string = '00:00';
+  /** 总时长（文本格式 mm:ss） */
   @StorageLink(AppStorageKeyConstants.KEY_TOTAL_TIME) totalTime: string = '00:00';
+  /** 当前进度（毫秒） */
   @StorageLink(AppStorageKeyConstants.KEY_PROGRESS) value: number = 0;
+  /** 进度条最大值（毫秒） */
   @StorageLink(AppStorageKeyConstants.KEY_PROGRESS_MAX) max: number = 0;
+  /** 播放模式索引（0=顺序 1=随机 2=单曲循环） */
   @State playModeIndex: number = 0;
+  /** 封面主色（给进度条/弹窗等做主题色参考） */
   @StorageLink(AppStorageKeyConstants.KEY_IMAGE_COLOR) imageColor: string = '';
+  /** 页面无操作累计时间（秒） */
   @StorageLink(AppStorageKeyConstants.KEY_PAGE_SHOW_TIME) pageShowTime: number = 0;
   @StorageLink(AppStorageKeyConstants.KEY_SONG_LIST) songList: SongItem[] = [];
+  /** 是否显示歌单 Sheet */
   @State isShowPlayList: boolean = false;
+  /** 当前播放模式枚举值 */
   @StorageLink(AppStorageKeyConstants.KEY_PLAY_MODE) playMode: MusicPlayMode = PlayModeSwitchList[this.playModeIndex];
   @StorageLink(AppStorageKeyConstants.KEY_SELECT_INDEX) selectIndex: number = 0;
+  /** 是否静音（变化时自动同步到 MediaControlCenter） */
   @StorageLink(AppStorageKeyConstants.KEY_IS_SILENT_MODE) @Watch('isSilentModeChange') isSilentMode: boolean = false;
+  /** 播放速度 */
   @StorageLink(AppStorageKeyConstants.KEY_CURRENT_SPEED) speed: number = 1;
-  // [Start currentVolumeChange]
+  /** 音量（0~1，变化时自动同步到 MediaControlCenter） */
   @StorageLink(AppStorageKeyConstants.KEY_CURRENT_VOLUME) @Watch('currentVolumeChange') volume: number = 0;
-  // [StartExclude currentVolumeChange]
   @State isShowSpeedBuild: boolean = false;
   @State isShowVolumeBuild: boolean = false;
+  /** 进度条操作时的动态样式：字号、粗细、发光 */
   @State songTimeFontSize: number = 10;
   @State songTimeFontColor: Resource = $r('app.color.play_text_color');
   @State trackThickness: number = 6;
   @State playBtnScale: number = 1.0;
   @State sliderGlow: number = 0;
+  /** 是否反向布局（小屏模式下控制栏在歌词页时反向） */
   @Prop isReverse: boolean = false;
   private scroller: Scroller = new Scroller();
   private resourceConversion: ResourceConversion = new ResourceConversion();
@@ -65,23 +82,24 @@ export struct ControlAreaComponent {
   uiContext: UIContext = this.getUIContext();
   promptAction: PromptAction = this.uiContext.getPromptAction();
   @State speedSelectIndex: number = 0;
+  /** 倍速选项列表 */
   @State speedArr: number[] = [0.5, 1, 2, 3]
-  @State modeRotate: number = 0;
   @State silentScale: number = 1.0;
   @State playlistScale: number = 1.0;
+  @State playModeScale: number = 1.0;
   @State speedScale: number = 1.0;
 
+  /** 静音状态变化时同步到 MediaControlCenter */
   isSilentModeChange() {
     MediaControlCenter.getInstance().setSilentMode(this.isSilentMode);
   }
 
-  // [EndExclude currentVolumeChange]
+  /** 音量值变化时同步到 MediaControlCenter */
   currentVolumeChange() {
     MediaControlCenter.getInstance().setVolume(this.volume)
   }
 
-  // [End currentVolumeChange]
-
+  /** 切换播放模式（顺序 → 随机 → 单曲循环），带动画和 Toast 提示 */
   switchPlayMode() {
     if (this.playModeIndex === PlayModeSwitchList.length - 1) {
       this.playModeIndex = 0;
@@ -89,10 +107,6 @@ export struct ControlAreaComponent {
       this.playModeIndex++;
     }
     this.playMode = PlayModeSwitchList[this.playModeIndex];
-    // 切换动画：图标旋转一圈
-    this.getUIContext()?.animateTo({ duration: 400, curve: Curve.EaseInOut }, () => {
-      this.modeRotate += 360;
-    });
     Logger.info(TAG, 'playModeIndex is' + this.playModeIndex);
     try {
       this.promptAction.openToast({
@@ -135,22 +149,17 @@ export struct ControlAreaComponent {
   build() {
     Column() {
       Column() {
+        /** ✅ 进度条 + 时间显示 */
         Column() {
           Slider({
-            min: 0,
-            max: this.max,
-            step: 1,
-            style: SliderStyle.NONE,
-            value: this.value
+            min: 0, max: this.max, step: 1, style: SliderStyle.NONE, value: this.value
           })
             .trackThickness(this.trackThickness)
             .selectedColor($r('app.color.slider_select'))
             .trackColor($r('app.color.slider_track'))
             .enabled(this.max > 0)
-            .shadow({
-              radius: this.sliderGlow,
-              color: '#33007DFF'
-            })
+            .shadow({ radius: this.sliderGlow, color: '#33007DFF' })
+            /** 拖拽结束时：seek + 样式恢复；拖拽中：实时更新时间 + 样式放大 */
             .onChange((value: number, mode: SliderChangeMode) => {
               if (mode === SliderChangeMode.End) {
                 MediaControlCenter.getInstance().seek(value);
@@ -175,6 +184,7 @@ export struct ControlAreaComponent {
             .height($r('app.float.slider_height'))
             .width(StyleConstants.FULL_WIDTH)
             .hitTestBehavior(HitTestMode.Block)
+          /** 当前时间（左） / 总时长（右） */
           Row() {
             Text(this.currentTime)
               .fontColor(this.songTimeFontColor)
@@ -190,10 +200,9 @@ export struct ControlAreaComponent {
           .width(StyleConstants.FULL_WIDTH)
           .justifyContent(FlexAlign.SpaceBetween)
         }
-        .margin({
-          bottom: 12
-        })
+        .margin({ bottom: 12 })
 
+        /** ✅ 播放控制：上一曲 → 播放/暂停 → 下一曲 */
         Row() {
           Image($r('app.media.ic_public_forward'))
             .controlImageBuilder()
@@ -203,15 +212,14 @@ export struct ControlAreaComponent {
               MediaControlCenter.getInstance().playPrevious();
               this.pageShowTime = 0;
             })
+          /** 播放/暂停按钮：播放中显示 ic_public_play（暂停图标），未播放显示 ic_public_pause（播放图标） */
           Image(this.isPlay ? $r('app.media.ic_public_play') : $r('app.media.ic_public_pause'))
             .controlImageBuilder()
             .width(72)
-            .scale({
-              x: this.playBtnScale,
-              y: this.playBtnScale
-            })
+            .scale({ x: this.playBtnScale, y: this.playBtnScale })
             .shadow({ radius: 10, color: '#22007DFF' })
             .hoverEffect(HoverEffect.Scale)
+            /** 点击时弹簧缩放动画 → 切换播放/暂停 */
             .onClick(() => {
               this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
                 this.playBtnScale = 0.85
@@ -239,24 +247,32 @@ export struct ControlAreaComponent {
         }
         .width(StyleConstants.FULL_WIDTH)
         .justifyContent(FlexAlign.SpaceBetween)
-        .padding({
-          left: $r('app.float.control_padding'),
-          right: $r('app.float.control_padding')
-        })
+        .padding({ left: $r('app.float.control_padding'), right: $r('app.float.control_padding') })
       }
 
+      /** ✅ 底部功能按钮行：播放模式 → 歌单 → 静音 → 倍速 → 音量 */
       Row() {
+        /** 播放模式切换（顺序/随机/单曲循环） */
         SymbolGlyph(this.playMode === MusicPlayMode.ORDER ? $r('sys.symbol.order_play') :
           this.playMode === MusicPlayMode.RANDOM ? $r('sys.symbol.shuffle') : $r('sys.symbol.repeat_1'))
           .fontSize(26)
           .renderingStrategy(SymbolRenderingStrategy.SINGLE)
           .fontColor([Color.White])
           .opacity(0.86)
-          .rotate({ angle: this.modeRotate })
+          .scale({ x: this.playModeScale, y: this.playModeScale })
           .onClick(() => {
+            this.getUIContext()?.animateTo({ duration: 200, curve: Curve.EaseInOut }, () => {
+              this.playModeScale = 0.75;
+            });
+            setTimeout(() => {
+              this.getUIContext()?.animateTo({ duration: 300, curve: curves.springMotion() }, () => {
+                this.playModeScale = 1.0;
+              });
+            }, 150);
             this.switchPlayMode()
           })
 
+        /** 歌单列表（弹出 Sheet） */
         SymbolGlyph($r('sys.symbol.music_note_list'))
           .fontSize(26)
           .renderingStrategy(SymbolRenderingStrategy.SINGLE)
@@ -286,6 +302,7 @@ export struct ControlAreaComponent {
             }
           })
 
+        /** 静音开关（铃铛图标） */
         SymbolGlyph(this.isSilentMode ? $r('sys.symbol.bell_slash') : $r('sys.symbol.bell'))
           .fontSize(26)
           .renderingStrategy(SymbolRenderingStrategy.SINGLE)
@@ -310,25 +327,22 @@ export struct ControlAreaComponent {
             }
           })
 
+        /** 倍速设置（弹出菜单） */
         SymbolGlyph($r('sys.symbol.speed_multiple'))
           .fontSize(26)
           .renderingStrategy(SymbolRenderingStrategy.SINGLE)
           .fontColor([Color.White])
           .opacity(0.86)
-          .onClick(() => {
-            this.isShowSpeedBuild = true;
-          })
+          .onClick(() => { this.isShowSpeedBuild = true; })
           .bindMenu(this.speedBuilder())
 
-
+        /** 音量控制（弹出 Sheet） */
         SymbolGlyph($r('sys.symbol.speaker_wave_2'))
           .fontSize(26)
           .renderingStrategy(SymbolRenderingStrategy.SINGLE)
           .fontColor([Color.White])
           .opacity(0.86)
-          .onClick(() => {
-            this.isShowVolumeBuild = true;
-          })
+          .onClick(() => { this.isShowVolumeBuild = true; })
           .bindSheet($$this.isShowVolumeBuild, this.volumeBuilder(), {
             dragBar: false,
             height: SheetSize.FIT_CONTENT,
@@ -336,18 +350,15 @@ export struct ControlAreaComponent {
             title: this.volumeTitle(),
             showClose: true,
           })
-
       }
       .width(StyleConstants.FULL_WIDTH)
       .justifyContent(FlexAlign.SpaceBetween)
-      .padding({
-        top: $r('app.float.slider_margin_top'),
-        bottom: this.isReverse ? $r('app.float.slider_margin_top') : 0
-      })
+      .padding({ top: $r('app.float.slider_margin_top'), bottom: this.isReverse ? $r('app.float.slider_margin_top') : 0 })
     }
     .reverse(this.isReverse)
   }
 
+  /** 歌单列表 Builder */
   @Builder
   musicListBuilder() {
     Column() {
@@ -372,40 +383,29 @@ export struct ControlAreaComponent {
     }
   }
 
+  /** 音量调节 Builder（Slider 0-100%） */
   @Builder
   volumeBuilder() {
     Column() {
       Row() {
-        // [Start VolumeSlider]
         Slider({
-          value: this.volume * 100,
-          min: 0,
-          max: 100,
-          step: 10,
-          style: SliderStyle.OutSet
+          value: this.volume * 100, min: 0, max: 100, step: 10, style: SliderStyle.OutSet
         })
           .showSteps(true)
           .showTips(false)
           .layoutWeight(1)
           .onChange((value: number, mode: SliderChangeMode) => {
             this.volume = value / 100;
-            // [StartExclude VolumeSlider]
             if (this.volume === 0) {
               this.isSilentMode = true
             } else {
               this.isSilentMode = false;
             }
-            // [EndExclude VolumeSlider]
           })
-        // [End VolumeSlider]
         Text(`${this.volume * 100}`)
       }
     }
-    .padding({
-      bottom: 30,
-      left: 15,
-      right: 15
-    })
+    .padding({ bottom: 30, left: 15, right: 15 })
   }
 
   @Builder
@@ -417,6 +417,7 @@ export struct ControlAreaComponent {
         this.mainWindowInfo.widthBp === WidthBreakpoint.WIDTH_MD) ? 20 : 14)
   }
 
+  /** 倍速选择菜单（0.5x / 1x / 2x / 3x） */
   @Builder
   speedBuilder() {
     Menu() {
@@ -424,8 +425,7 @@ export struct ControlAreaComponent {
         ForEach(this.speedArr, (speed: number, index: number) => {
           MenuItem({
             content: `${speed}x`,
-            symbolEndIcon: this.speed === speed ? new SymbolGlyphModifier($r('sys.symbol.checkmark')).fontSize('24vp') :
-              undefined
+            symbolEndIcon: this.speed === speed ? new SymbolGlyphModifier($r('sys.symbol.checkmark')).fontSize('24vp') : undefined
           })
             .width('100%')
             .onClick(() => {
@@ -464,6 +464,7 @@ export struct ControlAreaComponent {
   }
 }
 
+/** Image 扩展：播控图标通用样式（正方形 + 半透明 + 包含模式） */
 @Extend(Image)
 function controlImageBuilder() {
   .aspectRatio(1)
@@ -471,6 +472,10 @@ function controlImageBuilder() {
   .objectFit(ImageFit.Contain)
 }
 
+/**
+ * 歌单列表项（可复用）
+ * 显示：歌名 + 歌手(含角标) + 播放中等效提示图标
+ */
 @Reusable
 @Component
 struct MusicListContainer {
@@ -499,7 +504,7 @@ struct MusicListContainer {
           }
         }
         .alignItems(HorizontalAlign.Start)
-
+        /** 当前播放中的歌曲显示波形图标 */
         if (this.selectIndex === this.index && this.isPlay) {
           Column() {
             SymbolGlyph($r('sys.symbol.waveform_1'))
@@ -517,9 +522,6 @@ struct MusicListContainer {
       .height($r('app.float.list_item_height'))
       .width(StyleConstants.FULL_WIDTH)
     }
-    .padding({
-      left: $r('app.float.list_item_padding'),
-      right: $r('app.float.list_item_padding')
-    })
+    .padding({ left: $r('app.float.list_item_padding'), right: $r('app.float.list_item_padding') })
   }
 }

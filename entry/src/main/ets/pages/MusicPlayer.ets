@@ -3,22 +3,27 @@ import { MediaControlCenter } from '../common/utils/mediautils/MediaControlCente
 import { PlayerInfoComponent } from '../view/PlayerInfoComponent';
 import { WindowUtil } from '../common/utils/WindowUtil';
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
+import { curves } from '@kit.ArkUI';
 
 const TAG = '[MusicPlayer]';
 
 @Entry
 @Component
 struct MusicPlayer {
+  /** 是否显示播放状态（传给子组件用） */
   @State isShowPlay: boolean = false;
+  /** 页面背景透明度（用于进入时的淡入动画） */
   @State bgOpacity: number = 0;
+  /** 是否正在初始化（显示加载中） */
   @State isLoading: boolean = true;
+  /** 窗口工具（从 AppStorage 同步，含窗口大小、安全区信息） */
   @StorageLink(AppStorageKeyConstants.KEY_WINDOW_UTIL) windowUtil: WindowUtil | undefined = undefined;
 
+  /** 页面初始化：初始化媒体引擎 → 取消加载态 → 背景淡入 */
   async aboutToAppear() {
     try {
       await MediaControlCenter.getInstance().init();
       this.isLoading = false;
-      // 页面淡入效果
       this.getUIContext()?.animateTo({ duration: 600, curve: Curve.EaseOut }, () => {
         this.bgOpacity = 1
       })
@@ -32,22 +37,20 @@ struct MusicPlayer {
     Logger.info(TAG, 'aboutToDisappear');
   }
 
-  // 页面转场动画：从底部播控条位置散开式展开
+  /** 页面转场动画：从底部弹性滑入，从底部弹性滑出 */
   pageTransition() {
-    PageTransitionEnter({ duration: 400, curve: Curve.EaseOut })
-      .translate({ x: 0, y: 60 })
-      .scale({ x: 0.4, y: 0.4 })
+    PageTransitionEnter({ duration: 500, curve: curves.springMotion(0.6, 0.8) })
+      .slide(SlideEffect.Bottom)
       .opacity(0)
-    PageTransitionExit({ duration: 350, curve: Curve.EaseIn })
-      .translate({ x: 0, y: 60 })
-      .scale({ x: 0.4, y: 0.4 })
+    PageTransitionExit({ duration: 400, curve: curves.springMotion(0.7, 0.9) })
+      .slide(SlideEffect.Bottom)
       .opacity(0)
   }
 
   build() {
     Stack() {
+      /** 加载中：纯色背景 + LoadingProgress 动画 */
       if (this.isLoading) {
-        // 加载中状态
         Stack() {
           Column()
             .width('100%')
@@ -61,6 +64,7 @@ struct MusicPlayer {
         .height('100%')
         .width('100%')
       } else {
+        /** 加载完成：显示播放器主内容（封面 + 歌词 + 控制区） */
         PlayerInfoComponent({ isShowPlay: this.isShowPlay, mainWindowInfo: this.windowUtil?.mainWindowInfo })
       }
     }

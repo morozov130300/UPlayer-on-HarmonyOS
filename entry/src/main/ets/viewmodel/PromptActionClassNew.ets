@@ -60,6 +60,9 @@ export class PromptActionClassNew {
 
   // 打开弹窗
   static openDialog() {
+    if (PromptActionClassNew.ctx === undefined) {
+      return;
+    }
     if (PromptActionClassNew.contentNode !== null) {
       PromptActionClassNew.ctx.getPromptAction()
         .openCustomDialog(PromptActionClassNew.contentNode, PromptActionClassNew.options)
@@ -76,6 +79,9 @@ export class PromptActionClassNew {
   }
 
   static closeDialog() {
+    if (PromptActionClassNew.ctx === undefined) {
+      return;
+    }
     if (PromptActionClassNew.contentNode !== null) {
       PromptActionClassNew.ctx.getPromptAction()
         .closeCustomDialog(PromptActionClassNew.contentNode)
@@ -92,6 +98,9 @@ export class PromptActionClassNew {
   }
 
   static updateDialog(options: promptAction.BaseDialogOptions) {
+    if (PromptActionClassNew.ctx === undefined) {
+      return;
+    }
     if (PromptActionClassNew.contentNode !== null) {
       PromptActionClassNew.ctx.getPromptAction()
         .updateCustomDialog(PromptActionClassNew.contentNode, options)
