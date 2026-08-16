@@ -24,6 +24,11 @@ export class AVSessionController {
   private metadataCoverLease: AlbumCoverLease | undefined = undefined;
   private lastProgressReportTime: number = 0;
   private lastProgressReportPosition: number = -1;
+  private sessionAvailable: boolean = false;
+  private playbackStateInFlight: boolean = false;
+  private pendingPlaybackState: avSession.AVPlaybackState | undefined = undefined;
+  private lastSubmittedPlayState: avSession.PlaybackState | undefined = undefined;
+  private lastSubmittedActiveItemId: number = -1;
 
   private getAvPlayerService(): AVPlayerService {
     if (this.avPlayerService === undefined) {
@@ -55,19 +60,21 @@ export class AVSessionController {
     }
     try {
       this.AVSession = await avSession.createAVSession(this.context, "PLAY_AUDIO", 'audio');
+      this.sessionAvailable = true;
+      this.setListenerForMesFromController();
+      this.setInitialPlaybackState();
+      this.setLaunchAbility();
+      this.setAVQueueTitle();
+      await this.setAVQueueItems();
+      await this.setAVMetadata();
+      this.getAndUpdateFavoriteState(this.musicIndex.toString());
       await this.AVSession.activate();
       Logger.info(TAG, `session create succeeded : sessionId : ${this.AVSession.sessionId}`);
     } catch (err) {
+      this.sessionAvailable = false;
+      this.AVSession = undefined;
       Logger.error(TAG, `session create failed: ${JSON.stringify(err)}`);
-      return;
     }
-    this.setListenerForMesFromController();
-    this.setInitialPlaybackState();
-    this.setLaunchAbility();
-    this.setAVQueueTitle();
-    await this.setAVQueueItems();
-    await this.setAVMetadata();
-    this.getAndUpdateFavoriteState(this.musicIndex.toString());
   }
 
   private setInitialPlaybackState(): void {
@@ -90,11 +97,57 @@ export class AVSessionController {
       loopMode: loopMode,
       isFavorite: false,
     };
-    this.AVSession.setAVPlaybackState(playbackState, (err: BusinessError) => {
+    this.queuePlaybackState(playbackState);
+  }
+
+  private mergePlaybackState(
+    base: avSession.AVPlaybackState | undefined,
+    update: avSession.AVPlaybackState): avSession.AVPlaybackState {
+    const merged: avSession.AVPlaybackState = {};
+    if (base !== undefined) {
+      if (base.state !== undefined) merged.state = base.state;
+      if (base.position !== undefined) merged.position = base.position;
+      if (base.speed !== undefined) merged.speed = base.speed;
+      if (base.bufferedTime !== undefined) merged.bufferedTime = base.bufferedTime;
+      if (base.loopMode !== undefined) merged.loopMode = base.loopMode;
+      if (base.isFavorite !== undefined) merged.isFavorite = base.isFavorite;
+      if (base.activeItemId !== undefined) merged.activeItemId = base.activeItemId;
+      if (base.extras !== undefined) merged.extras = base.extras;
+    }
+    if (update.state !== undefined) merged.state = update.state;
+    if (update.position !== undefined) merged.position = update.position;
+    if (update.speed !== undefined) merged.speed = update.speed;
+    if (update.bufferedTime !== undefined) merged.bufferedTime = update.bufferedTime;
+    if (update.loopMode !== undefined) merged.loopMode = update.loopMode;
+    if (update.isFavorite !== undefined) merged.isFavorite = update.isFavorite;
+    if (update.activeItemId !== undefined) merged.activeItemId = update.activeItemId;
+    if (update.extras !== undefined) merged.extras = update.extras;
+    return merged;
+  }
+
+  private queuePlaybackState(update: avSession.AVPlaybackState): void {
+    if (!this.sessionAvailable || !this.AVSession) {
+      return;
+    }
+    this.pendingPlaybackState = this.mergePlaybackState(this.pendingPlaybackState, update);
+    this.submitNextPlaybackState();
+  }
+
+  private submitNextPlaybackState(): void {
+    const session: avSession.AVSession | undefined = this.AVSession;
+    if (!this.sessionAvailable || !session || this.playbackStateInFlight || !this.pendingPlaybackState) {
+      return;
+    }
+    const state: avSession.AVPlaybackState = this.pendingPlaybackState;
+    this.pendingPlaybackState = undefined;
+    this.playbackStateInFlight = true;
+    session.setAVPlaybackState(state, (err: BusinessError) => {
+      this.playbackStateInFlight = false;
       if (err) {
-        Logger.error(TAG, `setInitialPlaybackState BusinessError: code: ${err.code}, message: ${err.message}`);
-      } else {
-        Logger.info(TAG, 'setInitialPlaybackState successfully');
+        Logger.error(TAG, `setAVPlaybackState BusinessError: code: ${err.code}, message: ${err.message}`);
+      }
+      if (this.sessionAvailable && this.AVSession === session) {
+        this.submitNextPlaybackState();
       }
     });
   }
@@ -361,19 +414,11 @@ export class AVSessionController {
   }
 
   private setFavoriteState(isFavorite: boolean): void {
-    if (this.AVSession) {
-      this.AVSession.setAVPlaybackState({ isFavorite }, (err: BusinessError) => {
-        if (err) {
-          Logger.error(TAG, `setFavoriteState BusinessError: code: ${err.code}, message: ${err.message}`);
-        } else {
-          Logger.info(TAG, 'setFavoriteState successfully');
-        }
-      });
-    }
+    this.queuePlaybackState({ isFavorite });
   }
 
   public setProgressState(ms: number): void {
-    if (!this.AVSession) {
+    if (!this.sessionAvailable || !this.AVSession) {
       return;
     }
     const now: number = new Date().getTime();
@@ -384,34 +429,36 @@ export class AVSessionController {
     }
     this.lastProgressReportTime = now;
     this.lastProgressReportPosition = ms;
-    this.AVSession.setAVPlaybackState({
+    this.queuePlaybackState({
       position: {
         elapsedTime: ms,
         updateTime: now
-      }
-    }, (err: BusinessError) => {
-      if (err) {
-        Logger.error(TAG, `setProgressState BusinessError: code: ${err.code}, message: ${err.message}`);
       }
     });
   }
 
   public setPlayState(isPlay: boolean): void {
-    if (!this.AVSession) {
-      Logger.error(TAG, 'AVSession is undefined');
+    if (!this.sessionAvailable || !this.AVSession) {
       return;
     }
     const currentIndex: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? 0;
+    const state: avSession.PlaybackState = isPlay ?
+      avSession.PlaybackState.PLAYBACK_STATE_PLAY : avSession.PlaybackState.PLAYBACK_STATE_PAUSE;
+    const activeItemId: number = currentIndex + 1;
+    if (state === this.lastSubmittedPlayState && activeItemId === this.lastSubmittedActiveItemId) {
+      return;
+    }
+    this.lastSubmittedPlayState = state;
+    this.lastSubmittedActiveItemId = activeItemId;
     this.lastProgressReportTime = 0;
     this.lastProgressReportPosition = -1;
-    this.AVSession.setAVPlaybackState({
-      state: isPlay ? avSession.PlaybackState.PLAYBACK_STATE_PLAY : avSession.PlaybackState.PLAYBACK_STATE_PAUSE,
-      activeItemId: currentIndex + 1,
-    }, (err: BusinessError) => {
-      if (err) {
-        Logger.error(TAG, `setPlayState BusinessError: code: ${err.code}, message: ${err.message}`);
-      } else {
-        Logger.info(TAG, 'setPlayState successfully');
+    const position: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_PROGRESS) ?? 0;
+    this.queuePlaybackState({
+      state: state,
+      activeItemId: activeItemId,
+      position: {
+        elapsedTime: position,
+        updateTime: new Date().getTime()
       }
     });
   }
@@ -440,33 +487,32 @@ export class AVSessionController {
   }
 
   public async setLoopModeState(AVSessionLoopMode: avSession.LoopMode): Promise<void> {
-    if (this.AVSession) {
-      this.AVSession.setAVPlaybackState({ loopMode: AVSessionLoopMode }, (err: BusinessError) => {
-        if (err) {
-          Logger.error(TAG, `setLoopModeState BusinessError: code: ${err.code}, message: ${err.message}`);
-        } else {
-          Logger.info(TAG, 'setLoopModeState successfully');
-        }
-      });
-    }
+    this.queuePlaybackState({ loopMode: AVSessionLoopMode });
   }
 
   async unregisterSessionListener(): Promise<void> {
     this.metadataRequestId++;
     this.metadataCoverLease?.release();
     this.metadataCoverLease = undefined;
-    if (!this.AVSession) {
+    const session: avSession.AVSession | undefined = this.AVSession;
+    this.sessionAvailable = false;
+    this.pendingPlaybackState = undefined;
+    this.playbackStateInFlight = false;
+    this.lastSubmittedPlayState = undefined;
+    this.lastSubmittedActiveItemId = -1;
+    this.AVSession = undefined;
+    if (!session) {
       return;
     }
     try {
-      this.AVSession.off('play');
-      this.AVSession.off('pause');
-      this.AVSession.off('playNext');
-      this.AVSession.off('playPrevious');
-      this.AVSession.off('setLoopMode');
-      this.AVSession.off('seek');
-      this.AVSession.off('toggleFavorite');
-      this.AVSession.destroy();
+      session.off('play');
+      session.off('pause');
+      session.off('playNext');
+      session.off('playPrevious');
+      session.off('setLoopMode');
+      session.off('seek');
+      session.off('toggleFavorite');
+      await session.destroy();
     } catch (err) {
       Logger.error(TAG, `unregisterSessionListener failed: ${JSON.stringify(err)}`);
     }

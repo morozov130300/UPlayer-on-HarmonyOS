@@ -463,13 +463,13 @@ export class AVPlayerService {
     this.cancelPrepare()
     nativeAudio.stop()
     this.stopBackground()
+    AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, false)
+    this.sessionController.setPlayState(false)
     if (this.nativeMode) {
       this.stopNativeProgressTimer()
       this.stopNativeStartupCheck()
       this.nativeMode = false
       this.currentFilePath = ''
-      AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, false)
-      this.sessionController.setPlayState(false)
       return
     }
     if (this.avPlayer === undefined) {
@@ -480,7 +480,6 @@ export class AVPlayerService {
       await this.avPlayer.stop()
       this.currentFilePath = ''
       this.isPrepared = false
-      this.sessionController.setPlayState(false)
     } catch (err) {
       Logger.error(TAG, `stop failed: ${JSON.stringify(err)}`)
     }
@@ -537,6 +536,8 @@ export class AVPlayerService {
     this.cancelPrepare()
     nativeAudio.stop()
     this.stopBackground()
+    AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, false)
+    this.sessionController.setPlayState(false)
     if (this.nativeMode) {
       this.stopNativeProgressTimer()
       this.stopNativeStartupCheck()
@@ -604,20 +605,7 @@ export class AVPlayerService {
     if (!this.equalizerEnabled || !this.nativeMode) {
       return false
     }
-    if (!nativeAudio.setEqualizerBands(this.equalizerBands)) {
-      return false
-    }
-    const actualBands: number[] = nativeAudio.getEqualizerBands()
-    if (actualBands.length !== this.equalizerBands.length) {
-      return false
-    }
-    for (let i = 0; i < this.equalizerBands.length; i++) {
-      if (actualBands[i] !== this.equalizerBands[i]) {
-        Logger.error(TAG, `equalizer verify failed index=${i} requested=${this.equalizerBands[i]} actual=${actualBands[i]}`)
-        return false
-      }
-    }
-    return true
+    return nativeAudio.setEqualizerBands(this.equalizerBands)
   }
 
   async applyEqualizer(enabled: boolean, bands: number[]): Promise<void> {

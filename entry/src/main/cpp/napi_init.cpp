@@ -8,6 +8,7 @@
 #include <cstring>
 #include <deque>
 #include <list>
+#include <limits>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -410,12 +411,26 @@ public:
             OH_AudioCodec_Stop(decoder_);
         }
         if (renderer_ != nullptr) {
-            OH_AudioRenderer_Pause(renderer_);
-            OH_AudioRenderer_Flush(renderer_);
-            OH_AudioRenderer_Stop(renderer_);
-        }
-        if (renderer_ != nullptr) {
-            OH_AudioRenderer_Release(renderer_);
+            OH_AudioStream_State rendererState = AUDIOSTREAM_STATE_INVALID;
+            OH_AudioStream_Result stateResult = OH_AudioRenderer_GetCurrentState(renderer_, &rendererState);
+            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "renderer get state result=%{public}d state=%{public}d",
+                static_cast<int>(stateResult), static_cast<int>(rendererState));
+            if (stateResult == AUDIOSTREAM_SUCCESS &&
+                (rendererState == AUDIOSTREAM_STATE_RUNNING || rendererState == AUDIOSTREAM_STATE_PAUSED)) {
+                OH_AudioStream_Result stopResult = OH_AudioRenderer_Stop(renderer_);
+                OH_LOG_Print(LOG_APP, stopResult == AUDIOSTREAM_SUCCESS ? LOG_INFO : LOG_ERROR,
+                    UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                    "renderer stop result=%{public}d state=%{public}d",
+                    static_cast<int>(stopResult), static_cast<int>(rendererState));
+            }
+            if (stateResult != AUDIOSTREAM_SUCCESS || rendererState != AUDIOSTREAM_STATE_RELEASED) {
+                OH_AudioStream_Result releaseResult = OH_AudioRenderer_Release(renderer_);
+                OH_LOG_Print(LOG_APP, releaseResult == AUDIOSTREAM_SUCCESS ? LOG_INFO : LOG_ERROR,
+                    UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                    "renderer release result=%{public}d state=%{public}d",
+                    static_cast<int>(releaseResult), static_cast<int>(rendererState));
+            }
             renderer_ = nullptr;
         }
         if (pipeline_ != nullptr) {
@@ -463,7 +478,14 @@ public:
         durationMs_ = 0;
         measurementSquareSum_ = 0.0;
         measurementSampleCount_ = 0;
+        inputMeasurementSampleCount_ = 0;
+        inputPositiveFullScaleCount_ = 0;
+        inputNegativeFullScaleCount_ = 0;
+        outputPositiveFullScaleCount_ = 0;
+        outputNegativeFullScaleCount_ = 0;
         measurementPeak_ = 0;
+        consecutiveClippingWindows_ = 0;
+        headroomDb_ = 0.0;
     }
 
     bool SetEnabled(bool enabled)
@@ -472,6 +494,10 @@ public:
             return false;
         }
         requestedEqEnabled_ = enabled;
+        if (!enabled) {
+            headroomDb_ = 0.0;
+            consecutiveClippingWindows_ = 0;
+        }
         if (renderer_ == nullptr) {
             activeEqEnabled_ = enabled;
         }
@@ -482,30 +508,23 @@ public:
     {
         std::lock_guard<std::mutex> lock(effectMutex_);
         bands_ = bands;
+        maxPositiveGainDb_ = static_cast<double>(*std::max_element(bands_.begin(), bands_.end()));
+        if (maxPositiveGainDb_.load() <= 0.0) {
+            headroomDb_ = 0.0;
+            consecutiveClippingWindows_ = 0;
+        } else if (headroomDb_.load() > 0.0) {
+            headroomDb_ = maxPositiveGainDb_.load();
+        }
         if (!requestedEqEnabled_ || eqNode_ == nullptr) {
             return true;
         }
-        return ApplyBandsLocked(bands_, true);
+        return ApplyBandsLocked(bands_, false);
     }
 
     std::array<int32_t, EQUALIZER_BAND_NUM> GetBands()
     {
         std::lock_guard<std::mutex> lock(effectMutex_);
-        if (eqNode_ == nullptr) {
-            return bands_;
-        }
-        OH_EqualizerFrequencyBandGains current = {};
-        OH_AudioSuite_Result result = OH_AudioSuiteEngine_GetEqualizerFrequencyBandGains(eqNode_, &current);
-        if (result != AUDIOSUITE_SUCCESS) {
-            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                "get equalizer bands failed code=%{public}d", result);
-            return bands_;
-        }
-        std::array<int32_t, EQUALIZER_BAND_NUM> resultBands = {};
-        for (size_t i = 0; i < resultBands.size(); i++) {
-            resultBands[i] = current.gains[i];
-        }
-        return resultBands;
+        return bands_;
     }
 
     bool IsEqualizerEnabled() const
@@ -989,7 +1008,11 @@ private:
         if (userData == nullptr) {
             return 0;
         }
-        return static_cast<NativeAudioPlayer*>(userData)->ReadPcm(audioData, audioDataSize, finished);
+        NativeAudioPlayer* player = static_cast<NativeAudioPlayer*>(userData);
+        int32_t readSize = player->ReadPcm(audioData, audioDataSize, finished);
+        player->MeasureInput(audioData, readSize);
+        player->ApplyHeadroom(audioData, readSize);
+        return readSize;
     }
 
     static OH_AudioData_Callback_Result RendererDataCallback(
@@ -1049,9 +1072,43 @@ private:
         return true;
     }
 
+    void MeasureInput(void* audioData, int32_t audioDataSize)
+    {
+        const int16_t* samples = static_cast<const int16_t*>(audioData);
+        int32_t sampleCount = audioDataSize / static_cast<int32_t>(sizeof(int16_t));
+        if (samples == nullptr || sampleCount <= 0) {
+            return;
+        }
+        for (int32_t i = 0; i < sampleCount; i++) {
+            inputPositiveFullScaleCount_ += samples[i] == std::numeric_limits<int16_t>::max() ? 1 : 0;
+            inputNegativeFullScaleCount_ += samples[i] == std::numeric_limits<int16_t>::min() ? 1 : 0;
+        }
+        inputMeasurementSampleCount_ += static_cast<uint64_t>(sampleCount);
+    }
+
+    void ApplyHeadroom(void* audioData, int32_t audioDataSize)
+    {
+        double attenuationDb = headroomDb_.load();
+        if (attenuationDb <= 0.0) {
+            return;
+        }
+        int16_t* samples = static_cast<int16_t*>(audioData);
+        int32_t sampleCount = audioDataSize / static_cast<int32_t>(sizeof(int16_t));
+        if (samples == nullptr || sampleCount <= 0) {
+            return;
+        }
+        const double scale = std::pow(10.0, -attenuationDb / 20.0);
+        for (int32_t i = 0; i < sampleCount; i++) {
+            const double scaled = static_cast<double>(samples[i]) * scale;
+            const long converted = std::lround(scaled);
+            samples[i] = static_cast<int16_t>(std::clamp<long>(converted,
+                std::numeric_limits<int16_t>::min(), std::numeric_limits<int16_t>::max()));
+        }
+    }
+
     void MeasureOutput(void* audioData, int32_t audioDataSize, bool equalizerEnabled)
     {
-        int16_t* samples = static_cast<int16_t*>(audioData);
+        const int16_t* samples = static_cast<const int16_t*>(audioData);
         int32_t sampleCount = audioDataSize / static_cast<int32_t>(sizeof(int16_t));
         if (samples == nullptr || sampleCount <= 0) {
             return;
@@ -1062,19 +1119,47 @@ private:
             int32_t value = samples[i];
             peak = std::max(peak, std::abs(value));
             squareSum += static_cast<double>(value) * static_cast<double>(value);
+            outputPositiveFullScaleCount_ += value == std::numeric_limits<int16_t>::max() ? 1 : 0;
+            outputNegativeFullScaleCount_ += value == std::numeric_limits<int16_t>::min() ? 1 : 0;
         }
         measurementSquareSum_ += squareSum;
         measurementSampleCount_ += static_cast<uint64_t>(sampleCount);
         measurementPeak_ = std::max(measurementPeak_, peak);
         if (measurementSampleCount_ >= 48000 * 2) {
-            double rms = std::sqrt(measurementSquareSum_ / static_cast<double>(measurementSampleCount_));
-            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                "output level eq=%{public}d peak=%{public}.1f rms=%{public}.1f samples=%{public}llu",
-                equalizerEnabled ? 1 : 0, static_cast<double>(measurementPeak_), rms,
-                static_cast<unsigned long long>(measurementSampleCount_));
+            const uint64_t inputClipped = inputPositiveFullScaleCount_ + inputNegativeFullScaleCount_;
+            const uint64_t outputClipped = outputPositiveFullScaleCount_ + outputNegativeFullScaleCount_;
+            const bool addedClipping = equalizerEnabled && outputClipped > inputClipped;
+            consecutiveClippingWindows_ = addedClipping ? consecutiveClippingWindows_ + 1 : 0;
+            if (consecutiveClippingWindows_ >= 2 && maxPositiveGainDb_.load() > 0.0) {
+                headroomDb_ = maxPositiveGainDb_.load();
+                OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                    "equalizer added sustained clipping inputClip=%{public}llu outputClip=%{public}llu "
+                    "applyingHeadroomDb=%{public}.1f",
+                    static_cast<unsigned long long>(inputClipped),
+                    static_cast<unsigned long long>(outputClipped), headroomDb_.load());
+                consecutiveClippingWindows_ = 0;
+            }
+            const double rms = std::sqrt(
+                measurementSquareSum_ / static_cast<double>(measurementSampleCount_));
+            const double inputClipRatio = inputMeasurementSampleCount_ == 0 ? 0.0 :
+                static_cast<double>(inputClipped) * 100.0 / static_cast<double>(inputMeasurementSampleCount_);
+            const double outputClipRatio = static_cast<double>(outputClipped) * 100.0 /
+                static_cast<double>(measurementSampleCount_);
+            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "audio level eq=%{public}d peak=%{public}d rms=%{public}.1f "
+                "inputClip=%{public}llu(%{public}.4f%%) outputClip=%{public}llu(%{public}.4f%%) "
+                "headroomDb=%{public}.1f",
+                equalizerEnabled ? 1 : 0, measurementPeak_, rms,
+                static_cast<unsigned long long>(inputClipped), inputClipRatio,
+                static_cast<unsigned long long>(outputClipped), outputClipRatio, headroomDb_.load());
             measurementSquareSum_ = 0.0;
             measurementSampleCount_ = 0;
             measurementPeak_ = 0;
+            inputMeasurementSampleCount_ = 0;
+            inputPositiveFullScaleCount_ = 0;
+            inputNegativeFullScaleCount_ = 0;
+            outputPositiveFullScaleCount_ = 0;
+            outputNegativeFullScaleCount_ = 0;
         }
     }
 
@@ -1165,7 +1250,15 @@ private:
     float volume_ = 1.0f;
     double measurementSquareSum_ = 0.0;
     uint64_t measurementSampleCount_ = 0;
+    uint64_t inputMeasurementSampleCount_ = 0;
+    uint64_t inputPositiveFullScaleCount_ = 0;
+    uint64_t inputNegativeFullScaleCount_ = 0;
+    uint64_t outputPositiveFullScaleCount_ = 0;
+    uint64_t outputNegativeFullScaleCount_ = 0;
     int32_t measurementPeak_ = 0;
+    int32_t consecutiveClippingWindows_ = 0;
+    std::atomic<double> maxPositiveGainDb_ = 0.0;
+    std::atomic<double> headroomDb_ = 0.0;
     std::array<int32_t, EQUALIZER_BAND_NUM> bands_ = {};
     std::mutex pcmCallbackMutex_;
     std::mutex effectMutex_;
