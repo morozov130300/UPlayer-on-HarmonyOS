@@ -83,7 +83,8 @@ struct MainPage {
   }
 
   private indicatorDarken(base: number, range: number): number {
-    return Math.min(0.75, base + range * this.tabIndicatorDepth / 100)
+    const depth: number = 100 - this.tabIndicatorDepth
+    return Math.min(0.75, base + range * depth / 100)
   }
 
   onDisplaySizeChange(): void {
