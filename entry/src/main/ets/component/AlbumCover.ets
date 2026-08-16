@@ -13,6 +13,7 @@ export struct AlbumCover {
   @State cover: image.PixelMap | undefined = undefined
   private coverLease: AlbumCoverLease | undefined = undefined
   private requestId: number = 0
+  private retryTimer: number = -1
 
   aboutToAppear(): void {
     this.load()

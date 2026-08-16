@@ -11,7 +11,16 @@ const TAG = 'AudioMetadataService'
 const COVER_MAX_EDGE: number = 640
 const COVER_CACHE_MAX_ENTRIES: number = 40
 const COVER_CACHE_MAX_BYTES: number = 32 * 1024 * 1024
-const COVER_EXTRACTION_CONCURRENCY: number = 2
+const COVER_EXTRACTION_CONCURRENCY: number = 1
+const COVER_EXTRACTION_QUEUE_MAX: number = 24
+const FALLBACK_FAILURE_THRESHOLD: number = 1
+const FALLBACK_COOLDOWN_MS: number = 30000
+
+export enum CoverPriority {
+  LOW = 0,
+  MEDIUM = 1,
+  HIGH = 2
+}
 
 export enum AlbumCoverSize {
   SMALL = 96,
@@ -49,15 +58,24 @@ export class AlbumCoverLease {
   }
 }
 
+class CoverQueueItem {
+  priority: CoverPriority = CoverPriority.LOW
+  run: () => void = () => {}
+  resolve: (value: image.PixelMap | undefined) => void = () => {}
+}
+
 export class AudioMetadataService {
   private static instance: AudioMetadataService = new AudioMetadataService()
   private coverExtractionActive: number = 0
-  private coverExtractionQueue: Array<() => void> = []
+  private coverExtractionQueue: CoverQueueItem[] = []
   private coverCache: Map<string, AlbumCoverCacheEntry> = new Map<string, AlbumCoverCacheEntry>()
   private pendingCovers: Map<string, Promise<AlbumCoverCacheEntry | undefined>> =
     new Map<string, Promise<AlbumCoverCacheEntry | undefined>>()
   private cacheBytes: number = 0
   private accessCounter: number = 0
+  private fallbackFailureCount: number = 0
+  private fallbackCircuitUntil: number = 0
+  private fallbackProbeActive: boolean = false
 
   public static getInstance(): AudioMetadataService {
     return AudioMetadataService.instance
@@ -121,14 +139,15 @@ export class AudioMetadataService {
     return changed
   }
 
-  async acquireAlbumCover(song: SongInfo, maxEdge: number = AlbumCoverSize.LARGE): Promise<AlbumCoverLease | undefined> {
+  async acquireAlbumCover(song: SongInfo, maxEdge: number = AlbumCoverSize.LARGE,
+    priority: CoverPriority = CoverPriority.HIGH): Promise<AlbumCoverLease | undefined> {
     const normalizedEdge: number = this.normalizeCoverEdge(maxEdge)
     const key: string = this.coverKey(song, normalizedEdge)
     let entry: AlbumCoverCacheEntry | undefined = this.coverCache.get(key)
     if (entry === undefined) {
       let pending: Promise<AlbumCoverCacheEntry | undefined> | undefined = this.pendingCovers.get(key)
       if (pending === undefined) {
-        pending = this.loadCacheEntry(song, key, normalizedEdge)
+        pending = this.loadCacheEntry(song, key, normalizedEdge, priority)
         this.pendingCovers.set(key, pending)
       }
       entry = await pending
@@ -141,8 +160,9 @@ export class AudioMetadataService {
     return new AlbumCoverLease(this, entry)
   }
 
-  prefetchAlbumCover(song: SongInfo, maxEdge: number = AlbumCoverSize.SMALL): void {
-    this.acquireAlbumCover(song, maxEdge).then((lease: AlbumCoverLease | undefined) => {
+  prefetchAlbumCover(song: SongInfo, maxEdge: number = AlbumCoverSize.SMALL,
+    priority: CoverPriority = CoverPriority.LOW): void {
+    this.acquireAlbumCover(song, maxEdge, priority).then((lease: AlbumCoverLease | undefined) => {
       lease?.release()
     }).catch((err: Error) => {
       Logger.debug(TAG, `Album cover prefetch failed: ${JSON.stringify(err)}`)
@@ -164,9 +184,10 @@ export class AudioMetadataService {
     this.trimCoverCache()
   }
 
-  private async loadCacheEntry(song: SongInfo, key: string, maxEdge: number): Promise<AlbumCoverCacheEntry | undefined> {
+  private async loadCacheEntry(song: SongInfo, key: string, maxEdge: number,
+    priority: CoverPriority): Promise<AlbumCoverCacheEntry | undefined> {
     try {
-      const pixelMap: image.PixelMap | undefined = await this.loadAlbumCover(song, maxEdge)
+      const pixelMap: image.PixelMap | undefined = await this.loadAlbumCover(song, maxEdge, priority)
       if (pixelMap === undefined) return undefined
       const info: image.ImageInfo = await pixelMap.getImageInfo()
       const entry: AlbumCoverCacheEntry = new AlbumCoverCacheEntry()
@@ -217,7 +238,8 @@ export class AudioMetadataService {
     return sourcePath + '#' + maxEdge
   }
 
-  private async loadAlbumCover(song: SongInfo, maxEdge: number): Promise<image.PixelMap | undefined> {
+  private async loadAlbumCover(song: SongInfo, maxEdge: number,
+    priority: CoverPriority): Promise<image.PixelMap | undefined> {
     const sourcePath: string = song.uri.length > 0 ? song.uri : song.filePath
     let file: fs.File | undefined = undefined
     let source: image.ImageSource | undefined = undefined
@@ -233,7 +255,6 @@ export class AudioMetadataService {
       }
     } catch (err) {
       Logger.warn(TAG, `Album cover native extraction failed for ${song.fileName}: ${JSON.stringify(err)}`)
-      return undefined
     } finally {
       if (source !== undefined) {
         try {
@@ -246,13 +267,13 @@ export class AudioMetadataService {
     }
 
     const fallbackTask: Promise<image.PixelMap | undefined> =
-      this.scheduleFallbackCover(song, sourcePath, maxEdge)
+      this.scheduleFallbackCover(song, sourcePath, maxEdge, priority)
     return await fallbackTask
   }
 
   // 有界并发调度 fallback 封面提取，避免串行排队导致首屏大量占位图
   private scheduleFallbackCover(song: SongInfo, sourcePath: string,
-    maxEdge: number): Promise<image.PixelMap | undefined> {
+    maxEdge: number, priority: CoverPriority): Promise<image.PixelMap | undefined> {
     return new Promise<image.PixelMap | undefined>((resolve: (value: image.PixelMap | undefined) => void): void => {
       const run: () => void = (): void => {
         this.coverExtractionActive++
@@ -268,28 +289,68 @@ export class AudioMetadataService {
       if (this.coverExtractionActive < COVER_EXTRACTION_CONCURRENCY) {
         run()
       } else {
-        this.coverExtractionQueue.push(run)
+        if (this.coverExtractionQueue.length >= COVER_EXTRACTION_QUEUE_MAX) {
+          let dropIndex: number = -1
+          for (let i = this.coverExtractionQueue.length - 1; i >= 0; i--) {
+            if (this.coverExtractionQueue[i].priority < priority) {
+              dropIndex = i
+              break
+            }
+          }
+          if (dropIndex < 0) {
+            resolve(undefined)
+            return
+          }
+          const dropped: CoverQueueItem = this.coverExtractionQueue[dropIndex]
+          this.coverExtractionQueue.splice(dropIndex, 1)
+          dropped.resolve(undefined)
+        }
+        const item: CoverQueueItem = new CoverQueueItem()
+        item.priority = priority
+        item.run = run
+        item.resolve = resolve
+        this.coverExtractionQueue.push(item)
+        this.coverExtractionQueue.sort((a: CoverQueueItem, b: CoverQueueItem) => b.priority - a.priority)
       }
     })
   }
 
   private drainCoverQueue(): void {
     while (this.coverExtractionActive < COVER_EXTRACTION_CONCURRENCY && this.coverExtractionQueue.length > 0) {
-      const next: (() => void) | undefined = this.coverExtractionQueue.shift()
+      const next: CoverQueueItem | undefined = this.coverExtractionQueue.shift()
       if (next !== undefined) {
-        next()
+        next.run()
       }
     }
   }
 
   private async fetchFallbackCover(song: SongInfo, sourcePath: string,
     maxEdge: number): Promise<image.PixelMap | undefined> {
-    // 系统 avmetadatahelper 服务可能启动慢，首次失败时重试一次
-    let cover: image.PixelMap | undefined = await this.tryFetchFallbackCover(song, sourcePath, maxEdge)
-    if (cover === undefined) {
-      cover = await this.tryFetchFallbackCover(song, sourcePath, maxEdge)
+    const now: number = new Date().getTime()
+    if (now < this.fallbackCircuitUntil) return undefined
+    const halfOpen: boolean = this.fallbackFailureCount >= FALLBACK_FAILURE_THRESHOLD
+    if (halfOpen && this.fallbackProbeActive) return undefined
+    if (halfOpen) this.fallbackProbeActive = true
+    try {
+      const cover: image.PixelMap | undefined = await this.tryFetchFallbackCover(song, sourcePath, maxEdge)
+      if (cover !== undefined) {
+        this.fallbackFailureCount = 0
+        this.fallbackCircuitUntil = 0
+        return cover
+      }
+      this.recordFallbackFailure()
+      return undefined
+    } finally {
+      if (halfOpen) this.fallbackProbeActive = false
     }
-    return cover
+  }
+
+  private recordFallbackFailure(): void {
+    this.fallbackFailureCount++
+    if (this.fallbackFailureCount >= FALLBACK_FAILURE_THRESHOLD) {
+      this.fallbackCircuitUntil = new Date().getTime() + FALLBACK_COOLDOWN_MS
+      Logger.error(TAG, `Album cover fallback circuit open cooldownMs=${FALLBACK_COOLDOWN_MS}`)
+    }
   }
 
   private async tryFetchFallbackCover(song: SongInfo, sourcePath: string,

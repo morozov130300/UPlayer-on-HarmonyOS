@@ -50,6 +50,15 @@ export class LiveViewService {
   private sequence: number = 0;
   private isRunning: boolean = false;
   private context: common.UIAbilityContext | undefined = undefined;
+  private operationQueue: Promise<void> = Promise.resolve();
+  private lastSnapshot: string = '';
+  private cooldownUntil: number = 0;
+
+  private enqueue(operation: () => Promise<void>): Promise<void> {
+    const queued: Promise<void> = this.operationQueue.then(operation, operation);
+    this.operationQueue = queued.catch(() => {});
+    return queued;
+  }
 
   public static getInstance(): LiveViewService {
     return LiveViewService.instance;
@@ -85,10 +94,17 @@ export class LiveViewService {
   }
 
   async startLiveView(): Promise<void> {
-    if (this.isRunning) {
-      await this.updateLiveView();
-      return;
-    }
+    await this.enqueue(async (): Promise<void> => {
+      if (new Date().getTime() < this.cooldownUntil) return;
+      if (this.isRunning) {
+        await this.performUpdate();
+        return;
+      }
+      await this.performStart();
+    });
+  }
+
+  private async performStart(): Promise<void> {
     try {
       const title: string = AppStorage.get<string>('uplayer_current_title') ?? '未播放';
       const artist: string = AppStorage.get<string>('uplayer_current_artist') ?? '';
@@ -102,7 +118,7 @@ export class LiveViewService {
         icon: 'ic_public_music',
         title: title,
         content: artist.length > 0 ? artist : '未知歌手',
-        backgroundColor: '#1A1A1A',
+        backgroundColor: '#FF1A1A1A',
       };
       const primary: PrimaryData = {
         title: title,
@@ -112,12 +128,11 @@ export class LiveViewService {
           layoutType: liveViewManager.LayoutType.LAYOUT_TYPE_PICKUP,
           title: title,
           content: artist.length > 0 ? artist : '未知歌手',
-          underlineColor: '#007DFF',
+          underlineColor: '#FF007DFF',
           descPic: 'ic_public_music',
         },
         clickAction: clickAction ?? undefined,
         liveViewLockScreenAbilityName: 'LiveViewExtAbility',
-        liveViewLockScreenAbilityParameters: {},
       };
       const data: LiveViewData = {
         capsule: capsule,
@@ -132,22 +147,32 @@ export class LiveViewService {
       };
       await liveViewManager.startLiveView(liveView);
       this.isRunning = true;
+      this.lastSnapshot = `${title}\n${artist}\n${isPlay}`;
       Logger.info(TAG, 'startLiveView success');
     } catch (err) {
+      this.cooldownUntil = new Date().getTime() + 30000;
       const error: BusinessError = err as BusinessError;
       Logger.error(TAG, `startLiveView failed: ${error.code} ${error.message}`);
     }
   }
 
   async updateLiveView(): Promise<void> {
-    if (!this.isRunning) {
+    await this.enqueue(async (): Promise<void> => {
+      await this.performUpdate();
+    });
+  }
+
+  private async performUpdate(): Promise<void> {
+    if (!this.isRunning || new Date().getTime() < this.cooldownUntil) {
       return;
     }
     try {
-      this.sequence++;
       const title: string = AppStorage.get<string>('uplayer_current_title') ?? '未播放';
       const artist: string = AppStorage.get<string>('uplayer_current_artist') ?? '';
       const isPlay: boolean = AppStorage.get<boolean>(AppStorageKeyConstants.KEY_IS_PLAY) ?? false;
+      const snapshot: string = `${title}\n${artist}\n${isPlay}`;
+      if (snapshot === this.lastSnapshot) return;
+      this.sequence++;
       const clickAction: WantAgent | null = await this.buildClickAction();
       const textItem1: LiveViewTextItem = { text: artist.length > 0 ? artist : '未知歌手' };
       const textItem2: LiveViewTextItem = { text: isPlay ? '正在播放' : '已暂停' };
@@ -157,7 +182,7 @@ export class LiveViewService {
         icon: 'ic_public_music',
         title: title,
         content: artist.length > 0 ? artist : '未知歌手',
-        backgroundColor: '#1A1A1A',
+        backgroundColor: '#FF1A1A1A',
       };
       const primary: PrimaryData = {
         title: title,
@@ -167,12 +192,11 @@ export class LiveViewService {
           layoutType: liveViewManager.LayoutType.LAYOUT_TYPE_PICKUP,
           title: title,
           content: artist.length > 0 ? artist : '未知歌手',
-          underlineColor: '#007DFF',
+          underlineColor: '#FF007DFF',
           descPic: 'ic_public_music',
         },
         clickAction: clickAction ?? undefined,
         liveViewLockScreenAbilityName: 'LiveViewExtAbility',
-        liveViewLockScreenAbilityParameters: {},
       };
       const data: LiveViewData = {
         capsule: capsule,
@@ -186,17 +210,27 @@ export class LiveViewService {
         liveViewData: data,
       };
       await liveViewManager.updateLiveView(liveView);
+      this.lastSnapshot = snapshot;
       Logger.info(TAG, 'updateLiveView success');
     } catch (err) {
+      this.cooldownUntil = new Date().getTime() + 30000;
       const error: BusinessError = err as BusinessError;
       Logger.error(TAG, `updateLiveView failed: ${error.code} ${error.message}`);
     }
   }
 
   async stopLiveView(): Promise<void> {
-    if (!this.isRunning) {
-      return;
-    }
+    await this.enqueue(async (): Promise<void> => {
+      if (!this.isRunning) {
+        this.lastSnapshot = '';
+        this.cooldownUntil = 0;
+        return;
+      }
+      await this.performStop();
+    });
+  }
+
+  private async performStop(): Promise<void> {
     try {
       const capsule: CapsuleData = {
         type: liveViewManager.CapsuleType.CAPSULE_TYPE_TEXT,
@@ -212,7 +246,7 @@ export class LiveViewService {
           layoutType: liveViewManager.LayoutType.LAYOUT_TYPE_PICKUP,
           title: '',
           content: '',
-          underlineColor: '#007DFF',
+          underlineColor: '#FF007DFF',
         },
       };
       const data: LiveViewData = {
@@ -227,6 +261,8 @@ export class LiveViewService {
       };
       await liveViewManager.stopLiveView(liveView);
       this.isRunning = false;
+      this.lastSnapshot = '';
+      this.cooldownUntil = 0;
       Logger.info(TAG, 'stopLiveView success');
     } catch (err) {
       const error: BusinessError = err as BusinessError;

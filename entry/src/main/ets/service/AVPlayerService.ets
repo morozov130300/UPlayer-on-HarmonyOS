@@ -10,10 +10,20 @@ import { BackgroundUtil } from '../common/utils/BackgroundUtil'
 import { LiveViewService } from '../service/LiveViewService'
 import nativeAudio from 'libuplayer.so'
 import { SongInfo } from '../model/SongInfo'
-import { AlbumCoverSize, AudioMetadataService } from './AudioMetadataService'
+import { AlbumCoverSize, AudioMetadataService, CoverPriority } from './AudioMetadataService'
 import { DataService } from './DataService'
 
 const TAG = 'AVPlayerService'
+
+enum BackendState {
+  IDLE = 'idle',
+  STARTING_AV = 'startingAv',
+  PLAYING_AV = 'playingAv',
+  STARTING_NATIVE = 'startingNative',
+  PLAYING_NATIVE = 'playingNative',
+  STOPPING = 'stopping',
+  RELEASING = 'releasing'
+}
 
 export class AVPlayerService {
   private static instance: AVPlayerService = new AVPlayerService()
@@ -42,11 +52,28 @@ export class AVPlayerService {
   private nativeProgressTimer: number = -1
   private nativeStartupTimer: number = -1
   private playRequestId: number = 0
-  private backendMigrationId: number = 0
   private isSwitchingTrack: boolean = false
+  private operationQueue: Promise<void> = Promise.resolve()
+  private backendState: BackendState = BackendState.IDLE
+  private fallbackGeneration: number = -1
+  private pendingSeekMs: number | undefined = undefined
+  private desiredVolume: number = 1
+  private desiredSpeed: number = 1
 
   public static getInstance(): AVPlayerService {
     return AVPlayerService.instance
+  }
+
+  private enqueueOperation(operation: () => Promise<void>): Promise<void> {
+    const queued: Promise<void> = this.operationQueue.then(operation, operation)
+    this.operationQueue = queued.catch((err: Error) => {
+      Logger.error(TAG, `playback operation failed: ${JSON.stringify(err)}`)
+    })
+    return queued
+  }
+
+  private isCurrentGeneration(generation: number): boolean {
+    return generation === this.playRequestId
   }
 
   async init(): Promise<void> {
@@ -77,6 +104,7 @@ export class AVPlayerService {
           this.finishPrepare(true)
         }
       } else if (state === 'playing') {
+        this.backendState = BackendState.PLAYING_AV
         this.isSwitchingTrack = false
         AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, true)
         this.interruptedWhilePlaying = false
@@ -103,6 +131,7 @@ export class AVPlayerService {
           this.onSongComplete()
         }
       } else if (state === 'released') {
+        this.backendState = BackendState.IDLE
         this.isPrepared = false
       }
     })
@@ -160,6 +189,17 @@ export class AVPlayerService {
 
   async play(fileUri: string, startPositionMs: number = 0): Promise<void> {
     const requestId: number = ++this.playRequestId
+    this.pendingSeekMs = startPositionMs
+    await this.enqueueOperation(async (): Promise<void> => {
+      await this.performPlay(fileUri, requestId, this.pendingSeekMs ?? startPositionMs)
+    })
+  }
+
+  private async performPlay(fileUri: string, requestId: number, startPositionMs: number = 0): Promise<void> {
+    if (!this.isCurrentGeneration(requestId)) {
+      return
+    }
+    this.pendingSeekMs = undefined
     this.cancelPrepare()
     // 若当前处于播放状态，本次是切歌（播放中切到下一首），stop/reset 期间不应把播放状态置为暂停
     const wasPlaying: boolean = AppStorage.get<boolean>(AppStorageKeyConstants.KEY_IS_PLAY) ?? false
@@ -167,6 +207,20 @@ export class AVPlayerService {
     const useNativePlayer: boolean = this.equalizerEnabled && nativeAudio.isEqualizerSupported()
     Logger.error(TAG, `play useNativePlayer=${useNativePlayer} eqEnabled=${this.equalizerEnabled} nativeMode=${this.nativeMode}`)
     if (useNativePlayer) {
+      if (this.nativeMode && this.currentFilePath === fileUri && !nativeAudio.isCompleted() &&
+        !nativeAudio.hasFailed()) {
+        if (startPositionMs > 0) {
+          nativeAudio.seek(startPositionMs)
+        }
+        nativeAudio.setVolume(this.desiredVolume)
+        nativeAudio.setSpeed(this.desiredSpeed)
+        nativeAudio.resume()
+        AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, true)
+        this.sessionController.setPlayState(true)
+        this.backendState = BackendState.PLAYING_NATIVE
+        return
+      }
+      this.backendState = BackendState.STARTING_NATIVE
       nativeAudio.stop()
       await this.stopAvPlayerForNative(requestId)
       if (requestId !== this.playRequestId) {
@@ -177,6 +231,11 @@ export class AVPlayerService {
         return
       }
       if (nativeStarted) {
+        this.backendState = BackendState.PLAYING_NATIVE
+        this.fallbackGeneration = -1
+        return
+      }
+      if (!this.isCurrentGeneration(requestId)) {
         return
       }
       Logger.error(TAG, 'native player failed, fallback to AVPlayer')
@@ -214,10 +273,12 @@ export class AVPlayerService {
     const previousIndex: number = index <= 0 ? songs.length - 1 : index - 1
     const nextIndex: number = index >= songs.length - 1 ? 0 : index + 1
     const covers: AudioMetadataService = AudioMetadataService.getInstance()
-    covers.prefetchAlbumCover(songs[index], AlbumCoverSize.LARGE)
-    if (previousIndex !== index) covers.prefetchAlbumCover(songs[previousIndex], AlbumCoverSize.LARGE)
+    covers.prefetchAlbumCover(songs[index], AlbumCoverSize.MEDIUM, CoverPriority.HIGH)
+    if (previousIndex !== index) {
+      covers.prefetchAlbumCover(songs[previousIndex], AlbumCoverSize.SMALL, CoverPriority.LOW)
+    }
     if (nextIndex !== index && nextIndex !== previousIndex) {
-      covers.prefetchAlbumCover(songs[nextIndex], AlbumCoverSize.LARGE)
+      covers.prefetchAlbumCover(songs[nextIndex], AlbumCoverSize.SMALL, CoverPriority.LOW)
     }
   }
 
@@ -248,6 +309,7 @@ export class AVPlayerService {
   }
 
   private async playWithAvPlayer(fileUri: string, requestId: number, startPositionMs: number = 0): Promise<void> {
+    this.backendState = BackendState.STARTING_AV
     await this.init()
     if (this.avPlayer === undefined || requestId !== this.playRequestId) {
       return
@@ -256,9 +318,13 @@ export class AVPlayerService {
       (this.avPlayer.state === 'prepared' || this.avPlayer.state === 'paused' ||
         this.avPlayer.state === 'completed')) {
       if (startPositionMs > 0) {
-        this.avPlayer.seek(startPositionMs)
+        this.avPlayer.seek(this.pendingSeekMs ?? startPositionMs)
       }
+      this.pendingSeekMs = undefined
+      this.avPlayer.setVolume(this.desiredVolume)
+      this.avPlayer.setPlaybackRate(this.desiredSpeed)
       this.avPlayer.play()
+      this.backendState = BackendState.PLAYING_AV
       this.sessionController.setAVMetadata()
       return
     }
@@ -307,10 +373,15 @@ export class AVPlayerService {
       }
       this.currentAvFile = this.pendingAvFile
       this.pendingAvFile = undefined
-      if (startPositionMs > 0) {
-        this.avPlayer.seek(startPositionMs)
+      const effectiveStartPosition: number = this.pendingSeekMs ?? startPositionMs
+      if (effectiveStartPosition > 0) {
+        this.avPlayer.seek(effectiveStartPosition)
       }
+      this.pendingSeekMs = undefined
+      this.avPlayer.setVolume(this.desiredVolume)
+      this.avPlayer.setPlaybackRate(this.desiredSpeed)
       this.avPlayer.play()
+      this.backendState = BackendState.PLAYING_AV
       this.sessionController.setAVMetadata()
     } catch (err) {
       Logger.error(TAG, `play failed: ${JSON.stringify(err)}`)
@@ -459,34 +530,41 @@ export class AVPlayerService {
   }
 
   async stop(): Promise<void> {
-    this.playRequestId++
-    this.cancelPrepare()
-    nativeAudio.stop()
-    this.stopBackground()
-    AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, false)
-    this.sessionController.setPlayState(false)
-    if (this.nativeMode) {
+    const generation: number = ++this.playRequestId
+    await this.enqueueOperation(async (): Promise<void> => {
+      if (!this.isCurrentGeneration(generation)) return
+      this.backendState = BackendState.STOPPING
+      this.cancelPrepare()
       this.stopNativeProgressTimer()
       this.stopNativeStartupCheck()
-      this.nativeMode = false
-      this.currentFilePath = ''
-      return
-    }
-    if (this.avPlayer === undefined) {
-      return
-    }
-    try {
       this.stopFade()
-      await this.avPlayer.stop()
+      nativeAudio.stop()
+      this.nativeMode = false
+      this.stopBackground()
+      AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, false)
+      this.sessionController.setPlayState(false)
+      if (this.avPlayer !== undefined) {
+        try {
+          const state: string = this.avPlayer.state
+          if (state === 'playing' || state === 'paused' || state === 'prepared' || state === 'completed') {
+            await this.avPlayer.stop()
+          }
+        } catch (err) {
+          Logger.error(TAG, `stop failed: ${JSON.stringify(err)}`)
+        }
+      }
       this.currentFilePath = ''
       this.isPrepared = false
-    } catch (err) {
-      Logger.error(TAG, `stop failed: ${JSON.stringify(err)}`)
-    }
+      this.backendState = BackendState.IDLE
+    })
   }
 
   async seek(timeMs: number): Promise<void> {
     this.sessionController.setProgressState(timeMs)
+    if (this.backendState === BackendState.STARTING_NATIVE || this.backendState === BackendState.STARTING_AV) {
+      this.pendingSeekMs = timeMs
+      return
+    }
     if (this.nativeMode) {
       nativeAudio.seek(timeMs)
       return
@@ -502,6 +580,7 @@ export class AVPlayerService {
   }
 
   setVolume(vol: number): void {
+    this.desiredVolume = vol
     if (this.nativeMode) {
       nativeAudio.setVolume(vol)
       return
@@ -517,6 +596,7 @@ export class AVPlayerService {
   }
 
   setSpeed(speed: number): void {
+    this.desiredSpeed = speed
     if (this.nativeMode) {
       nativeAudio.setSpeed(speed)
       return
@@ -532,33 +612,39 @@ export class AVPlayerService {
   }
 
   async release(): Promise<void> {
-    this.playRequestId++
-    this.cancelPrepare()
-    nativeAudio.stop()
-    this.stopBackground()
-    AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, false)
-    this.sessionController.setPlayState(false)
-    if (this.nativeMode) {
+    const generation: number = ++this.playRequestId
+    await this.enqueueOperation(async (): Promise<void> => {
+      if (!this.isCurrentGeneration(generation)) return
+      this.backendState = BackendState.RELEASING
+      this.cancelPrepare()
       this.stopNativeProgressTimer()
       this.stopNativeStartupCheck()
-      this.nativeMode = false
-    }
-    if (this.avPlayer === undefined) {
-      return
-    }
-    try {
       this.stopFade()
-      await this.avPlayer.release()
-      this.avPlayer = undefined
+      nativeAudio.stop()
+      this.nativeMode = false
+      this.stopBackground()
+      AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, false)
+      this.sessionController.setPlayState(false)
+      if (this.avPlayer !== undefined) {
+        try {
+          await this.avPlayer.release()
+        } catch (err) {
+          Logger.error(TAG, `release failed: ${JSON.stringify(err)}`)
+        }
+        this.avPlayer = undefined
+      }
       if (this.currentAvFile !== undefined) {
         this.closeFile(this.currentAvFile)
         this.currentAvFile = undefined
       }
+      if (this.pendingAvFile !== undefined) {
+        this.closeFile(this.pendingAvFile)
+        this.pendingAvFile = undefined
+      }
       this.currentFilePath = ''
       this.isPrepared = false
-    } catch (err) {
-      Logger.error(TAG, `release failed: ${JSON.stringify(err)}`)
-    }
+      this.backendState = BackendState.IDLE
+    })
   }
 
   async onForegroundRestore(): Promise<void> {
@@ -616,10 +702,9 @@ export class AVPlayerService {
     if (enabled) {
       nativeAudio.setEqualizerBands(this.equalizerBands)
     }
-    if (previousEnabled === enabled) {
+    if (previousEnabled === enabled || this.nativeMode || !enabled) {
       return
     }
-    const migrationId: number = ++this.backendMigrationId
     const isPlaying: boolean = AppStorage.get<boolean>(AppStorageKeyConstants.KEY_IS_PLAY) ?? false
     if (!isPlaying || this.currentFilePath.length === 0) {
       return
@@ -628,9 +713,6 @@ export class AVPlayerService {
       (AppStorage.get<number>(AppStorageKeyConstants.KEY_PROGRESS) ?? 0)
     const fileUri: string = this.currentFilePath
     await this.play(fileUri, position)
-    if (migrationId !== this.backendMigrationId) {
-      return
-    }
   }
 
   private async playWithEqualizer(
@@ -648,6 +730,9 @@ export class AVPlayerService {
       }
       const started: boolean = await nativeAudio.play(file.fd, size, startPositionMs)
       if (requestId !== this.playRequestId) {
+        if (started) {
+          nativeAudio.stop()
+        }
         return false
       }
       if (!started) {
@@ -655,6 +740,9 @@ export class AVPlayerService {
         return false
       }
       this.nativeMode = true
+      this.backendState = BackendState.PLAYING_NATIVE
+      nativeAudio.setVolume(this.desiredVolume)
+      nativeAudio.setSpeed(this.desiredSpeed)
       this.currentFilePath = fileUri
       this.isPrepared = true
       AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, true)
@@ -677,6 +765,28 @@ export class AVPlayerService {
     }
   }
 
+  private requestNativeFallback(fileUri: string, requestId: number, position: number, reason: string): void {
+    if (!this.isCurrentGeneration(requestId) || this.fallbackGeneration === requestId) {
+      return
+    }
+    this.fallbackGeneration = requestId
+    this.enqueueOperation(async (): Promise<void> => {
+      if (!this.isCurrentGeneration(requestId) || !this.nativeMode) return
+      this.stopNativeProgressTimer()
+      this.stopNativeStartupCheck()
+      nativeAudio.stop()
+      this.nativeMode = false
+      this.isPrepared = false
+      Logger.error(TAG, `${reason}, fallback to AVPlayer`)
+      await this.playWithAvPlayer(fileUri, requestId, position)
+      if (this.backendState !== BackendState.PLAYING_AV) {
+        this.backendState = BackendState.IDLE
+        AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, false)
+        this.sessionController.setPlayState(false)
+      }
+    })
+  }
+
   private startNativeProgressTimer(fileUri: string, requestId: number): void {
     this.stopNativeProgressTimer()
     this.nativeProgressTimer = setInterval(() => {
@@ -689,13 +799,8 @@ export class AVPlayerService {
       AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_TIME, this.formatTime(position))
       this.sessionController.setProgressState(position)
       if (nativeAudio.hasFailed()) {
-        this.stopNativeProgressTimer()
         const failedPosition: number = position
-        nativeAudio.stop()
-        this.nativeMode = false
-        this.isPrepared = false
-        Logger.error(TAG, 'native render failed, fallback to AVPlayer')
-        this.playWithAvPlayer(fileUri, requestId, failedPosition)
+        this.requestNativeFallback(fileUri, requestId, failedPosition, 'native render failed')
         return
       }
       if (nativeAudio.isCompleted()) {
@@ -730,14 +835,8 @@ export class AVPlayerService {
         return
       }
       if (nativeAudio.hasFailed() || checkCount >= 20) {
-        this.stopNativeStartupCheck()
         const position: number = nativeAudio.getPosition()
-        nativeAudio.stop()
-        this.stopNativeProgressTimer()
-        this.nativeMode = false
-        this.isPrepared = false
-        Logger.error(TAG, 'native startup timeout, fallback to AVPlayer')
-        this.playWithAvPlayer(fileUri, requestId, position)
+        this.requestNativeFallback(fileUri, requestId, position, 'native startup timeout')
       }
     }, 100)
   }

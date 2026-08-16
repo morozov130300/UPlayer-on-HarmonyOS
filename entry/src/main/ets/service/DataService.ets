@@ -5,6 +5,7 @@ import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstan
 import { fileIo as fs, fileShare } from '@kit.CoreFileKit'
 import Logger from '../common/utils/Logger'
 import { common } from '@kit.AbilityKit'
+import { BusinessError } from '@kit.BasicServicesKit'
 import { AudioMetadataService } from './AudioMetadataService'
 import { MusicPlayMode } from '../common/constants/PlayerConstants'
 
@@ -582,41 +583,50 @@ export class DataService {
     return settings
   }
 
+  private isPersistableUri(value: string): boolean {
+    return value.startsWith('file://') || value.startsWith('datashare://') || value.startsWith('content://')
+  }
+
   async activatePersistedUris(): Promise<void> {
     if (!canIUse('SystemCapability.FileManagement.AppFileService.FolderAuthorization')) {
       Logger.info(TAG, 'activatePersistedUris: FolderAuthorization not supported')
       return
     }
     const songs: SongInfo[] = this.getSongs()
-    if (songs.length === 0) {
-      return
-    }
-    const uris: string[] = []
+    const uniqueUris: Set<string> = new Set<string>()
     for (let i = 0; i < songs.length; i++) {
-      const uri: string = songs[i].uri
-      if (uri.length > 0) {
-        uris.push(uri)
-      }
-      if (songs[i].lyricUri.length > 0) {
-        uris.push(songs[i].lyricUri)
-      }
+      if (this.isPersistableUri(songs[i].uri)) uniqueUris.add(songs[i].uri)
+      if (this.isPersistableUri(songs[i].lyricUri)) uniqueUris.add(songs[i].lyricUri)
     }
-    if (uris.length === 0) {
-      return
-    }
-    try {
+    const uris: string[] = Array.from(uniqueUris)
+    const batchSize: number = 500
+    for (let offset = 0; offset < uris.length; offset += batchSize) {
+      const batch: string[] = uris.slice(offset, offset + batchSize)
       const policies: fileShare.PolicyInfo[] = []
-      for (let i = 0; i < uris.length; i++) {
-        const policyInfo: fileShare.PolicyInfo = {
-          uri: uris[i],
-          operationMode: fileShare.OperationMode.READ_MODE,
-        }
-        policies.push(policyInfo)
+      for (let i = 0; i < batch.length; i++) {
+        policies.push({ uri: batch[i], operationMode: fileShare.OperationMode.READ_MODE })
       }
-      await fileShare.activatePermission(policies)
-      Logger.info(TAG, `activatePersistedUris: activatePermission success for ${uris.length} URIs`)
-    } catch (err) {
-      Logger.error(TAG, `activatePersistedUris: activatePermission failed: ${JSON.stringify(err)}`)
+      try {
+        const persistent: boolean[] = await fileShare.checkPersistentPermission(policies)
+        const authorized: fileShare.PolicyInfo[] = []
+        for (let i = 0; i < policies.length; i++) {
+          if (persistent[i]) authorized.push(policies[i])
+        }
+        if (authorized.length > 0) {
+          await fileShare.activatePermission(authorized)
+          Logger.info(TAG, `activatePersistedUris: activated ${authorized.length} URIs`)
+        }
+      } catch (err) {
+        const error: BusinessError<Array<fileShare.PolicyErrorResult>> =
+          err as BusinessError<Array<fileShare.PolicyErrorResult>>
+        if (error.data !== undefined) {
+          for (let i = 0; i < error.data.length; i++) {
+            Logger.error(TAG, `activatePersistedUris failed uri=${error.data[i].uri} code=${error.data[i].code}`)
+          }
+        } else {
+          Logger.error(TAG, `activatePersistedUris failed: code=${error.code} message=${error.message}`)
+        }
+      }
     }
   }
 }
