@@ -31,7 +31,7 @@ struct MainPage {
         .borderRadius(18)
         .alignItems(VerticalAlign.Center)
         .margin({ left: this.indicatorOffset, bottom: 12, })
-        .shadow({ radius: 8, color: '#33000000', offsetY: 4, offsetX: 2 })
+        .shadow({ radius: 6, color: '#33000000', offsetY: 4, offsetX: 0 })
         .radialGradient({
           center: ['50%', '50%'], // 径向渐变中心
           radius: '75%',           // 渐变半径覆盖整体
