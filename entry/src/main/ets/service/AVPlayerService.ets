@@ -416,6 +416,11 @@ export class AVPlayerService {
     }
   }
 
+  private stopBackground(): void {
+    const ctx: common.UIAbilityContext | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
+    BackgroundUtil.stopContinuousTask(ctx)
+  }
+
   async stop(): Promise<void> {
     this.playRequestId++
     this.cancelPrepare()
@@ -427,9 +432,11 @@ export class AVPlayerService {
       this.currentFilePath = ''
       AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, false)
       this.sessionController.setPlayState(false)
+      this.stopBackground()
       return
     }
     if (this.avPlayer === undefined) {
+      this.stopBackground()
       return
     }
     try {
@@ -438,6 +445,7 @@ export class AVPlayerService {
       this.currentFilePath = ''
       this.isPrepared = false
       this.sessionController.setPlayState(false)
+      this.stopBackground()
     } catch (err) {
       Logger.error(TAG, `stop failed: ${JSON.stringify(err)}`)
     }
@@ -445,7 +453,9 @@ export class AVPlayerService {
 
   async seek(timeMs: number): Promise<void> {
     if (this.nativeMode) {
-      nativeAudio.seek(timeMs)
+      if (nativeAudio.seek(timeMs)) {
+        this.sessionController.setProgressState(timeMs, true)
+      }
       return
     }
     if (this.avPlayer === undefined) {
@@ -453,6 +463,7 @@ export class AVPlayerService {
     }
     try {
       this.avPlayer.seek(timeMs)
+      this.sessionController.setProgressState(timeMs, true)
     } catch (err) {
       Logger.error(TAG, `seek failed: ${JSON.stringify(err)}`)
     }
@@ -498,6 +509,7 @@ export class AVPlayerService {
       this.nativeMode = false
     }
     if (this.avPlayer === undefined) {
+      this.stopBackground()
       return
     }
     try {
@@ -510,6 +522,7 @@ export class AVPlayerService {
       }
       this.currentFilePath = ''
       this.isPrepared = false
+      this.stopBackground()
     } catch (err) {
       Logger.error(TAG, `release failed: ${JSON.stringify(err)}`)
     }
@@ -557,7 +570,7 @@ export class AVPlayerService {
   updateEqualizerBands(bands: number[]): boolean {
     this.equalizerBands = this.normalizeEqualizerBands(bands)
     if (!this.equalizerEnabled || !this.nativeMode) {
-      return false
+      return true
     }
     if (!nativeAudio.setEqualizerBands(this.equalizerBands)) {
       return false

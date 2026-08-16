@@ -12,7 +12,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { wantAgent, common } from '@kit.AbilityKit';
+import { wantAgent, common, WantAgent } from '@kit.AbilityKit';
 import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import Logger from './Logger';
@@ -21,17 +21,27 @@ const TAG = 'BackgroundUtil';
 
 // [Start BackgroundUtil]
 export class BackgroundUtil {
-  /**
-   * Start background task.
-   *
-   * @param context
-   */
-  public static startContinuousTask(context?: common.UIAbilityContext): void {
+  private static isRunning: boolean = false;
+  private static startPromise: Promise<boolean> | undefined = undefined;
+  private static stopPromise: Promise<boolean> | undefined = undefined;
+
+  public static startContinuousTask(context?: common.UIAbilityContext): Promise<boolean> {
     if (!context) {
-      Logger.error(TAG, 'startContinuousTask failed', `context undefined`);
-      return;
+      Logger.error(TAG, 'startContinuousTask failed', 'context undefined');
+      return Promise.resolve(false);
     }
-    let wantAgentInfo: wantAgent.WantAgentInfo = {
+    if (BackgroundUtil.isRunning) {
+      return Promise.resolve(true);
+    }
+    if (BackgroundUtil.startPromise !== undefined) {
+      return BackgroundUtil.startPromise;
+    }
+    BackgroundUtil.startPromise = BackgroundUtil.start(context);
+    return BackgroundUtil.startPromise;
+  }
+
+  private static async start(context: common.UIAbilityContext): Promise<boolean> {
+    const wantAgentInfo: wantAgent.WantAgentInfo = {
       wants: [
         {
           bundleName: context.abilityInfo.bundleName,
@@ -42,38 +52,52 @@ export class BackgroundUtil {
       requestCode: 0,
       wantAgentFlags: [wantAgent.WantAgentFlags.UPDATE_PRESENT_FLAG]
     };
-
-    wantAgent.getWantAgent(wantAgentInfo).then((wantAgentObj: Object) => {
-      try {
-        backgroundTaskManager.startBackgroundRunning(context,
-          backgroundTaskManager.BackgroundMode.AUDIO_PLAYBACK, wantAgentObj).then(() => {
-          Logger.info(TAG, 'startBackgroundRunning succeeded');
-        }).catch((error: BusinessError) => {
-          Logger.error(TAG, `startBackgroundRunning failed Cause: code ${error.code}`);
-        });
-      } catch (error) {
-        Logger.error(TAG, `startBackgroundRunning failed.message ${(error as BusinessError).message}`);
-      }
-    })
-      .catch((error: BusinessError) => {
-        Logger.error('this audioRenderer: ', `getWantAgent failed Cause: code ${error.code}`);
-      });
+    try {
+      const agent: WantAgent = await wantAgent.getWantAgent(wantAgentInfo);
+      await backgroundTaskManager.startBackgroundRunning(context,
+        backgroundTaskManager.BackgroundMode.AUDIO_PLAYBACK, agent);
+      BackgroundUtil.isRunning = true;
+      Logger.info(TAG, 'startBackgroundRunning succeeded');
+      return true;
+    } catch (err) {
+      const error: BusinessError = err as BusinessError;
+      Logger.error(TAG, `startBackgroundRunning failed: code ${error.code}, message ${error.message}`);
+      return false;
+    } finally {
+      BackgroundUtil.startPromise = undefined;
+    }
   }
 
-  /**
-   * Stop background task.
-   *
-   * @param context
-   */
-  public static stopContinuousTask(context: common.UIAbilityContext): void {
+  public static stopContinuousTask(context?: common.UIAbilityContext): Promise<boolean> {
+    if (!context || (!BackgroundUtil.isRunning && BackgroundUtil.startPromise === undefined)) {
+      return Promise.resolve(true);
+    }
+    if (BackgroundUtil.stopPromise !== undefined) {
+      return BackgroundUtil.stopPromise;
+    }
+    BackgroundUtil.stopPromise = BackgroundUtil.stop(context);
+    return BackgroundUtil.stopPromise;
+  }
+
+  private static async stop(context: common.UIAbilityContext): Promise<boolean> {
+    if (BackgroundUtil.startPromise !== undefined) {
+      await BackgroundUtil.startPromise;
+    }
+    if (!BackgroundUtil.isRunning) {
+      BackgroundUtil.stopPromise = undefined;
+      return true;
+    }
     try {
-      backgroundTaskManager.stopBackgroundRunning(context).then(() => {
-        Logger.info('this audioRenderer: ', 'stopBackgroundRunning succeeded');
-      }).catch((error: BusinessError) => {
-        Logger.error('this audioRenderer: ', `stopBackgroundRunning failed Cause: code ${error.code}`);
-      });
-    } catch (error) {
-      Logger.error(TAG, `stopBackgroundRunning failed. message ${error}`);
+      await backgroundTaskManager.stopBackgroundRunning(context);
+      BackgroundUtil.isRunning = false;
+      Logger.info(TAG, 'stopBackgroundRunning succeeded');
+      return true;
+    } catch (err) {
+      const error: BusinessError = err as BusinessError;
+      Logger.error(TAG, `stopBackgroundRunning failed: code ${error.code}, message ${error.message}`);
+      return false;
+    } finally {
+      BackgroundUtil.stopPromise = undefined;
     }
   }
 }

@@ -20,6 +20,11 @@ export class AVSessionController {
   private musicIndex: number = 0;
   private avPlayerService: AVPlayerService | undefined = undefined;
   private metadataRequestId: number = 0;
+  private lastProgressUpdateTime: number = 0;
+  private lastProgressPosition: number = -1;
+  private progressUpdateInFlight: boolean = false;
+  private pendingProgressPosition: number | undefined = undefined;
+  private static readonly PROGRESS_UPDATE_INTERVAL_MS: number = 1000;
 
   private getAvPlayerService(): AVPlayerService {
     if (this.avPlayerService === undefined) {
@@ -335,21 +340,47 @@ export class AVSessionController {
     }
   }
 
-  public setProgressState(ms: number): void {
-    if (this.AVSession) {
-      this.AVSession.setAVPlaybackState({
-        position: {
-          elapsedTime: ms,
-          updateTime: new Date().getTime()
-        }
-      }, (err: BusinessError) => {
-        if (err) {
-          Logger.error(TAG, `setProgressState BusinessError: code: ${err.code}, message: ${err.message}`);
-        } else {
-          Logger.info(TAG, 'setProgressState successfully');
-        }
-      });
+  public setProgressState(ms: number, force: boolean = false): void {
+    if (!this.AVSession) {
+      return;
     }
+    const now: number = new Date().getTime();
+    if (this.progressUpdateInFlight) {
+      this.pendingProgressPosition = ms;
+      return;
+    }
+    if (!force && now - this.lastProgressUpdateTime < AVSessionController.PROGRESS_UPDATE_INTERVAL_MS &&
+      Math.abs(ms - this.lastProgressPosition) < AVSessionController.PROGRESS_UPDATE_INTERVAL_MS) {
+      this.pendingProgressPosition = ms;
+      return;
+    }
+    this.sendProgressState(ms, now);
+  }
+
+  private sendProgressState(ms: number, updateTime: number): void {
+    if (!this.AVSession) {
+      return;
+    }
+    this.progressUpdateInFlight = true;
+    this.AVSession.setAVPlaybackState({
+      position: {
+        elapsedTime: ms,
+        updateTime: updateTime
+      }
+    }, (err: BusinessError) => {
+      this.progressUpdateInFlight = false;
+      if (err) {
+        Logger.error(TAG, `setProgressState BusinessError: code: ${err.code}, message: ${err.message}`);
+      } else {
+        this.lastProgressUpdateTime = updateTime;
+        this.lastProgressPosition = ms;
+      }
+      const pendingPosition: number | undefined = this.pendingProgressPosition;
+      this.pendingProgressPosition = undefined;
+      if (pendingPosition !== undefined) {
+        this.setProgressState(pendingPosition);
+      }
+    });
   }
 
   public setPlayState(isPlay: boolean): void {
@@ -366,6 +397,8 @@ export class AVSessionController {
         Logger.error(TAG, `setPlayState BusinessError: code: ${err.code}, message: ${err.message}`);
       } else {
         Logger.info(TAG, 'setPlayState successfully');
+        const position: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_PROGRESS) ?? 0;
+        this.setProgressState(position, true);
       }
     });
   }

@@ -22,10 +22,15 @@ interface CapsuleData {
   backgroundColor?: string;
 }
 
+interface LayoutData {
+  layoutType: number;
+}
+
 interface PrimaryData {
   title: string;
   content: LiveViewTextItem[];
   keepTime: number;
+  layoutData: LayoutData;
   clickAction?: WantAgent;
   liveViewLockScreenAbilityName?: string;
   liveViewLockScreenAbilityParameters?: Record<string, string>;
@@ -81,6 +86,10 @@ export class LiveViewService {
       return;
     }
     try {
+      const enabled: boolean = await liveViewManager.isLiveViewEnabled();
+      if (!enabled) {
+        return;
+      }
       const title: string = AppStorage.get<string>('uplayer_current_title') ?? '未播放';
       const artist: string = AppStorage.get<string>('uplayer_current_artist') ?? '';
       const isPlay: boolean = AppStorage.get<boolean>(AppStorageKeyConstants.KEY_IS_PLAY) ?? false;
@@ -95,10 +104,12 @@ export class LiveViewService {
         content: artist.length > 0 ? artist : '未知歌手',
         backgroundColor: '#1A1A1A',
       };
+      const layoutData: LayoutData = { layoutType: liveViewManager.LayoutType.LAYOUT_TYPE_DEFAULT };
       const primary: PrimaryData = {
         title: title,
         content: [textItem1, textItem2],
         keepTime: 0,
+        layoutData: layoutData,
         clickAction: clickAction ?? undefined,
         liveViewLockScreenAbilityName: 'LiveViewExtAbility',
         liveViewLockScreenAbilityParameters: {},
@@ -143,10 +154,12 @@ export class LiveViewService {
         content: artist.length > 0 ? artist : '未知歌手',
         backgroundColor: '#1A1A1A',
       };
+      const layoutData: LayoutData = { layoutType: liveViewManager.LayoutType.LAYOUT_TYPE_DEFAULT };
       const primary: PrimaryData = {
         title: title,
         content: [textItem1, textItem2],
         keepTime: 0,
+        layoutData: layoutData,
         clickAction: clickAction ?? undefined,
         liveViewLockScreenAbilityName: 'LiveViewExtAbility',
         liveViewLockScreenAbilityParameters: {},
@@ -181,10 +194,12 @@ export class LiveViewService {
         title: '',
         content: '',
       };
+      const layoutData: LayoutData = { layoutType: liveViewManager.LayoutType.LAYOUT_TYPE_DEFAULT };
       const primary: PrimaryData = {
         title: '',
         content: [],
         keepTime: 0,
+        layoutData: layoutData,
       };
       const data: LiveViewData = {
         capsule: capsule,
