@@ -8,18 +8,21 @@ struct MainPage {
   tabBuilder(index: number, name: string, icon: Resource) {
     Column() {
       Image(icon)
-        .width(24)
-        .height(24)
-        .fillColor(this.currentIndex === index ? '#007DFF' : '#999999')
+        .width(20)
+        .height(20)
+        .fillColor(this.currentIndex === index ? '#FFFFFF' : '#666666')
 
       Text(name)
-        .fontSize(12)
-        .fontColor(this.currentIndex === index ? '#007DFF' : '#999999')
-        .margin({ top: 4 })
+        .fontSize(11)
+        .fontColor(this.currentIndex === index ? '#FFFFFF' : '#666666')
+        .margin({ top: 2 })
     }
     .width('100%')
-    .height('100%')
+    .height(40)
     .justifyContent(FlexAlign.Center)
+    .borderRadius(20)
+    .backgroundColor(this.currentIndex === index ? '#007DFF' : 'transparent')
+    .margin({ left: 4, right: 4 })
   }
 
   build() {
@@ -40,6 +43,10 @@ struct MainPage {
         }
         .tabBar(this.tabBuilder(2, '设置', $r('app.media.ic_public_settings')))
       }
+      .width('75%')
+      .padding({ left: 16, right: 16, bottom: 5 })
     }
+    .width('100%')
+    .height('100%')
   }
 }
