@@ -1,5 +1,6 @@
 import display from '@ohos.display'
-import { curves } from '@kit.ArkUI'
+import { curves, window } from '@kit.ArkUI'
+import { common } from '@kit.AbilityKit'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { SongInfo } from '../model/SongInfo'
 import { AVPlayerService } from '../service/AVPlayerService'
@@ -42,6 +43,8 @@ struct MainPage {
   private rotationTimer: number = -1
   private dataService: DataService = DataService.getInstance()
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
+  private windowClass: window.Window | undefined = AppStorage.get('windowClass')
+  private abilityContext: common.UIAbilityContext | undefined = AppStorage.get(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
 
   aboutToAppear(): void {
     this.dataService.initToAppStorage()
@@ -61,6 +64,53 @@ struct MainPage {
   }
 
   @Builder
+  windowControls() {
+    Row({ space: 4 }) {
+      Row() {
+        SymbolGlyph($r('sys.symbol.minus'))
+          .fontSize(14)
+          .fontColor([$r('app.color.text_sixty_color')])
+      }
+      .width(36).height(28)
+      .borderRadius(4)
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .hoverEffect(HoverEffect.Highlight)
+      .onClick(() => {
+        if (this.windowClass) { this.windowClass.minimize() }
+      })
+      Row() {
+        SymbolGlyph($r('sys.symbol.square'))
+          .fontSize(12)
+          .fontColor([$r('app.color.text_sixty_color')])
+      }
+      .width(36).height(28)
+      .borderRadius(4)
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .hoverEffect(HoverEffect.Highlight)
+      .onClick(() => {
+        if (this.windowClass) {
+          this.windowClass.maximize(window.MaximizePresentation.EXIT_IMMERSIVE)
+        }
+      })
+      Row() {
+        SymbolGlyph($r('sys.symbol.xmark'))
+          .fontSize(14)
+          .fontColor([$r('app.color.text_sixty_color')])
+      }
+      .width(36).height(28)
+      .borderRadius(4)
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .hoverEffect(HoverEffect.Highlight)
+      .onClick(() => {
+        if (this.abilityContext) { this.abilityContext.terminateSelf() }
+      })
+    }
+  }
+
+  @Builder
   customTabBar() {
     Stack({ alignContent: Alignment.BottomStart }) {
       Row()
@@ -72,8 +122,8 @@ struct MainPage {
         .shadow({
           radius: 6,
           color: $r('app.color.shadow_color'),
-          offsetY: 4,
-          offsetX: 0
+          offsetX: 0,
+          offsetY: 0
         })
         .radialGradient({
           center: ['50%', '50%'],
@@ -94,7 +144,7 @@ struct MainPage {
       .height(40)
       .borderRadius(20)
       .backgroundColor('rgba(255,255,255,0.06)')
-      .shadow({ radius: 50, color: $r('app.color.shadow_color'), offsetY: 10 })
+      .shadow({ radius: 50, color: $r('app.color.shadow_color'), offsetX: 0, offsetY: 0 })
     }
     .alignSelf(ItemAlign.Center)
     .height(60)
@@ -244,6 +294,7 @@ struct MainPage {
         .width(20)
         .height(20)
         .fillColor($r('app.color.player_icon_color'))
+        .onClick(() => { this.playPrevious() })
       Image(this.isPlaying ? $r('app.media.ic_public_play') : $r('app.media.ic_public_pause'))
         .width(20)
         .height(20)
@@ -255,6 +306,7 @@ struct MainPage {
         .width(20)
         .height(20)
         .fillColor($r('app.color.player_icon_color'))
+        .onClick(() => { this.playNext() })
     }
     .constraintSize({ maxWidth: this.breakpoint === 'sm' || this.breakpoint === 'md' ? '85%' : '42%' })
     .height(40)
@@ -294,6 +346,28 @@ struct MainPage {
     } else {
       this.avPlayerService.resume()
     }
+  }
+
+  playPrevious(): void {
+    const songList: SongInfo[] | undefined = AppStorage.get(AppStorageKeyConstants.KEY_SONG_LIST)
+    if (!songList || songList.length === 0) {
+      return
+    }
+    let idx: number = this.currentIndex >= 0 ? (AppStorage.get<number>(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? 0) : 0
+    idx = idx <= 0 ? songList.length - 1 : idx - 1
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, idx)
+    this.avPlayerService.play(songList[idx].filePath)
+  }
+
+  playNext(): void {
+    const songList: SongInfo[] | undefined = AppStorage.get(AppStorageKeyConstants.KEY_SONG_LIST)
+    if (!songList || songList.length === 0) {
+      return
+    }
+    let idx: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? 0
+    idx = idx >= songList.length - 1 ? 0 : idx + 1
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, idx)
+    this.avPlayerService.play(songList[idx].filePath)
   }
 
   startRotation() {
@@ -342,22 +416,26 @@ struct MainPage {
                   [ColorHelper.hexToRgba(this.primaryColor, 0), 1.0],
                 ]
               })
-            Column() {
+            Row() {
               Text(this.greetingTitle)
                 .fontWeight(FontWeight.Bolder)
                 .fontSize(28)
                 .fontColor($r('app.color.text_primary'))
                 .opacity(this.greetingOpacity)
                 .translate({ y: this.greetingOffset })
+              Blank()
+              if (this.breakpoint !== 'sm') {
+                this.windowControls()
+              }
             }
             .width('100%')
             .height('100%')
             .justifyContent(FlexAlign.Start)
-            .alignItems(HorizontalAlign.Start)
-            .padding({ top: 16 + this.topSafeHeight, left: 16 })
+            .alignItems(VerticalAlign.Center)
+            .padding({ top: 16 + this.topSafeHeight, left: 16, right: 8 })
           }
           .width('100%')
-          .height(80)
+          .height(this.breakpoint !== 'sm' ? 56 : 80)
           .transition({ type: TransitionType.Insert, opacity: 0, translate: { y: -20 } })
           .transition({ type: TransitionType.Delete, opacity: 0, translate: { y: -20 } })
         }
@@ -390,7 +468,7 @@ struct MainPage {
             this.playerControl()
           }
           .width('100%')
-          .padding({ left: 16, right: 16, bottom: this.bottomSafeHeight })
+          .padding({ left: 16, right: 16, bottom: this.bottomSafeHeight + 16 })
           .alignItems(VerticalAlign.Center)
         }
       }

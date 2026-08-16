@@ -496,10 +496,10 @@ export struct HomeContent {
       if (item.isAvailable) {
         Row() {
           SymbolGlyph($r('sys.symbol.list_bullet'))
-            .fontSize(16)
+            .fontSize(18)
             .renderingStrategy(SymbolRenderingStrategy.SINGLE)
-            .fontColor([$r('app.color.text_twenty_color')])
-            .margin({ right: 8 })
+            .fontColor([$r('app.color.text_sixty_color')])
+            .margin({ right: 12 })
             .onClick(() => {
               this.dataService.addToPlayNext(item.id)
               try {
@@ -512,8 +512,8 @@ export struct HomeContent {
       }
 
       Image(item.isFavorite ? $r('app.media.heart_fill') : $r('app.media.heart_gap'))
-        .width(20).height(20)
-        .fillColor(item.isFavorite ? '#FF3B30' : $r('app.color.text_twenty_color'))
+        .width(22).height(22)
+        .fillColor(item.isFavorite ? '#FF3B30' : $r('app.color.text_sixty_color'))
         .margin({ right: 12 })
         .onClick(() => {
           this.toggleFavorite(item.id)

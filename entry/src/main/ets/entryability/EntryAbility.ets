@@ -65,9 +65,16 @@ export default class EntryAbility extends UIAbility {
         let windowUtil = new WindowUtil(mainWindow, uiContext);
         AppStorage.setOrCreate(AppStorageKeyConstants.KEY_WINDOW_UTIL, windowUtil);
         AppStorage.setOrCreate(AppStorageKeyConstants.KEY_WINDOW, mainWindow);
+        AppStorage.setOrCreate('windowClass', mainWindow);
         windowUtil.setAvoidArea();
         windowUtil.updateAvoidArea();
         windowUtil.updateWindowInfo();
+        try {
+          mainWindow.setWindowDecorVisible(false);
+          mainWindow.setWindowTitleButtonVisible(false, false, false);
+        } catch (e) {
+          Logger.error(TAG, 'setWindowDecorVisible failed: ' + JSON.stringify(e));
+        }
       }).catch((error: Error) => {
         Logger.error(TAG, `getMainWindow failed: ${JSON.stringify(error)}`);
       });
@@ -86,6 +93,7 @@ export default class EntryAbility extends UIAbility {
 
   onForeground(): void {
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onForeground');
+    AVPlayerService.getInstance().onForegroundRestore();
   }
 
   onBackground(): void {

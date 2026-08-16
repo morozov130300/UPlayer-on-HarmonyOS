@@ -1,6 +1,7 @@
-import { router } from '@kit.ArkUI'
+import { router, curves } from '@kit.ArkUI'
 import { DataService, AppSettingsData } from '../service/DataService'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
+import { ColorHelper } from '../common/utils/ColorHelper'
 import Logger from '../common/utils/Logger'
 
 const TAG = 'SettingsContent'
@@ -40,31 +41,30 @@ export struct SettingsContent {
       Row() {
         Text('设置')
           .fontSize(18)
-          .fontColor($r('app.color.text_primary'))
+          .fontColor(ColorHelper.darken(this.primaryColor, 0.3))
           .fontWeight(FontWeight.Bold)
       }
       .width('100%')
-      .padding({ left: 16, right: 16, top: this.topSafeHeight + 8, bottom: 12 })
+      .padding({ left: 16, right: 16, top: this.topSafeHeight + 8, bottom: 10 })
 
-      Column({ space: 12 }) {
+      Column({ space: 8 }) {
         ForEach(this.categories, (cat: SettingCategory) => {
           Column() {
             Text(cat.title)
-              .fontSize(17)
-              .fontColor($r('app.color.text_primary'))
+              .fontSize(16)
+              .fontColor(ColorHelper.darken(this.primaryColor, 0.25))
               .fontWeight(FontWeight.Medium)
               .width('100%')
             Text(cat.description)
-              .fontSize(13)
-              .fontColor($r('app.color.text_twenty_color'))
+              .fontSize(12)
+              .fontColor(ColorHelper.hexWithAlpha(this.primaryColor, '80'))
               .width('100%')
-              .margin({ top: 4 })
+              .margin({ top: 3 })
           }
           .width('100%')
-          .padding({ left: 16, right: 16, top: 18, bottom: 18 })
-          .backgroundColor($r('app.color.page_background_sm'))
-          .borderRadius(12)
-          .shadow({ radius: 4, color: $r('app.color.shadow_color'), offsetY: 1 })
+          .padding({ left: 16, right: 16, top: 13, bottom: 13 })
+          .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+          .borderRadius(10)
           .alignItems(HorizontalAlign.Start)
           .onClick(() => { this.onCategoryClick(cat) })
         }, (cat: SettingCategory) => cat.route)
@@ -74,5 +74,6 @@ export struct SettingsContent {
     }
     .width('100%')
     .height('100%')
+    .backgroundColor($r('app.color.page_background_other'))
   }
 }

@@ -111,7 +111,11 @@ export struct LyricsComponent {
     }
     .onClick(() => {
       this.pageShowTime = 0;
-      if (!this.isShowControl) {
+      if (this.isShowControl) {
+        this.getUIContext()?.animateTo({ curve: curves.springMotion(0.5, 0.8) }, () => {
+          this.isShowControl = false;
+        });
+      } else {
         this.getUIContext()?.animateTo({ curve: curves.springMotion(0.5, 0.8) }, () => {
           this.isShowControl = true;
         });
