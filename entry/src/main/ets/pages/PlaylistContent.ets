@@ -1,11 +1,12 @@
 import { common } from '@kit.AbilityKit'
 import { FolderInfo } from '../model/FolderInfo'
 import { SongInfo } from '../model/SongInfo'
-import { DataService, AppSettingsData } from '../service/DataService'
+import { DataService, AppSettingsData, ImportResult } from '../service/DataService'
 import { SongScanner } from '../service/SongScanner'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
+import { promptAction } from '@kit.ArkUI'
 
 const TAG = 'PlaylistContent'
 const FAVORITES_FOLDER_ID: string = '__favorites__'
@@ -120,8 +121,15 @@ export struct PlaylistContent {
     }
     const newSongs: SongInfo[] = await this.songScanner.pickAudioFiles(this.context)
     if (newSongs.length > 0) {
-      this.dataService.addSongs(newSongs)
+      const result: ImportResult = this.dataService.addSongs(newSongs)
       this.loadData()
+      try {
+        promptAction.showToast({
+          message: `新增 ${result.newCount} 首` + (result.dupCount > 0 ? `，${result.dupCount} 首已存在` : '')
+        })
+      } catch (e) {
+        Logger.error(TAG, 'toast failed')
+      }
     }
   }
 

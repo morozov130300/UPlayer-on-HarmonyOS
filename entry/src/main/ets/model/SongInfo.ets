@@ -27,10 +27,12 @@ export class SongInfo {
   static fromFile(filePath: string, fileName: string): SongInfo {
     const song: SongInfo = new SongInfo();
     song.id = SongInfo.createId();
-    song.filePath = filePath;
-    song.fileName = fileName;
-    const dotIdx: number = fileName.lastIndexOf('.')
-    const baseName: string = dotIdx > 0 ? fileName.substring(0, dotIdx) : fileName
+    const decodedPath: string = decodeURIComponent(filePath)
+    const decodedName: string = decodeURIComponent(fileName)
+    song.filePath = decodedPath
+    song.fileName = decodedName
+    const dotIdx: number = decodedName.lastIndexOf('.')
+    const baseName: string = dotIdx > 0 ? decodedName.substring(0, dotIdx) : decodedName
     song.name = baseName
     song.title = baseName
     song.artist = ''
@@ -42,20 +44,18 @@ export class SongInfo {
     song.addedTime = Date.now()
     song.isFavorite = false
     song.isAvailable = true
-    // 提取文件夹路径：filePath 最后一个 / 之前的部分
-    const lastSlash: number = filePath.lastIndexOf('/')
-    const lastBackslash: number = filePath.lastIndexOf('\\')
+    const lastSlash: number = decodedPath.lastIndexOf('/')
+    const lastBackslash: number = decodedPath.lastIndexOf('\\')
     const sepIdx: number = lastSlash > lastBackslash ? lastSlash : lastBackslash
     if (sepIdx >= 0) {
-      song.folderPath = filePath.substring(0, sepIdx)
-      // 从 folderPath 中提取文件夹名（folderPath 的最后一段）
+      song.folderPath = decodedPath.substring(0, sepIdx)
       const folderLastSlash: number = song.folderPath.lastIndexOf('/')
       const folderLastBackslash: number = song.folderPath.lastIndexOf('\\')
       const folderSepIdx: number = folderLastSlash > folderLastBackslash ? folderLastSlash : folderLastBackslash
       song.folderName = folderSepIdx >= 0 ? song.folderPath.substring(folderSepIdx + 1) : song.folderPath
     }
-    const pathDotIdx: number = filePath.lastIndexOf('.')
-    const lyricPath: string = pathDotIdx > 0 ? filePath.substring(0, pathDotIdx) + '.lrc' : ''
+    const pathDotIdx: number = decodedPath.lastIndexOf('.')
+    const lyricPath: string = pathDotIdx > 0 ? decodedPath.substring(0, pathDotIdx) + '.lrc' : ''
     song.lyricPath = lyricPath
     return song
   }

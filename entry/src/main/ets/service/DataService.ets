@@ -2,6 +2,7 @@ import { SongInfo } from '../model/SongInfo'
 import { FolderInfo } from '../model/FolderInfo'
 import { PreferencesUtil } from '../common/utils/PreferencesUtil'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
+import { fileIo as fs } from '@kit.CoreFileKit'
 import Logger from '../common/utils/Logger'
 
 const TAG = 'DataService'
@@ -13,6 +14,7 @@ const KEY_SORT_MODE: string = 'uplayer_sort_mode'
 const KEY_VIEW_MODE: string = 'uplayer_view_mode'
 const KEY_SELECTED_FOLDERS: string = 'uplayer_selected_folders'
 const KEY_FAVORITES_SELECTED: string = 'uplayer_favorites_selected'
+const KEY_PLAY_NEXT_QUEUE: string = 'uplayer_play_next_queue'
 
 export const AUDIO_EXTENSIONS: string[] = [
   '.mp3', '.flac', '.wav', '.aac', '.m4a', '.ogg', '.wma', '.ape',
@@ -22,6 +24,11 @@ export const AUDIO_EXTENSIONS: string[] = [
   '.3gp', '.3g2', '.webm', '.mka'
 ]
 
+export class ImportResult {
+  newCount: number = 0
+  dupCount: number = 0
+}
+
 export class AppSettingsData {
   plusButtonScrollHide: boolean = true
   themeMode: string = 'system'
@@ -29,9 +36,8 @@ export class AppSettingsData {
   showLyrics: boolean = true
   enableNotification: boolean = true
   eqEnabled: boolean = false
-  volumeGain: number = 0
+  eqBands: number[] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
   playSpeed: number = 1
-  audioEffect: string = 'none'
   folderSortMode: string = 'name'
   fadeInOut: boolean = false
 }
@@ -168,12 +174,23 @@ export class DataService {
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SONG_LIST, songs)
   }
 
-  addSongs(newSongs: SongInfo[]): void {
+  addSongs(newSongs: SongInfo[]): ImportResult {
     const songs: SongInfo[] = this.getSongs()
+    const existingPaths: Set<string> = new Set()
+    for (let i = 0; i < songs.length; i++) {
+      existingPaths.add(songs[i].filePath)
+    }
+    const result: ImportResult = new ImportResult()
     for (let i = 0; i < newSongs.length; i++) {
-      songs.push(newSongs[i])
+      if (existingPaths.has(newSongs[i].filePath)) {
+        result.dupCount++
+      } else {
+        songs.push(newSongs[i])
+        result.newCount++
+      }
     }
     this.saveSongs(songs)
+    return result
   }
 
   removeSong(songId: string): void {
@@ -306,9 +323,14 @@ export class DataService {
       s.showLyrics = r['showLyrics'] as boolean
       s.enableNotification = r['enableNotification'] as boolean
       s.eqEnabled = r['eqEnabled'] as boolean
-      s.volumeGain = r['volumeGain'] as number
+      let rawEqBands: Object | undefined = r['eqBands']
+      if (rawEqBands !== undefined) {
+        const bands: number[] = rawEqBands as number[]
+        for (let i = 0; i < bands.length && i < 10; i++) {
+          s.eqBands[i] = bands[i]
+        }
+      }
       s.playSpeed = r['playSpeed'] as number
-      s.audioEffect = r['audioEffect'] as string
       let rawFolderSort: Object | undefined = r['folderSortMode']
       s.folderSortMode = rawFolderSort !== undefined ? rawFolderSort as string : 'name'
       let rawFadeInOut: Object | undefined = r['fadeInOut']
@@ -327,9 +349,8 @@ export class DataService {
     r['showLyrics'] = settings.showLyrics
     r['enableNotification'] = settings.enableNotification
     r['eqEnabled'] = settings.eqEnabled
-    r['volumeGain'] = settings.volumeGain
+    r['eqBands'] = settings.eqBands
     r['playSpeed'] = settings.playSpeed
-    r['audioEffect'] = settings.audioEffect
     r['folderSortMode'] = settings.folderSortMode
     r['fadeInOut'] = settings.fadeInOut
     this.getPref().preferencesPut(KEY_SETTINGS, JSON.stringify(r))
@@ -387,16 +408,79 @@ export class DataService {
     AppStorage.setOrCreate(KEY_FAVORITES_SELECTED, selected)
   }
 
+  // ═══════════ Play Next Queue ═══════════
+
+  getPlayNextQueue(): string[] {
+    const raw = this.getPref().getValue(KEY_PLAY_NEXT_QUEUE)
+    if (raw === undefined) return []
+    try {
+      return JSON.parse(raw as string) as string[]
+    } catch (e) {
+      return []
+    }
+  }
+
+  setPlayNextQueue(queue: string[]): void {
+    this.getPref().preferencesPut(KEY_PLAY_NEXT_QUEUE, JSON.stringify(queue))
+    AppStorage.setOrCreate(KEY_PLAY_NEXT_QUEUE, queue)
+  }
+
+  addToPlayNext(songId: string): void {
+    const queue: string[] = this.getPlayNextQueue()
+    queue.push(songId)
+    this.setPlayNextQueue(queue)
+  }
+
+  shiftPlayNext(): string | undefined {
+    const queue: string[] = this.getPlayNextQueue()
+    if (queue.length === 0) return undefined
+    const id: string = queue[0]
+    queue.splice(0, 1)
+    this.setPlayNextQueue(queue)
+    return id
+  }
+
+  // ═══════════ Accessibility Check ═══════════
+
+  checkSongsAccessibility(): void {
+    const songs: SongInfo[] = this.getSongs()
+    let changed: boolean = false
+    for (let i = 0; i < songs.length; i++) {
+      const prevAvailable: boolean = songs[i].isAvailable
+      try {
+        fs.accessSync(songs[i].filePath)
+        songs[i].isAvailable = true
+      } catch (e) {
+        songs[i].isAvailable = false
+      }
+      if (songs[i].lyricPath.length > 0) {
+        try {
+          fs.accessSync(songs[i].lyricPath)
+        } catch (e) {
+          songs[i].lyricPath = ''
+        }
+      }
+      if (songs[i].isAvailable !== prevAvailable) {
+        changed = true
+      }
+    }
+    if (changed) {
+      this.saveSongs(songs)
+    }
+  }
+
   // ═══════════ Init ═══════════
 
   initToAppStorage(): void {
     AppStorage.setOrCreate(KEY_SETTINGS, this.getSettings())
     AppStorage.setOrCreate(KEY_SORT_MODE, this.getSortMode())
     AppStorage.setOrCreate(KEY_VIEW_MODE, this.getViewMode())
+    this.checkSongsAccessibility()
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SONG_LIST, this.getSongs())
     AppStorage.setOrCreate(KEY_FOLDER_LIST, this.getFolders())
     AppStorage.setOrCreate(KEY_SELECTED_FOLDERS, this.getSelectedFolderPaths())
     AppStorage.setOrCreate(KEY_FAVORITES_SELECTED, this.isFavoritesSelected())
+    AppStorage.setOrCreate(KEY_PLAY_NEXT_QUEUE, this.getPlayNextQueue())
     const s: AppSettingsData = this.getSettings()
     AppStorage.setOrCreate('uplayer_primary_color', s.primaryColor)
     AppStorage.setOrCreate('uplayer_theme_mode', s.themeMode)

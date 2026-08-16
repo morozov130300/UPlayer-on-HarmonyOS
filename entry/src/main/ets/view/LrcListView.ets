@@ -16,30 +16,21 @@
 import { LrcEntry } from "../viewmodel/LrcEntry";
 import { LengthMetrics } from "@kit.ArkUI";
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
+import { AVPlayerService } from '../service/AVPlayerService';
 
-/** 无歌词时的默认行号 */
 const NONE_LINE: number = -1;
 
-/**
- * 歌词列表视图
- * 接收播放进度（毫秒）和解析后的歌词数组，自动滚动到当前行并高亮
- */
 @Component
 export default struct LrcListView {
-  /** 当前播放时间（毫秒），变化时触发滚动 */
   @Prop @Watch('onTimeUpdated') lyricMilliSecondsTime: number;
-  /** 歌词条目列表，变化时重新定位 */
   @Prop @Watch('onLyricUpdated') mLrcEntryList: Array<LrcEntry> = [];
   @State fontSize: number = 20;
-  /** 当前高亮的行索引 */
   @State mCurrentLine: number = NONE_LINE;
   private scrollerForList: Scroller = new Scroller();
-  /** 是否有歌词 */
   @State isHasLyric: boolean = true;
-  /** 主题色（从封面主色取），用于当前行左侧指示条 */
   @StorageLink(AppStorageKeyConstants.KEY_IMAGE_COLOR) themeColor: string = 'rgba(0, 125, 255, 1)';
+  private avPlayerService: AVPlayerService = AVPlayerService.getInstance();
 
-  /** 播放进度更新 → 查找对应歌词行 → 滚动居中 */
   onTimeUpdated() {
     if (!this.hasLrc()) {
       this.isHasLyric = false;
@@ -52,7 +43,6 @@ export default struct LrcListView {
     }
   }
 
-  /** 歌词列表变化 → 重置行号并重新定位 */
   onLyricUpdated() {
     if (!this.hasLrc()) {
       this.isHasLyric = false;
@@ -63,12 +53,10 @@ export default struct LrcListView {
     this.onTimeUpdated();
   }
 
-  /** 平滑滚动到指定行（居中） */
   smoothScrollTo(line: number) {
     this.scrollerForList.scrollToIndex(line, true, ScrollAlign.CENTER)
   }
 
-  /** 二分查找时间对应的歌词行索引（默认保留当前行） */
   findShowLine(milliSeconds: number): number {
     if (this.mLrcEntryList && this.mLrcEntryList.length > 0) {
       for (let index = 0; index < this.mLrcEntryList.length; index++) {
@@ -85,6 +73,10 @@ export default struct LrcListView {
     return this.mLrcEntryList && this.mLrcEntryList.length > 0;
   }
 
+  onLyricLineClick(entry: LrcEntry): void {
+    this.avPlayerService.seek(entry.lineStartTime);
+  }
+
   build() {
     Column() {
       if (this.isHasLyric) {
@@ -93,7 +85,6 @@ export default struct LrcListView {
           ForEach(this.mLrcEntryList, (item: LrcEntry, index: number) => {
             ListItem() {
               Row() {
-                /** 当前行左侧高亮指示条（宽度 3vp，高度 24vp，使用封面主题色） */
                 Column()
                   .width(3)
                   .height(this.mCurrentLine === index ? 24 : 0)
@@ -101,7 +92,6 @@ export default struct LrcListView {
                   .borderRadius(2)
                   .margin({ right: 12 })
                   .animation({ duration: 300, curve: Curve.EaseInOut })
-                /** 歌词文本：当前行白色大字号 + 粗体，其他行灰色半透明小字号 */
                 Text(item.lineWords)
                   .fontFamily('HarmonyHeiTi')
                   .fontColor(this.mCurrentLine === index ? "#FFFFFF" : "#B3ffffff")
@@ -111,6 +101,7 @@ export default struct LrcListView {
               }
               .alignItems(VerticalAlign.Center)
             }
+            .onClick(() => { this.onLyricLineClick(item); })
           })
         }
         .scrollBar(BarState.Off)

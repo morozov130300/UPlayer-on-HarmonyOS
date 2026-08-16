@@ -1,10 +1,12 @@
-// AVPlayer播放服务，使用media.AVPlayer播放导入的音频文件（替代仅支持PCM的AudioRendererController）
 import { media } from '@kit.MediaKit'
 import { fileIo as fs } from '@kit.CoreFileKit'
 import { BusinessError } from '@kit.BasicServicesKit'
 import { common } from '@kit.AbilityKit'
 import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
+import { AVSessionController } from '../common/utils/mediautils/AVSessionController'
+import { BackgroundUtil } from '../common/utils/BackgroundUtil'
+import { LiveViewService } from '../service/LiveViewService'
 
 const TAG = 'AVPlayerService'
 
@@ -20,6 +22,9 @@ export class AVPlayerService {
   private fadeStep: number = 0
   private static FADE_STEPS: number = 6
   private static FADE_INTERVAL: number = 50
+  public onSongComplete: (() => void) | undefined = undefined
+  private sessionController: AVSessionController = AVSessionController.getInstance()
+  private liveViewService: LiveViewService = LiveViewService.getInstance()
 
   public static getInstance(): AVPlayerService {
     return AVPlayerService.instance
@@ -59,13 +64,24 @@ export class AVPlayerService {
         }
       } else if (state === 'playing') {
         AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, true)
+        this.sessionController.setPlayState(true)
+        this.startBackground()
+        this.liveViewService.startLiveView()
       } else if (state === 'paused') {
         AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, false)
+        this.sessionController.setPlayState(false)
+        this.liveViewService.updateLiveView()
       } else if (state === 'stopped') {
         AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, false)
         this.isPrepared = false
+        this.sessionController.setPlayState(false)
       } else if (state === 'completed') {
         AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, false)
+        this.sessionController.setPlayState(false)
+        this.liveViewService.updateLiveView()
+        if (this.onSongComplete !== undefined) {
+          this.onSongComplete()
+        }
       } else if (state === 'released') {
         this.isPrepared = false
       }
@@ -77,6 +93,7 @@ export class AVPlayerService {
       if (totalMs > 0) {
         AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_TIME, this.formatTime(time))
       }
+      this.sessionController.setProgressState(time)
     })
 
     this.avPlayer.on('durationUpdate', (duration: number): void => {
@@ -103,6 +120,7 @@ export class AVPlayerService {
     }
     if (this.currentFilePath === filePath && this.isPrepared) {
       this.avPlayer.play()
+      this.sessionController.setAVMetadata()
       return
     }
     this.currentFilePath = filePath
@@ -119,6 +137,7 @@ export class AVPlayerService {
       let avFd: media.AVFileDescriptor = { fd: file.fd, offset: 0, length: 0 }
       this.avPlayer.fdSrc = avFd
       this.pendingPlay = true
+      this.sessionController.setAVMetadata()
       await new Promise<void>((resolve: Function): void => {
         this.resolvePrepare = resolve as (() => void)
       })
@@ -141,6 +160,7 @@ export class AVPlayerService {
       } else {
         this.avPlayer.play()
       }
+      this.sessionController.setPlayState(true)
     } catch (err) {
       Logger.error(TAG, `resume failed: ${JSON.stringify(err)}`)
     }
@@ -157,6 +177,7 @@ export class AVPlayerService {
       } else {
         this.avPlayer.pause()
       }
+      this.sessionController.setPlayState(false)
     } catch (err) {
       Logger.error(TAG, `pause failed: ${JSON.stringify(err)}`)
     }
@@ -207,6 +228,13 @@ export class AVPlayerService {
     }
   }
 
+  private startBackground(): void {
+    const ctx: common.UIAbilityContext | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
+    if (ctx !== undefined) {
+      BackgroundUtil.startContinuousTask(ctx)
+    }
+  }
+
   async stop(): Promise<void> {
     if (this.avPlayer === undefined) {
       return
@@ -215,6 +243,7 @@ export class AVPlayerService {
       await this.avPlayer.stop()
       this.currentFilePath = ''
       this.isPrepared = false
+      this.sessionController.setPlayState(false)
     } catch (err) {
       Logger.error(TAG, `stop failed: ${JSON.stringify(err)}`)
     }
@@ -247,9 +276,9 @@ export class AVPlayerService {
       return
     }
     try {
-      this.avPlayer.setSpeed(speed)
+      this.avPlayer.setPlaybackRate(speed)
     } catch (err) {
-      Logger.error(TAG, `setSpeed failed: ${JSON.stringify(err)}`)
+      Logger.error(TAG, `setPlaybackRate failed: ${JSON.stringify(err)}`)
     }
   }
 

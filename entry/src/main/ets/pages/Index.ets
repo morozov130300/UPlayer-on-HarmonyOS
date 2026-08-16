@@ -8,6 +8,9 @@ import { PlaylistContent } from './PlaylistContent'
 import { SettingsContent } from './SettingsContent'
 import { DataService } from '../service/DataService'
 import { ColorHelper } from '../common/utils/ColorHelper'
+import Logger from '../common/utils/Logger'
+
+const TAG = 'Index'
 
 @Entry
 @Component
@@ -159,11 +162,11 @@ struct MainPage {
           const newDisplayInfo = display.getDefaultDisplaySync()
           this.updateBreakpoint(newDisplayInfo.width)
         } catch (err) {
-          console.error('Failed to get display info', JSON.stringify(err))
+          Logger.error(TAG, 'display change error')
         }
       })
     } catch (err) {
-      console.error('Failed to init breakpoint', JSON.stringify(err))
+      Logger.error(TAG, 'init breakpoint error')
     }
   }
 
@@ -209,13 +212,13 @@ struct MainPage {
 
       if (this.currentSongTitle.length > 0) {
         Column() {
-          Marquee({ start: this.isTitleMarqueeRunning, step: 4, loop: -1, fromStart: true, src: this.currentSongTitle })
+          Marquee({ start: this.isTitleMarqueeRunning, step: 2, loop: -1, fromStart: true, src: this.currentSongTitle })
             .fontSize(13)
             .fontColor($r('app.color.text_primary'))
             .fontWeight(FontWeight.Medium)
             .width('100%')
             .onFinish(() => { this.isTitleMarqueeRunning = false })
-          Marquee({ start: this.isArtistMarqueeRunning, step: 3, loop: -1, fromStart: true,
+          Marquee({ start: this.isArtistMarqueeRunning, step: 1, loop: -1, fromStart: true,
             src: this.currentSongArtist.length > 0 ? this.currentSongArtist : '未知歌手' })
             .fontSize(10)
             .fontColor($r('app.color.text_sixty_color'))

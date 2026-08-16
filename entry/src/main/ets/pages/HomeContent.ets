@@ -1,12 +1,13 @@
 import { common } from '@kit.AbilityKit'
 import { SongInfo } from '../model/SongInfo'
-import { DataService, AppSettingsData } from '../service/DataService'
+import { DataService, AppSettingsData, ImportResult } from '../service/DataService'
 import { SongScanner } from '../service/SongScanner'
 import { AVPlayerService } from '../service/AVPlayerService'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import { DisplayItemDataSource } from '../viewmodel/DisplayItemDataSource'
 import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
+import { promptAction } from '@kit.ArkUI'
 
 const TAG = 'HomeContent'
 
@@ -192,8 +193,15 @@ export struct HomeContent {
     }
     const newSongs: SongInfo[] = await this.songScanner.pickAudioFiles(this.context)
     if (newSongs.length > 0) {
-      this.dataService.addSongs(newSongs)
+      const result: ImportResult = this.dataService.addSongs(newSongs)
       this.loadData()
+      try {
+        promptAction.showToast({
+          message: `新增 ${result.newCount} 首` + (result.dupCount > 0 ? `，${result.dupCount} 首已存在` : '')
+        })
+      } catch (e) {
+        Logger.error(TAG, 'toast failed')
+      }
     }
   }
 
@@ -446,12 +454,14 @@ export struct HomeContent {
           .borderRadius(6)
           .objectFit(ImageFit.Cover)
           .margin({ right: 10 })
+          .opacity(item.isAvailable ? 1 : 0.35)
           .onError(() => { this.failedArtIds.add(item.id) })
       } else {
         Image($r('app.media.ic_public_music'))
           .width(36).height(36)
           .fillColor($r('app.color.text_sixty_color'))
           .margin({ right: 10 })
+          .opacity(item.isAvailable ? 1 : 0.35)
       }
 
       Column() {
@@ -461,20 +471,45 @@ export struct HomeContent {
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .width('100%')
-        Row() {
-          Text(item.artist.length > 0 ? item.artist : '未知歌手')
-            .fontSize(12)
-            .fontColor($r('app.color.text_sixty_color'))
-          if (item.folderName.length > 0) {
-            Text(' · ' + item.folderName)
+        if (!item.isAvailable) {
+          Text('文件不可访问，点击重新导入')
+            .fontSize(11)
+            .fontColor('#FF3B30')
+            .width('100%')
+        } else {
+          Row() {
+            Text(item.artist.length > 0 ? item.artist : '未知歌手')
               .fontSize(12)
-              .fontColor($r('app.color.text_twenty_color'))
+              .fontColor($r('app.color.text_sixty_color'))
+            if (item.folderName.length > 0) {
+              Text(' · ' + item.folderName)
+                .fontSize(12)
+                .fontColor($r('app.color.text_twenty_color'))
+            }
           }
+          .width('100%')
         }
-        .width('100%')
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
+
+      if (item.isAvailable) {
+        Row() {
+          SymbolGlyph($r('sys.symbol.list_bullet'))
+            .fontSize(16)
+            .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+            .fontColor([$r('app.color.text_twenty_color')])
+            .margin({ right: 8 })
+            .onClick(() => {
+              this.dataService.addToPlayNext(item.id)
+              try {
+                promptAction.showToast({ message: '已添加到下一首播放' })
+              } catch (e) {
+                Logger.error(TAG, 'toast failed')
+              }
+            })
+        }
+      }
 
       Image(item.isFavorite ? $r('app.media.heart_fill') : $r('app.media.heart_gap'))
         .width(20).height(20)
@@ -494,6 +529,10 @@ export struct HomeContent {
         })
     )
     .onClick(() => {
+      if (!item.isAvailable) {
+        this.onPlusClick()
+        return
+      }
       this.onSongTap(item)
     })
   }

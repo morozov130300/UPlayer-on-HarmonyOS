@@ -9,14 +9,17 @@ import { ResourceConversion } from '../common/utils/ResourceConversion';
 import { SongInfo } from '../model/SongInfo';
 import { SongDataSource } from '../viewmodel/SongDataSource';
 import { AVPlayerService } from '../service/AVPlayerService';
+import { DataService } from '../service/DataService';
 import { ColorHelper } from '../common/utils/ColorHelper';
 import { common } from '@kit.AbilityKit';
 import { PreferencesUtil } from '../common/utils/PreferencesUtil';
 import { MediaTools } from '../common/utils/mediautils/MediaTools';
 import { WindowInfo } from '../common/utils/WindowUtil';
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
+import { audio } from '@kit.AudioKit';
 
 const TAG = 'ControlAreaComponent';
+const SKIP_MS: number = 15000;
 
 @Component
 export struct ControlAreaComponent {
@@ -54,6 +57,31 @@ export struct ControlAreaComponent {
   @State volumeScale: number = 1.0;
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance();
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF';
+
+  aboutToAppear(): void {
+    this.avPlayerService.onSongComplete = (): void => {
+      this.playNext();
+    };
+    this.syncSystemVolume();
+  }
+
+  private async syncSystemVolume(): Promise<void> {
+    try {
+      const audioManager: audio.AudioManager = audio.getAudioManager();
+      const volumeManager: audio.AudioVolumeManager = audioManager.getVolumeManager();
+      volumeManager.on('volumeChange', (volumeEvent: audio.VolumeEvent) => {
+        const maxVol: number = 15;
+        const newVol: number = volumeEvent.volume / maxVol;
+        this.volume = newVol;
+        AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_VOLUME, newVol);
+      });
+      const groupManager: audio.AudioVolumeGroupManager = await volumeManager.getVolumeGroupManager(audio.DEFAULT_VOLUME_GROUP_ID);
+      const currentVol: number = groupManager.getVolumeSync(audio.AudioVolumeType.MEDIA);
+      this.volume = currentVol / 15;
+    } catch (err) {
+      Logger.error(TAG, `syncSystemVolume failed: ${JSON.stringify(err)}`);
+    }
+  }
 
   switchPlayMode() {
     if (this.playModeIndex === PlayModeSwitchList.length - 1) {
@@ -100,6 +128,15 @@ export struct ControlAreaComponent {
   }
 
   private async playNext(): Promise<void> {
+    const playNextId: string | undefined = DataService.getInstance().shiftPlayNext();
+    if (playNextId !== undefined) {
+      for (let i = 0; i < this.songList.length; i++) {
+        if (this.songList[i].id === playNextId) {
+          await this.playSongAt(i);
+          return;
+        }
+      }
+    }
     let nextIndex: number = this.selectIndex;
     switch (this.playMode) {
       case MusicPlayMode.SINGLE_CYCLE:
@@ -139,6 +176,18 @@ export struct ControlAreaComponent {
         break;
     }
     await this.playSongAt(prevIndex);
+  }
+
+  private skipForward(): void {
+    const newPos: number = Math.min(this.value + SKIP_MS, this.max);
+    this.avPlayerService.seek(newPos);
+    this.pageShowTime = 0;
+  }
+
+  private skipBackward(): void {
+    const newPos: number = Math.max(this.value - SKIP_MS, 0);
+    this.avPlayerService.seek(newPos);
+    this.pageShowTime = 0;
   }
 
   build() {
@@ -194,6 +243,13 @@ export struct ControlAreaComponent {
       .margin({ bottom: 12 })
 
       Row() {
+        SymbolGlyph($r('sys.symbol.gobackward_15'))
+          .fontSize(28)
+          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+          .fontColor([Color.White])
+          .opacity(0.86)
+          .hoverEffect(HoverEffect.Scale)
+          .onClick(() => { this.skipBackward(); })
         Image($r('app.media.ic_public_forward'))
           .controlImageBuilder()
           .width(32)
@@ -232,6 +288,13 @@ export struct ControlAreaComponent {
             this.playNext();
             this.pageShowTime = 0;
           })
+        SymbolGlyph($r('sys.symbol.goforward_15'))
+          .fontSize(28)
+          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+          .fontColor([Color.White])
+          .opacity(0.86)
+          .hoverEffect(HoverEffect.Scale)
+          .onClick(() => { this.skipForward(); })
       }
       .width(StyleConstants.FULL_WIDTH)
       .justifyContent(FlexAlign.SpaceBetween)
@@ -364,13 +427,14 @@ export struct ControlAreaComponent {
       .margin({ bottom: 8 })
       Row() {
         Slider({
-          value: this.volume * 100, min: 0, max: 100, step: 10, style: SliderStyle.OutSet
+          value: this.volume * 15, min: 0, max: 15, step: 1, style: SliderStyle.OutSet
         })
           .showSteps(true)
           .showTips(false)
           .layoutWeight(1)
           .onChange((value: number, mode: SliderChangeMode) => {
-            this.volume = value / 100;
+            this.volume = value / 15;
+            AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_VOLUME, this.volume);
             this.avPlayerService.setVolume(this.volume);
             if (this.volume === 0) {
               this.isSilentMode = true;
@@ -420,20 +484,26 @@ export struct ControlAreaComponent {
         })
 
       Row() {
+        Text('0.25')
+          .fontSize(9)
+          .fontColor($r('app.color.text_sixty_color'))
         Text('0.5')
-          .fontSize(10)
+          .fontSize(9)
           .fontColor($r('app.color.text_sixty_color'))
         Text('1.0')
-          .fontSize(10)
+          .fontSize(9)
           .fontColor($r('app.color.text_sixty_color'))
         Text('1.5')
-          .fontSize(10)
+          .fontSize(9)
           .fontColor($r('app.color.text_sixty_color'))
         Text('2.0')
-          .fontSize(10)
+          .fontSize(9)
+          .fontColor($r('app.color.text_sixty_color'))
+        Text('2.5')
+          .fontSize(9)
           .fontColor($r('app.color.text_sixty_color'))
         Text('3.0')
-          .fontSize(10)
+          .fontSize(9)
           .fontColor($r('app.color.text_sixty_color'))
       }
       .width('100%')
