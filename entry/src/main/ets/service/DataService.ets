@@ -50,7 +50,7 @@ export class AppSettingsData {
   displaySizeScale: number = 1.0
   tabStyle: string = 'classic'
   glassBlurStrength: number = 25
-  tabIndicatorOpacity: number = 100
+  tabIndicatorOpacity: number = 50
 }
 
 export class DataService {
@@ -386,7 +386,7 @@ export class DataService {
       let rawGlassBlurStrength: Object | undefined = r['glassBlurStrength']
       s.glassBlurStrength = rawGlassBlurStrength !== undefined ? rawGlassBlurStrength as number : 25
       let rawTabIndicatorOpacity: Object | undefined = r['tabIndicatorOpacity']
-      s.tabIndicatorOpacity = rawTabIndicatorOpacity !== undefined ? rawTabIndicatorOpacity as number : 100
+      s.tabIndicatorOpacity = rawTabIndicatorOpacity !== undefined ? rawTabIndicatorOpacity as number : 50
       if (eqBandsMigrated) {
         this.saveSettings(s)
       }

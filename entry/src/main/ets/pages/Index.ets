@@ -48,7 +48,7 @@ struct MainPage {
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
   @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
   @StorageLink('uplayer_glass_blur_strength') glassBlurStrength: number = 25
-  @StorageLink('uplayer_tab_indicator_opacity') tabIndicatorOpacity: number = 100
+  @StorageLink('uplayer_tab_indicator_opacity') tabIndicatorOpacity: number = 50
   @State albumArtFailed: boolean = false
   @State isTitleMarqueeRunning: boolean = true
   @State isArtistMarqueeRunning: boolean = true
@@ -94,14 +94,9 @@ struct MainPage {
     return this.isDarkTheme() ? '#FFFFFF' : ColorHelper.darken(this.primaryColor, 0.35)
   }
 
-  private tabIndicatorBgColor(): ResourceColor {
-    const alpha: number = Math.round(this.tabIndicatorOpacity * 255 / 100)
-    return ColorHelper.hexWithAlpha(this.primaryColor, alpha.toString(16).padStart(2, '0'))
-  }
-
-  private tabIndicatorShadowColor(): ResourceColor {
-    const alpha: number = Math.round(this.tabIndicatorOpacity * 0.8 * 255 / 100)
-    return ColorHelper.hexWithAlpha(this.primaryColor, alpha.toString(16).padStart(2, '0'))
+  private indicatorDarken(base: number, range: number): number {
+    const depth: number = this.tabIndicatorOpacity
+    return Math.min(0.75, base + range * depth / 100)
   }
 
   private topContentInset(): number {
@@ -204,12 +199,21 @@ struct MainPage {
         .borderRadius(this.scaledSize(18))
         .alignItems(VerticalAlign.Center)
         .margin({ left: this.indicatorOffset, bottom: this.scaledSize(12) })
-        .backgroundColor(this.tabIndicatorBgColor())
         .shadow({
           radius: 14,
-          color: this.tabIndicatorShadowColor(),
+          color: ColorHelper.hexWithAlpha(
+            ColorHelper.darken(this.primaryColor, this.indicatorDarken(0.12, 0.4)), 'CC'),
           offsetX: 0,
           offsetY: 0
+        })
+        .radialGradient({
+          center: ['50%', '50%'],
+          radius: '75%',
+          colors: [
+            [ColorHelper.darken(this.primaryColor, this.indicatorDarken(0.02, 0.32)), 0.0],
+            [ColorHelper.darken(this.primaryColor, this.indicatorDarken(0.12, 0.48)), 0.58],
+            [ColorHelper.darken(this.primaryColor, this.indicatorDarken(0.25, 0.5)), 1.0],
+          ]
         })
         .zIndex(1)
 
