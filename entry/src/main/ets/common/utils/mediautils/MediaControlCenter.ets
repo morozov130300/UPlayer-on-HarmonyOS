@@ -146,6 +146,8 @@ export class MediaControlCenter {
     }
     this.avSessionController.unregisterSessionListener();
     this.mediaControlCenterHandle.release();
+    this.songItemBuilder.release();
+    this.isInitted = false;
   }
 
   // [Start StartContinuousTask]

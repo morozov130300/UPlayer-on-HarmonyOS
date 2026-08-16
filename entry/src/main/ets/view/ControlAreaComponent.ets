@@ -56,6 +56,8 @@ export struct ControlAreaComponent {
   @State songTimeFontSize: number = 10;
   @State songTimeFontColor: Resource = $r('app.color.play_text_color');
   @State trackThickness: number = 6;
+  @State playBtnScale: number = 1.0;
+  @State sliderGlow: number = 0;
   @Prop isReverse: boolean = false;
   private scroller: Scroller = new Scroller();
   private resourceConversion: ResourceConversion = new ResourceConversion();
@@ -64,6 +66,10 @@ export struct ControlAreaComponent {
   promptAction: PromptAction = this.uiContext.getPromptAction();
   @State speedSelectIndex: number = 0;
   @State speedArr: number[] = [0.5, 1, 2, 3]
+  @State modeRotate: number = 0;
+  @State silentScale: number = 1.0;
+  @State playlistScale: number = 1.0;
+  @State speedScale: number = 1.0;
 
   isSilentModeChange() {
     MediaControlCenter.getInstance().setSilentMode(this.isSilentMode);
@@ -83,6 +89,10 @@ export struct ControlAreaComponent {
       this.playModeIndex++;
     }
     this.playMode = PlayModeSwitchList[this.playModeIndex];
+    // 切换动画：图标旋转一圈
+    this.getUIContext()?.animateTo({ duration: 400, curve: Curve.EaseInOut }, () => {
+      this.modeRotate += 360;
+    });
     Logger.info(TAG, 'playModeIndex is' + this.playModeIndex);
     this.promptAction.openToast({
       message: `${this.playMode === MusicPlayMode.ORDER ?
@@ -132,6 +142,11 @@ export struct ControlAreaComponent {
             .trackThickness(this.trackThickness)
             .selectedColor($r('app.color.slider_select'))
             .trackColor($r('app.color.slider_track'))
+            .enabled(this.max > 0)
+            .shadow({
+              radius: this.sliderGlow,
+              color: '#33007DFF'
+            })
             .onChange((value: number, mode: SliderChangeMode) => {
               if (mode === SliderChangeMode.End) {
                 MediaControlCenter.getInstance().seek(value);
@@ -139,6 +154,7 @@ export struct ControlAreaComponent {
                   this.trackThickness = 6;
                   this.songTimeFontSize = 10;
                   this.songTimeFontColor = $r('app.color.play_text_color');
+                  this.sliderGlow = 0;
                 })
               }
               if (mode === SliderChangeMode.Moving) {
@@ -147,6 +163,7 @@ export struct ControlAreaComponent {
                   this.trackThickness = 10;
                   this.songTimeFontSize = 12;
                   this.songTimeFontColor = $r('app.color.slider_select');
+                  this.sliderGlow = 8;
                 })
               }
               this.pageShowTime = 0;
@@ -177,6 +194,7 @@ export struct ControlAreaComponent {
           Image($r('app.media.ic_public_forward'))
             .controlImageBuilder()
             .width(32)
+            .hoverEffect(HoverEffect.Scale)
             .onClick(() => {
               MediaControlCenter.getInstance().playPrevious();
               this.pageShowTime = 0;
@@ -184,7 +202,21 @@ export struct ControlAreaComponent {
           Image(this.isPlay ? $r('app.media.ic_public_play') : $r('app.media.ic_public_pause'))
             .controlImageBuilder()
             .width(72)
+            .scale({
+              x: this.playBtnScale,
+              y: this.playBtnScale
+            })
+            .shadow({ radius: 10, color: '#22007DFF' })
+            .hoverEffect(HoverEffect.Scale)
             .onClick(() => {
+              this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
+                this.playBtnScale = 0.85
+              })
+              setTimeout(() => {
+                this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
+                  this.playBtnScale = 1.0
+                })
+              }, 100)
               if (this.isPlay) {
                 MediaControlCenter.getInstance().pause()
               } else {
@@ -195,6 +227,7 @@ export struct ControlAreaComponent {
           Image($r('app.media.ic_public_next'))
             .controlImageBuilder()
             .width(32)
+            .hoverEffect(HoverEffect.Scale)
             .onClick(() => {
               MediaControlCenter.getInstance().playNext();
               this.pageShowTime = 0;
@@ -215,6 +248,7 @@ export struct ControlAreaComponent {
           .renderingStrategy(SymbolRenderingStrategy.SINGLE)
           .fontColor([Color.White])
           .opacity(0.86)
+          .rotate({ angle: this.modeRotate })
           .onClick(() => {
             this.switchPlayMode()
           })
@@ -224,7 +258,16 @@ export struct ControlAreaComponent {
           .renderingStrategy(SymbolRenderingStrategy.SINGLE)
           .fontColor([Color.White])
           .opacity(0.86)
+          .scale({ x: this.playlistScale, y: this.playlistScale })
           .onClick(() => {
+            this.getUIContext()?.animateTo({ duration: 150, curve: Curve.EaseInOut }, () => {
+              this.playlistScale = 0.8;
+            });
+            setTimeout(() => {
+              this.getUIContext()?.animateTo({ duration: 250, curve: curves.springMotion() }, () => {
+                this.playlistScale = 1.0;
+              });
+            }, 120);
             this.isShowPlayList = true;
           })
           .bindSheet($$this.isShowPlayList, this.musicListBuilder(), {
@@ -244,7 +287,16 @@ export struct ControlAreaComponent {
           .renderingStrategy(SymbolRenderingStrategy.SINGLE)
           .fontColor([Color.White])
           .opacity(0.86)
+          .scale({ x: this.silentScale, y: this.silentScale })
           .onClick(() => {
+            this.getUIContext()?.animateTo({ duration: 200, curve: Curve.EaseInOut }, () => {
+              this.silentScale = 0.75;
+            });
+            setTimeout(() => {
+              this.getUIContext()?.animateTo({ duration: 300, curve: curves.springMotion() }, () => {
+                this.silentScale = 1.0;
+              });
+            }, 150);
             this.isSilentMode = !this.isSilentMode;
             if (this.isSilentMode) {
               this.volume = 0;
@@ -325,7 +377,7 @@ export struct ControlAreaComponent {
           value: this.volume * 100,
           min: 0,
           max: 100,
-          step: 20,
+          step: 10,
           style: SliderStyle.OutSet
         })
           .showSteps(true)
@@ -355,8 +407,7 @@ export struct ControlAreaComponent {
   @Builder
   speedTitle() {
     Text($r('app.string.speed_setting'))
-      .fontColor((this.mainWindowInfo.widthBp === WidthBreakpoint.WIDTH_SM ||
-        this.mainWindowInfo.widthBp === WidthBreakpoint.WIDTH_MD) ? Color.Black : $r('sys.color.font_secondary'))
+      .fontColor($r('app.color.text_primary'))
       .fontWeight(FontWeight.Bold)
       .fontSize((this.mainWindowInfo.widthBp === WidthBreakpoint.WIDTH_SM ||
         this.mainWindowInfo.widthBp === WidthBreakpoint.WIDTH_MD) ? 20 : 14)
@@ -392,7 +443,7 @@ export struct ControlAreaComponent {
   playListTitle() {
     Text($r('app.string.play_list', this.songList.length))
       .maxLines(ContentConstants.PLAY_ALL_MAX_LINES)
-      .fontColor(Color.Black)
+      .fontColor($r('app.color.text_primary'))
       .fontWeight(FontWeight.Bold)
       .fontSize(20)
       .width('100%')
@@ -402,7 +453,7 @@ export struct ControlAreaComponent {
   volumeTitle() {
     Text($r('app.string.volume_setting'))
       .maxLines(ContentConstants.PLAY_ALL_MAX_LINES)
-      .fontColor(Color.Black)
+      .fontColor($r('app.color.text_primary'))
       .fontWeight(FontWeight.Bold)
       .fontSize(20)
       .width('100%')
@@ -429,7 +480,7 @@ struct MusicListContainer {
       Row() {
         Column() {
           Text(this.item!.title)
-            .fontColor(this.selectIndex === this.index && this.isPlay ? Color.Red : Color.Black)
+            .fontColor(this.selectIndex === this.index && this.isPlay ? Color.Red : $r('app.color.text_primary'))
             .fontSize(16)
             .margin({ bottom: $r('app.float.list_item_title_margin') })
           Row() {
@@ -439,7 +490,7 @@ struct MusicListContainer {
               .margin({ right: $r('app.float.list_item_image_margin') })
             Text(this.item!.singer)
               .opacity($r('app.float.singer_opacity'))
-              .fontColor(this.selectIndex === this.index && this.isPlay ? Color.Red : Color.Black)
+              .fontColor(this.selectIndex === this.index && this.isPlay ? Color.Red : $r('app.color.text_primary'))
               .fontSize(12)
           }
         }

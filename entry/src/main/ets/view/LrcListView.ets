@@ -15,6 +15,7 @@
 
 import { LrcEntry } from "../viewmodel/LrcEntry";
 import { LengthMetrics } from "@kit.ArkUI";
+import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
 
 /**
  * Default number of rows.
@@ -35,6 +36,7 @@ export default struct LrcListView {
   @State mCurrentLine: number = NONE_LINE;
   private scrollerForList: Scroller = new Scroller();
   @State isHasLyric: boolean = true;
+  @StorageLink(AppStorageKeyConstants.KEY_IMAGE_COLOR) themeColor: string = 'rgba(0, 125, 255, 1)';
 
   /**
    * The lyric time is updated. The lyrics need to be scrolled to the specified position.
@@ -99,11 +101,24 @@ export default struct LrcListView {
         List({ space: 20, initialIndex: 0, scroller: this.scrollerForList }) {
           ForEach(this.mLrcEntryList, (item: LrcEntry, index: number) => {
             ListItem() {
-              Text(item.lineWords)
-                .fontFamily('HarmonyHeiTi')
-                .fontColor(this.mCurrentLine === index ? "#FFFFFF" : "#99ffffff")
-                .fontSize(this.mCurrentLine === index ? 24 : 20)
-                .fontWeight(FontWeight.Bold)
+              Row() {
+                // 当前行左侧高亮指示条（使用封面主题色）
+                Column()
+                  .width(3)
+                  .height(this.mCurrentLine === index ? 24 : 0)
+                  .backgroundColor(this.themeColor)
+                  .borderRadius(2)
+                  .margin({ right: 12 })
+                  .animation({ duration: 300, curve: Curve.EaseInOut })
+
+                Text(item.lineWords)
+                  .fontFamily('HarmonyHeiTi')
+                  .fontColor(this.mCurrentLine === index ? "#FFFFFF" : "#B3ffffff")
+                  .fontSize(this.mCurrentLine === index ? 24 : 20)
+                  .fontWeight(FontWeight.Bold)
+                  .opacity(this.mCurrentLine === index ? 1.0 : 0.7)
+              }
+              .alignItems(VerticalAlign.Center)
             }
           })
         }
