@@ -2,12 +2,11 @@ import { picker, fileIo as fs } from '@kit.CoreFileKit'
 import { common } from '@kit.AbilityKit'
 import { SongInfo } from '../model/SongInfo'
 import { FolderInfo } from '../model/FolderInfo'
-import { DataService } from './DataService'
+import { DataService, AUDIO_EXTENSIONS } from './DataService'
+import { AudioMetadataService } from './AudioMetadataService'
 import Logger from '../common/utils/Logger'
 
 const TAG = 'SongScanner'
-
-const AUDIO_EXTENSIONS: string[] = ['.mp3', '.flac', '.wav', '.aac', '.m4a', '.ogg', '.wma', '.ape']
 
 export class SongScanner {
   private static instance: SongScanner = new SongScanner()
@@ -35,11 +34,17 @@ export class SongScanner {
         return []
       }
       const songs: SongInfo[] = []
+      const metadataService: AudioMetadataService = AudioMetadataService.getInstance()
+      Logger.info(TAG, `picker returned ${uris.length} URIs`)
       for (let i = 0; i < uris.length; i++) {
         const uri: string = uris[i]
         const fileName: string = this.getFileNameFromUri(uri)
-        if (this.isAudioFile(fileName)) {
+        const isAudio: boolean = this.isAudioFile(fileName)
+        Logger.info(TAG, `uri=${uri} fileName=${fileName} isAudio=${isAudio}`)
+        if (isAudio) {
           const song: SongInfo = SongInfo.fromFile(uri, fileName)
+          // Extract metadata (title, artist, album art, bitrate, sample rate)
+          await metadataService.extractAndSaveMetadata(song, context)
           songs.push(song)
         }
       }
@@ -70,11 +75,20 @@ export class SongScanner {
   }
 
   private getFileNameFromUri(uri: string): string {
-    const lastSlash: number = uri.lastIndexOf('/')
-    const lastBackslash: number = uri.lastIndexOf('\\')
+    // Handle content:// URIs by extracting the display name portion
+    // Also handle file:// and raw paths
+    const decoded: string = decodeURIComponent(uri)
+    const lastSlash: number = decoded.lastIndexOf('/')
+    const lastBackslash: number = decoded.lastIndexOf('\\')
     const sepIdx: number = lastSlash > lastBackslash ? lastSlash : lastBackslash
     if (sepIdx >= 0) {
-      return uri.substring(sepIdx + 1)
+      const namePart: string = decoded.substring(sepIdx + 1)
+      // Strip query params if any
+      const queryIdx: number = namePart.indexOf('?')
+      if (queryIdx > 0) {
+        return namePart.substring(0, queryIdx)
+      }
+      return namePart
     }
     return uri
   }

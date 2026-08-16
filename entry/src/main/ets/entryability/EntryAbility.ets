@@ -29,15 +29,29 @@ export default class EntryAbility extends UIAbility {
   onWindowStageCreate(windowStage: window.WindowStage): void {
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageCreate');
 
+    // Populate AppStorage BEFORE page rendering so @StorageLink gets data
+    DataService.getInstance().initToAppStorage();
+
+    // Apply saved theme mode
+    const settings = DataService.getInstance().getSettings();
+    try {
+      if (settings.themeMode === 'light') {
+        this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT);
+      } else if (settings.themeMode === 'dark') {
+        this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_DARK);
+      } else {
+        this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
+      }
+    } catch (e) {
+      Logger.error(TAG, 'applyThemeMode failed: ' + JSON.stringify(e));
+    }
+
     windowStage.loadContent('pages/Index', (err) => {
       if (err.code) {
         hilog.error(DOMAIN, 'testTag', 'Failed to load the content. Cause: %{public}s', JSON.stringify(err));
         return;
       }
       hilog.info(DOMAIN, 'testTag', 'Succeeded in loading the content.');
-
-      // Initialize DataService
-      DataService.getInstance().initToAppStorage();
 
       // Initialize WindowUtil
       windowStage.getMainWindow().then((mainWindow: window.Window) => {

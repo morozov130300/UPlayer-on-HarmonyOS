@@ -237,6 +237,7 @@ export struct PlayerInfoComponent {
               .height(56)
               .justifyContent(FlexAlign.Center)
               .borderRadius(28)
+              .hoverEffect(HoverEffect.Scale)
               .onClick(() => {
                 this.getUIContext()?.getRouter().back()
               })
@@ -267,6 +268,7 @@ export struct PlayerInfoComponent {
               .height(56)
               .justifyContent(FlexAlign.Center)
               .borderRadius(28)
+              .hoverEffect(HoverEffect.Scale)
               .onClick(() => {
                 this.getUIContext()?.getRouter().back()
               })

@@ -13,6 +13,7 @@ export struct PlaylistContent {
   onNavigateToHome: (folder: FolderInfo) => void = (folder: FolderInfo): void => {}
   private context: common.UIAbilityContext | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
   @State folders: FolderInfo[] = []
+  @State songs: SongInfo[] = []
   @State settings: AppSettingsData = new AppSettingsData()
   @State isPlusVisible: boolean = true
   @State lastScrollY: number = 0
@@ -25,8 +26,34 @@ export struct PlaylistContent {
   }
 
   loadData(): void {
-    this.folders = this.dataService.getFolders()
+    this.songs = this.dataService.getSongs()
     this.settings = this.dataService.getSettings()
+    this.buildFoldersFromSongs()
+  }
+
+  /** 从所有歌曲的 folderPath 自动构建文件夹列表 */
+  buildFoldersFromSongs(): void {
+    const seen: Record<string, boolean> = {}
+    const result: FolderInfo[] = []
+    for (let i = 0; i < this.songs.length; i++) {
+      const song: SongInfo = this.songs[i]
+      const key: string = song.folderPath
+      if (key.length > 0 && seen[key] === undefined) {
+        seen[key] = true
+        const folder: FolderInfo = FolderInfo.fromPath(key)
+        // 统计该文件夹内的歌曲数量
+        let count: number = 0
+        for (let j = 0; j < this.songs.length; j++) {
+          if (this.songs[j].folderPath === key) {
+            count++
+          }
+        }
+        folder.songCount = count
+        folder.isAvailable = true
+        result.push(folder)
+      }
+    }
+    this.folders = result
   }
 
   onFolderClick(folder: FolderInfo): void {
@@ -35,18 +62,14 @@ export struct PlaylistContent {
     this.onNavigateToHome(folder)
   }
 
-  removeFolder(folderId: string): void {
-    this.dataService.removeFolder(folderId)
-    this.loadData()
-  }
-
   async onPlusClick(): Promise<void> {
     if (this.context === undefined) {
       return
     }
-    const folder: FolderInfo | null = await this.songScanner.pickFolder(this.context)
-    if (folder !== null) {
-      this.dataService.addFolder(folder)
+    // 从歌曲所在文件夹导入歌曲文件
+    const newSongs: SongInfo[] = await this.songScanner.pickAudioFiles(this.context)
+    if (newSongs.length > 0) {
+      this.dataService.addSongs(newSongs)
       this.loadData()
     }
   }
@@ -67,7 +90,7 @@ export struct PlaylistContent {
         Row() {
           Text('我的歌单')
             .fontSize(18)
-            .fontColor('#FFFFFF')
+            .fontColor($r('app.color.text_primary'))
             .fontWeight(FontWeight.Bold)
         }
         .width('100%')
@@ -90,9 +113,9 @@ export struct PlaylistContent {
               .padding({ left: 16, right: 16 })
               .width('100%')
             } else {
-              Text('暂无歌单，点击右下角 + 添加文件夹')
+              Text('暂无歌单，点击右下角 + 导入歌曲')
                 .fontSize(14)
-                .fontColor('rgba(255,255,255,0.4)')
+                .fontColor($r('app.color.text_twenty_color'))
                 .width('100%')
                 .height(200)
                 .textAlign(TextAlign.Center)
@@ -108,7 +131,7 @@ export struct PlaylistContent {
       .width('100%')
       .height('100%')
 
-      // "+" button overlay
+      // "+" button
       if (this.settings.plusButtonVisible && this.isPlusVisible) {
         Row() {
           Text('+')
@@ -136,37 +159,28 @@ export struct PlaylistContent {
       Column() {
         Image($r('app.media.ic_public_music'))
           .width(36).height(36)
-          .fillColor('rgba(255,255,255,0.6)')
+          .fillColor($r('app.color.text_sixty_color'))
           .margin({ bottom: 8 })
         Text(item.name)
           .fontSize(14)
-          .fontColor(item.isAvailable ? '#FFFFFF' : 'rgba(255,255,255,0.3)')
+          .fontColor($r('app.color.text_primary'))
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Text(item.songCount + ' 首歌曲')
           .fontSize(11)
-          .fontColor('rgba(255,255,255,0.4)')
+          .fontColor($r('app.color.text_sixty_color'))
           .margin({ top: 4 })
       }
       .width('100%')
       .height('100%')
       .justifyContent(FlexAlign.Center)
       .alignItems(HorizontalAlign.Center)
-
-      // Delete button (top-right)
-      Text('✕')
-        .fontSize(14)
-        .fontColor('rgba(255,255,255,0.3)')
-        .width(16).height(16)
-        .textAlign(TextAlign.Center)
-        .position({ top: 8, right: 8 })
-        .onClick(() => { this.removeFolder(item.id) })
     }
     .width('100%')
     .aspectRatio(1.2)
-    .backgroundColor(item.isAvailable ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.03)')
+    .backgroundColor('rgba(0,0,0,0.03)')
     .borderRadius(16)
-    .border({ width: 1, color: 'rgba(255,255,255,0.1)' })
+    .border({ width: 1, color: $r('app.color.list_divider') })
     .onClick(() => { this.onFolderClick(item) })
   }
 }
