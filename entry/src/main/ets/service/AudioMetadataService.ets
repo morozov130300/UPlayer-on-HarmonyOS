@@ -12,6 +12,7 @@ const COVER_MAX_EDGE: number = 640
 
 export class AudioMetadataService {
   private static instance: AudioMetadataService = new AudioMetadataService()
+  private coverExtractionTail: Promise<void> = Promise.resolve()
 
   public static getInstance(): AudioMetadataService {
     return AudioMetadataService.instance
