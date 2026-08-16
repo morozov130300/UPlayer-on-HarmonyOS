@@ -1,6 +1,7 @@
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { window } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { AudioPlayerManager } from '../pages/MusicPlayer';
 
 const DOMAIN = 0x0000;
 
@@ -15,6 +16,8 @@ export default class EntryAbility extends UIAbility {
   }
 
   onDestroy(): void {
+    // 应用销毁时释放全局播放器资源
+    AudioPlayerManager.getInstance().release();
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onDestroy');
   }
 
