@@ -27,7 +27,7 @@ UPlayer 是一款专为鸿蒙PC设计的本地音频播放器，核心定位在�
 
 项目由一名在校本科生独立开发，既是满足个人实际使用需求的实践产物，也是软件工程专业学习过程中的系统性工程训练。通过完整经历需求分析、架构设计、编码实现到测试交付的全流程，持续积累工程经验，提升专业综合能力。
 
-> ⚠️项目正处于活跃开发阶段，可能会有诸多不稳定问题，欢迎体验与反馈。
+> ⚠️ 当前版本为 `0.0.1`，项目仍处于早期开发阶段。基础播放、歌曲管理、歌词和界面设置已经具备，但部分系统集成与音效功能仍需继续完善和真机验证。
 
 ## 快速开始
 
@@ -48,7 +48,7 @@ UPlayer 是一款专为鸿蒙PC设计的本地音频播放器，核心定位在�
 "products": [
   {
     "name": "default",
-    "signingConfig": "default",
+    "signingConfig": "debug",
     "targetSdkVersion": "6.1.1(24)",
     "compatibleSdkVersion": "6.1.1(24)",
     "runtimeOS": "HarmonyOS"
@@ -58,8 +58,8 @@ UPlayer 是一款专为鸿蒙PC设计的本地音频播放器，核心定位在�
 
 ### 安装
 
-1. 使用 DevEco Studio 打开工程根目录（`D:/UPlayer`）。
-2. 在 `File > Project Structure > Signing Configs` 中勾选「Automatically generate signature」自动签名，或使用工程内已配置的 `signingConfigs`（debugKey）。
+1. 使用 DevEco Studio 打开项目根目录。
+2. 在 `File > Project Structure > Signing Configs` 中启用自动签名，或配置自己的 HarmonyOS 调试签名。请勿直接复用仓库中的发布签名材料。
 3. 连接已开启开发者模式的真机，或创建模拟器。
 4. 点击运行按钮，将应用安装到目标设备。
 
@@ -84,8 +84,8 @@ UPlayer 是一款专为鸿蒙PC设计的本地音频播放器，核心定位在�
 - **歌词**：自动加载同目录下的 `.lrc` / `.krc` 歌词文件，解析后随播放进度滚动高亮，点击任意一行可跳转到对应时间点；无歌词时显示占位提示。
 - **播放模式**：支持顺序播放、随机播放、单曲循环三种模式，循环切换时弹出 Toast 提示。
 - **倍速与音量**：点击控制区的倍速图标弹出滑块，可在 `0.25x` ~ `3x` 之间调节播放速度；音量面板与系统媒体音量实时同步。
-- **封面与氛围**：从音频元数据提取专辑封面并缓存，播放页将封面模糊作为动态背景，并取主色调作为主题色联动界面高亮。
-- **锁屏实时胶囊**：播放时在系统锁屏上显示歌曲信息（封面、歌名、歌手、播放状态），并在播放页/桌面上可通过点击封面的播放信息进入。
+- **封面与氛围**：从音频元数据提取并缓存专辑封面，播放页使用封面生成模糊背景，并将主色调用于部分界面高亮。
+- **系统媒体集成**：项目已接入后台音频任务、AVSession 和锁屏 Live View，可同步基础播放状态与歌曲信息；这些能力仍需在支持对应系统能力的真机上继续验证。
 
 ### 配置说明
 
@@ -95,13 +95,13 @@ UPlayer 是一款专为鸿蒙PC设计的本地音频播放器，核心定位在�
 | :------- | :----------------------------------------------------------- |
 | 定制条目 | 滚动时隐藏加号按钮、主题模式（跟随系统/深色/浅色）、主题色（6 种）、字体大小、显示大小 |
 | 播放设置 | 显示歌词、通知栏控制、淡入淡出、播放速度                     |
-| 音效设置 | 均衡器开关，以及 `32Hz~16kHz` 共 10 个频段的独立增益调节     |
+| 音效设置 | 均衡器开关，以及 `32Hz~16kHz` 共 10 个频段的增益参数（当前主要完成界面与持久化，实际音频效果链路仍在完善） |
 
 所有配置通过 `PreferencesUtil` 持久化，重启应用后仍然生效。
 
 ## 高级扩展
 
-### 插件开发
+### 架构说明
 
 项目采用「单 Ability + 单例 Service」的分层架构，各层职责清晰，便于按需扩展：
 
@@ -139,7 +139,7 @@ entry/src/main/ets
 ├── pages/          # 页面：Index(主页)、MusicPlayer(播放器)、HomeContent(首页)、
 │                   #       PlaylistContent(歌单)、SettingsContent/SettingsDetailPage(设置)
 ├── view/           # 组件：PlayerInfoComponent、LyricsComponent、LrcListView、
-│                   #       ControlAreaComponent、MusicInfoComponent、WindowControlsComponent
+│                   #       ControlAreaComponent、MusicInfoComponent
 ├── service/        # 服务：AVPlayerService、DataService、SongScanner、
 │                   #       AudioMetadataService、LiveViewService
 ├── viewmodel/      # 数据源与歌词条目：SongDataSource、DisplayItemDataSource、LrcEntry
@@ -158,26 +158,22 @@ entry/src/main/ets
 ### 构建步骤
 
 - 图形界面：DevEco Studio 菜单 `Build > Build Hap(s)/APP(s)` 生成安装包。
-- 命令行：在工程根目录执行依赖安装与构建：
-
-```bash
-ohpm install
-hvigorw assembleHap
-```
-
+- 命令行：先执行 `ohpm install` 安装依赖，再使用 DevEco Studio 自带的 Hvigor 构建对应目标。项目根目录的 `build.ps1` 可用于构建 Release APP，但其中包含作者本机 DevEco Studio 的绝对路径，其他环境需要先按实际安装位置修改。
 - 单元测试入口位于 `entry/src/test` 与 `entry/src/ohosTest`，可在 DevEco Studio 中直接运行。
 
 ## 已知局限
 
 - 音频解码能力取决于设备系统，极少数无损/专有格式（如 `ape`、`dsf` 等）在部分设备上可能无法播放。
 - 后台播放依赖系统「后台任务」授权与常驻通知，若被系统清理或关闭通知权限可能中断。
-- `.krc` 歌词按酷狗字段时间轴解析，个别歌曲的时间点可能存在偏差。
+- `.krc` 歌词按当前解析逻辑处理时间轴，个别文件可能存在兼容性或时间点偏差。
+- 均衡器目前主要完成配置界面和参数持久化，尚未完整接入实际音频效果处理链路。
+- AVSession、后台任务和锁屏 Live View 已完成基础接入，但仍依赖设备系统能力、权限和真机验证。
 - 外部存储中的文件被移动、删除或重新插拔后，应用会通过可用性检查标记为「文件不可访问」，需重新导入对应歌曲。
-- 项目仍处于活跃开发阶段，可能存在不稳定问题，欢迎反馈。
+- 项目仍处于早期开发阶段，自动化测试、异常恢复和多设备兼容性仍需持续补充。
 
 ## 致谢与许可证
 
-- 作者：莫洛佐夫（工程 `vendor` 字段）
+- 作者：莫洛佐夫
 - 本工程代码以 **Apache License 2.0** 协议开源发布（各源文件头部已标注许可证信息）。
 - 感谢 HarmonyOS / OpenHarmony 开源生态与广大开发者的支持。
 
