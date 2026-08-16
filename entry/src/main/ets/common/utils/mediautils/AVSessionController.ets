@@ -5,6 +5,7 @@ import { AVPlayerService } from '../../../service/AVPlayerService';
 import { AlbumCoverLease, AlbumCoverSize, AudioMetadataService } from '../../../service/AudioMetadataService';
 import Logger from '../Logger';
 import { MusicPlayMode } from '../../constants/PlayerConstants';
+import { DataService } from '../../../service/DataService';
 import { PreferencesUtil } from '../PreferencesUtil';
 import { AppStorageKeyConstants } from '../../constants/AppStorageKeyConstants';
 import { image } from '@kit.ImageKit';
