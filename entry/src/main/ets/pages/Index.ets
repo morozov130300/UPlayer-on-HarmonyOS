@@ -1,23 +1,46 @@
+import { display } from '@kit.ArkUI';
+
 @Entry
 @Component
 struct MainPage {
+  // 状态变量
   @State currentIndex: number = 0
-  @State indicatorOffset: number = 16
+  @State indicatorOffset: number = 20
   @State greetingTitle: string = "加载中……"
+  @State isPlaying: boolean = false
+  @State rotationAngle: number = 0
+  @State hasAlbumCover: boolean = false
+  @StorageProp('isDarkMode') isDarkMode: boolean = false
+  @State isWideScreen: boolean = false
+  // 私有属性
   private tabsController: TabsController = new TabsController()
   private tabWidth: number = 100
   private tabGap: number = 8
+  private indicatorInset: number = 4
+  private rotationTimer: number = -1
 
+  // 自定义底部导航栏
   @Builder
   customTabBar() {
     Stack({ alignContent: Alignment.BottomStart }) {
-      // 滑动的蓝色指示器
+      // 滑动的蓝色指示器（比Tab窄，与胶囊边缘保留间距）
+      // 使用径向渐变模拟中间凸起、四周凹陷的立体效果
       Row()
-        .width(this.tabWidth)
-        .height(40)
-        .borderRadius(20)
-        .backgroundColor('#007DFF')
-        .margin({ left: this.indicatorOffset, bottom: 10 })
+        .width(this.tabWidth - 2 * this.indicatorInset) // 指示器宽度 = 标签宽度 - 两侧内边距
+        .height(36)
+        .borderRadius(18)
+        .alignItems(VerticalAlign.Center)
+        .margin({ left: this.indicatorOffset, bottom: 12, })
+        .shadow({ radius: 8, color: '#33000000', offsetY: 4, offsetX: 2 })
+        .radialGradient({
+          center: ['50%', '50%'], // 径向渐变中心
+          radius: '75%',           // 渐变半径覆盖整体
+          colors: [
+            ['#ed007dff', 0.0],    // 中心高亮 → 凸起感
+            ['#007DFF', 0.5],    // 主体蓝色
+            ['#0044AA', 1.0],    // 边缘加深 → 凹陷感
+          ]
+        })
 
       // Tab项
       Row({ space: this.tabGap }) {
@@ -26,21 +49,26 @@ struct MainPage {
         this.tabItem(2, '设置', $r('app.media.ic_public_settings'))
       }
       .margin({ left: 16, right: 16, bottom: 10 })
+      .height(40)
+      .borderRadius(20)
+      .shadow({ radius: 50, color: '#33000000', offsetY: 10 })
+
     }
-    .width('100%')
+    .width(this.isWideScreen ? '33.33%' : '100%')
+    .alignSelf(this.isWideScreen ? ItemAlign.Start : ItemAlign.Center)
     .height(60)
   }
 
+  // 单个Tab项（图标 + 文字）
   @Builder
   tabItem(index: number, name: string, icon: Resource) {
     Column() {
       Image(icon)
-        .width(20)
-        .height(20)
+        .height(18)
         .fillColor(this.currentIndex === index ? '#FFFFFF' : '#666666')
 
       Text(name)
-        .fontSize(11)
+        .fontSize(9)
         .fontColor(this.currentIndex === index ? '#FFFFFF' : '#666666')
         .margin({ top: 2 })
     }
@@ -54,19 +82,23 @@ struct MainPage {
     })
   }
 
+  // 更新指示器偏移量（带动画）
   updateIndicatorOffset(index: number) {
-    animateTo({
+    this.getUIContext()?.animateTo({
       duration: 300,
       curve: Curve.EaseInOut
     }, () => {
-      this.indicatorOffset = 16 + index * (this.tabWidth + this.tabGap)
+      this.indicatorOffset = 16 + this.indicatorInset + index * (this.tabWidth + this.tabGap)
     })
   }
 
+  // 页面即将显示时的初始化
   aboutToAppear(): void {
     this.updateGreeting()
+    this.initWindowSize()
   }
 
+  // 根据时段更新问候语
   updateGreeting() {
     const now = new Date()
     const hour = now.getHours()
@@ -85,27 +117,106 @@ struct MainPage {
     }
   }
 
-  @Builder
-  playControlButton() {
-    Row() {
-      Text('▶')
-        .fontSize(14)
-        .fontColor('#FFFFFF')
-      Text('播控中心')
-        .fontSize(14)
-        .fontColor('#FFFFFF')
-        .margin({ left: 6 })
+  // 初始化窗口尺寸并监听变化（适配折叠屏/大屏）
+  initWindowSize(): void {
+    try {
+      let defaultDisplay = display.getDefaultDisplaySync()
+      this.isWideScreen = this.getUIContext().px2vp(defaultDisplay.width) > 600
+
+      display.on('change', () => {
+        let updatedDisplay = display.getDefaultDisplaySync()
+        this.isWideScreen = this.getUIContext().px2vp(updatedDisplay.width) > 600
+      })
+    } catch (err) {
+      console.error('Failed to get display info', JSON.stringify(err))
     }
-    .height(40)
-    .borderRadius(20)
-    .backgroundColor('#007DFF')
-    .padding({ left: 16, right: 16 })
-    .position({ bottom: 10, right: 16 })
-    .onClick(() => {
-      // TODO: 跳转播控页面
-    })
   }
 
+  // 播控中心胶囊组件（专辑封面 + 控制按钮）
+  @Builder
+  playerControl() {
+    Row({ space: 20 }) {
+      // 专辑封面缩略图（圆形，播放时缓慢旋转）
+      Image($r('app.media.ic_public_music'))
+        .width(25)
+        .height(25)
+        .borderRadius(16)
+        .rotate({ angle: this.rotationAngle })
+        .backgroundColor('#00ffffff')
+        .fillColor(this.isDarkMode ? '#FFFFFF' : '#333333')
+
+      Blank()
+
+      // 上一曲
+      Image($r('app.media.ic_public_play_last'))
+        .width(20)
+        .height(20)
+        .fillColor(this.isDarkMode ? '#FFFFFF' : '#333333')
+
+      // 播放/暂停
+      Image(this.isPlaying ? $r('app.media.ic_public_pause') : $r('app.media.ic_public_play'))
+        .width(20)
+        .height(20)
+        .fillColor(this.isDarkMode ? '#FFFFFF' : '#333333')
+        .onClick(() => {
+          this.togglePlay()
+        })
+
+      // 下一曲
+      Image($r('app.media.ic_public_play_next'))
+        .width(20)
+        .height(20)
+        .fillColor(this.isDarkMode ? '#FFFFFF' : '#333333')
+    }
+    .height(40)
+    .padding({
+      left: 6,
+      right: 14,
+      top: 4,
+      bottom: 4
+    })
+    .backgroundColor(this.isDarkMode ? '#CC333333' : '#F5F5F5')
+    .borderRadius(20)
+    .shadow({ radius: 50, color: '#33000000', offsetY: 5 })
+  }
+
+  // 切换播放/暂停状态
+  togglePlay() {
+    this.isPlaying = !this.isPlaying
+    if (this.isPlaying) {
+      this.startRotation()
+    } else {
+      this.stopRotation()
+    }
+  }
+
+  // 开始旋转动画（每8秒一圈）
+  startRotation() {
+    this.stopRotation()
+    this.rotationTimer = setInterval(() => {
+      this.rotationAngle = (this.rotationAngle + 2.25) % 360
+    }, 50)
+  }
+
+  // 停止旋转动画（清理定时器）
+  stopRotation() {
+    if (this.rotationTimer !== -1) {
+      clearInterval(this.rotationTimer)
+      this.rotationTimer = -1
+    }
+  }
+
+  // 页面销毁前的清理
+  aboutToDisappear(): void {
+    this.stopRotation()
+    try {
+      display.off('change')
+    } catch (err) {
+      console.error('Failed to unregister display listener', JSON.stringify(err))
+    }
+  }
+
+  // 主页面布局
   build() {
     Stack() {
       Column() {
@@ -117,7 +228,7 @@ struct MainPage {
               Text(this.greetingTitle)
                 .fontWeight(FontWeight.Bolder)
                 .fontSize(28)
-                .fontColor('#FF000000')
+                .fontColor(this.isDarkMode ? '#FFFFFF' : '#333333')
             }
             .width('100%')
             .height('100%')
@@ -139,8 +250,11 @@ struct MainPage {
       .width('100%')
       .height('100%')
 
-      // 浮动播控中心
-      this.playControlButton()
+      // 播控中心 - 右下角浮动胶囊
+      Row() {
+        this.playerControl()
+      }
+      .position({ bottom: 10, right: 16 })
     }
     .width('100%')
     .height('100%')
