@@ -7,6 +7,7 @@ import { ColorHelper } from '../common/utils/ColorHelper';
 import { AVPlayerService } from '../service/AVPlayerService';
 import { SongInfo } from '../model/SongInfo';
 import { KeyCode } from '@kit.InputKit';
+import { StyleConstants } from '../common/constants/StyleConstants';
 
 const TAG = '[MusicPlayer]';
 
@@ -24,7 +25,7 @@ struct MusicPlayer {
 
   async aboutToAppear() {
     this.isLoading = false;
-    this.getUIContext()?.animateTo({ duration: 600, curve: Curve.EaseOut }, () => {
+    this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_BACKGROUND_FADE_DURATION, curve: Curve.EaseOut }, () => {
       this.bgOpacity = 1
     })
   }
@@ -34,10 +35,10 @@ struct MusicPlayer {
   }
 
   pageTransition() {
-    PageTransitionEnter({ duration: 500, curve: curves.springMotion(0.6, 0.8) })
+    PageTransitionEnter({ duration: StyleConstants.ANIMATION_PAGE_ENTER_DURATION, curve: curves.springMotion(0.6, 0.8) })
       .slide(SlideEffect.Bottom)
       .opacity(0)
-    PageTransitionExit({ duration: 400, curve: curves.springMotion(0.7, 0.9) })
+    PageTransitionExit({ duration: StyleConstants.ANIMATION_PAGE_EXIT_DURATION, curve: curves.springMotion(0.7, 0.9) })
       .slide(SlideEffect.Bottom)
       .opacity(0)
   }

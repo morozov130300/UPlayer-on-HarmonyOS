@@ -5,7 +5,7 @@ import { deviceInfo } from '@kit.BasicServicesKit';
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
 import { WindowUtil } from '../common/utils/WindowUtil';
 import { AVPlayerService } from '../service/AVPlayerService';
-import { DataService } from '../service/DataService';
+import { AppSettingsData, DataService } from '../service/DataService';
 import { AVSessionController } from '../common/utils/mediautils/AVSessionController';
 import { BackgroundUtil } from '../common/utils/BackgroundUtil';
 import { LiveViewService } from '../service/LiveViewService';
@@ -52,10 +52,9 @@ export default class EntryAbility extends UIAbility {
   onWindowStageCreate(windowStage: window.WindowStage): void {
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageCreate');
 
-    DataService.getInstance().initToAppStorage();
+    const settings: AppSettingsData = DataService.getInstance().initToAppStorage();
     AVSessionController.getInstance().initAVSession();
 
-    const settings = DataService.getInstance().getSettings();
     AVPlayerService.getInstance().applyEqualizer(settings.eqEnabled, settings.eqBands);
     try {
       if (settings.themeMode === 'light') {

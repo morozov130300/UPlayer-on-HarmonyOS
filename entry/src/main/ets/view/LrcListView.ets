@@ -17,6 +17,7 @@ import { LrcEntry } from "../viewmodel/LrcEntry";
 import { LengthMetrics } from "@kit.ArkUI";
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
 import { AVPlayerService } from '../service/AVPlayerService';
+import { StyleConstants } from '../common/constants/StyleConstants';
 
 const NONE_LINE: number = -1;
 
@@ -58,13 +59,24 @@ export default struct LrcListView {
   }
 
   findShowLine(milliSeconds: number): number {
-    if (this.mLrcEntryList && this.mLrcEntryList.length > 0) {
-      for (let index = 0; index < this.mLrcEntryList.length; index++) {
-        if (this.mLrcEntryList[index].lineStartTime <= milliSeconds
-          && this.mLrcEntryList[index].lineStartTime + this.mLrcEntryList[index].lineDuration >= milliSeconds) {
-          return index;
-        }
+    if (!this.mLrcEntryList || this.mLrcEntryList.length === 0) {
+      return this.mCurrentLine;
+    }
+    let low: number = 0;
+    let high: number = this.mLrcEntryList.length - 1;
+    let candidate: number = NONE_LINE;
+    while (low <= high) {
+      const middle: number = Math.floor((low + high) / 2);
+      if (this.mLrcEntryList[middle].lineStartTime <= milliSeconds) {
+        candidate = middle;
+        low = middle + 1;
+      } else {
+        high = middle - 1;
       }
+    }
+    if (candidate !== NONE_LINE &&
+      this.mLrcEntryList[candidate].lineStartTime + this.mLrcEntryList[candidate].lineDuration >= milliSeconds) {
+      return candidate;
     }
     return this.mCurrentLine;
   }
@@ -91,7 +103,7 @@ export default struct LrcListView {
                   .backgroundColor(this.themeColor)
                   .borderRadius(2)
                   .margin({ right: 12 })
-                  .animation({ duration: 300, curve: Curve.EaseInOut })
+                  .animation({ duration: StyleConstants.ANIMATION_LYRIC_HIGHLIGHT_DURATION, curve: Curve.EaseInOut })
                 Text(item.lineWords)
                   .fontFamily('HarmonyHeiTi')
                   .fontColor(this.mCurrentLine === index ? "#FFFFFF" : "#B3ffffff")

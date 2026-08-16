@@ -8,6 +8,7 @@ import Logger from '../common/utils/Logger'
 import { deviceInfo } from '@kit.BasicServicesKit'
 import { motion } from '@kit.MultimodalAwarenessKit'
 import { ColorConversion } from '../common/utils/ColorConversion'
+import { StyleConstants } from '../common/constants/StyleConstants'
 
 const TAG = 'SettingsDetailPage'
 const KEY_PRIMARY_COLOR = 'uplayer_primary_color'
@@ -331,10 +332,10 @@ struct SettingsDetailPage {
   }
 
   pageTransition() {
-    PageTransitionEnter({ duration: 300, curve: Curve.EaseOut })
+    PageTransitionEnter({ duration: StyleConstants.ANIMATION_SETTINGS_ENTER_DURATION, curve: Curve.EaseOut })
       .slide(SlideEffect.Right)
       .opacity(1)
-    PageTransitionExit({ duration: 250, curve: Curve.EaseIn })
+    PageTransitionExit({ duration: StyleConstants.ANIMATION_SETTINGS_EXIT_DURATION, curve: Curve.EaseIn })
       .slide(SlideEffect.Right)
       .opacity(0)
   }

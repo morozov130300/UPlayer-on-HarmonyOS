@@ -120,7 +120,7 @@ export struct PlayerInfoComponent {
           ]
         })
         .opacity(this.isPlay ? 0.6 : 0)
-        .animation({ duration: 1500, curve: Curve.EaseInOut })
+        .animation({ duration: StyleConstants.ANIMATION_PLAYER_LIGHT_DURATION, curve: Curve.EaseInOut })
 
       Column()
         .width('100%')
@@ -150,27 +150,6 @@ export struct PlayerInfoComponent {
       Column() {
         if (this.mainWindowInfo.widthBp !== WidthBreakpoint.WIDTH_SM) {
           Row() {
-            Row() {
-              SymbolGlyph($r('sys.symbol.chevron_left'))
-                .fontSize(32)
-                .fontColor([Color.White])
-                .opacity(0.8)
-            }
-            .width(Math.round(56 * this.sizeScale))
-            .height(Math.round(56 * this.sizeScale))
-            .justifyContent(FlexAlign.Center)
-            .borderRadius(Math.round(28 * this.sizeScale))
-            .hoverEffect(HoverEffect.Scale)
-            .onClick(() => {
-              this.getUIContext()?.getRouter().back()
-            })
-
-            Blank()
-          }
-          .width('100%')
-          .height(Math.round(56 * this.sizeScale))
-
-          Row() {
             Column() {
               MusicInfoComponent({ mainWindowInfo: this.mainWindowInfo })
             }
@@ -198,22 +177,6 @@ export struct PlayerInfoComponent {
               })
               .width('100%')
               .height('100%')
-
-              Row() {
-                SymbolGlyph($r('sys.symbol.chevron_left'))
-                  .fontSize(32)
-                  .fontColor([Color.White])
-                  .opacity(0.8)
-              }
-              .width(Math.round(56 * this.sizeScale))
-              .height(Math.round(56 * this.sizeScale))
-              .justifyContent(FlexAlign.Center)
-              .borderRadius(Math.round(28 * this.sizeScale))
-              .hoverEffect(HoverEffect.Scale)
-              .onClick(() => {
-                this.getUIContext()?.getRouter().back()
-              })
-              .position({ x: 8, y: 0 })
             }
 
             Stack() {
@@ -228,22 +191,6 @@ export struct PlayerInfoComponent {
               })
               .width('100%')
               .height('100%')
-
-              Row() {
-                SymbolGlyph($r('sys.symbol.chevron_left'))
-                  .fontSize(32)
-                  .fontColor([Color.White])
-                  .opacity(0.8)
-              }
-              .width(Math.round(40 * this.sizeScale))
-              .height(Math.round(56 * this.sizeScale))
-              .justifyContent(FlexAlign.Center)
-              .borderRadius(Math.round(28 * this.sizeScale))
-              .hoverEffect(HoverEffect.Scale)
-              .onClick(() => {
-                this.getUIContext()?.getRouter().back()
-              })
-              .position({ x: 8, y: 0 })
             }
           }
           .layoutWeight(1)
@@ -285,11 +232,28 @@ export struct PlayerInfoComponent {
         bottom: this.bottomHeight,
         top: this.topHeight
       })
+
+      Row() {
+        SymbolGlyph($r('sys.symbol.chevron_left'))
+          .fontSize(32)
+          .fontColor([Color.White])
+          .opacity(0.8)
+      }
+      .width(Math.round(56 * this.sizeScale))
+      .height(Math.round(56 * this.sizeScale))
+      .justifyContent(FlexAlign.Center)
+      .borderRadius(Math.round(28 * this.sizeScale))
+      .hoverEffect(HoverEffect.Scale)
+      .onClick(() => {
+        this.getUIContext()?.getRouter().back()
+      })
+      .position({ x: 8, y: this.topHeight })
+      .zIndex(2)
     }
     .height(StyleConstants.FULL_HEIGHT)
     .width(StyleConstants.FULL_WIDTH)
     .backgroundColor(this.imageColor)
-    .animation({ duration: 800, curve: Curve.EaseInOut })
+    .animation({ duration: StyleConstants.ANIMATION_PLAYER_BACKGROUND_DURATION, curve: Curve.EaseInOut })
   }
 
   private isBackgroundDark(colorStr: string): boolean {
@@ -376,15 +340,15 @@ export struct PlayerInfoComponent {
               return;
             }
             this.prevImageLabel = this.imageLabel;
-            this.getUIContext()?.animateTo({ duration: 600, curve: Curve.EaseOut }, () => {
+            this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_BACKGROUND_FADE_DURATION, curve: Curve.EaseOut }, () => {
               this.prevImageOpacity = 0.5;
             });
             this.imageLabel = value;
             setTimeout(() => {
-              this.getUIContext()?.animateTo({ duration: 800, curve: Curve.EaseOut }, () => {
+              this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_PLAYER_BACKGROUND_DURATION, curve: Curve.EaseOut }, () => {
                 this.prevImageOpacity = 0;
               });
-            }, 100);
+            }, StyleConstants.ANIMATION_PRESS_DELAY_SHORT);
           });
         }
     } catch (err) {

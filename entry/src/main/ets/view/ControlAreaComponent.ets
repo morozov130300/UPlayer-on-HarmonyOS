@@ -34,7 +34,7 @@ export struct ControlAreaComponent {
   @State playModeIndex: number = 0;
   @StorageLink(AppStorageKeyConstants.KEY_IMAGE_COLOR) imageColor: string = '';
   @StorageLink(AppStorageKeyConstants.KEY_PAGE_SHOW_TIME) pageShowTime: number = 0;
-  @StorageLink(AppStorageKeyConstants.KEY_SONG_LIST) songList: SongInfo[] = [];
+  @StorageLink(AppStorageKeyConstants.KEY_SONG_LIST) @Watch('onSongListChange') songList: SongInfo[] = [];
   @State isShowPlayList: boolean = false;
   @StorageLink(AppStorageKeyConstants.KEY_PLAY_MODE) playMode: MusicPlayMode = PlayModeSwitchList[this.playModeIndex];
   @StorageLink(AppStorageKeyConstants.KEY_SELECT_INDEX) selectIndex: number = 0;
@@ -58,27 +58,47 @@ export struct ControlAreaComponent {
   @State speedScale: number = 1.0;
   @State volumeScale: number = 1.0;
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance();
+  private songDataSource: SongDataSource = new SongDataSource([]);
+  private volumeManager: audio.AudioVolumeManager | undefined = undefined;
+  private isVolumeListenerRegistered: boolean = false;
+  private streamVolumeChangeCallback = (streamVolumeEvent: audio.StreamVolumeEvent): void => {
+    const maxVol: number = 15;
+    const newVol: number = streamVolumeEvent.volume / maxVol;
+    this.volume = newVol;
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_VOLUME, newVol);
+  };
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF';
 
   aboutToAppear(): void {
     this.avPlayerService.onSongComplete = (): void => {
       this.playNext();
     };
+    this.songDataSource.reloadData(this.songList);
     this.syncSystemVolume();
+  }
+
+  aboutToDisappear(): void {
+    if (this.volumeManager !== undefined && this.isVolumeListenerRegistered) {
+      this.volumeManager.off('streamVolumeChange', this.streamVolumeChangeCallback);
+      this.isVolumeListenerRegistered = false;
+    }
+  }
+
+  onSongListChange(): void {
+    this.songDataSource.reloadData(this.songList);
   }
 
   private async syncSystemVolume(): Promise<void> {
     try {
       const audioManager: audio.AudioManager = audio.getAudioManager();
-      const volumeManager: audio.AudioVolumeManager = audioManager.getVolumeManager();
-      const streamUsage: audio.StreamUsage = audio.StreamUsage.STREAM_USAGE_MUSIC;
-      volumeManager.on('streamVolumeChange', streamUsage, (streamVolumeEvent: audio.StreamVolumeEvent) => {
-        const maxVol: number = 15;
-        const newVol: number = streamVolumeEvent.volume / maxVol;
-        this.volume = newVol;
-        AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_VOLUME, newVol);
-      });
-      const groupManager: audio.AudioVolumeGroupManager = await volumeManager.getVolumeGroupManager(audio.DEFAULT_VOLUME_GROUP_ID);
+      this.volumeManager = audioManager.getVolumeManager();
+      if (!this.isVolumeListenerRegistered) {
+        this.volumeManager.on('streamVolumeChange', audio.StreamUsage.STREAM_USAGE_MUSIC,
+          this.streamVolumeChangeCallback);
+        this.isVolumeListenerRegistered = true;
+      }
+      const groupManager: audio.AudioVolumeGroupManager =
+        await this.volumeManager.getVolumeGroupManager(audio.DEFAULT_VOLUME_GROUP_ID);
       const currentVol: number = groupManager.getVolumeSync(audio.AudioVolumeType.MEDIA);
       this.volume = currentVol / 15;
     } catch (err) {
@@ -289,7 +309,7 @@ export struct ControlAreaComponent {
                 this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
                   this.playBtnScale = 1.0;
                 });
-              }, 100);
+              }, StyleConstants.ANIMATION_PRESS_DELAY_SHORT);
               this.pageShowTime = 0;
             })
         }
@@ -332,14 +352,14 @@ export struct ControlAreaComponent {
           .opacity(0.86)
           .scale({ x: this.playModeScale, y: this.playModeScale })
           .onClick(() => {
-            this.getUIContext()?.animateTo({ duration: 200, curve: Curve.EaseInOut }, () => {
+            this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_PRESS_DURATION_MEDIUM, curve: Curve.EaseInOut }, () => {
               this.playModeScale = 0.75;
             });
             setTimeout(() => {
-              this.getUIContext()?.animateTo({ duration: 300, curve: curves.springMotion() }, () => {
+              this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_RELEASE_DURATION_MEDIUM, curve: curves.springMotion() }, () => {
                 this.playModeScale = 1.0;
               });
-            }, 150);
+            }, StyleConstants.ANIMATION_PRESS_DELAY_LONG);
             this.switchPlayMode();
           })
 
@@ -350,14 +370,14 @@ export struct ControlAreaComponent {
           .opacity(0.86)
           .scale({ x: this.playlistScale, y: this.playlistScale })
           .onClick(() => {
-            this.getUIContext()?.animateTo({ duration: 150, curve: Curve.EaseInOut }, () => {
+            this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_PRESS_DURATION_SHORT, curve: Curve.EaseInOut }, () => {
               this.playlistScale = 0.8;
             });
             setTimeout(() => {
-              this.getUIContext()?.animateTo({ duration: 250, curve: curves.springMotion() }, () => {
+              this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_RELEASE_DURATION_SHORT, curve: curves.springMotion() }, () => {
                 this.playlistScale = 1.0;
               });
-            }, 120);
+            }, StyleConstants.ANIMATION_PRESS_DELAY_MEDIUM);
             this.isShowPlayList = true;
           })
           .bindSheet($$this.isShowPlayList, this.musicListBuilder(), {
@@ -379,14 +399,14 @@ export struct ControlAreaComponent {
           .opacity(0.86)
           .scale({ x: this.speedScale, y: this.speedScale })
           .onClick(() => {
-            this.getUIContext()?.animateTo({ duration: 150, curve: Curve.EaseInOut }, () => {
+            this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_PRESS_DURATION_SHORT, curve: Curve.EaseInOut }, () => {
               this.speedScale = 0.8;
             });
             setTimeout(() => {
-              this.getUIContext()?.animateTo({ duration: 250, curve: curves.springMotion() }, () => {
+              this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_RELEASE_DURATION_SHORT, curve: curves.springMotion() }, () => {
                 this.speedScale = 1.0;
               });
-            }, 120);
+            }, StyleConstants.ANIMATION_PRESS_DELAY_MEDIUM);
             this.isShowSpeedBuild = true;
           })
           .bindPopup(this.isShowSpeedBuild, {
@@ -407,14 +427,14 @@ export struct ControlAreaComponent {
           .opacity(0.86)
           .scale({ x: this.volumeScale, y: this.volumeScale })
           .onClick(() => {
-            this.getUIContext()?.animateTo({ duration: 150, curve: Curve.EaseInOut }, () => {
+            this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_PRESS_DURATION_SHORT, curve: Curve.EaseInOut }, () => {
               this.volumeScale = 0.8;
             });
             setTimeout(() => {
-              this.getUIContext()?.animateTo({ duration: 250, curve: curves.springMotion() }, () => {
+              this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_RELEASE_DURATION_SHORT, curve: curves.springMotion() }, () => {
                 this.volumeScale = 1.0;
               });
-            }, 120);
+            }, StyleConstants.ANIMATION_PRESS_DELAY_MEDIUM);
             this.isShowVolumeBuild = !this.isShowVolumeBuild
           })
       }
@@ -439,7 +459,7 @@ export struct ControlAreaComponent {
   musicListBuilder() {
     Column() {
       List({ scroller: this.scroller }) {
-        LazyForEach(new SongDataSource(this.songList), (item: SongInfo, index: number) => {
+        LazyForEach(this.songDataSource, (item: SongInfo, index: number) => {
           ListItem() {
             MusicListContainer({ item: item, index: index })
           }

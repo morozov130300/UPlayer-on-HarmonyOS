@@ -36,6 +36,7 @@ export class AVPlayerService {
   private nativeStartupTimer: number = -1
   private playRequestId: number = 0
   private nativeRequestActive: boolean = false
+  private backendMigrationId: number = 0
 
   public static getInstance(): AVPlayerService {
     return AVPlayerService.instance
@@ -502,11 +503,28 @@ export class AVPlayerService {
   }
 
   async applyEqualizer(enabled: boolean, bands: number[]): Promise<void> {
+    const migrationId: number = ++this.backendMigrationId
     this.equalizerEnabled = enabled
     this.equalizerBands = bands.slice(0, 10)
     nativeAudio.setEqualizerEnable(enabled)
     if (enabled) {
       nativeAudio.setEqualizerBands(this.equalizerBands)
+    }
+    if (this.nativeMode) {
+      return
+    }
+    const isPlaying: boolean = AppStorage.get<boolean>(AppStorageKeyConstants.KEY_IS_PLAY) ?? false
+    if (!isPlaying || this.currentFilePath.length === 0) {
+      return
+    }
+    const position: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_PROGRESS) ?? 0
+    const fileUri: string = this.currentFilePath
+    await this.play(fileUri)
+    if (migrationId !== this.backendMigrationId) {
+      return
+    }
+    if (position > 0) {
+      await this.seek(position)
     }
   }
 

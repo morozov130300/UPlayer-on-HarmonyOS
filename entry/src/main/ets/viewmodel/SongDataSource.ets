@@ -5,9 +5,12 @@ export class SongDataSource implements IDataSource {
   private listeners: DataChangeListener[] = [];
 
   constructor(element: SongInfo[]) {
-    for (let index = 0; index < element.length; index++) {
-      this.dataArray.push(element[index]);
-    }
+    this.dataArray = element;
+  }
+
+  public reloadData(element: SongInfo[]): void {
+    this.dataArray = element;
+    this.notifyDataReload();
   }
 
   public totalCount(): number {

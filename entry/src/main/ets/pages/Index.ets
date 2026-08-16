@@ -19,6 +19,7 @@ import { LyricFile } from '../common/constants/LyricConst'
 import { PlayerConstants } from '../common/constants/PlayerConstants'
 import { AlbumCover } from '../component/AlbumCover'
 import { ColorConversion } from '../common/utils/ColorConversion'
+import { StyleConstants } from '../common/constants/StyleConstants'
 
 const TAG = 'Index'
 
@@ -67,6 +68,15 @@ struct MainPage {
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
   private isPC: boolean = deviceInfo.deviceType === '2in1'
   private lyricLoadRequestId: number = 0
+  private isDisplayListenerRegistered: boolean = false
+  private displayChangeCallback = (): void => {
+    try {
+      const newDisplayInfo = display.getDefaultDisplaySync()
+      this.updateBreakpoint(newDisplayInfo.width)
+    } catch (err) {
+      Logger.error(TAG, 'display change error')
+    }
+  }
 
   private isDarkTheme(): boolean {
     if (this.themeMode === 'dark') {
@@ -139,7 +149,7 @@ struct MainPage {
     this.updateGreeting()
     this.initBreakpoint()
     this.loadCurrentLyrics()
-    this.getUIContext()?.animateTo({ duration: 800, curve: Curve.EaseOut }, () => {
+    this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_GREETING_DURATION, curve: Curve.EaseOut }, () => {
       this.greetingOpacity = 1
       this.greetingOffset = 0
     })
@@ -274,7 +284,7 @@ struct MainPage {
       color: this.hoverTabIndex === index ? ColorHelper.hexWithAlpha(this.primaryColor, '66') : Color.Transparent
     })
     .scale({ x: this.hoverTabIndex === index ? 1.06 : 1, y: this.hoverTabIndex === index ? 1.06 : 1 })
-    .animation({ duration: 180, curve: Curve.EaseOut })
+    .animation({ duration: StyleConstants.ANIMATION_HOVER_DURATION, curve: Curve.EaseOut })
     .hoverEffect(HoverEffect.Scale)
     .onHover((isHover: boolean) => { this.hoverTabIndex = isHover ? index : -1 })
     .onClick(() => {
@@ -307,7 +317,7 @@ struct MainPage {
       color: this.hoverTabIndex === index ? ColorHelper.hexWithAlpha(this.primaryColor, '77') : Color.Transparent
     })
     .scale({ x: this.hoverTabIndex === index ? 1.06 : 1, y: this.hoverTabIndex === index ? 1.06 : 1 })
-    .animation({ duration: 180, curve: Curve.EaseOut })
+    .animation({ duration: StyleConstants.ANIMATION_HOVER_DURATION, curve: Curve.EaseOut })
     .hoverEffect(HoverEffect.Scale)
     .onHover((isHover: boolean) => { this.hoverTabIndex = isHover ? index : -1 })
     .onClick(() => {
@@ -345,14 +355,10 @@ struct MainPage {
     try {
       const displayInfo = display.getDefaultDisplaySync()
       this.updateBreakpoint(displayInfo.width)
-      display.on('change', () => {
-        try {
-          const newDisplayInfo = display.getDefaultDisplaySync()
-          this.updateBreakpoint(newDisplayInfo.width)
-        } catch (err) {
-          Logger.error(TAG, 'display change error')
-        }
-      })
+      if (!this.isDisplayListenerRegistered) {
+        display.on('change', this.displayChangeCallback)
+        this.isDisplayListenerRegistered = true
+      }
     } catch (err) {
       Logger.error(TAG, 'init breakpoint error')
     }
@@ -517,12 +523,16 @@ struct MainPage {
   }
 
   onProgressChange(): void {
+    let low: number = 0
+    let high: number = this.lyricEntries.length - 1
     let currentIndex: number = -1
-    for (let i = 0; i < this.lyricEntries.length; i++) {
-      if (this.lyricEntries[i].lineStartTime <= this.playProgress) {
-        currentIndex = i
+    while (low <= high) {
+      const middle: number = Math.floor((low + high) / 2)
+      if (this.lyricEntries[middle].lineStartTime <= this.playProgress) {
+        currentIndex = middle
+        low = middle + 1
       } else {
-        break
+        high = middle - 1
       }
     }
     this.currentLyricLine = currentIndex >= 0 ? this.lyricEntries[currentIndex].lineWords : ''
@@ -577,18 +587,18 @@ struct MainPage {
 
   onPlayStateChange(): void {
     if (this.isPlaying) {
-      this.getUIContext()?.animateTo({ duration: 400, curve: curves.springMotion(0.3, 0.7) }, () => {
+      this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_ROTATION_START_DURATION, curve: curves.springMotion(0.3, 0.7) }, () => {
         this.rotationAngle += 30
       })
       setTimeout(() => {
         this.startRotation()
-      }, 400)
-      this.getUIContext()?.animateTo({ duration: 800, curve: Curve.EaseInOut }, () => {
+      }, StyleConstants.ANIMATION_ROTATION_START_DURATION)
+      this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_GLOW_ON_DURATION, curve: Curve.EaseInOut }, () => {
         this.isGlowing = true
       })
     } else {
       this.stopRotation()
-      this.getUIContext()?.animateTo({ duration: 500, curve: Curve.EaseInOut }, () => {
+      this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_GLOW_OFF_DURATION, curve: Curve.EaseInOut }, () => {
         this.isGlowing = false
       })
     }
@@ -640,13 +650,17 @@ struct MainPage {
 
   aboutToDisappear(): void {
     this.stopRotation()
+    if (this.isDisplayListenerRegistered) {
+      display.off('change', this.displayChangeCallback)
+      this.isDisplayListenerRegistered = false
+    }
   }
 
   pageTransition() {
-    PageTransitionEnter({ duration: 500, curve: curves.springMotion(0.6, 0.8) })
+    PageTransitionEnter({ duration: StyleConstants.ANIMATION_PAGE_ENTER_DURATION, curve: curves.springMotion(0.6, 0.8) })
       .scale({ x: 0.92, y: 0.92 })
       .opacity(0.7)
-    PageTransitionExit({ duration: 400, curve: curves.springMotion(0.7, 0.9) })
+    PageTransitionExit({ duration: StyleConstants.ANIMATION_PAGE_EXIT_DURATION, curve: curves.springMotion(0.7, 0.9) })
       .scale({ x: 0.92, y: 0.92 })
       .opacity(0.7)
   }
@@ -720,7 +734,7 @@ struct MainPage {
       .loop(false)
       .disableSwipe(false)
       .cachedCount(3)
-      .duration(260)
+      .duration(StyleConstants.ANIMATION_SWIPER_DURATION)
       .curve(Curve.EaseInOut)
       .onChange((index: number) => {
         this.onPageChange(index)

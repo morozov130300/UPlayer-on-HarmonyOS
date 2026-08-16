@@ -2,6 +2,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <cstdint>
 #include <cstring>
@@ -275,7 +276,24 @@ public:
         paused_ = false;
         completed_ = false;
         currentPositionMs_ = 0;
+        firstPcmReady_ = false;
+        decoderFailed_ = false;
+        activeEqEnabled_ = requestedEqEnabled_.load();
+        switchPhase_ = 0;
         decoderThread_ = std::thread(&NativeAudioPlayer::DecoderLoop, this);
+        {
+            std::unique_lock<std::mutex> lock(queueMutex_);
+            bool ready = queueCondition_.wait_for(lock, std::chrono::milliseconds(1500), [this]() {
+                return stopRequested_ || firstPcmReady_.load() || decoderFailed_.load();
+            });
+            if (!ready || !firstPcmReady_.load()) {
+                OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                    "first PCM timeout or decoder failed");
+                lock.unlock();
+                Stop();
+                return false;
+            }
+        }
         if (OH_AudioRenderer_Start(renderer_) != AUDIOSTREAM_SUCCESS) {
             OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG, "renderer start failed");
             Stop();
@@ -384,12 +402,10 @@ public:
             return false;
         }
         requestedEqEnabled_ = enabled;
-        if (activeEqEnabled_ != enabled) {
-            if (enabled && pipeline_ != nullptr) {
-                std::lock_guard<std::mutex> lock(effectMutex_);
-                OH_AudioSuiteEngine_StopPipeline(pipeline_);
-                OH_AudioSuiteEngine_StartPipeline(pipeline_);
-            }
+        if (renderer_ == nullptr) {
+            activeEqEnabled_ = enabled;
+            switchPhase_ = 0;
+        } else if (activeEqEnabled_ != enabled) {
             switchPhase_ = 1;
         }
         return true;
@@ -755,8 +771,13 @@ private:
         NativeAudioPlayer* player = static_cast<NativeAudioPlayer*>(userData);
         bool useEqualizer = player->activeEqEnabled_.load();
         if (!player->RenderAudio(audioData, audioDataSize, useEqualizer)) {
-            return AUDIO_DATA_CALLBACK_RESULT_INVALID;
+            std::memset(audioData, 0, static_cast<size_t>(audioDataSize));
+            player->switchPhase_ = 0;
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "render frame failed; returned silence and kept renderer alive");
+            return AUDIO_DATA_CALLBACK_RESULT_VALID;
         }
+        player->MeasureOutput(audioData, audioDataSize, useEqualizer);
         int32_t phase = player->switchPhase_.load();
         if (phase == 1) {
             player->ApplyGainRamp(audioData, audioDataSize, 1.0f, 0.0f);
@@ -801,6 +822,35 @@ private:
             paused_ = true;
         }
         return true;
+    }
+
+    void MeasureOutput(void* audioData, int32_t audioDataSize, bool equalizerEnabled)
+    {
+        int16_t* samples = static_cast<int16_t*>(audioData);
+        int32_t sampleCount = audioDataSize / static_cast<int32_t>(sizeof(int16_t));
+        if (samples == nullptr || sampleCount <= 0) {
+            return;
+        }
+        double squareSum = 0.0;
+        int32_t peak = 0;
+        for (int32_t i = 0; i < sampleCount; i++) {
+            int32_t value = samples[i];
+            peak = std::max(peak, std::abs(value));
+            squareSum += static_cast<double>(value) * static_cast<double>(value);
+        }
+        measurementSquareSum_ += squareSum;
+        measurementSampleCount_ += static_cast<uint64_t>(sampleCount);
+        measurementPeak_ = std::max(measurementPeak_, peak);
+        if (measurementSampleCount_ >= 48000 * 2) {
+            double rms = std::sqrt(measurementSquareSum_ / static_cast<double>(measurementSampleCount_));
+            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "output level eq=%{public}d peak=%{public}.1f rms=%{public}.1f samples=%{public}llu",
+                equalizerEnabled ? 1 : 0, static_cast<double>(measurementPeak_), rms,
+                static_cast<unsigned long long>(measurementSampleCount_));
+            measurementSquareSum_ = 0.0;
+            measurementSampleCount_ = 0;
+            measurementPeak_ = 0;
+        }
     }
 
     void ApplyGainRamp(void* audioData, int32_t audioDataSize, float startGain, float endGain)
@@ -903,6 +953,9 @@ private:
     std::atomic<int32_t> switchPhase_ = 0;
     float playbackSpeed_ = 1.0f;
     float volume_ = 1.0f;
+    double measurementSquareSum_ = 0.0;
+    uint64_t measurementSampleCount_ = 0;
+    int32_t measurementPeak_ = 0;
     std::array<int32_t, EQUALIZER_BAND_NUM> bands_ = {};
     std::mutex pcmCallbackMutex_;
     std::mutex effectMutex_;

@@ -41,4 +41,28 @@ export class StyleConstants {
    * Translate value of the player area on the bottom.
    */
   static readonly TRANSLATE_PLAYER_Y: string = '-48vp';
+
+  static readonly ANIMATION_PRESS_DELAY_SHORT: number = 100;
+  static readonly ANIMATION_PRESS_DELAY_MEDIUM: number = 120;
+  static readonly ANIMATION_PRESS_DELAY_LONG: number = 150;
+  static readonly ANIMATION_HOVER_DURATION: number = 180;
+  static readonly ANIMATION_PRESS_DURATION_SHORT: number = 150;
+  static readonly ANIMATION_PRESS_DURATION_MEDIUM: number = 200;
+  static readonly ANIMATION_RELEASE_DURATION_SHORT: number = 250;
+  static readonly ANIMATION_RELEASE_DURATION_MEDIUM: number = 300;
+  static readonly ANIMATION_SWIPER_DURATION: number = 260;
+  static readonly ANIMATION_PAGE_ENTER_DURATION: number = 500;
+  static readonly ANIMATION_PAGE_EXIT_DURATION: number = 400;
+  static readonly ANIMATION_GLOW_ON_DURATION: number = 800;
+  static readonly ANIMATION_GLOW_OFF_DURATION: number = 500;
+  static readonly ANIMATION_BACKGROUND_FADE_DURATION: number = 600;
+  static readonly ANIMATION_SETTINGS_ENTER_DURATION: number = 300;
+  static readonly ANIMATION_SETTINGS_EXIT_DURATION: number = 250;
+  static readonly ANIMATION_LYRIC_HIGHLIGHT_DURATION: number = 300;
+  static readonly ANIMATION_COVER_CROSS_FADE_DURATION: number = 500;
+  static readonly ANIMATION_AMBIENT_GLOW_DURATION: number = 3000;
+  static readonly ANIMATION_PLAYER_LIGHT_DURATION: number = 1500;
+  static readonly ANIMATION_GREETING_DURATION: number = 800;
+  static readonly ANIMATION_ROTATION_START_DURATION: number = 400;
+  static readonly ANIMATION_PLAYER_BACKGROUND_DURATION: number = 800;
 }

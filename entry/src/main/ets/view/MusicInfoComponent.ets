@@ -65,16 +65,16 @@ export struct MusicInfoComponent {
       this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
         this.favoriteScale = 1.0
       })
-    }, 150)
+    }, StyleConstants.ANIMATION_PRESS_DELAY_LONG)
   }
 
   startGlowAnimation() {
     this.stopGlowAnimation()
     this.glowTimer = setInterval(() => {
-      this.getUIContext()?.animateTo({ duration: 3000, curve: Curve.Linear }, () => {
+      this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_AMBIENT_GLOW_DURATION, curve: Curve.Linear }, () => {
         this.glowRotation = (this.glowRotation + 360) % 360
       })
-    }, 3000)
+    }, StyleConstants.ANIMATION_AMBIENT_GLOW_DURATION)
   }
 
   stopGlowAnimation() {
@@ -113,14 +113,14 @@ export struct MusicInfoComponent {
           })
           .rotate({ angle: this.glowRotation })
           .opacity(this.isPlay ? 0.8 : 0)
-          .animation({ duration: 500, curve: Curve.EaseInOut })
+          .animation({ duration: StyleConstants.ANIMATION_COVER_CROSS_FADE_DURATION, curve: Curve.EaseInOut })
         AlbumCover({ song: this.songList && this.selectIndex >= 0 && this.selectIndex < this.songList.length ?
           this.songList[this.selectIndex] : new SongInfo(), coverWidth: '100%', coverHeight: '100%', coverRadius: 8 })
           .width('100%')
           .aspectRatio(1)
           .constraintSize({ maxWidth: '100%', maxHeight: '50%' })
           .shadow({ radius: 12, color: 'rgba(0,0,0,0.15)', offsetX: 0, offsetY: 4 })
-          .animation({ duration: 500, curve: Curve.EaseInOut })
+          .animation({ duration: StyleConstants.ANIMATION_COVER_CROSS_FADE_DURATION, curve: Curve.EaseInOut })
       }
       .width('100%')
       .constraintSize({ maxWidth: '100%', maxHeight: '50%' })

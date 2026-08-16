@@ -526,8 +526,9 @@ export class DataService {
 
   // ═══════════ Init ═══════════
 
-  initToAppStorage(): void {
-    AppStorage.setOrCreate(KEY_SETTINGS, this.getSettings())
+  initToAppStorage(): AppSettingsData {
+    const settings: AppSettingsData = this.getSettings()
+    AppStorage.setOrCreate(KEY_SETTINGS, settings)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_LIBRARY_REVISION, 0)
     AppStorage.setOrCreate(KEY_SORT_MODE, this.getSortMode())
     AppStorage.setOrCreate(KEY_VIEW_MODE, this.getViewMode())
@@ -537,17 +538,17 @@ export class DataService {
     AppStorage.setOrCreate(KEY_SELECTED_FOLDERS, this.getSelectedFolderPaths())
     AppStorage.setOrCreate(KEY_FAVORITES_SELECTED, this.isFavoritesSelected())
     AppStorage.setOrCreate(KEY_PLAY_NEXT_QUEUE, this.getPlayNextQueue())
-    const s: AppSettingsData = this.getSettings()
-    AppStorage.setOrCreate('uplayer_primary_color', s.primaryColor)
-    AppStorage.setOrCreate('uplayer_theme_mode', s.themeMode)
-    AppStorage.setOrCreate('uplayer_show_lyrics', s.showLyrics)
-    AppStorage.setOrCreate('uplayer_fade_in_out', s.fadeInOut)
-    AppStorage.setOrCreate('uplayer_font_size_scale', s.fontSizeScale)
-    AppStorage.setOrCreate('uplayer_display_size_scale', s.displaySizeScale)
-    AppStorage.setOrCreate('uplayer_tab_style', s.tabStyle)
-    AppStorage.setOrCreate('uplayer_tab_indicator_depth', s.tabIndicatorDepth)
-    AppStorage.setOrCreate('uplayer_glass_blur_strength', s.glassBlurStrength)
+    AppStorage.setOrCreate('uplayer_primary_color', settings.primaryColor)
+    AppStorage.setOrCreate('uplayer_theme_mode', settings.themeMode)
+    AppStorage.setOrCreate('uplayer_show_lyrics', settings.showLyrics)
+    AppStorage.setOrCreate('uplayer_fade_in_out', settings.fadeInOut)
+    AppStorage.setOrCreate('uplayer_font_size_scale', settings.fontSizeScale)
+    AppStorage.setOrCreate('uplayer_display_size_scale', settings.displaySizeScale)
+    AppStorage.setOrCreate('uplayer_tab_style', settings.tabStyle)
+    AppStorage.setOrCreate('uplayer_tab_indicator_depth', settings.tabIndicatorDepth)
+    AppStorage.setOrCreate('uplayer_glass_blur_strength', settings.glassBlurStrength)
     this.activatePersistedUris()
+    return settings
   }
 
   async activatePersistedUris(): Promise<void> {
