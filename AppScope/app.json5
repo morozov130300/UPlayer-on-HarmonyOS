@@ -1,7 +1,7 @@
 {
   "app": {
-    "bundleName": "cn.edu.whut.myapplication",
-    "vendor": "example",
+    "bundleName": "cn.edu.whut.uplayer",
+    "vendor": "嵇寰宇",
     "versionCode": 1000000,
     "versionName": "0.0.0",
     "buildVersion": "1",
