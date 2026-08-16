@@ -202,10 +202,10 @@ export struct ControlAreaComponent {
           min: 0, max: this.max, step: 1, style: SliderStyle.NONE, value: this.value
         })
           .trackThickness(this.trackThickness)
-          .selectedColor(this.primaryColor)
-          .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.2))
+          .selectedColor(this.imageColor.length > 0 ? this.imageColor : '#FFFFFF')
+          .trackColor('#33FFFFFF')
           .enabled(this.max > 0)
-          .shadow({ radius: this.sliderGlow, color: ColorHelper.hexWithAlpha(this.primaryColor, '33') })
+          .shadow({ radius: this.sliderGlow, color: '#66FFFFFF' })
           .onChange((value: number, mode: SliderChangeMode) => {
             if (mode === SliderChangeMode.End) {
               this.avPlayerService.seek(value);
@@ -221,7 +221,7 @@ export struct ControlAreaComponent {
               this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
                 this.trackThickness = 10;
                 this.songTimeFontSize = 12;
-                this.songTimeFontColor = this.primaryColor;
+                this.songTimeFontColor = '#FFFFFF';
                 this.sliderGlow = 8;
               });
             }
