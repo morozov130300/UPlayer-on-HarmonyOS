@@ -262,10 +262,13 @@ public:
                 std::chrono::steady_clock::now() - startedAt).count();
         };
         Stop();
-        const double initialHeadroomDb = requestedEqEnabled_.load() ?
-            std::max(0.0, maxPositiveGainDb_.load()) : 0.0;
-        targetHeadroomDb_ = initialHeadroomDb;
-        headroomDb_ = initialHeadroomDb;
+        {
+            std::lock_guard<std::mutex> lock(effectMutex_);
+            activeEqEnabled_ = requestedEqEnabled_.load();
+            baseHeadroomDb_ = activeEqEnabled_.load() ? std::max(0.0, maxPositiveGainDb_.load()) : 0.0;
+            targetHeadroomDb_ = baseHeadroomDb_.load();
+            headroomDb_ = baseHeadroomDb_.load();
+        }
         OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "native startup stage=stop elapsedMs=%{public}lld", elapsedMs());
         if (requestId != latestPlayRequest.load()) {
@@ -329,6 +332,8 @@ public:
         decoderLifecycle_ = DecoderLifecycle::STARTED;
         paused_ = false;
         completed_ = false;
+        decoderEosReached_ = false;
+        audioSuiteEofReached_ = false;
         currentPositionMs_ = 0;
         firstPcmReady_ = false;
         decoderFailed_ = false;
@@ -344,7 +349,6 @@ public:
             }
             currentPositionMs_ = targetPositionMs;
         }
-        activeEqEnabled_ = requestedEqEnabled_.load();
         resampleInputRate_ = sampleRate_;
         resamplePos_ = 0.0;
         resampleLeft_.clear();
@@ -362,7 +366,7 @@ public:
 
     bool Resume()
     {
-        if (renderer_ == nullptr) {
+        if (renderer_ == nullptr || completed_.load() || stopRequested_.load()) {
             return false;
         }
         paused_ = false;
@@ -495,6 +499,8 @@ public:
         ReleaseSource();
         paused_ = false;
         completed_ = false;
+        decoderEosReached_ = false;
+        audioSuiteEofReached_ = false;
         decodingEnded_ = false;
         decoderFailed_ = false;
         firstPcmReady_ = false;
@@ -513,6 +519,7 @@ public:
         measurementPeak_ = 0;
         consecutiveClippingWindows_ = 0;
         cleanHeadroomWindows_ = 0;
+        baseHeadroomDb_ = 0.0;
         targetHeadroomDb_ = 0.0;
         headroomDb_ = 0.0;
     }
@@ -522,17 +529,18 @@ public:
         if (enabled && !IsEqualizerSupported()) {
             return false;
         }
+        std::lock_guard<std::mutex> lock(effectMutex_);
         requestedEqEnabled_ = enabled;
+        activeEqEnabled_ = enabled;
+        baseHeadroomDb_ = enabled ? std::max(0.0, maxPositiveGainDb_.load()) : 0.0;
+        targetHeadroomDb_ = baseHeadroomDb_.load();
         if (!enabled) {
-            targetHeadroomDb_ = 0.0;
             headroomDb_ = 0.0;
             consecutiveClippingWindows_ = 0;
             cleanHeadroomWindows_ = 0;
         } else {
-            targetHeadroomDb_ = std::max(0.0, maxPositiveGainDb_.load());
-            headroomDb_ = targetHeadroomDb_.load();
+            headroomDb_ = std::max(headroomDb_.load(), baseHeadroomDb_.load());
         }
-        activeEqEnabled_ = enabled;
         return true;
     }
 
@@ -542,10 +550,12 @@ public:
         bands_ = bands;
         maxPositiveGainDb_ = static_cast<double>(*std::max_element(bands_.begin(), bands_.end()));
         const double baseHeadroom = requestedEqEnabled_.load() ? std::max(0.0, maxPositiveGainDb_.load()) : 0.0;
+        baseHeadroomDb_ = baseHeadroom;
         targetHeadroomDb_ = baseHeadroom;
         headroomDb_ = std::max(headroomDb_.load(), baseHeadroom);
         cleanHeadroomWindows_ = 0;
-        if (maxPositiveGainDb_.load() <= 0.0) {
+        if (baseHeadroom <= 0.0) {
+            targetHeadroomDb_ = 0.0;
             headroomDb_ = 0.0;
         }
         if (!requestedEqEnabled_ || eqNode_ == nullptr) {
@@ -886,6 +896,8 @@ private:
         firstPcmReady_ = false;
         currentPositionMs_ = seekPosition;
         completed_ = false;
+        decoderEosReached_ = false;
+        audioSuiteEofReached_ = false;
         decodingEnded_ = false;
         decoderLifecycle_ = DecoderLifecycle::STARTED;
         queueCondition_.notify_all();
@@ -1004,6 +1016,9 @@ private:
                         }
                     }
                     outputEnded = (attr.flags & AVCODEC_BUFFER_FLAGS_EOS) != 0;
+                    if (outputEnded) {
+                        decoderEosReached_ = true;
+                    }
                     OH_AVErrCode freeResult = OH_AudioCodec_FreeOutputBuffer(decoder_, outputIndex);
                     if (freeResult != AV_ERR_OK) {
                         MarkDecoderTerminalFailure("FreeOutputBuffer", freeResult);
@@ -1155,8 +1170,8 @@ private:
                     static_cast<size_t>(audioDataSize - readSize));
             }
             if (finished) {
-                completed_ = true;
-                paused_ = true;
+                audioSuiteEofReached_ = true;
+                MarkPlaybackCompleted();
             }
             return true;
         }
@@ -1176,10 +1191,25 @@ private:
                 static_cast<size_t>(audioDataSize - responseSize));
         }
         if (finished) {
-            completed_ = true;
-            paused_ = true;
+            audioSuiteEofReached_ = true;
+            MarkPlaybackCompleted();
         }
         return true;
+    }
+
+    void MarkPlaybackCompleted()
+    {
+        if (stopRequested_.load() || decoderFailed_.load() || !decodingEnded_.load()) {
+            return;
+        }
+        bool expected = false;
+        if (completed_.compare_exchange_strong(expected, true)) {
+            paused_ = true;
+            currentPositionMs_ = durationMs_.load();
+            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "native playback completed decoderEos=%{public}d suiteEof=%{public}d",
+                decoderEosReached_.load() ? 1 : 0, audioSuiteEofReached_.load() ? 1 : 0);
+        }
     }
 
     void MeasureInput(void* audioData, int32_t audioDataSize)
@@ -1264,7 +1294,7 @@ private:
                 }
                 consecutiveClippingWindows_ = 0;
             } else if (cleanHeadroomWindows_ >= 8) {
-                const double floorDb = std::max(0.0, maxPositiveGainDb_.load());
+                const double floorDb = baseHeadroomDb_.load();
                 targetHeadroomDb_ = std::max(floorDb, targetDb - 0.25);
                 cleanHeadroomWindows_ = 0;
             }
@@ -1378,6 +1408,8 @@ private:
     std::atomic<DecoderLifecycle> decoderLifecycle_ = DecoderLifecycle::STOPPED;
     std::atomic<bool> paused_ = false;
     std::atomic<bool> completed_ = false;
+    std::atomic<bool> decoderEosReached_ = false;
+    std::atomic<bool> audioSuiteEofReached_ = false;
     std::atomic<bool> decodingEnded_ = false;
     std::atomic<bool> decoderFailed_ = false;
     std::atomic<bool> firstPcmReady_ = false;
@@ -1399,6 +1431,7 @@ private:
     int32_t consecutiveClippingWindows_ = 0;
     int32_t cleanHeadroomWindows_ = 0;
     std::atomic<double> maxPositiveGainDb_ = 0.0;
+    std::atomic<double> baseHeadroomDb_ = 0.0;
     std::atomic<double> targetHeadroomDb_ = 0.0;
     std::atomic<double> headroomDb_ = 0.0;
     std::array<int32_t, EQUALIZER_BAND_NUM> bands_ = {};

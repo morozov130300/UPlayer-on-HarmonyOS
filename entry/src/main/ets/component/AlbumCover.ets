@@ -2,6 +2,9 @@ import { image } from '@kit.ImageKit'
 import { SongInfo } from '../model/SongInfo'
 import { AlbumCoverLease, AlbumCoverSize, AudioMetadataService } from '../service/AudioMetadataService'
 
+const COVER_RETRY_MAX: number = 2
+const COVER_RETRY_BASE_MS: number = 800
+
 @Component
 export struct AlbumCover {
   @Prop @Watch('onSongChange') song: SongInfo = new SongInfo()
@@ -14,20 +17,33 @@ export struct AlbumCover {
   private coverLease: AlbumCoverLease | undefined = undefined
   private requestId: number = 0
   private retryTimer: number = -1
+  private retryCount: number = 0
 
   aboutToAppear(): void {
     this.load()
   }
 
   aboutToDisappear(): void {
-    this.requestId++
-    this.releaseCover()
+    this.invalidate()
   }
 
   private onSongChange(): void {
-    this.requestId++
-    this.releaseCover()
+    this.invalidate()
     this.load()
+  }
+
+  private invalidate(): void {
+    this.requestId++
+    this.retryCount = 0
+    this.clearRetryTimer()
+    this.releaseCover()
+  }
+
+  private clearRetryTimer(): void {
+    if (this.retryTimer !== -1) {
+      clearTimeout(this.retryTimer)
+      this.retryTimer = -1
+    }
   }
 
   private async load(): Promise<void> {
@@ -42,15 +58,36 @@ export struct AlbumCover {
         loaded?.release()
         return
       }
+      if (loaded === undefined) {
+        // 确认无封面则不重试；否则按有限次数退避重试可恢复失败
+        if (!AudioMetadataService.getInstance().isCoverConfirmedAbsent(this.song) &&
+          this.retryCount < COVER_RETRY_MAX) {
+          this.scheduleRetry(requestId)
+        }
+        return
+      }
+      this.retryCount = 0
       const previousLease: AlbumCoverLease | undefined = this.coverLease
       this.coverLease = loaded
-      this.cover = loaded?.pixelMap
+      this.cover = loaded.pixelMap
       previousLease?.release()
     } catch (_) {
-      if (requestId === this.requestId) {
-        this.releaseCover()
+      if (requestId === this.requestId && this.retryCount < COVER_RETRY_MAX) {
+        this.scheduleRetry(requestId)
       }
     }
+  }
+
+  private scheduleRetry(requestId: number): void {
+    this.clearRetryTimer()
+    this.retryCount++
+    const delay: number = COVER_RETRY_BASE_MS * Math.pow(2, this.retryCount - 1)
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = -1
+      if (requestId === this.requestId) {
+        this.load()
+      }
+    }, delay)
   }
 
   private releaseCover(): void {

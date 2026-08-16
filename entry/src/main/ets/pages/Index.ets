@@ -16,7 +16,7 @@ import Logger from '../common/utils/Logger'
 import { LrcEntry } from '../viewmodel/LrcEntry'
 import { parseKrcLyric, parseLrcLyric } from '../common/utils/LrcUtils'
 import { LyricFile } from '../common/constants/LyricConst'
-import { MusicPlayMode, PlayerConstants } from '../common/constants/PlayerConstants'
+import { PlayerConstants } from '../common/constants/PlayerConstants'
 import { AlbumCover } from '../component/AlbumCover'
 import { ColorConversion } from '../common/utils/ColorConversion'
 import { StyleConstants } from '../common/constants/StyleConstants'
@@ -623,49 +623,12 @@ struct MainPage {
     }
   }
 
-  private randomSongIndex(currentIndex: number, songCount: number): number {
-    if (songCount <= 1) {
-      return currentIndex
-    }
-    let nextIndex: number = currentIndex
-    for (let i = 0; i < 5 && nextIndex === currentIndex; i++) {
-      nextIndex = Math.floor(Math.random() * songCount)
-    }
-    return nextIndex === currentIndex ? (currentIndex + 1) % songCount : nextIndex
-  }
-
   playPrevious(): void {
-    const songList: SongInfo[] | undefined = AppStorage.get(AppStorageKeyConstants.KEY_SONG_LIST)
-    if (!songList || songList.length === 0) {
-      return
-    }
-    let idx: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? 0
-    const mode: MusicPlayMode = AppStorage.get<MusicPlayMode>(AppStorageKeyConstants.KEY_PLAY_MODE) ??
-      MusicPlayMode.ORDER
-    if (mode === MusicPlayMode.RANDOM) {
-      idx = this.randomSongIndex(idx, songList.length)
-    } else if (mode === MusicPlayMode.ORDER) {
-      idx = idx <= 0 ? songList.length - 1 : idx - 1
-    }
-    const song: SongInfo = songList[idx]
-    this.avPlayerService.playSong(song, idx)
+    this.avPlayerService.playPreviousSong()
   }
 
   playNext(): void {
-    const songList: SongInfo[] | undefined = AppStorage.get(AppStorageKeyConstants.KEY_SONG_LIST)
-    if (!songList || songList.length === 0) {
-      return
-    }
-    let idx: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? 0
-    const mode: MusicPlayMode = AppStorage.get<MusicPlayMode>(AppStorageKeyConstants.KEY_PLAY_MODE) ??
-      MusicPlayMode.ORDER
-    if (mode === MusicPlayMode.RANDOM) {
-      idx = this.randomSongIndex(idx, songList.length)
-    } else if (mode === MusicPlayMode.ORDER) {
-      idx = idx >= songList.length - 1 ? 0 : idx + 1
-    }
-    const song: SongInfo = songList[idx]
-    this.avPlayerService.playSong(song, idx)
+    this.avPlayerService.playNextSong()
   }
 
   startRotation() {

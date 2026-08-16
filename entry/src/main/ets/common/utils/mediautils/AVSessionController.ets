@@ -32,6 +32,8 @@ export class AVSessionController {
   private playbackRetryAttempt: number = 0;
   private playbackGeneration: number = 0;
   private lastQueueRevision: number = -1;
+  private coverRetryAttempt: number = 0;
+  private coverRetryTimer: number = -1;
 
   private getAvPlayerService(): AVPlayerService {
     if (this.avPlayerService === undefined) {
@@ -283,27 +285,53 @@ export class AVSessionController {
           coverLease.release();
           return;
         }
-        const coverMetadata: avSession.AVMetadata = {
-          assetId: `${requestedIndex}`,
-          mediaImage: coverLease.pixelMap,
-          avQueueImage: coverLease.pixelMap
-        };
-        if (song.title.length > 0) coverMetadata.title = song.title;
-        if (song.artist.length > 0) coverMetadata.artist = song.artist;
-        if (duration !== undefined && duration > 0) coverMetadata.duration = duration;
-        try {
-          await session.setAVMetadata(coverMetadata);
-          this.metadataCoverLease?.release();
-          this.metadataCoverLease = coverLease;
-          Logger.info(TAG, 'SetAVMetadata cover successfully');
-        } catch (err) {
-          coverLease.release();
-          const businessError: BusinessError = err as BusinessError;
-          Logger.error(TAG, `SetAVMetadata cover failed: code=${businessError.code}, message=${businessError.message}`);
-        }
+        await this.submitCoverWithRetry(session, song, requestedIndex, duration, coverLease, requestId);
       }).catch((err: Error) => {
         Logger.error(TAG, `SetAVMetadata cover load failed: ${JSON.stringify(err)}`);
       });
+  }
+
+  private async submitCoverWithRetry(session: avSession.AVSession, song: SongInfo, requestedIndex: number,
+    duration: number | undefined, coverLease: AlbumCoverLease, requestId: number): Promise<void> {
+    const coverMetadata: avSession.AVMetadata = {
+      assetId: `${requestedIndex}`,
+      mediaImage: coverLease.pixelMap,
+      avQueueImage: coverLease.pixelMap
+    };
+    if (song.title.length > 0) coverMetadata.title = song.title;
+    if (song.artist.length > 0) coverMetadata.artist = song.artist;
+    if (duration !== undefined && duration > 0) coverMetadata.duration = duration;
+    try {
+      await session.setAVMetadata(coverMetadata);
+      this.metadataCoverLease?.release();
+      this.metadataCoverLease = coverLease;
+      this.coverRetryAttempt = 0;
+      Logger.info(TAG, 'SetAVMetadata cover successfully');
+    } catch (err) {
+      coverLease.release();
+      const businessError: BusinessError = err as BusinessError;
+      Logger.error(TAG, `SetAVMetadata cover failed: code=${businessError.code}, message=${businessError.message}`);
+      if (this.coverRetryAttempt < 2 && requestId === this.metadataRequestId && this.AVSession === session) {
+        this.coverRetryAttempt++;
+        const delay: number = 500 * Math.pow(2, this.coverRetryAttempt - 1);
+        this.coverRetryTimer = setTimeout(() => {
+          this.coverRetryTimer = -1;
+          if (requestId === this.metadataRequestId && this.AVSession === session) {
+            AudioMetadataService.getInstance().acquireAlbumCover(song, AlbumCoverSize.MEDIUM, CoverPriority.HIGH)
+              .then(async (retryLease: AlbumCoverLease | undefined): Promise<void> => {
+                if (retryLease === undefined) return;
+                if (requestId !== this.metadataRequestId || this.AVSession !== session) {
+                  retryLease.release();
+                  return;
+                }
+                await this.submitCoverWithRetry(session, song, requestedIndex, duration, retryLease, requestId);
+              }).catch((retryErr: Error) => {
+                Logger.error(TAG, `SetAVMetadata cover retry load failed: ${JSON.stringify(retryErr)}`);
+              });
+          }
+        }, delay);
+      }
+    }
   }
 
   async setListenerForMesFromController(): Promise<void> {
@@ -340,55 +368,14 @@ export class AVSessionController {
     this.getAvPlayerService().pause();
   }
 
-  private randomSongIndex(currentIndex: number, songCount: number): number {
-    if (songCount <= 1) {
-      return currentIndex;
-    }
-    let nextIndex: number = currentIndex;
-    for (let i = 0; i < 5 && nextIndex === currentIndex; i++) {
-      nextIndex = Math.floor(Math.random() * songCount);
-    }
-    return nextIndex === currentIndex ? (currentIndex + 1) % songCount : nextIndex;
-  }
-
   private onPlayNext: () => void = () => {
     Logger.info(TAG, `on playNext , do playNext task`);
-    this.refreshSongList();
-    if (this.songList.length === 0) {
-      return;
-    }
-    const currentIdx: number = AppStorage.get(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? 0;
-    const playMode: MusicPlayMode = AppStorage.get<MusicPlayMode>(AppStorageKeyConstants.KEY_PLAY_MODE) ??
-      MusicPlayMode.ORDER;
-    let nextIdx: number = currentIdx;
-    if (playMode === MusicPlayMode.RANDOM) {
-      nextIdx = this.randomSongIndex(currentIdx, this.songList.length);
-    } else if (playMode === MusicPlayMode.ORDER) {
-      nextIdx = currentIdx >= this.songList.length - 1 ? 0 : currentIdx + 1;
-    }
-    if (nextIdx >= 0 && nextIdx < this.songList.length) {
-      this.getAvPlayerService().playSong(this.songList[nextIdx], nextIdx);
-    }
+    this.getAvPlayerService().playNextSong();
   }
 
   private onPlayPrevious: () => void = () => {
     Logger.info(TAG, `on playPrevious , do playPrevious task`);
-    this.refreshSongList();
-    if (this.songList.length === 0) {
-      return;
-    }
-    const currentIdx: number = AppStorage.get(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? 0;
-    const playMode: MusicPlayMode = AppStorage.get<MusicPlayMode>(AppStorageKeyConstants.KEY_PLAY_MODE) ??
-      MusicPlayMode.ORDER;
-    let prevIdx: number = currentIdx;
-    if (playMode === MusicPlayMode.RANDOM) {
-      prevIdx = this.randomSongIndex(currentIdx, this.songList.length);
-    } else if (playMode === MusicPlayMode.ORDER) {
-      prevIdx = currentIdx <= 0 ? this.songList.length - 1 : currentIdx - 1;
-    }
-    if (prevIdx >= 0 && prevIdx < this.songList.length) {
-      this.getAvPlayerService().playSong(this.songList[prevIdx], prevIdx);
-    }
+    this.getAvPlayerService().playPreviousSong();
   }
 
   private onSeek: (curMs: number) => void = (curMs: number) => {
@@ -519,6 +506,11 @@ export class AVSessionController {
     this.metadataRequestId++;
     this.metadataCoverLease?.release();
     this.metadataCoverLease = undefined;
+    if (this.coverRetryTimer !== -1) {
+      clearTimeout(this.coverRetryTimer);
+      this.coverRetryTimer = -1;
+    }
+    this.coverRetryAttempt = 0;
     const session: avSession.AVSession | undefined = this.AVSession;
     this.sessionAvailable = false;
     this.playbackGeneration++;

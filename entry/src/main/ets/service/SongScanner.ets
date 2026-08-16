@@ -37,7 +37,6 @@ export class SongScanner {
       const metadataService: AudioMetadataService = AudioMetadataService.getInstance()
       Logger.info(TAG, `picker returned ${uris.length} URIs`)
       const allUrisToPersist: string[] = []
-      const metadataTasks: Promise<void>[] = []
       for (let i = 0; i < uris.length; i++) {
         const uri: string = uris[i]
         const fileName: string = this.getFileNameFromUri(uri)
@@ -56,15 +55,9 @@ export class SongScanner {
           }
           songs.push(song)
           allUrisToPersist.push(uri)
-          metadataTasks.push(metadataService.extractAndSaveMetadata(song, context))
-          if (metadataTasks.length >= 1) {
-            await Promise.all(metadataTasks)
-            metadataTasks.length = 0
-          }
+          // 文本元数据由 AudioMetadataService 统一串行调度，扫描侧不再自行管理批次
+          await metadataService.extractAndSaveMetadata(song, context)
         }
-      }
-      if (metadataTasks.length > 0) {
-        await Promise.all(metadataTasks)
       }
       await this.persistUris(allUrisToPersist)
       AudioMetadataService.getInstance().prefetchAlbumCovers(songs)

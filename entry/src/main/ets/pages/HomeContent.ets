@@ -242,7 +242,7 @@ export struct HomeContent {
     const allSongs: SongInfo[] = this.dataService.getSongs()
     for (let i = 0; i < allSongs.length; i++) {
       if (allSongs[i].id === item.id) {
-        this.avPlayerService.playSong(item, i)
+        this.avPlayerService.playSongAt(i)
         break
       }
     }

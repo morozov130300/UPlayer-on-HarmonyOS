@@ -5,7 +5,6 @@ import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstan
 import { curves } from '@kit.ArkUI';
 import { ColorHelper } from '../common/utils/ColorHelper';
 import { AVPlayerService } from '../service/AVPlayerService';
-import { SongInfo } from '../model/SongInfo';
 import { KeyCode } from '@kit.InputKit';
 import { StyleConstants } from '../common/constants/StyleConstants';
 
@@ -67,19 +66,11 @@ struct MusicPlayer {
   }
 
   private playAdjacentSong(isNext: boolean): void {
-    const songList: SongInfo[] | undefined = AppStorage.get(AppStorageKeyConstants.KEY_SONG_LIST);
-    if (songList === undefined || songList.length === 0) {
-      return;
+    if (isNext) {
+      this.avPlayerService.playNextSong();
+    } else {
+      this.avPlayerService.playPreviousSong();
     }
-    const currentIndex: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? 0;
-    let targetIndex: number = isNext ? currentIndex + 1 : currentIndex - 1;
-    if (targetIndex >= songList.length) {
-      targetIndex = 0;
-    } else if (targetIndex < 0) {
-      targetIndex = songList.length - 1;
-    }
-    const song: SongInfo = songList[targetIndex];
-    this.avPlayerService.playSong(song, targetIndex);
   }
 
   build() {

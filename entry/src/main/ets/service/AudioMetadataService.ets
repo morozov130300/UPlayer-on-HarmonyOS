@@ -15,6 +15,7 @@ const COVER_EXTRACTION_CONCURRENCY: number = 1
 const COVER_EXTRACTION_QUEUE_MAX: number = 24
 const FALLBACK_FAILURE_THRESHOLD: number = 1
 const FALLBACK_COOLDOWN_MS: number = 30000
+const NEGATIVE_COVER_COOLDOWN_MS: number = 60000
 
 export enum CoverPriority {
   LOW = 0,
@@ -64,6 +65,25 @@ class CoverQueueItem {
   resolve: (value: image.PixelMap | undefined) => void = () => {}
 }
 
+// 统一 extractor 调度队列项：文本元数据与 fallback 封面共享同一串行通道
+class ExtractorQueueItem {
+  priority: number = 0
+  run: () => Promise<void> = async () => {}
+  resolve: () => void = () => {}
+  reject: (err: Error) => void = () => {}
+}
+
+const EXTRACTOR_PRIORITY_TEXT: number = 2
+const EXTRACTOR_PRIORITY_COVER_LOW: number = 1
+const EXTRACTOR_PRIORITY_COVER_MEDIUM: number = 2
+const EXTRACTOR_PRIORITY_COVER_HIGH: number = 3
+
+// 封面加载结果：区分成功、确认无封面、单文件解析失败、extractor 系统性失败
+class CoverLoadResult {
+  pixelMap: image.PixelMap | undefined = undefined
+  status: 'ok' | 'none' | 'fileError' | 'systemic' = 'none'
+}
+
 export class AudioMetadataService {
   private static instance: AudioMetadataService = new AudioMetadataService()
   private coverExtractionActive: number = 0
@@ -76,13 +96,65 @@ export class AudioMetadataService {
   private fallbackFailureCount: number = 0
   private fallbackCircuitUntil: number = 0
   private fallbackProbeActive: boolean = false
+  // 统一 AVMetadataExtractor 串行调度：任意时刻最多一个 extractor 活跃
+  private extractorQueue: ExtractorQueueItem[] = []
+  private extractorActive: boolean = false
+  private extractorGeneration: number = 0
+  // 单文件负缓存：确认无封面或单文件解析失败，key=sourcePath，value=记录时间戳
+  private negativeCoverCache: Map<string, number> = new Map<string, number>()
+  // 封面任务生命周期 generation：应用销毁/缓存清理后使排队与执行中的任务失效
+  private coverLifecycleGeneration: number = 0
 
   public static getInstance(): AudioMetadataService {
     return AudioMetadataService.instance
   }
 
+  // 将任务排入统一 extractor 串行通道；priority 越大越先执行
+  private enqueueExtractorTask(priority: number, run: () => Promise<void>): Promise<void> {
+    return new Promise<void>((resolve: () => void, reject: (err: Error) => void): void => {
+      const item: ExtractorQueueItem = new ExtractorQueueItem()
+      item.priority = priority
+      item.run = run
+      item.resolve = resolve
+      item.reject = reject
+      this.extractorQueue.push(item)
+      this.extractorQueue.sort((a: ExtractorQueueItem, b: ExtractorQueueItem) => b.priority - a.priority)
+      this.drainExtractorQueue()
+    })
+  }
+
+  private drainExtractorQueue(): void {
+    if (this.extractorActive || this.extractorQueue.length === 0) {
+      return
+    }
+    const next: ExtractorQueueItem | undefined = this.extractorQueue.shift()
+    if (next === undefined) {
+      return
+    }
+    this.extractorActive = true
+    const generation: number = this.extractorGeneration
+    next.run().then(() => {
+      if (generation === this.extractorGeneration) {
+        next.resolve()
+      }
+    }).catch((err: Error) => {
+      if (generation === this.extractorGeneration) {
+        next.reject(err)
+      }
+    }).finally(() => {
+      this.extractorActive = false
+      this.drainExtractorQueue()
+    })
+  }
+
   // 提取文本元数据；封面严格按需从音频文件读取到内存
   async extractAndSaveMetadata(song: SongInfo, context: common.UIAbilityContext): Promise<void> {
+    await this.enqueueExtractorTask(EXTRACTOR_PRIORITY_TEXT, async (): Promise<void> => {
+      await this.doExtractAndSaveMetadata(song)
+    })
+  }
+
+  private async doExtractAndSaveMetadata(song: SongInfo): Promise<void> {
     let extractor: media.AVMetadataExtractor | undefined = undefined
     let file: fs.File | undefined = undefined
     try {
@@ -173,6 +245,16 @@ export class AudioMetadataService {
     for (let i = 0; i < songs.length; i++) {
       if (songs[i].isAvailable) this.prefetchAlbumCover(songs[i], maxEdge)
     }
+  }
+
+  // 判断某文件是否已确认无嵌入封面（负缓存命中），供组件决定是否重试
+  isCoverConfirmedAbsent(song: SongInfo): boolean {
+    const sourcePath: string = song.uri.length > 0 ? song.uri : song.filePath
+    const negativeAt: number | undefined = this.negativeCoverCache.get(sourcePath)
+    if (negativeAt === undefined) {
+      return false
+    }
+    return new Date().getTime() - negativeAt < NEGATIVE_COVER_COOLDOWN_MS
   }
 
   releaseAlbumCover(entry: AlbumCoverCacheEntry): void {
@@ -266,6 +348,13 @@ export class AudioMetadataService {
       if (file !== undefined) fs.closeSync(file)
     }
 
+    const now: number = new Date().getTime()
+    const negativeAt: number | undefined = this.negativeCoverCache.get(sourcePath)
+    if (negativeAt !== undefined && now - negativeAt < NEGATIVE_COVER_COOLDOWN_MS) {
+      Logger.debug(TAG, `Album cover negative cache hit for ${song.fileName}`)
+      return undefined
+    }
+
     const fallbackTask: Promise<image.PixelMap | undefined> =
       this.scheduleFallbackCover(song, sourcePath, maxEdge, priority)
     return await fallbackTask
@@ -277,7 +366,7 @@ export class AudioMetadataService {
     return new Promise<image.PixelMap | undefined>((resolve: (value: image.PixelMap | undefined) => void): void => {
       const run: () => void = (): void => {
         this.coverExtractionActive++
-        this.fetchFallbackCover(song, sourcePath, maxEdge).then((cover: image.PixelMap | undefined) => {
+        this.fetchFallbackCover(song, sourcePath, maxEdge, priority).then((cover: image.PixelMap | undefined) => {
           resolve(cover)
         }).catch(() => {
           resolve(undefined)
@@ -325,20 +414,30 @@ export class AudioMetadataService {
   }
 
   private async fetchFallbackCover(song: SongInfo, sourcePath: string,
-    maxEdge: number): Promise<image.PixelMap | undefined> {
+    maxEdge: number, priority: CoverPriority): Promise<image.PixelMap | undefined> {
     const now: number = new Date().getTime()
     if (now < this.fallbackCircuitUntil) return undefined
     const halfOpen: boolean = this.fallbackFailureCount >= FALLBACK_FAILURE_THRESHOLD
     if (halfOpen && this.fallbackProbeActive) return undefined
     if (halfOpen) this.fallbackProbeActive = true
     try {
-      const cover: image.PixelMap | undefined = await this.tryFetchFallbackCover(song, sourcePath, maxEdge)
-      if (cover !== undefined) {
+      const extractorPriority: number = priority === CoverPriority.HIGH ? EXTRACTOR_PRIORITY_COVER_HIGH :
+        priority === CoverPriority.MEDIUM ? EXTRACTOR_PRIORITY_COVER_MEDIUM : EXTRACTOR_PRIORITY_COVER_LOW
+      let result: CoverLoadResult = new CoverLoadResult()
+      await this.enqueueExtractorTask(extractorPriority, async (): Promise<void> => {
+        result = await this.tryFetchFallbackCover(song, sourcePath, maxEdge)
+      })
+      if (result.pixelMap !== undefined) {
         this.fallbackFailureCount = 0
         this.fallbackCircuitUntil = 0
-        return cover
+        this.negativeCoverCache.delete(sourcePath)
+        return result.pixelMap
       }
-      this.recordFallbackFailure()
+      // 确认无封面或单文件解析失败：写入单文件负缓存，不触发全局熔断
+      this.negativeCoverCache.set(sourcePath, new Date().getTime())
+      if (result.status === 'systemic') {
+        this.recordFallbackFailure()
+      }
       return undefined
     } finally {
       if (halfOpen) this.fallbackProbeActive = false
@@ -354,17 +453,29 @@ export class AudioMetadataService {
   }
 
   private async tryFetchFallbackCover(song: SongInfo, sourcePath: string,
-    maxEdge: number): Promise<image.PixelMap | undefined> {
+    maxEdge: number): Promise<CoverLoadResult> {
+    const result: CoverLoadResult = new CoverLoadResult()
     let file: fs.File | undefined = undefined
     let extractor: media.AVMetadataExtractor | undefined = undefined
     let fallbackCover: image.PixelMap | undefined = undefined
     try {
       file = fs.openSync(sourcePath, fs.OpenMode.READ_ONLY)
       const fileSize: number = fs.statSync(file.fd).size
-      extractor = await media.createAVMetadataExtractor()
+      try {
+        extractor = await media.createAVMetadataExtractor()
+      } catch (createErr) {
+        // extractor 创建失败属于系统性暂时失败，触发全局降载
+        result.status = 'systemic'
+        Logger.warn(TAG, `AVMetadataExtractor create failed for ${song.fileName}: ${JSON.stringify(createErr)}`)
+        return result
+      }
       const avFd: media.AVFileDescriptor = { fd: file.fd, offset: 0, length: fileSize }
       extractor.fdSrc = avFd
       fallbackCover = await extractor.fetchAlbumCover()
+      if (fallbackCover === undefined) {
+        result.status = 'none'
+        return result
+      }
       const fallbackInfo: image.ImageInfo = await fallbackCover.getImageInfo()
       const fallbackLongEdge: number = Math.max(fallbackInfo.size.width, fallbackInfo.size.height)
       if (fallbackLongEdge > COVER_MAX_EDGE) {
@@ -379,13 +490,15 @@ export class AudioMetadataService {
         await fallbackCover.scale(displayScale, displayScale, image.AntiAliasingLevel.HIGH)
       }
       Logger.debug(TAG, `Album cover fallback success for ${song.fileName}`)
-      const cover: image.PixelMap = fallbackCover
+      result.pixelMap = fallbackCover
+      result.status = 'ok'
       fallbackCover = undefined
-      return cover
+      return result
     } catch (err) {
       if (fallbackCover !== undefined) fallbackCover.release()
+      result.status = 'fileError'
       Logger.warn(TAG, `Album cover fallback failed for ${song.fileName}: ${JSON.stringify(err)}`)
-      return undefined
+      return result
     } finally {
       if (extractor !== undefined) {
         try {
@@ -425,6 +538,13 @@ export class AudioMetadataService {
   }
 
   clearMemoryCache(): void {
+    // 使排队与执行中的封面任务失效，避免回写已销毁对象
+    this.coverLifecycleGeneration++
+    this.extractorGeneration++
+    this.extractorQueue.length = 0
+    this.extractorActive = false
+    this.coverExtractionQueue.length = 0
+    this.coverExtractionActive = 0
     this.coverCache.forEach((entry: AlbumCoverCacheEntry) => {
       entry.cached = false
       if (entry.references === 0 && entry.pixelMap !== undefined) {
@@ -434,7 +554,11 @@ export class AudioMetadataService {
     })
     this.coverCache.clear()
     this.pendingCovers.clear()
+    this.negativeCoverCache.clear()
     this.cacheBytes = 0
+    this.fallbackFailureCount = 0
+    this.fallbackCircuitUntil = 0
+    this.fallbackProbeActive = false
     uplayer.clearAlbumCoverCache()
   }
 }

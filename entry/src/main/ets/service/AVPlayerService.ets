@@ -12,6 +12,7 @@ import nativeAudio from 'libuplayer.so'
 import { SongInfo } from '../model/SongInfo'
 import { AlbumCoverSize, AudioMetadataService, CoverPriority } from './AudioMetadataService'
 import { DataService } from './DataService'
+import { MusicPlayMode } from '../common/constants/PlayerConstants'
 
 const TAG = 'AVPlayerService'
 
@@ -43,7 +44,6 @@ export class AVPlayerService {
   private static EQUALIZER_MIN_GAIN_DB: number = -10
   private static EQUALIZER_MAX_GAIN_DB: number = 10
   private interruptedWhilePlaying: boolean = false
-  public onSongComplete: (() => void) | undefined = undefined
   private sessionController: AVSessionController = AVSessionController.getInstance()
   private liveViewService: LiveViewService = LiveViewService.getInstance()
   private nativeMode: boolean = false
@@ -52,6 +52,8 @@ export class AVPlayerService {
   private nativeProgressTimer: number = -1
   private nativeStartupTimer: number = -1
   private playRequestId: number = 0
+  private activePlaybackGeneration: number = -1
+  private completionGeneration: number = -1
   private isSwitchingTrack: boolean = false
   private operationQueue: Promise<void> = Promise.resolve()
   private backendState: BackendState = BackendState.IDLE
@@ -127,9 +129,7 @@ export class AVPlayerService {
         AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, false)
         this.sessionController.setPlayState(false)
         this.liveViewService.updateLiveView()
-        if (this.onSongComplete !== undefined) {
-          this.onSongComplete()
-        }
+        this.handlePlaybackCompleted(this.activePlaybackGeneration)
       } else if (state === 'released') {
         this.backendState = BackendState.IDLE
         this.isPrepared = false
@@ -215,6 +215,7 @@ export class AVPlayerService {
         nativeAudio.setVolume(this.desiredVolume)
         nativeAudio.setSpeed(this.desiredSpeed)
         nativeAudio.resume()
+        this.activePlaybackGeneration = requestId
         AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, true)
         this.sessionController.setPlayState(true)
         this.backendState = BackendState.PLAYING_NATIVE
@@ -251,6 +252,10 @@ export class AVPlayerService {
   }
 
   async playSong(song: SongInfo, index: number): Promise<void> {
+    if (!song.isAvailable) {
+      Logger.error(TAG, `skip unavailable song index=${index} id=${song.id}`)
+      return
+    }
     this.prefetchSongCovers(index)
     AppStorage.setOrCreate('uplayer_current_title', song.title.length > 0 ? song.title : song.name)
     AppStorage.setOrCreate('uplayer_current_artist', song.artist)
@@ -263,6 +268,115 @@ export class AVPlayerService {
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TOTAL_TIME, this.formatTime(song.duration))
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, index)
     await this.play(song.uri.length > 0 ? song.uri : song.filePath)
+  }
+
+  async playSongAt(index: number): Promise<boolean> {
+    const songs: SongInfo[] = DataService.getInstance().getSongs()
+    if (index < 0 || index >= songs.length || !songs[index].isAvailable) {
+      return false
+    }
+    await this.playSong(songs[index], index)
+    return true
+  }
+
+  async playNextSong(naturalCompletion: boolean = false): Promise<boolean> {
+    const songs: SongInfo[] = DataService.getInstance().getSongs()
+    if (songs.length === 0) {
+      return false
+    }
+    const queuedIndex: number = this.consumePlayableQueuedIndex(songs)
+    if (queuedIndex >= 0) {
+      return this.playSongAt(queuedIndex)
+    }
+    const currentIndex: number = this.getCurrentSongIndex(songs.length)
+    const playMode: MusicPlayMode = DataService.getInstance().getPlayMode()
+    if (naturalCompletion && playMode === MusicPlayMode.SINGLE_CYCLE &&
+      currentIndex >= 0 && songs[currentIndex].isAvailable) {
+      return this.playSongAt(currentIndex)
+    }
+    let targetIndex: number = -1
+    if (playMode === MusicPlayMode.RANDOM) {
+      targetIndex = this.getRandomPlayableIndex(songs, currentIndex)
+    } else {
+      targetIndex = this.findPlayableIndex(songs, currentIndex, 1)
+    }
+    return targetIndex >= 0 ? this.playSongAt(targetIndex) : false
+  }
+
+  async playPreviousSong(): Promise<boolean> {
+    const songs: SongInfo[] = DataService.getInstance().getSongs()
+    if (songs.length === 0) {
+      return false
+    }
+    const currentIndex: number = this.getCurrentSongIndex(songs.length)
+    const playMode: MusicPlayMode = DataService.getInstance().getPlayMode()
+    const targetIndex: number = playMode === MusicPlayMode.RANDOM ?
+      this.getRandomPlayableIndex(songs, currentIndex) : this.findPlayableIndex(songs, currentIndex, -1)
+    return targetIndex >= 0 ? this.playSongAt(targetIndex) : false
+  }
+
+  private getCurrentSongIndex(songCount: number): number {
+    const currentIndex: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? -1
+    return currentIndex >= 0 && currentIndex < songCount ? currentIndex : -1
+  }
+
+  private findPlayableIndex(songs: SongInfo[], currentIndex: number, direction: number): number {
+    if (songs.length === 0) {
+      return -1
+    }
+    const startIndex: number = currentIndex >= 0 ? currentIndex : (direction > 0 ? songs.length - 1 : 0)
+    for (let offset = 1; offset <= songs.length; offset++) {
+      const index: number = (startIndex + direction * offset + songs.length * 2) % songs.length
+      if (songs[index].isAvailable) {
+        return index
+      }
+    }
+    return -1
+  }
+
+  private getRandomPlayableIndex(songs: SongInfo[], currentIndex: number): number {
+    const playableIndexes: number[] = []
+    for (let i = 0; i < songs.length; i++) {
+      if (songs[i].isAvailable && (i !== currentIndex || playableIndexes.length === 0)) {
+        playableIndexes.push(i)
+      }
+    }
+    if (playableIndexes.length > 1 && currentIndex >= 0) {
+      const currentPosition: number = playableIndexes.indexOf(currentIndex)
+      if (currentPosition >= 0) {
+        playableIndexes.splice(currentPosition, 1)
+      }
+    }
+    if (playableIndexes.length === 0) {
+      return currentIndex >= 0 && songs[currentIndex].isAvailable ? currentIndex : -1
+    }
+    return playableIndexes[Math.floor(Math.random() * playableIndexes.length)]
+  }
+
+  private consumePlayableQueuedIndex(songs: SongInfo[]): number {
+    const queueLength: number = DataService.getInstance().getPlayNextQueue().length
+    for (let i = 0; i < queueLength; i++) {
+      const songId: string | undefined = DataService.getInstance().shiftPlayNext()
+      if (songId === undefined) {
+        return -1
+      }
+      for (let index = 0; index < songs.length; index++) {
+        if (songs[index].id === songId && songs[index].isAvailable) {
+          return index
+        }
+      }
+    }
+    return -1
+  }
+
+  private handlePlaybackCompleted(generation: number): void {
+    if (generation < 0 || generation !== this.playRequestId || this.completionGeneration === generation) {
+      return
+    }
+    this.completionGeneration = generation
+    this.playNextSong(true).catch((err: Error) => {
+      Logger.error(TAG, `natural completion selection failed: ${JSON.stringify(err)}`)
+    })
   }
 
   private prefetchSongCovers(index: number): void {
@@ -324,6 +438,7 @@ export class AVPlayerService {
       this.avPlayer.setVolume(this.desiredVolume)
       this.avPlayer.setPlaybackRate(this.desiredSpeed)
       this.avPlayer.play()
+      this.activePlaybackGeneration = requestId
       this.backendState = BackendState.PLAYING_AV
       this.sessionController.setAVMetadata()
       return
@@ -381,6 +496,7 @@ export class AVPlayerService {
       this.avPlayer.setVolume(this.desiredVolume)
       this.avPlayer.setPlaybackRate(this.desiredSpeed)
       this.avPlayer.play()
+      this.activePlaybackGeneration = requestId
       this.backendState = BackendState.PLAYING_AV
       this.sessionController.setAVMetadata()
     } catch (err) {
@@ -740,6 +856,7 @@ export class AVPlayerService {
         return false
       }
       this.nativeMode = true
+      this.activePlaybackGeneration = requestId
       this.backendState = BackendState.PLAYING_NATIVE
       nativeAudio.setVolume(this.desiredVolume)
       nativeAudio.setSpeed(this.desiredSpeed)
@@ -807,9 +924,7 @@ export class AVPlayerService {
         this.stopNativeProgressTimer()
         AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, false)
         this.sessionController.setPlayState(false)
-        if (this.onSongComplete !== undefined) {
-          this.onSongComplete()
-        }
+        this.handlePlaybackCompleted(requestId)
       }
     }, 250)
   }

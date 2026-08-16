@@ -70,9 +70,6 @@ export struct ControlAreaComponent {
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF';
 
   aboutToAppear(): void {
-    this.avPlayerService.onSongComplete = (): void => {
-      this.playNext();
-    };
     this.songDataSource.reloadData(this.songList);
     this.syncPlayModeIndex();
     this.syncSystemVolume();
@@ -136,78 +133,6 @@ export struct ControlAreaComponent {
     } catch (err) {
       Logger.error(TAG, `openToast failed: ${JSON.stringify(err)}`);
     }
-  }
-
-  private getSecureRandom0To1(): number {
-    return Math.random();
-  }
-
-  private setRandom(retryCount: number = 0): number {
-    let random0To1 = this.getSecureRandom0To1();
-    let num = Math.round(random0To1 * (this.songList.length - 1));
-    if (this.selectIndex === num && this.songList.length > 1 && retryCount < 5) {
-      return this.setRandom(retryCount + 1);
-    }
-    return num;
-  }
-
-  private async playSongAt(index: number): Promise<void> {
-    if (index < 0 || index >= this.songList.length) {
-      return;
-    }
-    const song: SongInfo = this.songList[index];
-    await this.avPlayerService.playSong(song, index);
-  }
-
-  private async playNext(): Promise<void> {
-    const playNextId: string | undefined = DataService.getInstance().shiftPlayNext();
-    if (playNextId !== undefined) {
-      for (let i = 0; i < this.songList.length; i++) {
-        if (this.songList[i].id === playNextId) {
-          await this.playSongAt(i);
-          return;
-        }
-      }
-    }
-    let nextIndex: number = this.selectIndex;
-    switch (this.playMode) {
-      case MusicPlayMode.SINGLE_CYCLE:
-        break;
-      case MusicPlayMode.ORDER:
-        if (this.selectIndex >= this.songList.length - 1) {
-          nextIndex = 0;
-        } else {
-          nextIndex = this.selectIndex + 1;
-        }
-        break;
-      case MusicPlayMode.RANDOM:
-        nextIndex = this.setRandom();
-        break;
-      default:
-        break;
-    }
-    await this.playSongAt(nextIndex);
-  }
-
-  private async playPrevious(): Promise<void> {
-    let prevIndex: number = this.selectIndex;
-    switch (this.playMode) {
-      case MusicPlayMode.SINGLE_CYCLE:
-        break;
-      case MusicPlayMode.ORDER:
-        if (this.selectIndex <= 0) {
-          prevIndex = this.songList.length - 1;
-        } else {
-          prevIndex = this.selectIndex - 1;
-        }
-        break;
-      case MusicPlayMode.RANDOM:
-        prevIndex = this.setRandom();
-        break;
-      default:
-        break;
-    }
-    await this.playSongAt(prevIndex);
   }
 
   private skipForward(): void {
@@ -293,7 +218,7 @@ export struct ControlAreaComponent {
             .width(32)
             .hoverEffect(HoverEffect.Scale)
             .onClick(() => {
-              this.playPrevious();
+              this.avPlayerService.playPreviousSong();
               this.pageShowTime = 0;
             })
         }
@@ -333,7 +258,7 @@ export struct ControlAreaComponent {
             .width(32)
             .hoverEffect(HoverEffect.Scale)
             .onClick(() => {
-              this.playNext();
+              this.avPlayerService.playNextSong();
               this.pageShowTime = 0;
             })
         }
@@ -604,7 +529,7 @@ struct MusicListContainer {
       .justifyContent(FlexAlign.SpaceBetween)
       .onClick(() => {
         const avService: AVPlayerService = AVPlayerService.getInstance();
-        avService.playSong(this.item, this.index);
+        avService.playSongAt(this.index);
       })
       .height($r('app.float.list_item_height'))
       .width(StyleConstants.FULL_WIDTH)

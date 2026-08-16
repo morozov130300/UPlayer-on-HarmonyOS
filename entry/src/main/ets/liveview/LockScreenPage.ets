@@ -1,6 +1,5 @@
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
 import { AVPlayerService } from '../service/AVPlayerService';
-import { SongInfo } from '../model/SongInfo';
 
 @Entry
 @Component
@@ -102,34 +101,10 @@ struct LockScreenPage {
   }
 
   private onPlayPrevious(): void {
-    const list: SongInfo[] = AppStorage.get<SongInfo[]>(AppStorageKeyConstants.KEY_SONG_LIST) ?? [];
-    const currentIdx: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? 0;
-    if (list.length === 0) {
-      return;
-    }
-    let prevIdx: number = currentIdx - 1;
-    if (prevIdx < 0) {
-      prevIdx = list.length - 1;
-    }
-    if (prevIdx >= 0 && prevIdx < list.length) {
-      const song: SongInfo = list[prevIdx];
-      this.playerService.playSong(song, prevIdx);
-    }
+    this.playerService.playPreviousSong();
   }
 
   private onPlayNext(): void {
-    const list: SongInfo[] = AppStorage.get<SongInfo[]>(AppStorageKeyConstants.KEY_SONG_LIST) ?? [];
-    const currentIdx: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? 0;
-    if (list.length === 0) {
-      return;
-    }
-    let nextIdx: number = currentIdx + 1;
-    if (nextIdx >= list.length) {
-      nextIdx = 0;
-    }
-    if (nextIdx < list.length) {
-      const song: SongInfo = list[nextIdx];
-      this.playerService.playSong(song, nextIdx);
-    }
+    this.playerService.playNextSong();
   }
 }
