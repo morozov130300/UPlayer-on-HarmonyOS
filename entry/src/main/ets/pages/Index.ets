@@ -135,7 +135,7 @@ struct MainPage {
   }
 
   private indicatorDarken(base: number, range: number): number {
-    const depth: number = 100 - this.tabIndicatorDepth
+    const depth: number = this.tabIndicatorDepth
     return Math.min(0.75, base + range * depth / 100)
   }
 
