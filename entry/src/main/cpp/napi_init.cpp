@@ -8,6 +8,7 @@
 #include <cstring>
 #include <deque>
 #include <list>
+#include <limits>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -248,12 +249,25 @@ public:
         bool supported = false;
         OH_AudioSuite_Result result = OH_AudioSuiteEngine_IsNodeTypeSupported(
             EFFECT_NODE_TYPE_EQUALIZER, &supported);
+        OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "isEqualizerSupported result=%d supported=%d", static_cast<int>(result), supported ? 1 : 0);
         return result == AUDIOSUITE_SUCCESS && supported;
     }
 
     bool Play(int32_t fd, int64_t size, int64_t startPositionMs, uint64_t requestId)
     {
+        const auto startedAt = std::chrono::steady_clock::now();
+        auto elapsedMs = [&startedAt]() -> long long {
+            return std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - startedAt).count();
+        };
         Stop();
+        const double initialHeadroomDb = requestedEqEnabled_.load() ?
+            std::max(0.0, maxPositiveGainDb_.load()) : 0.0;
+        targetHeadroomDb_ = initialHeadroomDb;
+        headroomDb_ = initialHeadroomDb;
+        OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "native startup stage=stop elapsedMs=%{public}lld", elapsedMs());
         if (requestId != latestPlayRequest.load()) {
             return false;
         }
@@ -278,18 +292,41 @@ public:
             Stop();
             return false;
         }
-        stopRequested_ = false;
-        acceptingCodecCallbacks_ = true;
-        codecGeneration_.fetch_add(1);
-        startupStage_ = StartupStage::IDLE;
-        if (!ConfigureTrack() || !ConfigureDecoder() || !ConfigureEffects() || !ConfigureRenderer()) {
+        OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "native startup stage=source elapsedMs=%{public}lld", elapsedMs());
+        if (!ConfigureTrack()) {
             Stop();
             return false;
         }
+        OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "native startup stage=track elapsedMs=%{public}lld", elapsedMs());
+        if (!ConfigureDecoder()) {
+            Stop();
+            return false;
+        }
+        OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "native startup stage=decoder elapsedMs=%{public}lld", elapsedMs());
+        if (!ConfigureEffects()) {
+            Stop();
+            return false;
+        }
+        OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "native startup stage=effects elapsedMs=%{public}lld", elapsedMs());
+        if (!ConfigureRenderer()) {
+            Stop();
+            return false;
+        }
+        OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "native startup stage=renderer-config elapsedMs=%{public}lld", elapsedMs());
         if (requestId != latestPlayRequest.load()) {
             Stop();
             return false;
         }
+        stopRequested_ = false;
+        seekRequested_ = false;
+        seekRequestSequence_ = 0;
+        decoderFailureLogged_ = false;
+        decoderLifecycle_ = DecoderLifecycle::STARTED;
         paused_ = false;
         completed_ = false;
         currentPositionMs_ = 0;
@@ -308,110 +345,111 @@ public:
             currentPositionMs_ = targetPositionMs;
         }
         activeEqEnabled_ = requestedEqEnabled_.load();
+        resampleInputRate_ = sampleRate_;
+        resamplePos_ = 0.0;
+        resampleLeft_.clear();
+        resampleRight_.clear();
         decoderThread_ = std::thread(&NativeAudioPlayer::DecoderLoop, this);
-        {
-            std::unique_lock<std::mutex> lock(queueMutex_);
-            bool ready = queueCondition_.wait_for(lock, std::chrono::milliseconds(3000), [this]() {
-                return stopRequested_ || firstPcmReady_.load() || decoderFailed_.load();
-            });
-            if (!ready || !firstPcmReady_.load()) {
-                StartupStage stage = startupStage_.load();
-                OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                    "native startup failed stage=%{public}d timeout=%{public}d sampleRate=%{public}d channels=%{public}d",
-                    static_cast<int32_t>(stage), ready ? 0 : 1, sampleRate_, channelCount_);
-                lock.unlock();
-                Stop();
-                return false;
-            }
-        }
-        if (rendererState_ != RendererState::CREATED ||
-            OH_AudioRenderer_Start(renderer_) != AUDIOSTREAM_SUCCESS) {
-            startupStage_ = StartupStage::FAILED;
+        if (OH_AudioRenderer_Start(renderer_) != AUDIOSTREAM_SUCCESS) {
             OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG, "renderer start failed");
             Stop();
             return false;
         }
-        rendererState_ = RendererState::STARTED;
-        startupStage_ = StartupStage::RENDERER_STARTED;
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "native startup stage=started elapsedMs=%{public}lld", elapsedMs());
         return true;
     }
 
     bool Resume()
     {
-        if (renderer_ == nullptr ||
-            (rendererState_ != RendererState::PAUSED && rendererState_ != RendererState::STOPPED)) {
+        if (renderer_ == nullptr) {
             return false;
         }
-        if (OH_AudioRenderer_Start(renderer_) != AUDIOSTREAM_SUCCESS) {
-            return false;
-        }
-        rendererState_ = RendererState::STARTED;
         paused_ = false;
-        return true;
+        return OH_AudioRenderer_Start(renderer_) == AUDIOSTREAM_SUCCESS;
     }
 
     bool Pause()
     {
-        if (renderer_ == nullptr || rendererState_ != RendererState::STARTED) {
-            return rendererState_ == RendererState::PAUSED;
-        }
-        if (OH_AudioRenderer_Pause(renderer_) != AUDIOSTREAM_SUCCESS) {
+        if (renderer_ == nullptr) {
             return false;
         }
-        rendererState_ = RendererState::PAUSED;
         paused_ = true;
-        return true;
+        return OH_AudioRenderer_Pause(renderer_) == AUDIOSTREAM_SUCCESS;
     }
 
     bool Seek(int64_t positionMs)
     {
-        if (demuxer_ == nullptr || decoder_ == nullptr) {
+        if (demuxer_ == nullptr || decoder_ == nullptr || stopRequested_.load() || decodingEnded_.load() ||
+            decoderLifecycle_.load() != DecoderLifecycle::STARTED) {
             return false;
         }
         seekPositionMs_ = std::max<int64_t>(0, positionMs);
+        seekRequestSequence_.fetch_add(1);
         seekRequested_ = true;
+        queueCondition_.notify_all();
         return true;
     }
 
     void RequestStop()
     {
-        acceptingCodecCallbacks_ = false;
+        decoderLifecycle_ = DecoderLifecycle::STOPPING;
         stopRequested_ = true;
-        codecGeneration_.fetch_add(1);
+        seekRequested_ = false;
         queueCondition_.notify_all();
-        codecQueueCondition_.notify_all();
     }
 
     void Stop()
     {
         RequestStop();
         {
-            std::lock_guard<std::mutex> lock(codecQueueMutex_);
-            inputBuffers_.clear();
-            outputBuffers_.clear();
-        }
-        codecQueueCondition_.notify_all();
-        if (decoderThread_.joinable()) {
-            decoderThread_.join();
-        }
-        if (renderer_ != nullptr) {
-            if (rendererState_ == RendererState::STARTED || rendererState_ == RendererState::PAUSED) {
-                if (OH_AudioRenderer_Stop(renderer_) == AUDIOSTREAM_SUCCESS) {
-                    rendererState_ = RendererState::STOPPED;
-                }
-            }
-            OH_AudioRenderer_Release(renderer_);
-            renderer_ = nullptr;
-            rendererState_ = RendererState::EMPTY;
-        }
-        {
             std::lock_guard<std::mutex> lock(queueMutex_);
             pcmQueue_.clear();
         }
         queueCondition_.notify_all();
-        if (pipeline_ != nullptr && pipelineStarted_) {
+        // 先 join 解码线程，让它在 stopRequested_ 置位后自然退出（QueryInputBuffer/
+        // QueryOutputBuffer 的 20ms 超时会让它快速返回并检查循环条件）。
+        // 注意：不能在解码线程还在运行时调用 OH_AudioCodec_Stop，否则会与解码线程
+        // 正在执行的 QueryInputBuffer/QueryOutputBuffer 并发，导致解码器进入非同步状态
+        // 而解码线程仍在其内部访问，造成 "not in sync mode" 疯狂刷屏。
+        if (decoderThread_.joinable()) {
+            const auto joinStart = std::chrono::steady_clock::now();
+            decoderThread_.join();
+            const auto joinMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - joinStart).count();
+            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "decoder thread joined elapsedMs=%{public}lld", static_cast<long long>(joinMs));
+        }
+        if (decoder_ != nullptr) {
+            OH_AVErrCode stopResult = OH_AudioCodec_Stop(decoder_);
+            OH_LOG_Print(LOG_APP, stopResult == AV_ERR_OK ? LOG_INFO : LOG_ERROR,
+                UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG, "decoder stop result=%{public}d", static_cast<int>(stopResult));
+        }
+        if (renderer_ != nullptr) {
+            OH_AudioStream_State rendererState = AUDIOSTREAM_STATE_INVALID;
+            OH_AudioStream_Result stateResult = OH_AudioRenderer_GetCurrentState(renderer_, &rendererState);
+            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "renderer get state result=%{public}d state=%{public}d",
+                static_cast<int>(stateResult), static_cast<int>(rendererState));
+            if (stateResult == AUDIOSTREAM_SUCCESS &&
+                (rendererState == AUDIOSTREAM_STATE_RUNNING || rendererState == AUDIOSTREAM_STATE_PAUSED)) {
+                OH_AudioStream_Result stopResult = OH_AudioRenderer_Stop(renderer_);
+                OH_LOG_Print(LOG_APP, stopResult == AUDIOSTREAM_SUCCESS ? LOG_INFO : LOG_ERROR,
+                    UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                    "renderer stop result=%{public}d state=%{public}d",
+                    static_cast<int>(stopResult), static_cast<int>(rendererState));
+            }
+            if (stateResult != AUDIOSTREAM_SUCCESS || rendererState != AUDIOSTREAM_STATE_RELEASED) {
+                OH_AudioStream_Result releaseResult = OH_AudioRenderer_Release(renderer_);
+                OH_LOG_Print(LOG_APP, releaseResult == AUDIOSTREAM_SUCCESS ? LOG_INFO : LOG_ERROR,
+                    UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                    "renderer release result=%{public}d state=%{public}d",
+                    static_cast<int>(releaseResult), static_cast<int>(rendererState));
+            }
+            renderer_ = nullptr;
+        }
+        if (pipeline_ != nullptr) {
             OH_AudioSuiteEngine_StopPipeline(pipeline_);
-            pipelineStarted_ = false;
         }
         if (inputNode_ != nullptr) {
             OH_AudioSuiteEngine_DestroyNode(inputNode_);
@@ -434,24 +472,24 @@ public:
             engine_ = nullptr;
         }
         if (decoder_ != nullptr) {
-            if (codecState_ == CodecState::STARTED) {
-                OH_AudioCodec_Stop(decoder_);
-                codecState_ = CodecState::STOPPED;
-            }
-            OH_AudioCodec_Destroy(decoder_);
+            OH_AVErrCode destroyResult = OH_AudioCodec_Destroy(decoder_);
+            OH_LOG_Print(LOG_APP, destroyResult == AV_ERR_OK ? LOG_INFO : LOG_ERROR,
+                UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG, "decoder destroy result=%{public}d",
+                static_cast<int>(destroyResult));
             decoder_ = nullptr;
-            codecState_ = CodecState::EMPTY;
-        }
-        if (trackFormat_ != nullptr) {
-            OH_AVFormat_Destroy(trackFormat_);
-            trackFormat_ = nullptr;
         }
         if (demuxer_ != nullptr) {
-            OH_AVDemuxer_Destroy(demuxer_);
+            OH_AVErrCode destroyResult = OH_AVDemuxer_Destroy(demuxer_);
+            OH_LOG_Print(LOG_APP, destroyResult == AV_ERR_OK ? LOG_INFO : LOG_ERROR,
+                UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG, "demuxer destroy result=%{public}d",
+                static_cast<int>(destroyResult));
             demuxer_ = nullptr;
         }
         if (source_ != nullptr) {
-            OH_AVSource_Destroy(source_);
+            OH_AVErrCode destroyResult = OH_AVSource_Destroy(source_);
+            OH_LOG_Print(LOG_APP, destroyResult == AV_ERR_OK ? LOG_INFO : LOG_ERROR,
+                UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG, "source destroy result=%{public}d",
+                static_cast<int>(destroyResult));
             source_ = nullptr;
         }
         ReleaseSource();
@@ -460,13 +498,23 @@ public:
         decodingEnded_ = false;
         decoderFailed_ = false;
         firstPcmReady_ = false;
-        seekRequested_ = false;
         currentPositionMs_ = 0;
         durationMs_ = 0;
-        startupStage_ = StartupStage::IDLE;
+        seekRequestSequence_ = 0;
+        decoderFailureLogged_ = false;
+        decoderLifecycle_ = DecoderLifecycle::STOPPED;
         measurementSquareSum_ = 0.0;
         measurementSampleCount_ = 0;
+        inputMeasurementSampleCount_ = 0;
+        inputPositiveFullScaleCount_ = 0;
+        inputNegativeFullScaleCount_ = 0;
+        outputPositiveFullScaleCount_ = 0;
+        outputNegativeFullScaleCount_ = 0;
         measurementPeak_ = 0;
+        consecutiveClippingWindows_ = 0;
+        cleanHeadroomWindows_ = 0;
+        targetHeadroomDb_ = 0.0;
+        headroomDb_ = 0.0;
     }
 
     bool SetEnabled(bool enabled)
@@ -475,9 +523,16 @@ public:
             return false;
         }
         requestedEqEnabled_ = enabled;
-        if (renderer_ == nullptr) {
-            activeEqEnabled_ = enabled;
+        if (!enabled) {
+            targetHeadroomDb_ = 0.0;
+            headroomDb_ = 0.0;
+            consecutiveClippingWindows_ = 0;
+            cleanHeadroomWindows_ = 0;
+        } else {
+            targetHeadroomDb_ = std::max(0.0, maxPositiveGainDb_.load());
+            headroomDb_ = targetHeadroomDb_.load();
         }
+        activeEqEnabled_ = enabled;
         return true;
     }
 
@@ -485,30 +540,24 @@ public:
     {
         std::lock_guard<std::mutex> lock(effectMutex_);
         bands_ = bands;
+        maxPositiveGainDb_ = static_cast<double>(*std::max_element(bands_.begin(), bands_.end()));
+        const double baseHeadroom = requestedEqEnabled_.load() ? std::max(0.0, maxPositiveGainDb_.load()) : 0.0;
+        targetHeadroomDb_ = baseHeadroom;
+        headroomDb_ = std::max(headroomDb_.load(), baseHeadroom);
+        cleanHeadroomWindows_ = 0;
+        if (maxPositiveGainDb_.load() <= 0.0) {
+            headroomDb_ = 0.0;
+        }
         if (!requestedEqEnabled_ || eqNode_ == nullptr) {
             return true;
         }
-        return ApplyBandsLocked(bands_, true);
+        return ApplyBandsLocked(bands_, false);
     }
 
     std::array<int32_t, EQUALIZER_BAND_NUM> GetBands()
     {
         std::lock_guard<std::mutex> lock(effectMutex_);
-        if (eqNode_ == nullptr) {
-            return bands_;
-        }
-        OH_EqualizerFrequencyBandGains current = {};
-        OH_AudioSuite_Result result = OH_AudioSuiteEngine_GetEqualizerFrequencyBandGains(eqNode_, &current);
-        if (result != AUDIOSUITE_SUCCESS) {
-            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                "get equalizer bands failed code=%{public}d", result);
-            return bands_;
-        }
-        std::array<int32_t, EQUALIZER_BAND_NUM> resultBands = {};
-        for (size_t i = 0; i < resultBands.size(); i++) {
-            resultBands[i] = current.gains[i];
-        }
-        return resultBands;
+        return bands_;
     }
 
     bool IsEqualizerEnabled() const
@@ -588,39 +637,6 @@ public:
     }
 
 private:
-    enum class CodecState : uint8_t {
-        EMPTY,
-        CREATED,
-        CONFIGURED,
-        PREPARED,
-        STARTED,
-        STOPPED
-    };
-
-    enum class RendererState : uint8_t {
-        EMPTY,
-        CREATED,
-        STARTED,
-        PAUSED,
-        STOPPED
-    };
-
-    enum class StartupStage : uint8_t {
-        IDLE,
-        DECODER_STARTED,
-        INPUT_CALLBACK,
-        OUTPUT_CALLBACK,
-        FIRST_PCM,
-        RENDERER_STARTED,
-        FAILED
-    };
-
-    struct CodecBufferItem {
-        uint32_t index = 0;
-        OH_AVBuffer* buffer = nullptr;
-        uint64_t generation = 0;
-    };
-
     bool ApplyBandsLocked(const std::array<int32_t, EQUALIZER_BAND_NUM>& bands, bool verify)
     {
         if (eqNode_ == nullptr) {
@@ -664,7 +680,7 @@ private:
         for (size_t i = 0; i < bands.size(); i++) {
             matched = matched && current.gains[i] == bands[i];
         }
-        OH_LOG_Print(LOG_APP, matched ? LOG_INFO : LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+        OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "equalizer bands applied matched=%{public}d bypassed=%{public}d requested=%{public}d,%{public}d,"
             "%{public}d,%{public}d,%{public}d,%{public}d,%{public}d,%{public}d,%{public}d,%{public}d "
             "actual=%{public}d,%{public}d,%{public}d,%{public}d,%{public}d,%{public}d,%{public}d,%{public}d,"
@@ -746,38 +762,22 @@ private:
             trackFormat_ = nullptr;
             return false;
         }
-        codecState_ = CodecState::CREATED;
-        OH_AVCodecCallback callback = {
-            CodecErrorCallback,
-            CodecStreamChangedCallback,
-            CodecInputBufferCallback,
-            CodecOutputBufferCallback
-        };
-        OH_AVErrCode callbackResult = OH_AudioCodec_RegisterCallback(decoder_, callback, this);
         OH_AVFormat_SetIntValue(trackFormat_, OH_MD_KEY_AUDIO_SAMPLE_FORMAT, SAMPLE_S16LE);
-        OH_AVErrCode configureResult = callbackResult == AV_ERR_OK ?
-            OH_AudioCodec_Configure(decoder_, trackFormat_) : callbackResult;
+        // QueryInputBuffer/QueryOutputBuffer 仅允许在同步模式使用。同步模式必须在
+        // Configure 阶段通过 OH_MD_KEY_ENABLE_SYNC_MODE 显式启用，默认值 0 是异步模式。
+        OH_AVFormat_SetIntValue(trackFormat_, OH_MD_KEY_ENABLE_SYNC_MODE, 1);
+        OH_AVErrCode configureResult = OH_AudioCodec_Configure(decoder_, trackFormat_);
         bool configured = configureResult == AV_ERR_OK;
-        if (configured) {
-            codecState_ = CodecState::CONFIGURED;
-        }
         OH_AVFormat_Destroy(trackFormat_);
         trackFormat_ = nullptr;
         OH_AVErrCode prepareResult = configured ? OH_AudioCodec_Prepare(decoder_) : configureResult;
-        if (prepareResult == AV_ERR_OK) {
-            codecState_ = CodecState::PREPARED;
-        }
         OH_AVErrCode startResult = prepareResult == AV_ERR_OK ? OH_AudioCodec_Start(decoder_) : prepareResult;
-        if (startResult == AV_ERR_OK) {
-            codecState_ = CodecState::STARTED;
-            startupStage_ = StartupStage::DECODER_STARTED;
-        }
-        if (callbackResult != AV_ERR_OK || !configured || prepareResult != AV_ERR_OK || startResult != AV_ERR_OK) {
+        if (!configured || prepareResult != AV_ERR_OK || startResult != AV_ERR_OK) {
             OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                "decoder setup failed callback=%{public}d configure=%{public}d prepare=%{public}d start=%{public}d",
-                callbackResult, configureResult, prepareResult, startResult);
+                "decoder setup failed configure=%{public}d prepare=%{public}d start=%{public}d",
+                configureResult, prepareResult, startResult);
         }
-        return callbackResult == AV_ERR_OK && configured && prepareResult == AV_ERR_OK && startResult == AV_ERR_OK;
+        return configured && prepareResult == AV_ERR_OK && startResult == AV_ERR_OK;
     }
 
     bool ConfigureEffects()
@@ -794,9 +794,9 @@ private:
             return false;
         }
         OH_AudioFormat inputFormat = {};
-        inputFormat.samplingRate = static_cast<OH_Audio_SampleRate>(sampleRate_);
-        inputFormat.channelLayout = channelCount_ == 1 ? CH_LAYOUT_MONO : CH_LAYOUT_STEREO;
-        inputFormat.channelCount = static_cast<uint32_t>(channelCount_);
+        inputFormat.samplingRate = SAMPLE_RATE_48000;
+        inputFormat.channelLayout = CH_LAYOUT_STEREO;
+        inputFormat.channelCount = 2;
         inputFormat.encodingType = AUDIO_ENCODING_TYPE_RAW;
         inputFormat.sampleFormat = AUDIO_SAMPLE_S16LE;
         OH_AudioSuiteNodeBuilder_SetNodeType(builder, INPUT_NODE_TYPE_DEFAULT);
@@ -808,9 +808,9 @@ private:
         success = success && OH_AudioSuiteEngine_CreateNode(pipeline_, builder, &eqNode_) == AUDIOSUITE_SUCCESS;
         OH_AudioSuiteNodeBuilder_Reset(builder);
         OH_AudioFormat outputFormat = {};
-        outputFormat.samplingRate = static_cast<OH_Audio_SampleRate>(sampleRate_);
-        outputFormat.channelLayout = channelCount_ == 1 ? CH_LAYOUT_MONO : CH_LAYOUT_STEREO;
-        outputFormat.channelCount = static_cast<uint32_t>(channelCount_);
+        outputFormat.samplingRate = SAMPLE_RATE_48000;
+        outputFormat.channelLayout = CH_LAYOUT_STEREO;
+        outputFormat.channelCount = 2;
         outputFormat.encodingType = AUDIO_ENCODING_TYPE_RAW;
         outputFormat.sampleFormat = AUDIO_SAMPLE_S16LE;
         OH_AudioSuiteNodeBuilder_SetNodeType(builder, OUTPUT_NODE_TYPE_DEFAULT);
@@ -827,9 +827,7 @@ private:
                 return false;
             }
         }
-        OH_AudioSuite_Result startResult = OH_AudioSuiteEngine_StartPipeline(pipeline_);
-        pipelineStarted_ = startResult == AUDIOSUITE_SUCCESS;
-        return pipelineStarted_;
+        return OH_AudioSuiteEngine_StartPipeline(pipeline_) == AUDIOSUITE_SUCCESS;
     }
 
     bool ConfigureRenderer()
@@ -839,8 +837,8 @@ private:
             OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG, "renderer builder failed");
             return false;
         }
-        OH_AudioStreamBuilder_SetSamplingRate(builder, sampleRate_);
-        OH_AudioStreamBuilder_SetChannelCount(builder, channelCount_);
+        OH_AudioStreamBuilder_SetSamplingRate(builder, 48000);
+        OH_AudioStreamBuilder_SetChannelCount(builder, 2);
         OH_AudioStreamBuilder_SetSampleFormat(builder, AUDIOSTREAM_SAMPLE_S16LE);
         OH_AudioStreamBuilder_SetEncodingType(builder, AUDIOSTREAM_ENCODING_TYPE_RAW);
         OH_AudioStreamBuilder_SetRendererInfo(builder, AUDIOSTREAM_USAGE_MUSIC);
@@ -848,7 +846,6 @@ private:
         bool success = OH_AudioStreamBuilder_GenerateRenderer(builder, &renderer_) == AUDIOSTREAM_SUCCESS;
         OH_AudioStreamBuilder_Destroy(builder);
         if (success) {
-            rendererState_ = RendererState::CREATED;
             OH_AudioRenderer_SetSpeed(renderer_, playbackSpeed_);
             OH_AudioRenderer_SetVolume(renderer_, volume_);
         }
@@ -858,204 +855,173 @@ private:
         return success;
     }
 
+    bool RestoreDecoderAfterSeek(int64_t seekPosition, uint64_t requestSequence)
+    {
+        decoderLifecycle_ = DecoderLifecycle::SEEKING;
+        OH_AVErrCode stopResult = OH_AudioCodec_Stop(decoder_);
+        if (stopResult != AV_ERR_OK) {
+            MarkDecoderTerminalFailure("SeekStop", stopResult);
+            return false;
+        }
+        OH_AVErrCode seekResult = OH_AVDemuxer_SeekToTime(demuxer_, seekPosition, SEEK_MODE_CLOSEST_SYNC);
+        if (seekResult != AV_ERR_OK) {
+            MarkDecoderTerminalFailure("SeekDemux", seekResult);
+            return false;
+        }
+        if (stopRequested_.load()) {
+            return false;
+        }
+        OH_AVErrCode startResult = OH_AudioCodec_Start(decoder_);
+        if (startResult != AV_ERR_OK) {
+            MarkDecoderTerminalFailure("SeekRestart", startResult);
+            return false;
+        }
+        {
+            std::lock_guard<std::mutex> lock(queueMutex_);
+            pcmQueue_.clear();
+            resampleLeft_.clear();
+            resampleRight_.clear();
+            resamplePos_ = 0.0;
+        }
+        firstPcmReady_ = false;
+        currentPositionMs_ = seekPosition;
+        completed_ = false;
+        decodingEnded_ = false;
+        decoderLifecycle_ = DecoderLifecycle::STARTED;
+        queueCondition_.notify_all();
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "decoder seek restored position=%{public}lld sequence=%{public}llu",
+            static_cast<long long>(seekPosition), static_cast<unsigned long long>(requestSequence));
+        return true;
+    }
+
+    void MarkDecoderTerminalFailure(const char* operation, OH_AVErrCode result)
+    {
+        bool expected = false;
+        if (decoderFailureLogged_.compare_exchange_strong(expected, true)) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "decoder terminal failure operation=%{public}s code=%{public}d stop=%{public}d",
+                operation, static_cast<int>(result), stopRequested_.load() ? 1 : 0);
+        }
+        decoderLifecycle_ = DecoderLifecycle::FAILED;
+        decoderFailed_ = true;
+        decodingEnded_ = true;
+        queueCondition_.notify_all();
+    }
+
     void DecoderLoop()
     {
         bool inputEnded = false;
         bool outputEnded = false;
-        while (!stopRequested_ && !outputEnded) {
-            if (seekRequested_) {
-                uint64_t nextGeneration = codecGeneration_.fetch_add(1) + 1;
-                {
-                    std::lock_guard<std::mutex> lock(codecQueueMutex_);
-                    inputBuffers_.clear();
-                    outputBuffers_.clear();
-                }
-                if (codecState_ != CodecState::STARTED) {
-                    FailDecoder("seek state", static_cast<int32_t>(codecState_.load()), 0);
+        bool terminalFailure = false;
+        decoderFailureLogged_ = false;
+        while (!stopRequested_.load() && !outputEnded && !terminalFailure) {
+            if (seekRequested_.exchange(false)) {
+                const uint64_t requestSequence = seekRequestSequence_.load();
+                const int64_t seekPosition = seekPositionMs_.load();
+                if (!RestoreDecoderAfterSeek(seekPosition, requestSequence)) {
+                    terminalFailure = !stopRequested_.load();
                     break;
                 }
-                OH_AVErrCode stopResult = OH_AudioCodec_Stop(decoder_);
-                if (stopResult != AV_ERR_OK) {
-                    FailDecoder("seek stop", stopResult, 0);
-                    break;
-                }
-                codecState_ = CodecState::STOPPED;
-                OH_AVErrCode seekResult = OH_AVDemuxer_SeekToTime(
-                    demuxer_, seekPositionMs_.load(), SEEK_MODE_CLOSEST_SYNC);
-                OH_AVErrCode prepareResult = seekResult == AV_ERR_OK ? OH_AudioCodec_Prepare(decoder_) : seekResult;
-                if (prepareResult == AV_ERR_OK) {
-                    codecState_ = CodecState::PREPARED;
-                }
-                OH_AVErrCode restartResult = prepareResult == AV_ERR_OK ? OH_AudioCodec_Start(decoder_) : prepareResult;
-                int64_t seekPosition = seekPositionMs_.load();
-                if (seekResult != AV_ERR_OK || prepareResult != AV_ERR_OK || restartResult != AV_ERR_OK) {
-                    FailDecoder("seek reset", seekResult, restartResult);
-                    break;
-                }
-                codecState_ = CodecState::STARTED;
-                {
-                    std::lock_guard<std::mutex> lock(queueMutex_);
-                    pcmQueue_.clear();
-                }
-                firstPcmReady_ = false;
-                decoderFailed_ = false;
-                currentPositionMs_ = seekPosition;
                 inputEnded = false;
                 outputEnded = false;
-                completed_ = false;
-                decodingEnded_ = false;
-                seekRequested_ = false;
-                OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                    "seek reset generation=%{public}llu position=%{public}lld",
-                    static_cast<unsigned long long>(nextGeneration), static_cast<long long>(seekPosition));
-                codecQueueCondition_.notify_all();
-            }
-
-            CodecBufferItem inputItem;
-            CodecBufferItem outputItem;
-            bool hasInput = false;
-            bool hasOutput = false;
-            {
-                std::unique_lock<std::mutex> lock(codecQueueMutex_);
-                codecQueueCondition_.wait_for(lock, std::chrono::milliseconds(20), [this, inputEnded]() {
-                    return stopRequested_ || seekRequested_ || decoderFailed_ || !outputBuffers_.empty() ||
-                        (!inputEnded && !inputBuffers_.empty());
-                });
-                if (!inputEnded && !inputBuffers_.empty()) {
-                    inputItem = inputBuffers_.front();
-                    inputBuffers_.pop_front();
-                    hasInput = true;
-                }
-                if (!outputBuffers_.empty()) {
-                    outputItem = outputBuffers_.front();
-                    outputBuffers_.pop_front();
-                    hasOutput = true;
+                if (requestSequence != seekRequestSequence_.load()) {
+                    seekRequested_ = true;
+                    continue;
                 }
             }
-            if (stopRequested_ || decoderFailed_) {
+            if (decoderLifecycle_.load() != DecoderLifecycle::STARTED) {
+                MarkDecoderTerminalFailure("DecoderLifecycle", AV_ERR_INVALID_STATE);
+                terminalFailure = true;
                 break;
             }
-            const uint64_t currentGeneration = codecGeneration_.load();
-            if (hasInput && inputItem.generation != currentGeneration) {
-                hasInput = false;
-            }
-            if (hasOutput && outputItem.generation != currentGeneration) {
-                hasOutput = false;
-            }
-            if (hasInput && !seekRequested_) {
-                OH_AVErrCode readResult = OH_AVDemuxer_ReadSampleBuffer(demuxer_, trackIndex_, inputItem.buffer);
-                OH_AVCodecBufferAttr attr = {};
-                OH_AVErrCode attrResult = readResult == AV_ERR_OK ?
-                    OH_AVBuffer_GetBufferAttr(inputItem.buffer, &attr) : readResult;
-                OH_AVErrCode pushResult = attrResult == AV_ERR_OK ?
-                    OH_AudioCodec_PushInputBuffer(decoder_, inputItem.index) : attrResult;
-                if (readResult != AV_ERR_OK || attrResult != AV_ERR_OK || pushResult != AV_ERR_OK) {
-                    FailDecoder("decoder input", readResult, pushResult);
-                    break;
+            if (!inputEnded) {
+                uint32_t inputIndex = 0;
+                OH_AVErrCode inputResult = OH_AudioCodec_QueryInputBuffer(decoder_, &inputIndex, 20000);
+                if (inputResult == AV_ERR_OK) {
+                    OH_AVBuffer* inputBuffer = OH_AudioCodec_GetInputBuffer(decoder_, inputIndex);
+                    if (inputBuffer == nullptr) {
+                        MarkDecoderTerminalFailure("GetInputBuffer", AV_ERR_INVALID_VAL);
+                        terminalFailure = true;
+                    } else {
+                        OH_AVErrCode readResult = OH_AVDemuxer_ReadSampleBuffer(demuxer_, trackIndex_, inputBuffer);
+                        if (readResult != AV_ERR_OK) {
+                            MarkDecoderTerminalFailure("ReadSampleBuffer", readResult);
+                            terminalFailure = true;
+                        } else {
+                            OH_AVCodecBufferAttr attr = {};
+                            OH_AVBuffer_GetBufferAttr(inputBuffer, &attr);
+                            inputEnded = (attr.flags & AVCODEC_BUFFER_FLAGS_EOS) != 0;
+                            OH_AVErrCode pushResult = OH_AudioCodec_PushInputBuffer(decoder_, inputIndex);
+                            if (pushResult != AV_ERR_OK) {
+                                MarkDecoderTerminalFailure("PushInputBuffer", pushResult);
+                                terminalFailure = true;
+                            }
+                        }
+                    }
+                } else if (inputResult != AV_ERR_TRY_AGAIN_LATER) {
+                    MarkDecoderTerminalFailure("QueryInputBuffer", inputResult);
+                    terminalFailure = true;
                 }
-                inputEnded = (attr.flags & AVCODEC_BUFFER_FLAGS_EOS) != 0;
             }
-            if (hasOutput && !seekRequested_) {
-                OH_AVCodecBufferAttr attr = {};
-                OH_AVErrCode attrResult = OH_AVBuffer_GetBufferAttr(outputItem.buffer, &attr);
-                uint8_t* address = attrResult == AV_ERR_OK ? OH_AVBuffer_GetAddr(outputItem.buffer) : nullptr;
-                if (attrResult == AV_ERR_OK && address != nullptr && attr.size > 0) {
-                    uint8_t* begin = address + attr.offset;
-                    PublishRawPcm(begin, attr.size);
-                    std::unique_lock<std::mutex> lock(queueMutex_);
-                    queueCondition_.wait(lock, [this]() {
-                        return stopRequested_ || pcmQueue_.size() < maxQueueBytes_;
-                    });
-                    if (!stopRequested_) {
-                        pcmQueue_.insert(pcmQueue_.end(), begin, begin + attr.size);
-                        currentPositionMs_ = attr.pts / 1000;
-                        firstPcmReady_ = true;
-                        startupStage_ = StartupStage::FIRST_PCM;
-                        queueCondition_.notify_all();
+            if (stopRequested_.load() || terminalFailure || seekRequested_.load()) {
+                continue;
+            }
+            uint32_t outputIndex = 0;
+            OH_AVErrCode outputResult = OH_AudioCodec_QueryOutputBuffer(decoder_, &outputIndex, 20000);
+            if (outputResult == AV_ERR_STREAM_CHANGED) {
+                OH_AVFormat* outputFormat = OH_AudioCodec_GetOutputDescription(decoder_);
+                if (outputFormat == nullptr) {
+                    MarkDecoderTerminalFailure("GetOutputDescription", AV_ERR_INVALID_STATE);
+                    terminalFailure = true;
+                } else {
+                    OH_AVFormat_GetIntValue(outputFormat, OH_MD_KEY_AUD_SAMPLE_RATE, &sampleRate_);
+                    OH_AVFormat_GetIntValue(outputFormat, OH_MD_KEY_AUD_CHANNEL_COUNT, &channelCount_);
+                    OH_AVFormat_Destroy(outputFormat);
+                    resampleInputRate_ = sampleRate_;
+                }
+            } else if (outputResult == AV_ERR_OK) {
+                OH_AVBuffer* outputBuffer = OH_AudioCodec_GetOutputBuffer(decoder_, outputIndex);
+                if (outputBuffer == nullptr) {
+                    MarkDecoderTerminalFailure("GetOutputBuffer", AV_ERR_INVALID_VAL);
+                    terminalFailure = true;
+                } else {
+                    OH_AVCodecBufferAttr attr = {};
+                    OH_AVBuffer_GetBufferAttr(outputBuffer, &attr);
+                    uint8_t* address = OH_AVBuffer_GetAddr(outputBuffer);
+                    if (address != nullptr && attr.size > 0) {
+                        uint8_t* begin = address + attr.offset;
+                        PublishRawPcm(begin, attr.size);
+                        std::unique_lock<std::mutex> lock(queueMutex_);
+                        queueCondition_.wait(lock, [this]() {
+                            return stopRequested_.load() || seekRequested_.load() || pcmQueue_.size() < maxQueueBytes_;
+                        });
+                        if (!stopRequested_.load() && !seekRequested_.load()) {
+                            pcmQueue_.insert(pcmQueue_.end(), begin, begin + attr.size);
+                            currentPositionMs_ = attr.pts / 1000;
+                            firstPcmReady_ = true;
+                            queueCondition_.notify_all();
+                        }
+                    }
+                    outputEnded = (attr.flags & AVCODEC_BUFFER_FLAGS_EOS) != 0;
+                    OH_AVErrCode freeResult = OH_AudioCodec_FreeOutputBuffer(decoder_, outputIndex);
+                    if (freeResult != AV_ERR_OK) {
+                        MarkDecoderTerminalFailure("FreeOutputBuffer", freeResult);
+                        terminalFailure = true;
                     }
                 }
-                outputEnded = attrResult == AV_ERR_OK && (attr.flags & AVCODEC_BUFFER_FLAGS_EOS) != 0;
-                OH_AVErrCode freeResult = OH_AudioCodec_FreeOutputBuffer(decoder_, outputItem.index);
-                if (attrResult != AV_ERR_OK || freeResult != AV_ERR_OK) {
-                    FailDecoder("decoder output", attrResult, freeResult);
-                    break;
-                }
+            } else if (outputResult != AV_ERR_TRY_AGAIN_LATER) {
+                MarkDecoderTerminalFailure("QueryOutputBuffer", outputResult);
+                terminalFailure = true;
             }
         }
-        if (!stopRequested_) {
-            decodingEnded_ = outputEnded;
-            decoderFailed_ = decoderFailed_.load() || !firstPcmReady_.load();
+        if (!stopRequested_.load()) {
+            decodingEnded_ = true;
+            if (terminalFailure) {
+                decoderFailed_ = true;
+            }
             queueCondition_.notify_all();
         }
-    }
-
-    void FailDecoder(const char* stage, int32_t primaryCode, int32_t secondaryCode)
-    {
-        bool alreadyFailed = decoderFailed_.exchange(true);
-        startupStage_ = StartupStage::FAILED;
-        queueCondition_.notify_all();
-        codecQueueCondition_.notify_all();
-        if (!alreadyFailed) {
-            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                "%{public}s failed primary=%{public}d secondary=%{public}d generation=%{public}llu",
-                stage, primaryCode, secondaryCode,
-                static_cast<unsigned long long>(codecGeneration_.load()));
-        }
-    }
-
-    static void CodecErrorCallback(OH_AVCodec*, int32_t errorCode, void* userData)
-    {
-        if (userData == nullptr) {
-            return;
-        }
-        NativeAudioPlayer* player = static_cast<NativeAudioPlayer*>(userData);
-        player->FailDecoder("decoder callback", errorCode, 0);
-    }
-
-    static void CodecStreamChangedCallback(OH_AVCodec*, OH_AVFormat* format, void* userData)
-    {
-        if (userData == nullptr || format == nullptr) {
-            return;
-        }
-        NativeAudioPlayer* player = static_cast<NativeAudioPlayer*>(userData);
-        OH_AVFormat_GetIntValue(format, OH_MD_KEY_AUD_SAMPLE_RATE, &player->sampleRate_);
-        OH_AVFormat_GetIntValue(format, OH_MD_KEY_AUD_CHANNEL_COUNT, &player->channelCount_);
-    }
-
-    static void CodecInputBufferCallback(OH_AVCodec*, uint32_t index, OH_AVBuffer* buffer, void* userData)
-    {
-        if (userData == nullptr || buffer == nullptr) {
-            return;
-        }
-        NativeAudioPlayer* player = static_cast<NativeAudioPlayer*>(userData);
-        {
-            std::lock_guard<std::mutex> lock(player->codecQueueMutex_);
-            if (player->stopRequested_ || !player->acceptingCodecCallbacks_ ||
-                player->codecState_ != CodecState::STARTED) {
-                return;
-            }
-            player->startupStage_ = StartupStage::INPUT_CALLBACK;
-            player->inputBuffers_.push_back({ index, buffer, player->codecGeneration_.load() });
-        }
-        player->codecQueueCondition_.notify_one();
-    }
-
-    static void CodecOutputBufferCallback(OH_AVCodec*, uint32_t index, OH_AVBuffer* buffer, void* userData)
-    {
-        if (userData == nullptr || buffer == nullptr) {
-            return;
-        }
-        NativeAudioPlayer* player = static_cast<NativeAudioPlayer*>(userData);
-        {
-            std::lock_guard<std::mutex> lock(player->codecQueueMutex_);
-            if (player->stopRequested_ || !player->acceptingCodecCallbacks_ ||
-                player->codecState_ != CodecState::STARTED) {
-                return;
-            }
-            player->startupStage_ = StartupStage::OUTPUT_CALLBACK;
-            player->outputBuffers_.push_back({ index, buffer, player->codecGeneration_.load() });
-        }
-        player->codecQueueCondition_.notify_one();
     }
 
     int32_t ReadPcm(void* audioData, int32_t audioDataSize, bool* finished)
@@ -1063,16 +1029,87 @@ private:
         if (audioData == nullptr || audioDataSize <= 0 || finished == nullptr) {
             return 0;
         }
-        std::lock_guard<std::mutex> lock(queueMutex_);
-        int32_t readSize = std::min<int32_t>(audioDataSize, static_cast<int32_t>(pcmQueue_.size()));
-        uint8_t* destination = static_cast<uint8_t*>(audioData);
-        for (int32_t i = 0; i < readSize; i++) {
-            destination[i] = pcmQueue_.front();
-            pcmQueue_.pop_front();
+        int16_t* out = static_cast<int16_t*>(audioData);
+        int32_t outSamples = audioDataSize / 4; // 立体声 S16LE，每采样点 4 字节
+        int32_t written = 0;
+        const double ratio = static_cast<double>(resampleInputRate_) / static_cast<double>(resampleOutputRate_);
+        // 循环填充，直到写满请求的采样点数或解码结束。
+        // 不能在持有 queueMutex_ 时等待，否则解码线程无法填充 pcmQueue_ 造成死锁。
+        while (written < outSamples) {
+            std::unique_lock<std::mutex> lock(queueMutex_);
+            // 从 pcmQueue_ 读取源采样率 PCM（立体声 S16LE，每采样点 4 字节）到重采样缓冲
+            while (pcmQueue_.size() >= 4 && resampleLeft_.size() < 4096) {
+                int16_t left = static_cast<int16_t>((pcmQueue_[0] & 0xFF) | (pcmQueue_[1] << 8));
+                int16_t right = static_cast<int16_t>((pcmQueue_[2] & 0xFF) | (pcmQueue_[3] << 8));
+                resampleLeft_.push_back(left);
+                resampleRight_.push_back(right);
+                pcmQueue_.pop_front();
+                pcmQueue_.pop_front();
+                pcmQueue_.pop_front();
+                pcmQueue_.pop_front();
+            }
+            // 数据不足且解码未结束：释放锁等待解码线程产出数据（带超时，防止偶发卡死）
+            if (resampleLeft_.size() < 2 && !decodingEnded_.load()) {
+                queueCondition_.wait_for(lock, std::chrono::milliseconds(50), [this]() {
+                    return stopRequested_.load() || decodingEnded_.load() ||
+                        resampleLeft_.size() >= 2 || pcmQueue_.size() >= 4;
+                });
+                if (stopRequested_.load()) {
+                    *finished = true;
+                    return written * 4;
+                }
+                continue;
+            }
+            // 线性插值重采样：源采样率 -> 48000
+            while (written < outSamples && resampleLeft_.size() >= 2) {
+                double pos = resamplePos_;
+                int32_t idx = static_cast<int32_t>(pos);
+                if (idx + 1 >= static_cast<int32_t>(resampleLeft_.size())) {
+                    // resamplePos_ 已指向缓冲末尾，消费掉已越过的采样点后回到缓冲开头继续
+                    int32_t skip = static_cast<int32_t>(resampleLeft_.size()) - 1;
+                    for (int32_t i = 0; i < skip && !resampleLeft_.empty(); i++) {
+                        resampleLeft_.pop_front();
+                        resampleRight_.pop_front();
+                    }
+                    resamplePos_ -= skip;
+                    continue;
+                }
+                double frac = pos - idx;
+                int16_t l0 = resampleLeft_[idx];
+                int16_t l1 = resampleLeft_[idx + 1];
+                int16_t r0 = resampleRight_[idx];
+                int16_t r1 = resampleRight_[idx + 1];
+                out[written * 2] = static_cast<int16_t>(l0 + (l1 - l0) * frac);
+                out[written * 2 + 1] = static_cast<int16_t>(r0 + (r1 - r0) * frac);
+                written++;
+                resamplePos_ += ratio;
+                // 消费已越过的输入采样点
+                int32_t consumed = static_cast<int32_t>(resamplePos_);
+                if (consumed > 0) {
+                    for (int32_t i = 0; i < consumed && !resampleLeft_.empty(); i++) {
+                        resampleLeft_.pop_front();
+                        resampleRight_.pop_front();
+                    }
+                    resamplePos_ -= consumed;
+                }
+            }
+            // 解码结束且缓冲耗尽：标记 finished
+            if (decodingEnded_.load() && pcmQueue_.empty() && resampleLeft_.size() < 2) {
+                *finished = true;
+                queueCondition_.notify_all();
+                return written * 4;
+            }
+            // 若本次未写满但仍有数据可继续，回到循环顶部继续填充
+            if (resampleLeft_.size() < 2 && decodingEnded_.load()) {
+                *finished = true;
+                queueCondition_.notify_all();
+                return written * 4;
+            }
+            queueCondition_.notify_all();
         }
-        *finished = decodingEnded_.load() && pcmQueue_.empty();
+        *finished = false;
         queueCondition_.notify_all();
-        return readSize;
+        return written * 4;
     }
 
     static int32_t InputDataCallback(OH_AudioNode*, void* userData, void* audioData,
@@ -1081,7 +1118,11 @@ private:
         if (userData == nullptr) {
             return 0;
         }
-        return static_cast<NativeAudioPlayer*>(userData)->ReadPcm(audioData, audioDataSize, finished);
+        NativeAudioPlayer* player = static_cast<NativeAudioPlayer*>(userData);
+        int32_t readSize = player->ReadPcm(audioData, audioDataSize, finished);
+        player->MeasureInput(audioData, readSize);
+        player->ApplyHeadroom(audioData, readSize);
+        return readSize;
     }
 
     static OH_AudioData_Callback_Result RendererDataCallback(
@@ -1125,6 +1166,9 @@ private:
         OH_AudioSuite_Result result = OH_AudioSuiteEngine_RenderFrame(
             pipeline_, audioData, audioDataSize, &responseSize, &finished);
         if (result != AUDIOSUITE_SUCCESS) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "RenderFrame failed result=%d responseSize=%d finished=%d inputSize=%d",
+                static_cast<int>(result), responseSize, finished ? 1 : 0, audioDataSize);
             return false;
         }
         if (responseSize < audioDataSize) {
@@ -1138,9 +1182,51 @@ private:
         return true;
     }
 
+    void MeasureInput(void* audioData, int32_t audioDataSize)
+    {
+        const int16_t* samples = static_cast<const int16_t*>(audioData);
+        int32_t sampleCount = audioDataSize / static_cast<int32_t>(sizeof(int16_t));
+        if (samples == nullptr || sampleCount <= 0) {
+            return;
+        }
+        for (int32_t i = 0; i < sampleCount; i++) {
+            inputPositiveFullScaleCount_ += samples[i] == std::numeric_limits<int16_t>::max() ? 1 : 0;
+            inputNegativeFullScaleCount_ += samples[i] == std::numeric_limits<int16_t>::min() ? 1 : 0;
+        }
+        inputMeasurementSampleCount_ += static_cast<uint64_t>(sampleCount);
+    }
+
+    void ApplyHeadroom(void* audioData, int32_t audioDataSize)
+    {
+        double currentDb = headroomDb_.load();
+        const double targetDb = targetHeadroomDb_.load();
+        if (currentDb < targetDb) {
+            currentDb = std::min(targetDb, currentDb + 0.25);
+        } else if (currentDb > targetDb) {
+            currentDb = std::max(targetDb, currentDb - 0.10);
+        }
+        headroomDb_ = currentDb;
+        double attenuationDb = currentDb;
+        if (attenuationDb <= 0.0) {
+            return;
+        }
+        int16_t* samples = static_cast<int16_t*>(audioData);
+        int32_t sampleCount = audioDataSize / static_cast<int32_t>(sizeof(int16_t));
+        if (samples == nullptr || sampleCount <= 0) {
+            return;
+        }
+        const double scale = std::pow(10.0, -attenuationDb / 20.0);
+        for (int32_t i = 0; i < sampleCount; i++) {
+            const double scaled = static_cast<double>(samples[i]) * scale;
+            const long converted = std::lround(scaled);
+            samples[i] = static_cast<int16_t>(std::clamp<long>(converted,
+                std::numeric_limits<int16_t>::min(), std::numeric_limits<int16_t>::max()));
+        }
+    }
+
     void MeasureOutput(void* audioData, int32_t audioDataSize, bool equalizerEnabled)
     {
-        int16_t* samples = static_cast<int16_t*>(audioData);
+        const int16_t* samples = static_cast<const int16_t*>(audioData);
         int32_t sampleCount = audioDataSize / static_cast<int32_t>(sizeof(int16_t));
         if (samples == nullptr || sampleCount <= 0) {
             return;
@@ -1151,19 +1237,58 @@ private:
             int32_t value = samples[i];
             peak = std::max(peak, std::abs(value));
             squareSum += static_cast<double>(value) * static_cast<double>(value);
+            outputPositiveFullScaleCount_ += value == std::numeric_limits<int16_t>::max() ? 1 : 0;
+            outputNegativeFullScaleCount_ += value == std::numeric_limits<int16_t>::min() ? 1 : 0;
         }
         measurementSquareSum_ += squareSum;
         measurementSampleCount_ += static_cast<uint64_t>(sampleCount);
         measurementPeak_ = std::max(measurementPeak_, peak);
         if (measurementSampleCount_ >= 48000 * 2) {
-            double rms = std::sqrt(measurementSquareSum_ / static_cast<double>(measurementSampleCount_));
+            const uint64_t inputClipped = inputPositiveFullScaleCount_ + inputNegativeFullScaleCount_;
+            const uint64_t outputClipped = outputPositiveFullScaleCount_ + outputNegativeFullScaleCount_;
+            const uint64_t addedFullScale = outputClipped > inputClipped ? outputClipped - inputClipped : 0;
+            const double addedClipRatio = measurementSampleCount_ == 0 ? 0.0 :
+                static_cast<double>(addedFullScale) / static_cast<double>(measurementSampleCount_);
+            const bool addedClipping = equalizerEnabled && addedClipRatio > 0.00001;
+            consecutiveClippingWindows_ = addedClipping ? consecutiveClippingWindows_ + 1 : 0;
+            cleanHeadroomWindows_ = addedClipping ? 0 : cleanHeadroomWindows_ + 1;
+            double targetDb = targetHeadroomDb_.load();
+            if (consecutiveClippingWindows_ >= 2 && maxPositiveGainDb_.load() > 0.0) {
+                const double previous = targetDb;
+                targetDb = std::min(12.0, targetDb + 0.5);
+                targetHeadroomDb_ = targetDb;
+                if (targetDb != previous) {
+                    OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                        "equalizer clipping feedback addedRatio=%{public}.6f targetHeadroomDb=%{public}.1f",
+                        addedClipRatio, targetDb);
+                }
+                consecutiveClippingWindows_ = 0;
+            } else if (cleanHeadroomWindows_ >= 8) {
+                const double floorDb = std::max(0.0, maxPositiveGainDb_.load());
+                targetHeadroomDb_ = std::max(floorDb, targetDb - 0.25);
+                cleanHeadroomWindows_ = 0;
+            }
+            const double rms = std::sqrt(
+                measurementSquareSum_ / static_cast<double>(measurementSampleCount_));
+            const double inputClipRatio = inputMeasurementSampleCount_ == 0 ? 0.0 :
+                static_cast<double>(inputClipped) * 100.0 / static_cast<double>(inputMeasurementSampleCount_);
+            const double outputClipRatio = static_cast<double>(outputClipped) * 100.0 /
+                static_cast<double>(measurementSampleCount_);
             OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                "output level eq=%{public}d peak=%{public}.1f rms=%{public}.1f samples=%{public}llu",
-                equalizerEnabled ? 1 : 0, static_cast<double>(measurementPeak_), rms,
-                static_cast<unsigned long long>(measurementSampleCount_));
+                "audio level eq=%{public}d peak=%{public}d rms=%{public}.1f "
+                "inputClip=%{public}llu(%{public}.4f%%) outputClip=%{public}llu(%{public}.4f%%) "
+                "headroomDb=%{public}.1f",
+                equalizerEnabled ? 1 : 0, measurementPeak_, rms,
+                static_cast<unsigned long long>(inputClipped), inputClipRatio,
+                static_cast<unsigned long long>(outputClipped), outputClipRatio, headroomDb_.load());
             measurementSquareSum_ = 0.0;
             measurementSampleCount_ = 0;
             measurementPeak_ = 0;
+            inputMeasurementSampleCount_ = 0;
+            inputPositiveFullScaleCount_ = 0;
+            inputNegativeFullScaleCount_ = 0;
+            outputPositiveFullScaleCount_ = 0;
+            outputNegativeFullScaleCount_ = 0;
         }
     }
 
@@ -1217,6 +1342,14 @@ private:
         delete callbackData;
     }
 
+    enum class DecoderLifecycle : int32_t {
+        STOPPED = 0,
+        STARTED = 1,
+        SEEKING = 2,
+        FAILED = 3,
+        STOPPING = 4,
+    };
+
     int32_t sourceFd_ = -1;
     OH_AVSource* source_ = nullptr;
     OH_AVDemuxer* demuxer_ = nullptr;
@@ -1234,22 +1367,15 @@ private:
     int64_t durationUs_ = 0;
     std::string mime_;
     std::thread decoderThread_;
-    std::mutex codecQueueMutex_;
-    std::condition_variable codecQueueCondition_;
-    std::deque<CodecBufferItem> inputBuffers_;
-    std::deque<CodecBufferItem> outputBuffers_;
-    std::atomic<uint64_t> codecGeneration_ = 0;
-    std::atomic<bool> acceptingCodecCallbacks_ = false;
-    std::atomic<CodecState> codecState_ = CodecState::EMPTY;
-    std::atomic<RendererState> rendererState_ = RendererState::EMPTY;
-    std::atomic<StartupStage> startupStage_ = StartupStage::IDLE;
-    bool pipelineStarted_ = false;
     std::mutex queueMutex_;
     std::condition_variable queueCondition_;
     std::deque<uint8_t> pcmQueue_;
     const size_t maxQueueBytes_ = 48000 * 2 * 2 / 4;
     std::atomic<bool> stopRequested_ = true;
     std::atomic<bool> seekRequested_ = false;
+    std::atomic<uint64_t> seekRequestSequence_ = 0;
+    std::atomic<bool> decoderFailureLogged_ = false;
+    std::atomic<DecoderLifecycle> decoderLifecycle_ = DecoderLifecycle::STOPPED;
     std::atomic<bool> paused_ = false;
     std::atomic<bool> completed_ = false;
     std::atomic<bool> decodingEnded_ = false;
@@ -1264,11 +1390,27 @@ private:
     float volume_ = 1.0f;
     double measurementSquareSum_ = 0.0;
     uint64_t measurementSampleCount_ = 0;
+    uint64_t inputMeasurementSampleCount_ = 0;
+    uint64_t inputPositiveFullScaleCount_ = 0;
+    uint64_t inputNegativeFullScaleCount_ = 0;
+    uint64_t outputPositiveFullScaleCount_ = 0;
+    uint64_t outputNegativeFullScaleCount_ = 0;
     int32_t measurementPeak_ = 0;
+    int32_t consecutiveClippingWindows_ = 0;
+    int32_t cleanHeadroomWindows_ = 0;
+    std::atomic<double> maxPositiveGainDb_ = 0.0;
+    std::atomic<double> targetHeadroomDb_ = 0.0;
+    std::atomic<double> headroomDb_ = 0.0;
     std::array<int32_t, EQUALIZER_BAND_NUM> bands_ = {};
     std::mutex pcmCallbackMutex_;
     std::mutex effectMutex_;
     napi_threadsafe_function pcmCaptureFunction_ = nullptr;
+    // 重采样状态：解码器输出源采样率 PCM，均衡器管线固定 48000
+    double resamplePos_ = 0.0;
+    int32_t resampleInputRate_ = 44100;
+    int32_t resampleOutputRate_ = 48000;
+    std::deque<int16_t> resampleLeft_ = {};
+    std::deque<int16_t> resampleRight_ = {};
 };
 
 napi_value BooleanValue(napi_env env, bool value)

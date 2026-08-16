@@ -8,13 +8,57 @@ const TAG = 'LiveViewService';
 const LIVE_VIEW_ID: number = 1;
 const LIVE_VIEW_EVENT: string = 'MUSIC';
 
+interface LiveViewTextItem {
+  text: string;
+  textColor?: string;
+}
+
+interface CapsuleData {
+  type: number;
+  status: number;
+  icon?: string;
+  title: string;
+  content: string;
+  backgroundColor?: string;
+}
+
+interface LiveViewLayoutData {
+  layoutType: liveViewManager.LayoutType;
+  title: string;
+  content: string;
+  underlineColor?: string;
+  descPic?: string;
+}
+
+interface PrimaryData {
+  title: string;
+  content: LiveViewTextItem[];
+  keepTime: number;
+  layoutData: LiveViewLayoutData;
+  clickAction?: WantAgent;
+  liveViewLockScreenAbilityName?: string;
+  liveViewLockScreenAbilityParameters?: Record<string, string>;
+}
+
+interface LiveViewData {
+  capsule: CapsuleData;
+  primary: PrimaryData;
+}
+
 export class LiveViewService {
   private static instance: LiveViewService = new LiveViewService();
   private sequence: number = 0;
   private isRunning: boolean = false;
-  private disabledForSession: boolean = false;
-  private failureLogged: boolean = false;
   private context: common.UIAbilityContext | undefined = undefined;
+  private operationQueue: Promise<void> = Promise.resolve();
+  private lastSnapshot: string = '';
+  private cooldownUntil: number = 0;
+
+  private enqueue(operation: () => Promise<void>): Promise<void> {
+    const queued: Promise<void> = this.operationQueue.then(operation, operation);
+    this.operationQueue = queued.catch(() => {});
+    return queued;
+  }
 
   public static getInstance(): LiveViewService {
     return LiveViewService.instance;
@@ -24,9 +68,9 @@ export class LiveViewService {
     this.context = ctx;
   }
 
-  private async buildClickAction(): Promise<WantAgent | undefined> {
+  private async buildClickAction(): Promise<WantAgent | null> {
     if (!this.context) {
-      return undefined;
+      return null;
     }
     const wantAgentInfo: wantAgent.WantAgentInfo = {
       wants: [
@@ -40,109 +84,189 @@ export class LiveViewService {
       wantAgentFlags: [wantAgent.WantAgentFlags.UPDATE_PRESENT_FLAG]
     };
     try {
-      return await wantAgent.getWantAgent(wantAgentInfo);
+      const agent: WantAgent = await wantAgent.getWantAgent(wantAgentInfo);
+      return agent;
     } catch (err) {
-      this.disableForSession('buildClickAction', err as BusinessError);
-      return undefined;
-    }
-  }
-
-  private async buildLiveView(stopped: boolean = false): Promise<liveViewManager.LiveView> {
-    const title: string = stopped ? '' : (AppStorage.get<string>('uplayer_current_title') ?? '未播放');
-    const artist: string = stopped ? '' : (AppStorage.get<string>('uplayer_current_artist') ?? '');
-    const isPlay: boolean = !stopped && (AppStorage.get<boolean>(AppStorageKeyConstants.KEY_IS_PLAY) ?? false);
-    const clickAction: WantAgent | undefined = stopped ? undefined : await this.buildClickAction();
-    return {
-      id: LIVE_VIEW_ID,
-      sequence: this.sequence,
-      event: LIVE_VIEW_EVENT,
-      isMute: false,
-      liveViewData: {
-        capsule: {
-          type: liveViewManager.CapsuleType.CAPSULE_TYPE_TEXT,
-          status: isPlay ? 1 : 0,
-          icon: stopped ? undefined : 'ic_public_music',
-          title: title,
-          content: stopped ? '' : (artist.length > 0 ? artist : '未知歌手'),
-          backgroundColor: stopped ? undefined : '#1A1A1A',
-        },
-        primary: {
-          title: title,
-          content: stopped ? [] : [
-            { text: artist.length > 0 ? artist : '未知歌手' },
-            { text: isPlay ? '正在播放' : '已暂停' }
-          ],
-          keepTime: 0,
-          layoutData: {
-            layoutType: liveViewManager.LayoutType.LAYOUT_TYPE_DEFAULT
-          },
-          clickAction: clickAction,
-          liveViewLockScreenAbilityName: stopped ? undefined : 'LiveViewExtAbility',
-          liveViewLockScreenAbilityParameters: stopped ? undefined : {},
-        }
-      }
-    };
-  }
-
-  private disableForSession(operation: string, error: BusinessError): void {
-    this.disabledForSession = true;
-    this.isRunning = false;
-    if (!this.failureLogged) {
-      this.failureLogged = true;
-      Logger.error(TAG, `${operation} failed: ${error.code} ${error.message}`);
+      const error: BusinessError = err as BusinessError;
+      Logger.error(TAG, `buildClickAction failed: ${error.code} ${error.message}`);
+      return null;
     }
   }
 
   async startLiveView(): Promise<void> {
-    if (this.disabledForSession) {
-      return;
-    }
-    if (this.isRunning) {
-      await this.updateLiveView();
-      return;
-    }
-    try {
-      if (!await liveViewManager.isLiveViewEnabled()) {
-        this.disabledForSession = true;
+    await this.enqueue(async (): Promise<void> => {
+      if (new Date().getTime() < this.cooldownUntil) return;
+      if (this.isRunning) {
+        await this.performUpdate();
         return;
       }
-      this.sequence = 0;
-      await liveViewManager.startLiveView(await this.buildLiveView());
+      await this.performStart();
+    });
+  }
+
+  private async performStart(): Promise<void> {
+    try {
+      const title: string = AppStorage.get<string>('uplayer_current_title') ?? '未播放';
+      const artist: string = AppStorage.get<string>('uplayer_current_artist') ?? '';
+      const isPlay: boolean = AppStorage.get<boolean>(AppStorageKeyConstants.KEY_IS_PLAY) ?? false;
+      const clickAction: WantAgent | null = await this.buildClickAction();
+      const textItem1: LiveViewTextItem = { text: artist.length > 0 ? artist : '未知歌手' };
+      const textItem2: LiveViewTextItem = { text: isPlay ? '正在播放' : '已暂停' };
+      const capsule: CapsuleData = {
+        type: liveViewManager.CapsuleType.CAPSULE_TYPE_TEXT,
+        status: isPlay ? 1 : 0,
+        icon: 'ic_public_music',
+        title: title,
+        content: artist.length > 0 ? artist : '未知歌手',
+        backgroundColor: '#FF1A1A1A',
+      };
+      const primary: PrimaryData = {
+        title: title,
+        content: [textItem1, textItem2],
+        keepTime: 0,
+        layoutData: {
+          layoutType: liveViewManager.LayoutType.LAYOUT_TYPE_PICKUP,
+          title: title,
+          content: artist.length > 0 ? artist : '未知歌手',
+          underlineColor: '#FF007DFF',
+          descPic: 'ic_public_music',
+        },
+        clickAction: clickAction ?? undefined,
+        liveViewLockScreenAbilityName: 'LiveViewExtAbility',
+      };
+      const data: LiveViewData = {
+        capsule: capsule,
+        primary: primary,
+      };
+      const liveView: liveViewManager.LiveView = {
+        id: LIVE_VIEW_ID,
+        sequence: this.sequence,
+        event: LIVE_VIEW_EVENT,
+        isMute: false,
+        liveViewData: data,
+      };
+      await liveViewManager.startLiveView(liveView);
       this.isRunning = true;
+      this.lastSnapshot = `${title}\n${artist}\n${isPlay}`;
       Logger.info(TAG, 'startLiveView success');
     } catch (err) {
-      this.disableForSession('startLiveView', err as BusinessError);
+      this.cooldownUntil = new Date().getTime() + 30000;
+      const error: BusinessError = err as BusinessError;
+      Logger.error(TAG, `startLiveView failed: ${error.code} ${error.message}`);
     }
   }
 
   async updateLiveView(): Promise<void> {
-    if (!this.isRunning || this.disabledForSession) {
+    await this.enqueue(async (): Promise<void> => {
+      await this.performUpdate();
+    });
+  }
+
+  private async performUpdate(): Promise<void> {
+    if (!this.isRunning || new Date().getTime() < this.cooldownUntil) {
       return;
     }
     try {
+      const title: string = AppStorage.get<string>('uplayer_current_title') ?? '未播放';
+      const artist: string = AppStorage.get<string>('uplayer_current_artist') ?? '';
+      const isPlay: boolean = AppStorage.get<boolean>(AppStorageKeyConstants.KEY_IS_PLAY) ?? false;
+      const snapshot: string = `${title}\n${artist}\n${isPlay}`;
+      if (snapshot === this.lastSnapshot) return;
       this.sequence++;
-      await liveViewManager.updateLiveView(await this.buildLiveView());
+      const clickAction: WantAgent | null = await this.buildClickAction();
+      const textItem1: LiveViewTextItem = { text: artist.length > 0 ? artist : '未知歌手' };
+      const textItem2: LiveViewTextItem = { text: isPlay ? '正在播放' : '已暂停' };
+      const capsule: CapsuleData = {
+        type: liveViewManager.CapsuleType.CAPSULE_TYPE_TEXT,
+        status: isPlay ? 1 : 0,
+        icon: 'ic_public_music',
+        title: title,
+        content: artist.length > 0 ? artist : '未知歌手',
+        backgroundColor: '#FF1A1A1A',
+      };
+      const primary: PrimaryData = {
+        title: title,
+        content: [textItem1, textItem2],
+        keepTime: 0,
+        layoutData: {
+          layoutType: liveViewManager.LayoutType.LAYOUT_TYPE_PICKUP,
+          title: title,
+          content: artist.length > 0 ? artist : '未知歌手',
+          underlineColor: '#FF007DFF',
+          descPic: 'ic_public_music',
+        },
+        clickAction: clickAction ?? undefined,
+        liveViewLockScreenAbilityName: 'LiveViewExtAbility',
+      };
+      const data: LiveViewData = {
+        capsule: capsule,
+        primary: primary,
+      };
+      const liveView: liveViewManager.LiveView = {
+        id: LIVE_VIEW_ID,
+        sequence: this.sequence,
+        event: LIVE_VIEW_EVENT,
+        isMute: false,
+        liveViewData: data,
+      };
+      await liveViewManager.updateLiveView(liveView);
+      this.lastSnapshot = snapshot;
+      Logger.info(TAG, 'updateLiveView success');
     } catch (err) {
-      this.disableForSession('updateLiveView', err as BusinessError);
+      this.cooldownUntil = new Date().getTime() + 30000;
+      const error: BusinessError = err as BusinessError;
+      Logger.error(TAG, `updateLiveView failed: ${error.code} ${error.message}`);
     }
   }
 
   async stopLiveView(): Promise<void> {
-    if (!this.isRunning) {
-      this.disabledForSession = false;
-      this.failureLogged = false;
-      return;
-    }
+    await this.enqueue(async (): Promise<void> => {
+      if (!this.isRunning) {
+        this.lastSnapshot = '';
+        this.cooldownUntil = 0;
+        return;
+      }
+      await this.performStop();
+    });
+  }
+
+  private async performStop(): Promise<void> {
     try {
-      this.sequence++;
-      await liveViewManager.stopLiveView(await this.buildLiveView(true));
+      const capsule: CapsuleData = {
+        type: liveViewManager.CapsuleType.CAPSULE_TYPE_TEXT,
+        status: 0,
+        title: '',
+        content: '',
+      };
+      const primary: PrimaryData = {
+        title: '',
+        content: [],
+        keepTime: 0,
+        layoutData: {
+          layoutType: liveViewManager.LayoutType.LAYOUT_TYPE_PICKUP,
+          title: '',
+          content: '',
+          underlineColor: '#FF007DFF',
+        },
+      };
+      const data: LiveViewData = {
+        capsule: capsule,
+        primary: primary,
+      };
+      const liveView: liveViewManager.LiveView = {
+        id: LIVE_VIEW_ID,
+        sequence: this.sequence,
+        event: LIVE_VIEW_EVENT,
+        liveViewData: data,
+      };
+      await liveViewManager.stopLiveView(liveView);
+      this.isRunning = false;
+      this.lastSnapshot = '';
+      this.cooldownUntil = 0;
       Logger.info(TAG, 'stopLiveView success');
     } catch (err) {
-      this.disableForSession('stopLiveView', err as BusinessError);
-    } finally {
-      this.isRunning = false;
-      this.disabledForSession = false;
-      this.failureLogged = false;
+      const error: BusinessError = err as BusinessError;
+      Logger.error(TAG, `stopLiveView failed: ${error.code} ${error.message}`);
     }
   }
 }

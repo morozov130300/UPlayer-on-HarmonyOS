@@ -13,12 +13,12 @@ import { AVPlayerService } from '../service/AVPlayerService';
 import { DataService } from '../service/DataService';
 import { ColorHelper } from '../common/utils/ColorHelper';
 import { common } from '@kit.AbilityKit';
-import { PreferencesUtil } from '../common/utils/PreferencesUtil';
 import { MediaTools } from '../common/utils/mediautils/MediaTools';
 import { WindowInfo } from '../common/utils/WindowUtil';
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
 import { audio } from '@kit.AudioKit';
 import { AlbumCover } from '../component/AlbumCover';
+import { AVSessionController } from '../common/utils/mediautils/AVSessionController';
 
 const TAG = 'ControlAreaComponent';
 const SKIP_MS: number = 15000;
@@ -74,6 +74,7 @@ export struct ControlAreaComponent {
       this.playNext();
     };
     this.songDataSource.reloadData(this.songList);
+    this.syncPlayModeIndex();
     this.syncSystemVolume();
   }
 
@@ -106,6 +107,14 @@ export struct ControlAreaComponent {
     }
   }
 
+  private syncPlayModeIndex(): void {
+    const index: number = PlayModeSwitchList.indexOf(this.playMode);
+    this.playModeIndex = index >= 0 ? index : 0;
+    if (index < 0) {
+      this.playMode = PlayModeSwitchList[0];
+    }
+  }
+
   switchPlayMode() {
     if (this.playModeIndex === PlayModeSwitchList.length - 1) {
       this.playModeIndex = 0;
@@ -113,6 +122,8 @@ export struct ControlAreaComponent {
       this.playModeIndex++;
     }
     this.playMode = PlayModeSwitchList[this.playModeIndex];
+    DataService.getInstance().setPlayMode(this.playMode);
+    AVSessionController.getInstance().setPlayModeToAVSession(this.playMode);
     Logger.info(TAG, 'playModeIndex is' + this.playModeIndex);
     try {
       this.promptAction.openToast({
@@ -386,7 +397,6 @@ export struct ControlAreaComponent {
             title: this.playListTitle(),
             showClose: true,
             preferType: SheetType.CENTER,
-            radius: LengthMetrics.vp(24),
             onWillAppear: () => {
               Logger.info(TAG, 'musicListBuilder');
               this.scroller.scrollToIndex(this.selectIndex, false, ScrollAlign.CENTER);

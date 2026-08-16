@@ -5,7 +5,9 @@ import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstan
 import { fileIo as fs, fileShare } from '@kit.CoreFileKit'
 import Logger from '../common/utils/Logger'
 import { common } from '@kit.AbilityKit'
+import { BusinessError } from '@kit.BasicServicesKit'
 import { AudioMetadataService } from './AudioMetadataService'
+import { MusicPlayMode } from '../common/constants/PlayerConstants'
 
 const TAG = 'DataService'
 
@@ -17,6 +19,7 @@ const KEY_VIEW_MODE: string = 'uplayer_view_mode'
 const KEY_SELECTED_FOLDERS: string = 'uplayer_selected_folders'
 const KEY_FAVORITES_SELECTED: string = 'uplayer_favorites_selected'
 const KEY_PLAY_NEXT_QUEUE: string = 'uplayer_play_next_queue'
+const KEY_PLAY_MODE: string = 'uplayer_play_mode'
 const EQUALIZER_MIN_GAIN_DB: number = -10
 const EQUALIZER_MAX_GAIN_DB: number = 10
 
@@ -53,8 +56,6 @@ export class AppSettingsData {
 export class DataService {
   private static instance: DataService = new DataService()
   private songsCache: SongInfo[] | undefined = undefined
-  private uriActivationInFlight: boolean = false
-  private uriActivationCompleted: boolean = false
 
   public static getInstance(): DataService {
     return DataService.instance
@@ -446,6 +447,19 @@ export class DataService {
     AppStorage.setOrCreate(KEY_VIEW_MODE, mode)
   }
 
+  getPlayMode(): MusicPlayMode {
+    const raw = this.getPref().getValue(KEY_PLAY_MODE)
+    if (raw === MusicPlayMode.SINGLE_CYCLE || raw === MusicPlayMode.ORDER || raw === MusicPlayMode.RANDOM) {
+      return raw as MusicPlayMode
+    }
+    return MusicPlayMode.ORDER
+  }
+
+  setPlayMode(mode: MusicPlayMode): void {
+    this.getPref().preferencesPut(KEY_PLAY_MODE, mode)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PLAY_MODE, mode)
+  }
+
   getSelectedFolderPaths(): string[] {
     const raw = this.getPref().getValue(KEY_SELECTED_FOLDERS)
     if (raw === undefined) return []
@@ -549,6 +563,7 @@ export class DataService {
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_LIBRARY_REVISION, 0)
     AppStorage.setOrCreate(KEY_SORT_MODE, this.getSortMode())
     AppStorage.setOrCreate(KEY_VIEW_MODE, this.getViewMode())
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PLAY_MODE, this.getPlayMode())
     this.checkSongsAccessibility()
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SONG_LIST, this.getSongs())
     AppStorage.setOrCreate(KEY_FOLDER_LIST, this.getFolders())
@@ -568,52 +583,50 @@ export class DataService {
     return settings
   }
 
-  private isPersistedAuthorizationUri(uri: string): boolean {
-    const schemeEnd: number = uri.indexOf('://')
-    if (schemeEnd <= 0) {
-      return false
-    }
-    const scheme: string = uri.substring(0, schemeEnd).toLowerCase()
-    return scheme === 'file' || scheme === 'datashare'
+  private isPersistableUri(value: string): boolean {
+    return value.startsWith('file://') || value.startsWith('datashare://') || value.startsWith('content://')
   }
 
   async activatePersistedUris(): Promise<void> {
-    if (this.uriActivationInFlight || this.uriActivationCompleted) {
-      return
-    }
     if (!canIUse('SystemCapability.FileManagement.AppFileService.FolderAuthorization')) {
       Logger.info(TAG, 'activatePersistedUris: FolderAuthorization not supported')
-      this.uriActivationCompleted = true
       return
     }
     const songs: SongInfo[] = this.getSongs()
-    const uriSet: Set<string> = new Set<string>()
+    const uniqueUris: Set<string> = new Set<string>()
     for (let i = 0; i < songs.length; i++) {
-      if (this.isPersistedAuthorizationUri(songs[i].uri)) {
-        uriSet.add(songs[i].uri)
-      }
-      if (this.isPersistedAuthorizationUri(songs[i].lyricUri)) {
-        uriSet.add(songs[i].lyricUri)
-      }
+      if (this.isPersistableUri(songs[i].uri)) uniqueUris.add(songs[i].uri)
+      if (this.isPersistableUri(songs[i].lyricUri)) uniqueUris.add(songs[i].lyricUri)
     }
-    const uris: string[] = Array.from(uriSet)
-    if (uris.length === 0) {
-      this.uriActivationCompleted = true
-      return
-    }
-    this.uriActivationInFlight = true
-    for (let i = 0; i < uris.length; i++) {
-      const policyInfo: fileShare.PolicyInfo = {
-        uri: uris[i],
-        operationMode: fileShare.OperationMode.READ_MODE,
+    const uris: string[] = Array.from(uniqueUris)
+    const batchSize: number = 500
+    for (let offset = 0; offset < uris.length; offset += batchSize) {
+      const batch: string[] = uris.slice(offset, offset + batchSize)
+      const policies: fileShare.PolicyInfo[] = []
+      for (let i = 0; i < batch.length; i++) {
+        policies.push({ uri: batch[i], operationMode: fileShare.OperationMode.READ_MODE })
       }
       try {
-        await fileShare.activatePermission([policyInfo])
+        const persistent: boolean[] = await fileShare.checkPersistentPermission(policies)
+        const authorized: fileShare.PolicyInfo[] = []
+        for (let i = 0; i < policies.length; i++) {
+          if (persistent[i]) authorized.push(policies[i])
+        }
+        if (authorized.length > 0) {
+          await fileShare.activatePermission(authorized)
+          Logger.info(TAG, `activatePersistedUris: activated ${authorized.length} URIs`)
+        }
       } catch (err) {
-        Logger.warn(TAG, `activatePersistedUris: skip invalid URI ${uris[i]}: ${JSON.stringify(err)}`)
+        const error: BusinessError<Array<fileShare.PolicyErrorResult>> =
+          err as BusinessError<Array<fileShare.PolicyErrorResult>>
+        if (error.data !== undefined) {
+          for (let i = 0; i < error.data.length; i++) {
+            Logger.error(TAG, `activatePersistedUris failed uri=${error.data[i].uri} code=${error.data[i].code}`)
+          }
+        } else {
+          Logger.error(TAG, `activatePersistedUris failed: code=${error.code} message=${error.message}`)
+        }
       }
     }
-    this.uriActivationInFlight = false
-    this.uriActivationCompleted = true
   }
 }

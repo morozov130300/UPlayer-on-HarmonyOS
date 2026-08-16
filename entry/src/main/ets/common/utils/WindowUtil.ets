@@ -59,6 +59,7 @@ export class WindowUtil {
     const buttonHeight: number = this.uiContext.px2vp(titleButtonRect.height)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TITLE_BUTTON_WIDTH, buttonWidth)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TITLE_BUTTON_HEIGHT, buttonHeight)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TOP_HEIGHT, buttonHeight)
   }
 
   setupImmersiveTitleButtons(): void {
@@ -66,17 +67,19 @@ export class WindowUtil {
       return
     }
     try {
+      this.mainWindow.setWindowDecorHeight(56)
       this.mainWindow.setWindowDecorVisible(false)
       this.mainWindow.setWindowTitleButtonVisible(true, true, true)
       this.mainWindow.setWindowTitleMoveEnabled(true)
       const decorButtonStyle: window.DecorButtonStyle = {
         buttonBackgroundSize: 40,
-        spacingBetweenButtons: 8,
+        spacingBetweenButtons: 4,
         closeButtonRightMargin: 8,
         buttonIconSize: 18,
         buttonBackgroundCornerRadius: 8
       }
       this.mainWindow.setDecorButtonStyle(decorButtonStyle)
+      this.updateTitleButtonRect(this.mainWindow.getTitleButtonRect())
       this.mainWindow.on('windowTitleButtonRectChange', this.onTitleButtonRectChange)
     } catch (err) {
       Logger.error(TAG, `setupImmersiveTitleButtons failed: ${JSON.stringify(err)}`)

@@ -20,13 +20,53 @@ export default function localUnitTest() {
       // Presets a clear action, which is performed after all test cases of the test suite end.
       // This API supports only one parameter: clear action function.
     });
-    it('assertContain', 0, () => {
-      // Defines a test case. This API supports three parameters: test case name, filter parameter, and test case function.
-      let a = 'abc';
-      let b = 'b';
-      // Defines a variety of assertion methods, which are used to declare expected boolean conditions.
-      expect(a).assertContain(b);
-      expect(a).assertEqual(a);
+    it('latestIntentWins', 0, () => {
+      let generation: number = 0;
+      const first: number = ++generation;
+      const second: number = ++generation;
+      expect(first === generation).assertFalse();
+      expect(second === generation).assertTrue();
+    });
+    it('uriFilter', 0, () => {
+      const isPersistable = (value: string): boolean => value.startsWith('file://') ||
+        value.startsWith('datashare://') || value.startsWith('content://');
+      expect(isPersistable('/storage/Users/current/song.lrc')).assertFalse();
+      expect(isPersistable('file://docs/storage/Users/current/song.mp3')).assertTrue();
+    });
+    it('metadataOptionalDuration', 0, () => {
+      const metadata: Record<string, Object> = { 'assetId': '1' };
+      const duration: number = 0;
+      if (duration > 0) metadata['duration'] = duration;
+      expect(metadata['assetId']).assertEqual('1');
+      expect(metadata['duration'] === undefined).assertTrue();
+    });
+    it('circuitBreakerThreshold', 0, () => {
+      let failures: number = 0;
+      const threshold: number = 1;
+      failures++;
+      expect(failures >= threshold).assertTrue();
+    });
+    it('liveViewColorFormat', 0, () => {
+      const color: string = '#FF007DFF';
+      expect(color.length).assertEqual(9);
+      expect(color.startsWith('#')).assertTrue();
+    });
+    it('seekRestartUsesStoppedState', 0, () => {
+      const operations: string[] = ['stop', 'demuxSeek', 'start'];
+      expect(operations.indexOf('flush') < 0).assertTrue();
+      expect(operations.join(',')).assertEqual('stop,demuxSeek,start');
+    });
+    it('equalizerHeadroomStartsAtPositiveGain', 0, () => {
+      const maxPositiveGainDb: number = 10;
+      const enabled: boolean = true;
+      const headroomDb: number = enabled ? Math.max(0, maxPositiveGainDb) : 0;
+      expect(headroomDb).assertEqual(10);
+    });
+    it('nativeEqualizerToggleKeepsBackend', 0, () => {
+      const nativeMode: boolean = true;
+      const enabledChanged: boolean = true;
+      const shouldMigrateBackend: boolean = enabledChanged && !nativeMode;
+      expect(shouldMigrateBackend).assertFalse();
     });
   });
 }

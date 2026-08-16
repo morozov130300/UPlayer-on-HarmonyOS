@@ -57,7 +57,7 @@ export class SongScanner {
           songs.push(song)
           allUrisToPersist.push(uri)
           metadataTasks.push(metadataService.extractAndSaveMetadata(song, context))
-          if (metadataTasks.length >= 4) {
+          if (metadataTasks.length >= 1) {
             await Promise.all(metadataTasks)
             metadataTasks.length = 0
           }
@@ -67,6 +67,7 @@ export class SongScanner {
         await Promise.all(metadataTasks)
       }
       await this.persistUris(allUrisToPersist)
+      AudioMetadataService.getInstance().prefetchAlbumCovers(songs)
       Logger.info(TAG, `picked ${songs.length} audio files`)
       return songs
     } catch (err) {

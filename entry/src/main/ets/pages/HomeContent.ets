@@ -8,6 +8,7 @@ import { DisplayItemDataSource } from '../viewmodel/DisplayItemDataSource'
 import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { AlbumCover } from '../component/AlbumCover'
+import { AlbumCoverSize, AudioMetadataService } from '../service/AudioMetadataService'
 
 const TAG = 'HomeContent'
 
@@ -56,6 +57,13 @@ export struct HomeContent {
   loadData(): void {
     this.failedArtIds = new Set<string>()
     this.songs = this.dataService.getSongs()
+    // 只预取首屏可见区域，避免一打开就触发全部歌曲的封面解码
+    const visible: SongInfo[] = []
+    const prefetchCount: number = Math.min(this.songs.length, 12)
+    for (let i = 0; i < prefetchCount; i++) {
+      if (this.songs[i].isAvailable) visible.push(this.songs[i])
+    }
+    AudioMetadataService.getInstance().prefetchAlbumCovers(visible, AlbumCoverSize.SMALL)
     this.settings = this.dataService.getSettings()
     this.viewMode = this.dataService.getViewMode()
     this.sortMode = this.dataService.getSortMode()
@@ -396,6 +404,7 @@ export struct HomeContent {
           .width('100%')
           .height('100%')
           .edgeEffect(EdgeEffect.Spring)
+          .cachedCount(8)
           .onDidScroll(() => {
             const offset = this.scroller.currentOffset()
             const yOffset: number = offset.yOffset
@@ -510,7 +519,7 @@ export struct HomeContent {
       }
 
       AlbumCover({ song: item, coverWidth: this.scaledSize(36), coverHeight: this.scaledSize(36),
-        coverRadius: this.scaledSize(6) })
+        coverRadius: this.scaledSize(6), decodeSize: AlbumCoverSize.SMALL })
         .margin({ right: this.scaledSize(10) })
         .opacity(item.isAvailable ? 1 : 0.35)
 

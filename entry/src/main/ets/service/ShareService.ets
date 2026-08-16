@@ -36,10 +36,7 @@ export class ShareService {
       return
     }
     try {
-      this.capabilityRegistry = {
-        windowId: mainWindow.getWindowProperties().id,
-        sendOnly: true
-      }
+      this.capabilityRegistry = { windowId: mainWindow.getWindowProperties().id }
       this.registerKnockShare()
       this.registerGesturesShare()
     } catch (err) {

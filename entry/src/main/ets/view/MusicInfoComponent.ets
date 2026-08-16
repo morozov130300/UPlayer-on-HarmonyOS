@@ -115,7 +115,8 @@ export struct MusicInfoComponent {
           .opacity(this.isPlay ? 0.8 : 0)
           .animation({ duration: StyleConstants.ANIMATION_COVER_CROSS_FADE_DURATION, curve: Curve.EaseInOut })
         AlbumCover({ song: this.songList && this.selectIndex >= 0 && this.selectIndex < this.songList.length ?
-          this.songList[this.selectIndex] : new SongInfo(), coverWidth: '100%', coverHeight: '100%', coverRadius: 8 })
+          this.songList[this.selectIndex] : new SongInfo(), coverWidth: '100%', coverHeight: '100%', coverRadius: 8,
+          decodeSize: 640 })
           .width('100%')
           .aspectRatio(1)
           .constraintSize({ maxWidth: '100%', maxHeight: '50%' })

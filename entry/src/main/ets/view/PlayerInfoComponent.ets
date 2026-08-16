@@ -13,7 +13,7 @@ import { ColorConversion } from '../common/utils/ColorConversion';
 import { WindowInfo } from '../common/utils/WindowUtil';
 import { PromptActionClassNew } from '../viewmodel/PromptActionClassNew';
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
-import { AudioMetadataService } from '../service/AudioMetadataService';
+import { AlbumCoverLease, AlbumCoverSize, AudioMetadataService } from '../service/AudioMetadataService';
 
 const TAG = 'PlayerInfoComponent'
 
@@ -43,6 +43,9 @@ export struct PlayerInfoComponent {
   @State currentSwiperIndex: number = 0;
   private context: common.UIAbilityContext | undefined = AppStorage.get(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT);
   private imageLoadRequestId: number = 0;
+  private backgroundCoverLease: AlbumCoverLease | undefined = undefined;
+  private currentBackgroundMap: image.PixelMap | undefined = undefined;
+  private previousBackgroundMap: image.PixelMap | undefined = undefined;
 
   bottomHeightChange() {
   }
@@ -69,10 +72,24 @@ export struct PlayerInfoComponent {
 
   aboutToDisappear(): void {
     clearInterval(this.intervalID);
+    this.imageLoadRequestId++;
+    this.backgroundCoverLease?.release();
+    this.backgroundCoverLease = undefined;
+    this.currentBackgroundMap?.release();
+    this.currentBackgroundMap = undefined;
+    this.previousBackgroundMap?.release();
+    this.previousBackgroundMap = undefined;
   }
 
   build() {
     Stack() {
+      Column()
+        .width('100%')
+        .height(this.topHeight)
+        .backgroundColor(this.imageColor)
+        .position({ top: 0 })
+        .zIndex(1)
+
       Image(this.prevImageLabel)
         .size(this.mainWindowInfo.heightBp !== HeightBreakpoint.HEIGHT_LG ?
           { width: PlayerConstants.BACK_IMAGE, height: '100%' } :
@@ -302,20 +319,75 @@ export struct PlayerInfoComponent {
 
   private async loadAlbumArt(song: SongInfo): Promise<void> {
     const requestId: number = ++this.imageLoadRequestId;
+    let coverLease: AlbumCoverLease | undefined = undefined;
     try {
-      const pixelMap: image.PixelMap | undefined = await AudioMetadataService.getInstance().fetchAlbumCover(song);
-      if (pixelMap === undefined) {
-        this.setDefaultBackground();
+      coverLease = await AudioMetadataService.getInstance().acquireAlbumCover(song, AlbumCoverSize.LARGE);
+      if (coverLease === undefined) {
+        if (requestId === this.imageLoadRequestId) {
+          this.setDefaultBackground();
+        }
         return;
       }
+      if (requestId !== this.imageLoadRequestId) {
+        return;
+      }
+      this.backgroundCoverLease?.release();
+      this.backgroundCoverLease = coverLease;
+      const pixelMap: image.PixelMap = coverLease.pixelMap;
+      await this.updateImageColor(pixelMap, requestId);
+      const headFilter = effectKit.createEffect(pixelMap);
+      if (headFilter === null) {
+        return;
+      }
+      headFilter.blur(PlayerConstants.IMAGE_BLUR);
+      const value: image.PixelMap = await headFilter.getEffectPixelMap();
+      if (requestId !== this.imageLoadRequestId) {
+        value.release();
+        return;
+      }
+      this.previousBackgroundMap?.release();
+      this.previousBackgroundMap = this.currentBackgroundMap;
+      this.currentBackgroundMap = value;
+      this.prevImageLabel = this.imageLabel;
+      this.getUIContext()?.animateTo({
+        duration: StyleConstants.ANIMATION_BACKGROUND_FADE_DURATION,
+        curve: Curve.EaseOut
+      }, () => {
+        this.prevImageOpacity = 0.5;
+      });
+      this.imageLabel = value;
+      setTimeout(() => {
         if (requestId !== this.imageLoadRequestId) {
-          pixelMap.release();
           return;
         }
-        effectKit.createColorPicker(pixelMap, (error: BusinessError, colorPicker: effectKit.ColorPicker) => {
-          if (requestId !== this.imageLoadRequestId) {
-            return;
+        this.getUIContext()?.animateTo({
+          duration: StyleConstants.ANIMATION_PLAYER_BACKGROUND_DURATION,
+          curve: Curve.EaseOut
+        }, () => {
+          this.prevImageOpacity = 0;
+        });
+        setTimeout(() => {
+          if (requestId === this.imageLoadRequestId) {
+            this.prevImageLabel = $r('app.media.ic_public_music');
+            this.previousBackgroundMap?.release();
+            this.previousBackgroundMap = undefined;
           }
+        }, StyleConstants.ANIMATION_PLAYER_BACKGROUND_DURATION);
+      }, StyleConstants.ANIMATION_PRESS_DELAY_SHORT);
+    } catch (err) {
+      Logger.error(`loadAlbumArt failed: ${JSON.stringify(err)}`);
+    } finally {
+      if (this.backgroundCoverLease === coverLease) {
+        this.backgroundCoverLease = undefined;
+      }
+      coverLease?.release();
+    }
+  }
+
+  private async updateImageColor(pixelMap: image.PixelMap, requestId: number): Promise<void> {
+    await new Promise<void>((resolve: () => void): void => {
+      effectKit.createColorPicker(pixelMap, (error: BusinessError, colorPicker: effectKit.ColorPicker) => {
+        if (requestId === this.imageLoadRequestId) {
           if (error) {
             Logger.error('Failed to create color picker.');
           } else {
@@ -323,29 +395,9 @@ export struct PlayerInfoComponent {
             const colorArr: number[] = ColorConversion.dealColor(color.red, color.green, color.blue);
             this.imageColor = `rgba(${colorArr[0]}, ${colorArr[1]}, ${colorArr[2]}, 1)`;
           }
-        });
-        const headFilter = effectKit.createEffect(pixelMap);
-        if (headFilter !== null) {
-          headFilter.blur(PlayerConstants.IMAGE_BLUR);
-          headFilter.getEffectPixelMap().then((value: image.PixelMap) => {
-            if (requestId !== this.imageLoadRequestId) {
-              value.release();
-              return;
-            }
-            this.prevImageLabel = this.imageLabel;
-            this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_BACKGROUND_FADE_DURATION, curve: Curve.EaseOut }, () => {
-              this.prevImageOpacity = 0.5;
-            });
-            this.imageLabel = value;
-            setTimeout(() => {
-              this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_PLAYER_BACKGROUND_DURATION, curve: Curve.EaseOut }, () => {
-                this.prevImageOpacity = 0;
-              });
-            }, StyleConstants.ANIMATION_PRESS_DELAY_SHORT);
-          });
         }
-    } catch (err) {
-      Logger.error(`loadAlbumArt failed: ${JSON.stringify(err)}`);
-    }
+        resolve();
+      });
+    });
   }
 }

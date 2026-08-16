@@ -1,6 +1,6 @@
 import { image } from '@kit.ImageKit'
 import { SongInfo } from '../model/SongInfo'
-import { AudioMetadataService } from '../service/AudioMetadataService'
+import { AlbumCoverLease, AlbumCoverSize, AudioMetadataService } from '../service/AudioMetadataService'
 
 @Component
 export struct AlbumCover {
@@ -9,8 +9,11 @@ export struct AlbumCover {
   @Prop coverHeight: Length = 48
   @Prop coverRadius: Length = 0
   @Prop fit: ImageFit = ImageFit.Cover
+  @Prop decodeSize: number = AlbumCoverSize.SMALL
   @State cover: image.PixelMap | undefined = undefined
+  private coverLease: AlbumCoverLease | undefined = undefined
   private requestId: number = 0
+  private retryTimer: number = -1
 
   aboutToAppear(): void {
     this.load()
@@ -22,27 +25,38 @@ export struct AlbumCover {
   }
 
   private onSongChange(): void {
+    this.requestId++
+    this.releaseCover()
     this.load()
   }
 
   private async load(): Promise<void> {
     const requestId: number = ++this.requestId
-    const loaded: image.PixelMap | undefined = await AudioMetadataService.getInstance().fetchAlbumCover(this.song)
-    if (requestId !== this.requestId) {
-      if (loaded !== undefined) {
-        loaded.release()
+    const songId: string = this.song.id
+    const songPath: string = this.song.uri.length > 0 ? this.song.uri : this.song.filePath
+    try {
+      const loaded: AlbumCoverLease | undefined =
+        await AudioMetadataService.getInstance().acquireAlbumCover(this.song, this.decodeSize)
+      const currentPath: string = this.song.uri.length > 0 ? this.song.uri : this.song.filePath
+      if (requestId !== this.requestId || songId !== this.song.id || songPath !== currentPath) {
+        loaded?.release()
+        return
       }
-      return
+      const previousLease: AlbumCoverLease | undefined = this.coverLease
+      this.coverLease = loaded
+      this.cover = loaded?.pixelMap
+      previousLease?.release()
+    } catch (_) {
+      if (requestId === this.requestId) {
+        this.releaseCover()
+      }
     }
-    this.releaseCover()
-    this.cover = loaded
   }
 
   private releaseCover(): void {
-    if (this.cover !== undefined) {
-      this.cover.release()
-      this.cover = undefined
-    }
+    this.cover = undefined
+    this.coverLease?.release()
+    this.coverLease = undefined
   }
 
   build() {

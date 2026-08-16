@@ -12,93 +12,116 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { wantAgent, common, WantAgent } from '@kit.AbilityKit';
+import { wantAgent, common } from '@kit.AbilityKit';
 import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import Logger from './Logger';
 
 const TAG = 'BackgroundUtil';
 
+enum ContinuousTaskState {
+  STOPPED,
+  STARTING,
+  RUNNING,
+  STOPPING
+}
+
 // [Start BackgroundUtil]
 export class BackgroundUtil {
-  private static isRunning: boolean = false;
-  private static startPromise: Promise<boolean> | undefined = undefined;
-  private static stopPromise: Promise<boolean> | undefined = undefined;
+  private static state: ContinuousTaskState = ContinuousTaskState.STOPPED;
+  private static operation: Promise<void> = Promise.resolve();
+  private static stopQueued: boolean = false;
+  private static startQueued: boolean = false;
 
-  public static startContinuousTask(context?: common.UIAbilityContext): Promise<boolean> {
+  /**
+   * Start background task.
+   *
+   * @param context
+   */
+  public static startContinuousTask(context?: common.UIAbilityContext): void {
     if (!context) {
-      Logger.error(TAG, 'startContinuousTask failed', 'context undefined');
-      return Promise.resolve(false);
+      Logger.error(TAG, 'startContinuousTask failed', `context undefined`);
+      return;
     }
-    if (BackgroundUtil.isRunning) {
-      return Promise.resolve(true);
+    if (BackgroundUtil.state === ContinuousTaskState.STARTING ||
+      BackgroundUtil.state === ContinuousTaskState.RUNNING) {
+      return;
     }
-    if (BackgroundUtil.startPromise !== undefined) {
-      return BackgroundUtil.startPromise;
+    if (BackgroundUtil.state === ContinuousTaskState.STOPPING) {
+      BackgroundUtil.startQueued = true;
+      return;
     }
-    BackgroundUtil.startPromise = BackgroundUtil.start(context);
-    return BackgroundUtil.startPromise;
-  }
-
-  private static async start(context: common.UIAbilityContext): Promise<boolean> {
-    const wantAgentInfo: wantAgent.WantAgentInfo = {
-      wants: [
-        {
-          bundleName: context.abilityInfo.bundleName,
-          abilityName: context.abilityInfo.name
+    BackgroundUtil.state = ContinuousTaskState.STARTING;
+    BackgroundUtil.stopQueued = false;
+    BackgroundUtil.startQueued = false;
+    BackgroundUtil.operation = BackgroundUtil.operation.then(async () => {
+      if (BackgroundUtil.state !== ContinuousTaskState.STARTING) {
+        return;
+      }
+      const wantAgentInfo: wantAgent.WantAgentInfo = {
+        wants: [
+          {
+            bundleName: context.abilityInfo.bundleName,
+            abilityName: context.abilityInfo.name
+          }
+        ],
+        operationType: wantAgent.OperationType.START_ABILITY,
+        requestCode: 0,
+        wantAgentFlags: [wantAgent.WantAgentFlags.UPDATE_PRESENT_FLAG]
+      };
+      try {
+        const wantAgentObj: Object = await wantAgent.getWantAgent(wantAgentInfo);
+        await backgroundTaskManager.startBackgroundRunning(context,
+          backgroundTaskManager.BackgroundMode.AUDIO_PLAYBACK, wantAgentObj);
+        BackgroundUtil.state = ContinuousTaskState.RUNNING;
+        Logger.info(TAG, 'startBackgroundRunning succeeded');
+        if (BackgroundUtil.stopQueued) {
+          BackgroundUtil.stopQueued = false;
+          BackgroundUtil.stopContinuousTask(context);
         }
-      ],
-      operationType: wantAgent.OperationType.START_ABILITY,
-      requestCode: 0,
-      wantAgentFlags: [wantAgent.WantAgentFlags.UPDATE_PRESENT_FLAG]
-    };
-    try {
-      const agent: WantAgent = await wantAgent.getWantAgent(wantAgentInfo);
-      await backgroundTaskManager.startBackgroundRunning(context,
-        backgroundTaskManager.BackgroundMode.AUDIO_PLAYBACK, agent);
-      BackgroundUtil.isRunning = true;
-      Logger.info(TAG, 'startBackgroundRunning succeeded');
-      return true;
-    } catch (err) {
-      const error: BusinessError = err as BusinessError;
-      Logger.error(TAG, `startBackgroundRunning failed: code ${error.code}, message ${error.message}`);
-      return false;
-    } finally {
-      BackgroundUtil.startPromise = undefined;
-    }
+      } catch (error) {
+        BackgroundUtil.state = ContinuousTaskState.STOPPED;
+        BackgroundUtil.stopQueued = false;
+        const businessError: BusinessError = error as BusinessError;
+        Logger.error(TAG, `startBackgroundRunning failed Cause: code ${businessError.code}`);
+      }
+    });
   }
 
-  public static stopContinuousTask(context?: common.UIAbilityContext): Promise<boolean> {
-    if (!context || (!BackgroundUtil.isRunning && BackgroundUtil.startPromise === undefined)) {
-      return Promise.resolve(true);
+  /**
+   * Stop background task.
+   *
+   * @param context
+   */
+  public static stopContinuousTask(context?: common.UIAbilityContext): void {
+    if (!context || BackgroundUtil.state === ContinuousTaskState.STOPPED ||
+      BackgroundUtil.state === ContinuousTaskState.STOPPING) {
+      return;
     }
-    if (BackgroundUtil.stopPromise !== undefined) {
-      return BackgroundUtil.stopPromise;
+    if (BackgroundUtil.state === ContinuousTaskState.STARTING) {
+      BackgroundUtil.stopQueued = true;
+      return;
     }
-    BackgroundUtil.stopPromise = BackgroundUtil.stop(context);
-    return BackgroundUtil.stopPromise;
-  }
-
-  private static async stop(context: common.UIAbilityContext): Promise<boolean> {
-    if (BackgroundUtil.startPromise !== undefined) {
-      await BackgroundUtil.startPromise;
-    }
-    if (!BackgroundUtil.isRunning) {
-      BackgroundUtil.stopPromise = undefined;
-      return true;
-    }
-    try {
-      await backgroundTaskManager.stopBackgroundRunning(context);
-      BackgroundUtil.isRunning = false;
-      Logger.info(TAG, 'stopBackgroundRunning succeeded');
-      return true;
-    } catch (err) {
-      const error: BusinessError = err as BusinessError;
-      Logger.error(TAG, `stopBackgroundRunning failed: code ${error.code}, message ${error.message}`);
-      return false;
-    } finally {
-      BackgroundUtil.stopPromise = undefined;
-    }
+    BackgroundUtil.state = ContinuousTaskState.STOPPING;
+    BackgroundUtil.operation = BackgroundUtil.operation.then(async () => {
+      if (BackgroundUtil.state !== ContinuousTaskState.STOPPING) {
+        return;
+      }
+      try {
+        await backgroundTaskManager.stopBackgroundRunning(context);
+        BackgroundUtil.state = ContinuousTaskState.STOPPED;
+        Logger.info(TAG, 'stopBackgroundRunning succeeded');
+        if (BackgroundUtil.startQueued) {
+          BackgroundUtil.startQueued = false;
+          BackgroundUtil.startContinuousTask(context);
+        }
+      } catch (error) {
+        BackgroundUtil.state = ContinuousTaskState.RUNNING;
+        BackgroundUtil.startQueued = false;
+        const businessError: BusinessError = error as BusinessError;
+        Logger.error(TAG, `stopBackgroundRunning failed Cause: code ${businessError.code}`);
+      }
+    });
   }
 }
 
