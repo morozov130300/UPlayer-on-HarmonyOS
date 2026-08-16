@@ -1,4 +1,4 @@
-import { picker, fileIo as fs } from '@kit.CoreFileKit'
+import { picker, fileIo as fs, fileShare } from '@kit.CoreFileKit'
 import { common } from '@kit.AbilityKit'
 import { SongInfo } from '../model/SongInfo'
 import { FolderInfo } from '../model/FolderInfo'
@@ -33,6 +33,7 @@ export class SongScanner {
       if (uris.length === 0) {
         return []
       }
+      await this.persistUris(uris)
       const songs: SongInfo[] = []
       const metadataService: AudioMetadataService = AudioMetadataService.getInstance()
       Logger.info(TAG, `picker returned ${uris.length} URIs`)
@@ -43,7 +44,6 @@ export class SongScanner {
         Logger.info(TAG, `uri=${uri} fileName=${fileName} isAudio=${isAudio}`)
         if (isAudio) {
           const song: SongInfo = SongInfo.fromFile(uri, fileName)
-          // Check if LRC lyrics file exists alongside the audio file
           if (song.lyricPath.length > 0) {
             try {
               fs.accessSync(song.lyricPath)
@@ -60,6 +60,27 @@ export class SongScanner {
     } catch (err) {
       Logger.error(TAG, `pickAudioFiles error: ${JSON.stringify(err)}`)
       return []
+    }
+  }
+
+  private async persistUris(uris: string[]): Promise<void> {
+    if (!canIUse('SystemCapability.FileManagement.AppFileService.FolderAuthorization')) {
+      Logger.info(TAG, 'persistUris: FolderAuthorization not supported on this device')
+      return
+    }
+    try {
+      const policies: fileShare.PolicyInfo[] = []
+      for (let i = 0; i < uris.length; i++) {
+        const policyInfo: fileShare.PolicyInfo = {
+          uri: uris[i],
+          operationMode: fileShare.OperationMode.READ_MODE,
+        }
+        policies.push(policyInfo)
+      }
+      await fileShare.persistPermission(policies)
+      Logger.info(TAG, 'persistUris: persistPermission success')
+    } catch (err) {
+      Logger.error(TAG, `persistUris: persistPermission failed: ${JSON.stringify(err)}`)
     }
   }
 

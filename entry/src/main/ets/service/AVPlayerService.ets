@@ -136,17 +136,17 @@ export class AVPlayerService {
     })
   }
 
-  async play(filePath: string): Promise<void> {
+  async play(fileUri: string): Promise<void> {
     await this.init()
     if (this.avPlayer === undefined) {
       return
     }
-    if (this.currentFilePath === filePath && this.isPrepared) {
+    if (this.currentFilePath === fileUri && this.isPrepared) {
       this.avPlayer.play()
       this.sessionController.setAVMetadata()
       return
     }
-    this.currentFilePath = filePath
+    this.currentFilePath = fileUri
     this.isPrepared = false
     try {
       const curState: string = this.avPlayer.state
@@ -156,7 +156,7 @@ export class AVPlayerService {
       if (curState !== 'idle') {
         await this.avPlayer.reset()
       }
-      let file: fs.File = fs.openSync(filePath, fs.OpenMode.READ_ONLY)
+      let file: fs.File = fs.openSync(fileUri, fs.OpenMode.READ_ONLY)
       let avFd: media.AVFileDescriptor = { fd: file.fd, offset: 0, length: 0 }
       this.avPlayer.fdSrc = avFd
       this.pendingPlay = true

@@ -7,7 +7,6 @@ import { ColorHelper } from '../common/utils/ColorHelper'
 import { DisplayItemDataSource } from '../viewmodel/DisplayItemDataSource'
 import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
-import { promptAction } from '@kit.ArkUI'
 
 const TAG = 'HomeContent'
 
@@ -196,7 +195,7 @@ export struct HomeContent {
       const result: ImportResult = this.dataService.addSongs(newSongs)
       this.loadData()
       try {
-        promptAction.showToast({
+        this.getUIContext()?.getPromptAction().showToast({
           message: `新增 ${result.newCount} 首` + (result.dupCount > 0 ? `，${result.dupCount} 首已存在` : '')
         })
       } catch (e) {
@@ -208,7 +207,16 @@ export struct HomeContent {
   toggleFavorite(songId: string): void {
     const newFav: boolean = this.dataService.toggleFavorite(songId)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_IS_FAVORITE, newFav)
-    this.loadData()
+    // Update the display item directly without reloading all data
+    for (let i = 0; i < this.displayItems.length; i++) {
+      const item: DisplayItem = this.displayItems[i]
+      if (!item.isHeader && item.song && item.song.id === songId) {
+        item.song.isFavorite = newFav
+        break
+      }
+    }
+    // Notify data source of change
+    this.displayDataSource.notifyDataReload()
   }
 
   onSongTap(item: SongInfo): void {
@@ -227,7 +235,7 @@ export struct HomeContent {
         break
       }
     }
-    this.avPlayerService.play(item.filePath)
+    this.avPlayerService.play(item.uri.length > 0 ? item.uri : item.filePath)
   }
 
   onSongLongPress(item: SongInfo): void {
@@ -407,6 +415,8 @@ export struct HomeContent {
         .position({ bottom: 12, right: 20 })
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
+        .transition({ type: TransitionType.Insert, opacity: 0, scale: { x: 0.5, y: 0.5 } })
+        .transition({ type: TransitionType.Delete, opacity: 0, scale: { x: 0.5, y: 0.5 } })
         .onClick(() => { this.onPlusClick() })
       }
     }
@@ -504,7 +514,7 @@ export struct HomeContent {
             .onClick(() => {
               this.dataService.addToPlayNext(item.id)
               try {
-                promptAction.showToast({ message: '已添加到下一首播放' })
+                this.getUIContext()?.getPromptAction().showToast({ message: '已添加到下一首播放' })
               } catch (e) {
                 Logger.error(TAG, 'toast failed')
               }

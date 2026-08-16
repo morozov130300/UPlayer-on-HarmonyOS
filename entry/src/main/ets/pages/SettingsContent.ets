@@ -1,7 +1,9 @@
-import { router, curves } from '@kit.ArkUI'
+import { curves, uiAppearance } from '@kit.ArkUI'
 import { DataService, AppSettingsData } from '../service/DataService'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { ColorHelper } from '../common/utils/ColorHelper'
+import { WindowControlsComponent } from '../view/WindowControlsComponent'
+import { deviceInfo } from '@kit.BasicServicesKit'
 import Logger from '../common/utils/Logger'
 
 const TAG = 'SettingsContent'
@@ -19,6 +21,7 @@ export struct SettingsContent {
   @StorageLink(KEY_PRIMARY_COLOR) primaryColor: string = '#007DFF'
   @StorageLink(AppStorageKeyConstants.KEY_TOP_HEIGHT) topSafeHeight: number = 0
   private dataService: DataService = DataService.getInstance()
+  private isPC: boolean = deviceInfo.deviceType === '2in1'
   private categories: SettingCategory[] = [
     { title: '定制条目', description: '界面布局、主题配色等个性化选项', route: 'customize' },
     { title: '播放设置', description: '播放速度、歌词显示、通知栏控制', route: 'playback' },
@@ -29,8 +32,30 @@ export struct SettingsContent {
     this.settings = this.dataService.getSettings()
   }
 
+  private isDark(): boolean {
+    if (this.settings.themeMode === 'dark') {
+      return true
+    }
+    if (this.settings.themeMode === 'system') {
+      try {
+        return uiAppearance.getDarkMode() === uiAppearance.DarkMode.ALWAYS_DARK
+      } catch (e) {
+        return false
+      }
+    }
+    return false
+  }
+
+  private settingTextColor(): ResourceColor {
+    return this.isDark() ? '#FFFFFF' : ColorHelper.darken(this.primaryColor, 0.3)
+  }
+
+  private settingSubTextColor(): ResourceColor {
+    return this.isDark() ? ColorHelper.hexWithAlpha('#FFFFFF', '88') : ColorHelper.hexWithAlpha(this.primaryColor, '80')
+  }
+
   onCategoryClick(category: SettingCategory): void {
-    router.pushUrl({
+    this.getUIContext()?.getRouter().pushUrl({
       url: 'pages/SettingsDetailPage',
       params: { category: category.route }
     })
@@ -41,7 +66,7 @@ export struct SettingsContent {
       Row() {
         Text('设置')
           .fontSize(18)
-          .fontColor(ColorHelper.darken(this.primaryColor, 0.3))
+          .fontColor(this.settingTextColor())
           .fontWeight(FontWeight.Bold)
       }
       .width('100%')
@@ -52,12 +77,12 @@ export struct SettingsContent {
           Column() {
             Text(cat.title)
               .fontSize(16)
-              .fontColor(ColorHelper.darken(this.primaryColor, 0.25))
+              .fontColor(this.settingTextColor())
               .fontWeight(FontWeight.Medium)
               .width('100%')
             Text(cat.description)
               .fontSize(12)
-              .fontColor(ColorHelper.hexWithAlpha(this.primaryColor, '80'))
+              .fontColor(this.settingSubTextColor())
               .width('100%')
               .margin({ top: 3 })
           }

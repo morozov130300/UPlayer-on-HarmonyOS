@@ -10,6 +10,7 @@ import { PlaylistContent } from './PlaylistContent'
 import { SettingsContent } from './SettingsContent'
 import { DataService } from '../service/DataService'
 import { ColorHelper } from '../common/utils/ColorHelper'
+import { WindowControlsComponent } from '../view/WindowControlsComponent'
 import Logger from '../common/utils/Logger'
 
 const TAG = 'Index'
@@ -33,6 +34,7 @@ struct MainPage {
   @StorageLink('uplayer_current_artist') currentSongArtist: string = ''
   @StorageLink('uplayer_current_album_art') currentSongAlbumArt: string = ''
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
+  @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
   @State albumArtFailed: boolean = false
   @State isTitleMarqueeRunning: boolean = true
   @State isArtistMarqueeRunning: boolean = true
@@ -44,8 +46,6 @@ struct MainPage {
   private rotationTimer: number = -1
   private dataService: DataService = DataService.getInstance()
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
-  private windowClass: window.Window | undefined = AppStorage.get('windowClass')
-  private abilityContext: common.UIAbilityContext | undefined = AppStorage.get(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
   private isPC: boolean = deviceInfo.deviceType === '2in1'
 
   aboutToAppear(): void {
@@ -63,53 +63,6 @@ struct MainPage {
       this.currentIndex = 0
       this.updateIndicatorOffset(0)
     })
-  }
-
-  @Builder
-  windowControls() {
-    Row({ space: 4 }) {
-      Row() {
-        SymbolGlyph($r('sys.symbol.minus'))
-          .fontSize(14)
-          .fontColor([$r('app.color.text_sixty_color')])
-      }
-      .width(36).height(28)
-      .borderRadius(4)
-      .justifyContent(FlexAlign.Center)
-      .alignItems(VerticalAlign.Center)
-      .hoverEffect(HoverEffect.Highlight)
-      .onClick(() => {
-        if (this.windowClass) { this.windowClass.minimize() }
-      })
-      Row() {
-        SymbolGlyph($r('sys.symbol.square'))
-          .fontSize(12)
-          .fontColor([$r('app.color.text_sixty_color')])
-      }
-      .width(36).height(28)
-      .borderRadius(4)
-      .justifyContent(FlexAlign.Center)
-      .alignItems(VerticalAlign.Center)
-      .hoverEffect(HoverEffect.Highlight)
-      .onClick(() => {
-        if (this.windowClass) {
-          this.windowClass.maximize(window.MaximizePresentation.EXIT_IMMERSIVE)
-        }
-      })
-      Row() {
-        SymbolGlyph($r('sys.symbol.xmark'))
-          .fontSize(14)
-          .fontColor([$r('app.color.text_sixty_color')])
-      }
-      .width(36).height(28)
-      .borderRadius(4)
-      .justifyContent(FlexAlign.Center)
-      .alignItems(VerticalAlign.Center)
-      .hoverEffect(HoverEffect.Highlight)
-      .onClick(() => {
-        if (this.abilityContext) { this.abilityContext.terminateSelf() }
-      })
-    }
   }
 
   @Builder
@@ -280,6 +233,9 @@ struct MainPage {
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
         .margin({ left: 8, right: 8 })
+        .onClick(() => {
+          this.getUIContext().getRouter().pushUrl({ url: 'pages/MusicPlayer' })
+        })
       } else {
         Column() {
           Text('未播放')
@@ -358,7 +314,7 @@ struct MainPage {
     let idx: number = this.currentIndex >= 0 ? (AppStorage.get<number>(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? 0) : 0
     idx = idx <= 0 ? songList.length - 1 : idx - 1
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, idx)
-    this.avPlayerService.play(songList[idx].filePath)
+    this.avPlayerService.play(songList[idx].uri.length > 0 ? songList[idx].uri : songList[idx].filePath)
   }
 
   playNext(): void {
@@ -369,7 +325,7 @@ struct MainPage {
     let idx: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? 0
     idx = idx >= songList.length - 1 ? 0 : idx + 1
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, idx)
-    this.avPlayerService.play(songList[idx].filePath)
+    this.avPlayerService.play(songList[idx].uri.length > 0 ? songList[idx].uri : songList[idx].filePath)
   }
 
   startRotation() {
@@ -427,7 +383,7 @@ struct MainPage {
                 .translate({ y: this.greetingOffset })
               Blank()
               if (this.isPC) {
-                this.windowControls()
+                WindowControlsComponent()
               }
             }
             .width('100%')
@@ -437,7 +393,7 @@ struct MainPage {
             .padding({ top: 16 + this.topSafeHeight, left: 16, right: 8 })
           }
           .width('100%')
-          .height(this.isPC ? 56 : 80)
+          .height(this.isPC ? 64 : 96)
           .transition({ type: TransitionType.Insert, opacity: 0, translate: { y: -20 } })
           .transition({ type: TransitionType.Delete, opacity: 0, translate: { y: -20 } })
         }
@@ -476,6 +432,7 @@ struct MainPage {
       }
       .width('100%')
       .height('100%')
+      .scale({ x: this.displaySizeScale, y: this.displaySizeScale })
     }
     .width('100%')
     .height('100%')
