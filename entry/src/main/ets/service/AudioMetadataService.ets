@@ -62,7 +62,11 @@ export class AudioMetadataService {
       Logger.warn(TAG, `Metadata extraction failed for ${song.fileName}: ${JSON.stringify(err)}`)
     } finally {
       if (extractor !== undefined) {
-        extractor.release()
+        try {
+          await extractor.release()
+        } catch (err) {
+          Logger.warn(TAG, `AVMetadataExtractor release failed: ${JSON.stringify(err)}`)
+        }
       }
       if (file !== undefined) {
         fs.closeSync(file)
@@ -158,7 +162,11 @@ export class AudioMetadataService {
       return undefined
     } finally {
       if (extractor !== undefined) {
-        extractor.release()
+        try {
+          await extractor.release()
+        } catch (err) {
+          Logger.warn(TAG, `AVMetadataExtractor release failed: ${JSON.stringify(err)}`)
+        }
       }
       if (file !== undefined) {
         fs.closeSync(file)
