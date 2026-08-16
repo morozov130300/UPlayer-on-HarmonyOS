@@ -1,4 +1,6 @@
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
+import { AVPlayerService } from '../service/AVPlayerService';
+import { SongInfo } from '../model/SongInfo';
 
 @Entry
 @Component
@@ -7,6 +9,8 @@ struct LockScreenPage {
   @StorageLink('uplayer_current_artist') artist: string = '';
   @StorageLink('uplayer_current_album_art') albumArt: string = '';
   @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) isPlay: boolean = false;
+
+  private playerService: AVPlayerService = AVPlayerService.getInstance();
 
   build() {
     Column() {
@@ -39,6 +43,54 @@ struct LockScreenPage {
           .fontSize(12)
           .fontColor('#80FFFFFF')
           .margin({ top: 8 })
+        Row() {
+          Button({ type: ButtonType.Circle }) {
+            Image($r('app.media.ic_public_play_last'))
+              .width(24).height(24)
+              .fillColor(Color.White)
+          }
+          .width(48).height(48)
+          .backgroundColor('#33FFFFFF')
+          .onClick(() => {
+            this.onPlayPrevious();
+          })
+
+          Button({ type: ButtonType.Circle }) {
+            if (this.isPlay) {
+              Image($r('app.media.ic_public_pause'))
+                .width(28).height(28)
+                .fillColor(Color.White)
+            } else {
+              Image($r('app.media.ic_public_play'))
+                .width(28).height(28)
+                .fillColor(Color.White)
+            }
+          }
+          .width(56).height(56)
+          .backgroundColor('#33FFFFFF')
+          .margin({ left: 24, right: 24 })
+          .onClick(() => {
+            if (this.isPlay) {
+              this.playerService.pause();
+            } else {
+              this.playerService.resume();
+            }
+          })
+
+          Button({ type: ButtonType.Circle }) {
+            Image($r('app.media.ic_public_play_next'))
+              .width(24).height(24)
+              .fillColor(Color.White)
+          }
+          .width(48).height(48)
+          .backgroundColor('#33FFFFFF')
+          .onClick(() => {
+            this.onPlayNext();
+          })
+        }
+        .margin({ top: 24 })
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
       }
       .justifyContent(FlexAlign.Center)
       .alignItems(HorizontalAlign.Center)
@@ -47,5 +99,41 @@ struct LockScreenPage {
     .height('100%')
     .backgroundColor('#1A1A1A')
     .justifyContent(FlexAlign.Center)
+  }
+
+  private onPlayPrevious(): void {
+    const list: SongInfo[] = AppStorage.get<SongInfo[]>(AppStorageKeyConstants.KEY_SONG_LIST) ?? [];
+    const currentIdx: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? 0;
+    if (list.length === 0) {
+      return;
+    }
+    let prevIdx: number = currentIdx - 1;
+    if (prevIdx < 0) {
+      prevIdx = list.length - 1;
+    }
+    if (prevIdx >= 0 && prevIdx < list.length) {
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, prevIdx);
+      const song: SongInfo = list[prevIdx];
+      const uri: string = song.uri.length > 0 ? song.uri : song.filePath;
+      this.playerService.play(uri);
+    }
+  }
+
+  private onPlayNext(): void {
+    const list: SongInfo[] = AppStorage.get<SongInfo[]>(AppStorageKeyConstants.KEY_SONG_LIST) ?? [];
+    const currentIdx: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? 0;
+    if (list.length === 0) {
+      return;
+    }
+    let nextIdx: number = currentIdx + 1;
+    if (nextIdx >= list.length) {
+      nextIdx = 0;
+    }
+    if (nextIdx < list.length) {
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, nextIdx);
+      const song: SongInfo = list[nextIdx];
+      const uri: string = song.uri.length > 0 ? song.uri : song.filePath;
+      this.playerService.play(uri);
+    }
   }
 }

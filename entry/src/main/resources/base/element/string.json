@@ -54,7 +54,7 @@
     },
     {
       "name": "play_list",
-      "value": "play list %d"
+      "value": "播放列表（%d）"
     },
     {
       "name": "song_name",

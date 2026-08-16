@@ -98,6 +98,8 @@ export default struct LrcListView {
                   .fontSize(this.mCurrentLine === index ? 24 : 20)
                   .fontWeight(FontWeight.Bold)
                   .opacity(this.mCurrentLine === index ? 1.0 : 0.7)
+                  .constraintSize({ maxWidth: '85%' })
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
               }
               .alignItems(VerticalAlign.Center)
             }

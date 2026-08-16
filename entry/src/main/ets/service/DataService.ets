@@ -42,10 +42,12 @@ export class AppSettingsData {
   fadeInOut: boolean = false
   fontSizeScale: number = 1.0
   displaySizeScale: number = 1.0
+  tabStyle: string = 'classic'
 }
 
 export class DataService {
   private static instance: DataService = new DataService()
+  private songsCache: SongInfo[] | undefined = undefined
 
   public static getInstance(): DataService {
     return DataService.instance
@@ -165,15 +167,20 @@ export class DataService {
   // ═══════════ Song CRUD ═══════════
 
   getSongs(): SongInfo[] {
+    if (this.songsCache !== undefined) {
+      return this.songsCache
+    }
     const arr: object[] = this.readJsonArray(KEY_SONG_LIST)
     const result: SongInfo[] = []
     for (let i = 0; i < arr.length; i++) {
       result.push(this.recordToSong(arr[i] as Record<string, Object>))
     }
+    this.songsCache = result
     return result
   }
 
   saveSongs(songs: SongInfo[]): void {
+    this.songsCache = songs
     const records: Record<string, Object>[] = []
     for (let i = 0; i < songs.length; i++) {
       records.push(this.songToRecord(songs[i]))
@@ -183,6 +190,7 @@ export class DataService {
   }
 
   addSongs(newSongs: SongInfo[]): ImportResult {
+    this.songsCache = undefined
     const songs: SongInfo[] = this.getSongs()
     const existingPaths: Set<string> = new Set()
     for (let i = 0; i < songs.length; i++) {
@@ -347,6 +355,8 @@ export class DataService {
       s.fontSizeScale = rawFontSizeScale !== undefined ? rawFontSizeScale as number : 1.0
       let rawDisplaySizeScale: Object | undefined = r['displaySizeScale']
       s.displaySizeScale = rawDisplaySizeScale !== undefined ? rawDisplaySizeScale as number : 1.0
+      let rawTabStyle: Object | undefined = r['tabStyle']
+      s.tabStyle = rawTabStyle !== undefined ? rawTabStyle as string : 'classic'
       return s
     } catch (e) {
       return new AppSettingsData()
@@ -367,6 +377,7 @@ export class DataService {
     r['fadeInOut'] = settings.fadeInOut
     r['fontSizeScale'] = settings.fontSizeScale
     r['displaySizeScale'] = settings.displaySizeScale
+    r['tabStyle'] = settings.tabStyle
     this.getPref().preferencesPut(KEY_SETTINGS, JSON.stringify(r))
     AppStorage.setOrCreate(KEY_SETTINGS, settings)
     AppStorage.setOrCreate('uplayer_fade_in_out', settings.fadeInOut)
@@ -511,6 +522,7 @@ export class DataService {
     AppStorage.setOrCreate('uplayer_fade_in_out', s.fadeInOut)
     AppStorage.setOrCreate('uplayer_font_size_scale', s.fontSizeScale)
     AppStorage.setOrCreate('uplayer_display_size_scale', s.displaySizeScale)
+    AppStorage.setOrCreate('uplayer_tab_style', s.tabStyle)
     this.activatePersistedUris()
   }
 

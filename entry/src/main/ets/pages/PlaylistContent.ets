@@ -6,7 +6,8 @@ import { SongScanner } from '../service/SongScanner'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
-import { LengthMetrics } from '@kit.ArkUI'
+import { LengthMetrics, display } from '@kit.ArkUI'
+import { deviceInfo } from '@kit.BasicServicesKit'
 
 const TAG = 'PlaylistContent'
 const FAVORITES_FOLDER_ID: string = '__favorites__'
@@ -31,9 +32,29 @@ export struct PlaylistContent {
   private previousFolderPaths: string[] = []
   @State isEditMode: boolean = false
   @State editSelectedFolderIds: string[] = []
+  @State gridColumns: number = 2
 
   aboutToAppear(): void {
     this.loadData()
+    this.updateGridColumns()
+  }
+
+  private updateGridColumns(): void {
+    if (deviceInfo.deviceType === '2in1') {
+      this.gridColumns = 3
+      return
+    }
+    try {
+      const displayInfo = display.getDefaultDisplaySync()
+      const vpWidth = displayInfo.width / 160
+      if (vpWidth >= 600) {
+        this.gridColumns = 3
+      } else {
+        this.gridColumns = 2
+      }
+    } catch (e) {
+      this.gridColumns = 2
+    }
   }
 
   loadData(): void {
@@ -45,24 +66,24 @@ export struct PlaylistContent {
   }
 
   buildFoldersFromSongs(): void {
-    const seen: Record<string, boolean> = {}
-    const result: FolderInfo[] = []
+    const countMap: Record<string, number> = {}
     for (let i = 0; i < this.songs.length; i++) {
-      const song: SongInfo = this.songs[i]
-      const key: string = song.folderPath
-      if (key.length > 0 && seen[key] === undefined) {
-        seen[key] = true
-        const folder: FolderInfo = FolderInfo.fromPath(key)
-        let count: number = 0
-        for (let j = 0; j < this.songs.length; j++) {
-          if (this.songs[j].folderPath === key) {
-            count++
-          }
+      const key: string = this.songs[i].folderPath
+      if (key.length > 0) {
+        if (countMap[key] === undefined) {
+          countMap[key] = 1
+        } else {
+          countMap[key] = countMap[key] + 1
         }
-        folder.songCount = count
-        folder.isAvailable = true
-        result.push(folder)
       }
+    }
+    const result: FolderInfo[] = []
+    const keys: string[] = Object.keys(countMap)
+    for (let i = 0; i < keys.length; i++) {
+      const folder: FolderInfo = FolderInfo.fromPath(keys[i])
+      folder.songCount = countMap[keys[i]] as number
+      folder.isAvailable = true
+      result.push(folder)
     }
     this.sortFolders(result)
     this.folders = result
@@ -281,11 +302,16 @@ export struct PlaylistContent {
             }
 
             if (this.folders.length > 0) {
-              Column({ space: 12 }) {
+              Grid() {
                 ForEach(this.folders, (item: FolderInfo) => {
-                  this.folderCard(item)
+                  GridItem() {
+                    this.folderCard(item)
+                  }
                 }, (item: FolderInfo) => item.id)
               }
+              .columnsTemplate('1fr '.repeat(this.gridColumns).trim())
+              .columnsGap(10)
+              .rowsGap(10)
               .padding({ left: 16, right: 16 })
               .width('100%')
             } else {
@@ -384,21 +410,21 @@ export struct PlaylistContent {
         .position({ x: 6, y: 6 })
       }
       Image($r('app.media.ic_public_music'))
-        .width(36).height(36)
+        .width(28).height(28)
         .fillColor($r('app.color.text_sixty_color'))
-        .margin({ bottom: 8 })
+        .margin({ bottom: 6 })
       Text(item.name)
-        .fontSize(14)
+        .fontSize(12)
         .fontColor($r('app.color.text_primary'))
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
       Text(item.songCount + ' 首歌曲')
-        .fontSize(11)
+        .fontSize(10)
         .fontColor($r('app.color.text_sixty_color'))
-        .margin({ top: 4 })
+        .margin({ top: 2 })
     }
     .width('100%')
-    .height(100)
+    .height(80)
     .justifyContent(FlexAlign.Center)
     .alignItems(HorizontalAlign.Center)
     .backgroundColor(this.isFolderSelected(item) ?
