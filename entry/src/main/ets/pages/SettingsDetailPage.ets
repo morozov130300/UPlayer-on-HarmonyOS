@@ -178,23 +178,26 @@ struct SettingsDetailPage {
       .borderRadius(this.scaledSize(18))
       .shadow({
         radius: 14,
-        color: ColorHelper.hexWithAlpha(
-          ColorHelper.darken(this.primaryColor, this.indicatorDarken(0.12, 0.4)), 'CC')
+        color: ColorHelper.hexWithAlpha(this.primaryColor, this.indicatorAlpha(0.8).toString(16).padStart(2, '0'))
       })
       .radialGradient({
         center: ['50%', '50%'],
         radius: '75%',
         colors: [
-          [ColorHelper.darken(this.primaryColor, this.indicatorDarken(0.02, 0.32)), 0.0],
-          [ColorHelper.darken(this.primaryColor, this.indicatorDarken(0.12, 0.48)), 0.58],
-          [ColorHelper.darken(this.primaryColor, this.indicatorDarken(0.25, 0.5)), 1.0],
+          [this.indicatorGradientColor(0.95), 0.0],
+          [this.indicatorGradientColor(0.75), 0.58],
+          [this.indicatorGradientColor(0.55), 1.0],
         ]
       })
   }
 
-  private indicatorDarken(base: number, range: number): number {
-    const depth: number = this.tabIndicatorOpacity
-    return Math.min(0.75, base + range * depth / 100)
+  private indicatorAlpha(base: number): number {
+    const opacity: number = this.tabIndicatorOpacity / 100
+    return Math.round(base * opacity * 255)
+  }
+
+  private indicatorGradientColor(base: number): ResourceColor {
+    return ColorHelper.hexWithAlpha(this.primaryColor, this.indicatorAlpha(base).toString(16).padStart(2, '0'))
   }
 
   private isDark(): boolean {
