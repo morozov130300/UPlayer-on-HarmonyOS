@@ -1,0 +1,352 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "项目处于初始开发阶段，功能尚未完善"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "UPlayer 初始开发版本"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "UPlayer"
+    },
+    {
+      "name": "keep_background_running_reason",
+      "value": "用于在后台继续播放音乐"
+    },
+    {
+      "name": "shared_desc",
+      "value": "shared_desc"
+    },
+    {
+      "name": "collection_num",
+      "value": "125000"
+    },
+    {
+      "name": "list_name",
+      "value": "Independent folk"
+    },
+    {
+      "name": "playlist_Introduction",
+      "value": "The set list is a selection of popular folk songs."
+    },
+    {
+      "name": "play_all",
+      "value": "Play all(%d)"
+    },
+    {
+      "name": "collect",
+      "value": "collect"
+    },
+    {
+      "name": "download",
+      "value": "download"
+    },
+    {
+      "name": "comment",
+      "value": "comment"
+    },
+    {
+      "name": "share",
+      "value": "share"
+    },
+    {
+      "name": "play_list",
+      "value": "播放列表（%d）"
+    },
+    {
+      "name": "song_name",
+      "value": "I don't know"
+    },
+    {
+      "name": "singer",
+      "value": "Hello xiao wan"
+    },
+    {
+      "name": "EntryFormAbility_desc",
+      "value": "form_description"
+    },
+    {
+      "name": "EntryFormAbility_label",
+      "value": "form_label"
+    },
+    {
+      "name": "sequential_playback",
+      "value": "Sequential playback"
+    },
+    {
+      "name": "single_playback",
+      "value": "Single playback"
+    },
+    {
+      "name": "random_playback",
+      "value": "Random playback"
+    },
+    {
+      "name": "reason_background",
+      "value": "Allow applications to run in the background of music player scenes."
+    },
+    {
+      "name": "page_show",
+      "value": "page from package"
+    },
+    {
+      "name": "volume_setting",
+      "value": "Volume setting"
+    },
+    {
+      "name": "speed_setting",
+      "value": "Speed setting"
+    },
+    {
+      "name": "song_title_two",
+      "value": "I don't know."
+    },
+    {
+      "name": "singer_one",
+      "value": "Delacey"
+    },
+    {
+      "name": "song_title_one",
+      "value": "Dream It Possible"
+    },
+    {
+      "name": "singer_two",
+      "value": "second singer"
+    },
+    {
+      "name": "song_title_three",
+      "value": "third song"
+    },
+    {
+      "name": "singer_three",
+      "value": "third singer"
+    },
+    {
+      "name": "song_title_four",
+      "value": "fourth song"
+    },
+    {
+      "name": "singer_four",
+      "value": "fourth singer"
+    },
+    {
+      "name": "song_title_five",
+      "value": "fifth song"
+    },
+    {
+      "name": "singer_five",
+      "value": "fifth singer"
+    },
+    {
+      "name": "song_title_six",
+      "value": "sixth song"
+    },
+    {
+      "name": "singer_six",
+      "value": "sixth singer"
+    },
+    {
+      "name": "song_title_seven",
+      "value": "seventh song"
+    },
+    {
+      "name": "singer_seven",
+      "value": "seventh singer"
+    },
+    {
+      "name": "song_title_eight",
+      "value": "eighth song"
+    },
+    {
+      "name": "singer_eight",
+      "value": "eighth singer"
+    },
+    {
+      "name": "song_title_nine",
+      "value": "ninth song"
+    },
+    {
+      "name": "singer_nine",
+      "value": "ninth singer"
+    },
+    {
+      "name": "song_title_ten",
+      "value": "tenth singer"
+    },
+    {
+      "name": "singer_ten",
+      "value": "tenth singer"
+    },
+    {
+      "name": "playback_speed",
+      "value": "Playback Speed"
+    },
+    {
+      "name": "no_lyric",
+      "value": "无歌词"
+    },
+    {
+      "name": "got_it",
+      "value": "Got it"
+    },
+    {
+      "name": "no_operate",
+      "value": "Please go back to the inner screen to experience this sample!"
+    },
+    {
+      "name": "Ultra_high_definition_audio",
+      "value": "Ultra-high-definition audio"
+    },
+    {
+      "name": "Spatial_audio",
+      "value": "Spatial audio"
+    },
+    {
+      "name": "all_songs",
+      "value": "全部歌曲"
+    },
+    {
+      "name": "current_playlist",
+      "value": "当前播放"
+    },
+    {
+      "name": "sort_by_name",
+      "value": "名称排序"
+    },
+    {
+      "name": "sort_by_date",
+      "value": "添加时间"
+    },
+    {
+      "name": "sort_custom",
+      "value": "自定义"
+    },
+    {
+      "name": "flat_view",
+      "value": "平铺"
+    },
+    {
+      "name": "folder_view",
+      "value": "文件夹"
+    },
+    {
+      "name": "my_playlists",
+      "value": "我的歌单"
+    },
+    {
+      "name": "no_songs",
+      "value": "暂无歌曲，点击右下角 + 添加"
+    },
+    {
+      "name": "no_playlists",
+      "value": "暂无歌单，点击右下角 + 添加文件夹"
+    },
+    {
+      "name": "settings_title",
+      "value": "设置"
+    },
+    {
+      "name": "plus_button_visible",
+      "value": "显示加号按钮"
+    },
+    {
+      "name": "theme_mode",
+      "value": "主题模式"
+    },
+    {
+      "name": "theme_system",
+      "value": "跟随系统"
+    },
+    {
+      "name": "theme_dark",
+      "value": "深色模式"
+    },
+    {
+      "name": "theme_light",
+      "value": "浅色模式"
+    },
+    {
+      "name": "theme_custom",
+      "value": "自定义"
+    },
+    {
+      "name": "primary_color",
+      "value": "主题色"
+    },
+    {
+      "name": "playback_settings",
+      "value": "播放设置"
+    },
+    {
+      "name": "show_lyrics",
+      "value": "显示歌词"
+    },
+    {
+      "name": "background_playback",
+      "value": "后台播放"
+    },
+    {
+      "name": "audio_effects",
+      "value": "音效设置"
+    },
+    {
+      "name": "equalizer",
+      "value": "均衡器"
+    },
+    {
+      "name": "volume_gain",
+      "value": "音量增益"
+    },
+    {
+      "name": "playback_speed_setting",
+      "value": "播放速度"
+    },
+    {
+      "name": "audio_enhancement",
+      "value": "音效增强"
+    },
+    {
+      "name": "effect_off",
+      "value": "关闭"
+    },
+    {
+      "name": "effect_pop",
+      "value": "流行"
+    },
+    {
+      "name": "effect_rock",
+      "value": "摇滚"
+    },
+    {
+      "name": "effect_classical",
+      "value": "古典"
+    },
+    {
+      "name": "effect_jazz",
+      "value": "爵士"
+    },
+    {
+      "name": "effect_bass",
+      "value": "重低音"
+    },
+    {
+      "name": "unknown_singer",
+      "value": "未知歌手"
+    },
+    {
+      "name": "song_count",
+      "value": "%d 首歌曲"
+    },
+    {
+      "name": "reason_file_access_persist",
+      "value": "持久化访问导入的音乐文件，重启后无需再次选择"
+    },
+    {
+      "name": "reason_detect_gesture",
+      "value": "根据用户握持方向调整设置预览位置"
+    }
+  ]
+}
