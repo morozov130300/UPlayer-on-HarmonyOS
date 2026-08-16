@@ -2,7 +2,7 @@ import { common, wantAgent } from '@kit.AbilityKit';
 import { avSession } from '@kit.AVSessionKit';
 import { SongInfo } from '../../../model/SongInfo';
 import { AVPlayerService } from '../../../service/AVPlayerService';
-import { AudioMetadataService } from '../../../service/AudioMetadataService';
+import { AlbumCoverLease, AlbumCoverSize, AudioMetadataService } from '../../../service/AudioMetadataService';
 import Logger from '../Logger';
 import { MusicPlayMode } from '../../constants/PlayerConstants';
 import { PreferencesUtil } from '../PreferencesUtil';
@@ -20,6 +20,7 @@ export class AVSessionController {
   private musicIndex: number = 0;
   private avPlayerService: AVPlayerService | undefined = undefined;
   private metadataRequestId: number = 0;
+  private metadataCoverLease: AlbumCoverLease | undefined = undefined;
 
   private getAvPlayerService(): AVPlayerService {
     if (this.avPlayerService === undefined) {
@@ -176,16 +177,14 @@ export class AVSessionController {
     try {
       if (this.context) {
         const song: SongInfo = this.songList[this.musicIndex];
-        // 按需从音频文件提取封面，不再使用缓存文件
-        let mediaImage: image.PixelMap | undefined = undefined;
-        mediaImage = await this.extractCoverFromSong(song);
+        const coverLease: AlbumCoverLease | undefined = await AudioMetadataService.getInstance()
+          .acquireAlbumCover(song, AlbumCoverSize.MEDIUM);
         if (requestId !== this.metadataRequestId || requestedIndex !==
           (AppStorage.get<number>(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? 0)) {
-          if (mediaImage !== undefined) {
-            mediaImage.release();
-          }
+          coverLease?.release();
           return;
         }
+        const mediaImage: image.PixelMap | undefined = coverLease?.pixelMap;
         const metadata: avSession.AVMetadata = {
           assetId: `${this.musicIndex}`,
           title: song.title,
@@ -197,22 +196,24 @@ export class AVSessionController {
           avQueueImage: mediaImage
         };
         if (this.AVSession) {
-          this.AVSession.setAVMetadata(metadata).then(() => {
+          try {
+            await this.AVSession.setAVMetadata(metadata);
+            this.metadataCoverLease?.release();
+            this.metadataCoverLease = coverLease;
             Logger.info(TAG, 'SetAVMetadata successfully');
-          }).catch((err: BusinessError) => {
-            Logger.error(TAG, `SetAVMetadata BusinessError: code: ${err.code}, message: ${err.message}`);
-          });
+          } catch (err) {
+            coverLease?.release();
+            const businessError: BusinessError = err as BusinessError;
+            Logger.error(TAG,
+              `SetAVMetadata BusinessError: code: ${businessError.code}, message: ${businessError.message}`);
+          }
+        } else {
+          coverLease?.release();
         }
       }
     } catch (error) {
       Logger.error(TAG, `SetAVMetadata failed, code: ${(error as BusinessError).code}`);
     }
-  }
-
-  // 从音频文件直接提取封面PixelMap
-  private async extractCoverFromSong(song: SongInfo): Promise<image.PixelMap | undefined> {
-    const metadataService: AudioMetadataService = AudioMetadataService.getInstance();
-    return await metadataService.fetchAlbumCover(song);
   }
 
   async setListenerForMesFromController(): Promise<void> {
@@ -406,6 +407,9 @@ export class AVSessionController {
   }
 
   async unregisterSessionListener(): Promise<void> {
+    this.metadataRequestId++;
+    this.metadataCoverLease?.release();
+    this.metadataCoverLease = undefined;
     if (!this.AVSession) {
       return;
     }

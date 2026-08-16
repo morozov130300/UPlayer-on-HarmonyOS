@@ -106,6 +106,14 @@ export struct ControlAreaComponent {
     }
   }
 
+  private syncPlayModeIndex(): void {
+    const index: number = PlayModeSwitchList.indexOf(this.playMode);
+    this.playModeIndex = index >= 0 ? index : 0;
+    if (index < 0) {
+      this.playMode = PlayModeSwitchList[0];
+    }
+  }
+
   switchPlayMode() {
     if (this.playModeIndex === PlayModeSwitchList.length - 1) {
       this.playModeIndex = 0;
@@ -113,6 +121,7 @@ export struct ControlAreaComponent {
       this.playModeIndex++;
     }
     this.playMode = PlayModeSwitchList[this.playModeIndex];
+    DataService.getInstance().setPlayMode(this.playMode);
     Logger.info(TAG, 'playModeIndex is' + this.playModeIndex);
     try {
       this.promptAction.openToast({

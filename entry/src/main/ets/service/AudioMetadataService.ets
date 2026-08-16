@@ -183,14 +183,18 @@ export class AudioMetadataService {
 
   private trimCoverCache(): void {
     while (this.coverCache.size > COVER_CACHE_MAX_ENTRIES || this.cacheBytes > COVER_CACHE_MAX_BYTES) {
-      let oldest: AlbumCoverCacheEntry | undefined = undefined
-      this.coverCache.forEach((candidate: AlbumCoverCacheEntry) => {
-        if (candidate.references === 0 && (oldest === undefined || candidate.lastAccess < oldest.lastAccess)) {
-          oldest = candidate
+      let oldestKey: string = ''
+      let oldestAccess: number = Number.MAX_VALUE
+      this.coverCache.forEach((candidate: AlbumCoverCacheEntry, key: string) => {
+        if (candidate.references === 0 && candidate.lastAccess < oldestAccess) {
+          oldestKey = key
+          oldestAccess = candidate.lastAccess
         }
       })
+      if (oldestKey.length === 0) return
+      const oldest: AlbumCoverCacheEntry | undefined = this.coverCache.get(oldestKey)
       if (oldest === undefined) return
-      this.coverCache.delete(oldest.key)
+      this.coverCache.delete(oldestKey)
       this.cacheBytes = Math.max(0, this.cacheBytes - oldest.bytes)
       oldest.cached = false
       if (oldest.pixelMap !== undefined) {

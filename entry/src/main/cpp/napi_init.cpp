@@ -253,7 +253,14 @@ public:
 
     bool Play(int32_t fd, int64_t size, int64_t startPositionMs, uint64_t requestId)
     {
+        const auto startedAt = std::chrono::steady_clock::now();
+        auto elapsedMs = [&startedAt]() -> long long {
+            return std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - startedAt).count();
+        };
         Stop();
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "native startup stage=stop elapsedMs=%{public}lld", elapsedMs());
         if (requestId != latestPlayRequest.load()) {
             return false;
         }
@@ -278,10 +285,32 @@ public:
             Stop();
             return false;
         }
-        if (!ConfigureTrack() || !ConfigureDecoder() || !ConfigureEffects() || !ConfigureRenderer()) {
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "native startup stage=source elapsedMs=%{public}lld", elapsedMs());
+        if (!ConfigureTrack()) {
             Stop();
             return false;
         }
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "native startup stage=track elapsedMs=%{public}lld", elapsedMs());
+        if (!ConfigureDecoder()) {
+            Stop();
+            return false;
+        }
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "native startup stage=decoder elapsedMs=%{public}lld", elapsedMs());
+        if (!ConfigureEffects()) {
+            Stop();
+            return false;
+        }
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "native startup stage=effects elapsedMs=%{public}lld", elapsedMs());
+        if (!ConfigureRenderer()) {
+            Stop();
+            return false;
+        }
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "native startup stage=renderer-config elapsedMs=%{public}lld", elapsedMs());
         if (requestId != latestPlayRequest.load()) {
             Stop();
             return false;
@@ -306,24 +335,13 @@ public:
         }
         activeEqEnabled_ = requestedEqEnabled_.load();
         decoderThread_ = std::thread(&NativeAudioPlayer::DecoderLoop, this);
-        {
-            std::unique_lock<std::mutex> lock(queueMutex_);
-            bool ready = queueCondition_.wait_for(lock, std::chrono::milliseconds(1500), [this]() {
-                return stopRequested_ || firstPcmReady_.load() || decoderFailed_.load();
-            });
-            if (!ready || !firstPcmReady_.load()) {
-                OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                    "first PCM timeout or decoder failed");
-                lock.unlock();
-                Stop();
-                return false;
-            }
-        }
         if (OH_AudioRenderer_Start(renderer_) != AUDIOSTREAM_SUCCESS) {
             OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG, "renderer start failed");
             Stop();
             return false;
         }
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "native startup stage=started elapsedMs=%{public}lld", elapsedMs());
         return true;
     }
 

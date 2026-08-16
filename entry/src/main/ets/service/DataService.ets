@@ -446,6 +446,19 @@ export class DataService {
     AppStorage.setOrCreate(KEY_VIEW_MODE, mode)
   }
 
+  getPlayMode(): MusicPlayMode {
+    const raw = this.getPref().getValue(KEY_PLAY_MODE)
+    if (raw === MusicPlayMode.SINGLE_CYCLE || raw === MusicPlayMode.ORDER || raw === MusicPlayMode.RANDOM) {
+      return raw as MusicPlayMode
+    }
+    return MusicPlayMode.ORDER
+  }
+
+  setPlayMode(mode: MusicPlayMode): void {
+    this.getPref().preferencesPut(KEY_PLAY_MODE, mode)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PLAY_MODE, mode)
+  }
+
   getSelectedFolderPaths(): string[] {
     const raw = this.getPref().getValue(KEY_SELECTED_FOLDERS)
     if (raw === undefined) return []
@@ -549,6 +562,7 @@ export class DataService {
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_LIBRARY_REVISION, 0)
     AppStorage.setOrCreate(KEY_SORT_MODE, this.getSortMode())
     AppStorage.setOrCreate(KEY_VIEW_MODE, this.getViewMode())
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PLAY_MODE, this.getPlayMode())
     this.checkSongsAccessibility()
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SONG_LIST, this.getSongs())
     AppStorage.setOrCreate(KEY_FOLDER_LIST, this.getFolders())
