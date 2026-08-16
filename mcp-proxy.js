@@ -9,6 +9,8 @@
 
 'use strict';
 
+const https = require('https');
+
 const REMOTE_URL = 'https://connect-api.cloud.huawei.com/api/developerknowledge/mcp';
 
 let sessionId = null;
@@ -19,35 +21,50 @@ function log(...args) {
 }
 
 async function remoteRequest(payload, isNotification) {
+  const body = JSON.stringify(payload);
+  const url = new URL(REMOTE_URL);
   const headers = {
     'Content-Type': 'application/json',
-    'Accept': 'application/json, text/event-stream'
+    'Accept': 'application/json, text/event-stream',
+    'Content-Length': Buffer.byteLength(body)
   };
   if (sessionId) {
     headers['Mcp-Session-Id'] = sessionId;
   }
-  const res = await fetch(REMOTE_URL, {
-    method: 'POST',
-    headers: headers,
-    body: JSON.stringify(payload)
+
+  const response = await new Promise((resolve, reject) => {
+    const request = https.request(url, {
+      method: 'POST',
+      headers: headers
+    }, (res) => {
+      const chunks = [];
+      res.on('data', (chunk) => chunks.push(chunk));
+      res.on('end', () => {
+        resolve({
+          status: res.statusCode,
+          headers: res.headers,
+          text: Buffer.concat(chunks).toString('utf8')
+        });
+      });
+      res.on('error', reject);
+    });
+    request.on('error', reject);
+    request.end(body);
   });
-  const newSess = res.headers.get('mcp-session-id');
+
+  const newSess = response.headers['mcp-session-id'];
   if (newSess) {
-    sessionId = newSess;
+    sessionId = Array.isArray(newSess) ? newSess[0] : newSess;
   }
-  if (res.status === 202) {
+  if (response.status === 202 || !response.text) {
     return null; // 通知类请求，服务器可能返回 202 无内容
   }
-  const text = await res.text();
-  if (!text) {
-    return null;
-  }
-  const ct = (res.headers.get('content-type') || '').toLowerCase();
+  const ct = String(response.headers['content-type'] || '').toLowerCase();
   if (ct.includes('text/event-stream')) {
     // 解析 SSE 事件（服务器也可能用 SSE 返回流式结果）
     const messages = [];
     let data = '';
-    for (const line of text.split('\n')) {
+    for (const line of response.text.split('\n')) {
       const t = line.trim();
       if (t.startsWith('data:')) {
         data += t.slice(5).trim();
@@ -62,9 +79,9 @@ async function remoteRequest(payload, isNotification) {
     return messages;
   }
   try {
-    return JSON.parse(text);
+    return JSON.parse(response.text);
   } catch (e) {
-    return text;
+    return response.text;
   }
 }
 
