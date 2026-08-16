@@ -16,6 +16,11 @@ class EqBandInfo {
   index: number = 0
 }
 
+class ThemeColorOption {
+  name: string = ''
+  value: string = ''
+}
+
 interface ThemeOption {
   label: string
   value: string
@@ -40,6 +45,11 @@ struct SettingsDetailPage {
   @StorageLink('uplayer_glass_blur_strength') glassBlurStrength: number = 25
   @State pageTitle: string = ''
   @State previewOnRight: boolean = false
+  @State showColorPicker: boolean = false
+  @State pickerHue: number = 210
+  @State pickerSaturation: number = 1
+  @State pickerValue: number = 1
+  @State pickerOriginalColor: string = '#007DFF'
   private dataService: DataService = DataService.getInstance()
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
   private isPC: boolean = deviceInfo.deviceType === '2in1'
@@ -56,7 +66,16 @@ struct SettingsDetailPage {
     { label: '经典', value: 'classic' },
     { label: '沉浸', value: 'immersive' }
   ]
-  private colorOptions: string[] = ['#007DFF', '#FF3B30', '#34C759', '#FF9500', '#AF52DE', '#5AC8FA']
+  private colorOptions: ThemeColorOption[] = [
+    { name: '鸿蒙蓝', value: '#007DFF' },
+    { name: '经典红', value: '#FF3B30' },
+    { name: '经典绿', value: '#34C759' },
+    { name: '经典橙', value: '#FF9500' },
+    { name: '经典紫', value: '#AF52DE' },
+    { name: '经典青', value: '#5AC8FA' },
+    { name: '典雅金', value: '#C79A3B' },
+    { name: '沉浸靛', value: '#5856D6' }
+  ]
   private eqBands: EqBandInfo[] = [
     { freq: '32', index: 0 }, { freq: '64', index: 1 }, { freq: '125', index: 2 },
     { freq: '250', index: 3 }, { freq: '500', index: 4 }, { freq: '1k', index: 5 },
@@ -78,6 +97,10 @@ struct SettingsDetailPage {
   }
 
   aboutToDisappear(): void {
+    if (this.showColorPicker) {
+      this.previewPrimaryColor(this.pickerOriginalColor)
+      this.showColorPicker = false
+    }
     this.unregisterHoldingHandListener()
   }
 
@@ -251,6 +274,42 @@ struct SettingsDetailPage {
     AppStorage.setOrCreate(KEY_PRIMARY_COLOR, color)
   }
 
+  private previewPrimaryColor(color: string): void {
+    this.settings.primaryColor = color
+    this.primaryColor = color
+  }
+
+  private currentPickerColor(): string {
+    return ColorHelper.hsvToHex(this.pickerHue, this.pickerSaturation, this.pickerValue)
+  }
+
+  private hueColor(): string {
+    return ColorHelper.hsvToHex(this.pickerHue, 1, 1)
+  }
+
+  private openColorPicker(): void {
+    const hsv = ColorHelper.hexToHsv(this.settings.primaryColor)
+    this.pickerOriginalColor = this.settings.primaryColor
+    this.pickerHue = hsv.h
+    this.pickerSaturation = hsv.s
+    this.pickerValue = hsv.v
+    this.showColorPicker = true
+  }
+
+  private updatePickerColor(): void {
+    this.previewPrimaryColor(this.currentPickerColor())
+  }
+
+  private cancelColorPicker(): void {
+    this.previewPrimaryColor(this.pickerOriginalColor)
+    this.showColorPicker = false
+  }
+
+  private confirmColorPicker(): void {
+    this.setPrimaryColor(this.currentPickerColor())
+    this.showColorPicker = false
+  }
+
   onSpeedChange(value: number): void {
     this.settings.playSpeed = 0.5 + value / 100
     this.updateSetting()
@@ -304,25 +363,38 @@ struct SettingsDetailPage {
         .padding({ left: 4, right: this.titleButtonWidth + 12 })
         .alignItems(VerticalAlign.Center)
 
-        Scroll() {
-          Column({ space: 10 }) {
-            if (this.pageTitle === '定制') {
-              this.buildCustomizeSection()
-            } else if (this.pageTitle === '播放') {
-              this.buildPlaybackSection()
-            } else if (this.pageTitle === '音效') {
-              this.buildAudioSection()
+        Stack({ alignContent: Alignment.Center }) {
+          Column() {
+            Scroll() {
+              Column({ space: 10 }) {
+                if (this.pageTitle === '定制') {
+                  this.buildCustomizeSection()
+                } else if (this.pageTitle === '播放') {
+                  this.buildPlaybackSection()
+                } else if (this.pageTitle === '音效') {
+                  this.buildAudioSection()
+                }
+              }
+              .width('100%')
+              .padding({
+                left: this.scaledSize(12), right: this.scaledSize(12),
+                top: this.scaledSize(16), bottom: this.scaledSize(40)
+              })
             }
+            .width('100%')
+            .layoutWeight(1)
+            .align(Alignment.Top)
+            .edgeEffect(EdgeEffect.Spring)
           }
           .width('100%')
-          .padding({
-            left: this.scaledSize(12), right: this.scaledSize(12),
-            top: this.scaledSize(16), bottom: this.scaledSize(40)
-          })
+          .height('100%')
+
+          if (this.showColorPicker) {
+            this.colorPickerOverlay()
+          }
         }
         .width('100%')
         .layoutWeight(1)
-        .align(Alignment.Top)
       }
       .width('100%')
       .height('100%')
@@ -516,27 +588,74 @@ struct SettingsDetailPage {
 
       Column() {
         this.sectionTitle('主题色')
-        Row() {
-          ForEach(this.colorOptions, (color: string) => {
-            Column()
-              .width(this.scaledSize(26)).height(this.scaledSize(26))
-              .borderRadius(this.scaledSize(13))
-              .backgroundColor(color)
-              .border({
-                width: this.settings.primaryColor === color ? 2.5 : 0.5,
-                color: this.settings.primaryColor === color ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.25)
-              })
-              .margin({ left: 8 })
-              .onClick(() => { this.setPrimaryColor(color) })
-          }, (color: string) => color)
+        Grid() {
+          ForEach(this.colorOptions, (option: ThemeColorOption) => {
+            GridItem() {
+              Row({ space: this.scaledSize(8) }) {
+                Column()
+                  .width(this.scaledSize(24))
+                  .height(this.scaledSize(24))
+                  .borderRadius(this.scaledSize(12))
+                  .backgroundColor(option.value)
+                  .border({
+                    width: this.settings.primaryColor === option.value ? 3 : 1,
+                    color: this.settings.primaryColor === option.value ? '#FFFFFF' :
+                      ColorHelper.hexToRgba(this.primaryColor, 0.25)
+                  })
+                Text(option.name)
+                  .fontSize(this.scaledFont(11))
+                  .fontColor(this.settingTextColor())
+                  .maxLines(1)
+              }
+              .width('100%')
+              .height(this.scaledSize(42))
+              .padding({ left: this.scaledSize(8), right: this.scaledSize(8) })
+              .borderRadius(this.scaledSize(10))
+              .backgroundColor(this.settings.primaryColor === option.value ?
+                ColorHelper.hexToRgba(option.value, 0.18) : ColorHelper.hexToRgba(this.primaryColor, 0.04))
+              .onClick(() => { this.setPrimaryColor(option.value) })
+            }
+          }, (option: ThemeColorOption) => option.value)
         }
-        .padding({ left: 12, right: 12, top: 2, bottom: 10 })
+        .columnsTemplate(this.isPC ? '1fr 1fr 1fr 1fr' : '1fr 1fr')
+        .columnsGap(this.scaledSize(8))
+        .rowsGap(this.scaledSize(8))
+        .padding({ left: this.scaledSize(12), right: this.scaledSize(12), top: 4 })
         .width('100%')
-        .justifyContent(FlexAlign.End)
+
+        Row({ space: this.scaledSize(10) }) {
+          Column()
+            .width(this.scaledSize(28))
+            .height(this.scaledSize(28))
+            .borderRadius(this.scaledSize(14))
+            .backgroundColor(this.primaryColor)
+            .border({ width: 2, color: '#FFFFFF' })
+          Column() {
+            Text('自定义颜色')
+              .fontSize(this.scaledFont(12))
+              .fontColor(this.settingTextColor())
+              .fontWeight(FontWeight.Medium)
+            Text(this.primaryColor.toUpperCase())
+              .fontSize(this.scaledFont(10))
+              .fontColor(this.settingSubTextColor())
+          }
+          .alignItems(HorizontalAlign.Start)
+          Blank()
+          SymbolGlyph($r('sys.symbol.paintpalette'))
+            .fontSize(this.scaledFont(22))
+            .fontColor([this.primaryColor])
+        }
+        .width('100%')
+        .height(this.scaledSize(48))
+        .padding({ left: this.scaledSize(12), right: this.scaledSize(12) })
+        .margin({ top: this.scaledSize(8), bottom: this.scaledSize(10) })
+        .borderRadius(this.scaledSize(10))
+        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.08))
+        .onClick(() => { this.openColorPicker() })
       }
       .width('100%')
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(10)
+      .borderRadius(this.scaledSize(10))
 
       Column() {
         this.sectionTitle('字体大小')
@@ -630,6 +749,145 @@ struct SettingsDetailPage {
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(10)
     }
+  }
+
+  @Builder
+  colorPickerOverlay(): void {
+    Stack({ alignContent: Alignment.Center }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor('rgba(0,0,0,0.45)')
+
+      Column({ space: this.scaledSize(12) }) {
+        Row() {
+          Text('自定义主题色')
+            .fontSize(this.scaledFont(16))
+            .fontColor(this.settingTextColor())
+            .fontWeight(FontWeight.Bold)
+          Blank()
+          Column()
+            .width(this.scaledSize(34))
+            .height(this.scaledSize(34))
+            .borderRadius(this.scaledSize(17))
+            .backgroundColor(this.currentPickerColor())
+            .border({ width: 2, color: '#FFFFFF' })
+        }
+        .width('100%')
+
+        Stack({ alignContent: Alignment.TopStart }) {
+          Row()
+            .width('100%')
+            .height('100%')
+            .linearGradient({
+              angle: 90,
+              colors: [['#FFFFFF', 0], [this.hueColor(), 1]]
+            })
+          Row()
+            .width('100%')
+            .height('100%')
+            .linearGradient({
+              angle: 180,
+              colors: [['rgba(0,0,0,0)', 0], ['#000000', 1]]
+            })
+          Column()
+            .width(this.scaledSize(18))
+            .height(this.scaledSize(18))
+            .borderRadius(this.scaledSize(9))
+            .border({ width: 3, color: '#FFFFFF' })
+            .shadow({ radius: 5, color: '#88000000' })
+            .position({
+              x: this.pickerSaturation * this.scaledSize(264) - this.scaledSize(9),
+              y: (1 - this.pickerValue) * this.scaledSize(150) - this.scaledSize(9)
+            })
+        }
+        .width(this.scaledSize(264))
+        .height(this.scaledSize(150))
+        .borderRadius(this.scaledSize(12))
+        .clip(true)
+        .gesture(
+          PanGesture()
+            .onActionStart((event: GestureEvent) => {
+              if (event.fingerList.length > 0) {
+                this.updateColorBoard(event.fingerList[0].localX, event.fingerList[0].localY)
+              }
+            })
+            .onActionUpdate((event: GestureEvent) => {
+              if (event.fingerList.length > 0) {
+                this.updateColorBoard(event.fingerList[0].localX, event.fingerList[0].localY)
+              }
+            })
+        )
+
+        Text('色相')
+          .fontSize(this.scaledFont(11))
+          .fontColor(this.settingSubTextColor())
+          .width('100%')
+        Slider({
+          value: this.pickerHue,
+          min: 0,
+          max: 360,
+          step: 1,
+          style: SliderStyle.OutSet
+        })
+          .width('100%')
+          .selectedColor(this.hueColor())
+          .trackColor(ColorHelper.hexToRgba(this.hueColor(), 0.2))
+          .blockColor(this.hueColor())
+          .blockBorderColor('#FFFFFF')
+          .blockBorderWidth(2)
+          .onChange((value: number) => {
+            this.pickerHue = value
+            this.updatePickerColor()
+          })
+
+        Row() {
+          Text(this.currentPickerColor().toUpperCase())
+            .fontSize(this.scaledFont(12))
+            .fontColor(this.settingTextColor())
+            .fontWeight(FontWeight.Medium)
+          Blank()
+          Text('S ' + Math.round(this.pickerSaturation * 100) + '%  V ' +
+            Math.round(this.pickerValue * 100) + '%')
+            .fontSize(this.scaledFont(10))
+            .fontColor(this.settingSubTextColor())
+        }
+        .width('100%')
+
+        Row({ space: this.scaledSize(10) }) {
+          Button('取消')
+            .layoutWeight(1)
+            .height(this.scaledSize(38))
+            .fontColor(this.settingTextColor())
+            .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.08))
+            .onClick(() => { this.cancelColorPicker() })
+          Button('确定')
+            .layoutWeight(1)
+            .height(this.scaledSize(38))
+            .fontColor('#FFFFFF')
+            .backgroundColor(this.currentPickerColor())
+            .onClick(() => { this.confirmColorPicker() })
+        }
+        .width('100%')
+      }
+      .width(this.scaledSize(304))
+      .padding(this.scaledSize(20))
+      .borderRadius(this.scaledSize(22))
+      .backgroundColor($r('app.color.page_background_other'))
+      .border({ width: 1, color: ColorHelper.hexToRgba(this.primaryColor, 0.2) })
+      .shadow({ radius: 28, color: '#66000000' })
+    }
+    .width('100%')
+    .height('100%')
+    .zIndex(50)
+  }
+
+  private updateColorBoard(localX: number, localY: number): void {
+    const width: number = this.scaledSize(264)
+    const height: number = this.scaledSize(150)
+    this.pickerSaturation = Math.max(0, Math.min(1, localX / width))
+    this.pickerValue = 1 - Math.max(0, Math.min(1, localY / height))
+    this.updatePickerColor()
   }
 
   @Builder

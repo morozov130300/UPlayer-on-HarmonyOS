@@ -1,8 +1,7 @@
-// 一碰传 (Knock Share) + 隔空抓取 (Gestures Share) 服务
+// 碰一碰 + 隔空传送分享服务
 import { harmonyShare, systemShare } from '@kit.ShareKit'
 import { uniformTypeDescriptor as utd } from '@kit.ArkData'
-import { fileUri } from '@kit.CoreFileKit'
-import { common } from '@kit.AbilityKit'
+import { fileIo as fs, fileUri } from '@kit.CoreFileKit'
 import { window } from '@kit.ArkUI'
 import { SongInfo } from '../model/SongInfo'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
@@ -11,86 +10,65 @@ import Logger from '../common/utils/Logger'
 const TAG = 'ShareService'
 const CAPABILITY: string = 'SystemCapability.Collaboration.HarmonyShare'
 
-interface GesturesShareOptions {
-  windowId: number
-}
-
 export class ShareService {
   private static instance: ShareService = new ShareService()
   private isKnockListening: boolean = false
   private isGesturesListening: boolean = false
-  private context: common.UIAbilityContext | undefined = undefined
-  private windowId: number = -1
-  private pageContext: string = 'home'
+  private capabilityRegistry: harmonyShare.SendCapabilityRegistry | undefined = undefined
 
-  // 回调引用必须为实例属性，off()需传入同一引用才能注销
-  private knockCallback: (sharableTarget: harmonyShare.SharableTarget) => void = (sharableTarget: harmonyShare.SharableTarget): void => {
-    this.handleShare('knockShare', sharableTarget)
-  }
+  private knockCallback: (sharableTarget: harmonyShare.SharableTarget) => void =
+    (sharableTarget: harmonyShare.SharableTarget): void => {
+      this.handleShare('knockShare', sharableTarget)
+    }
 
-  private gesturesCallback: (sharableTarget: harmonyShare.SharableTarget) => void = (sharableTarget: harmonyShare.SharableTarget): void => {
-    this.handleShare('gesturesShare', sharableTarget)
-  }
+  private gesturesCallback: (sharableTarget: harmonyShare.SharableTarget) => void =
+    (sharableTarget: harmonyShare.SharableTarget): void => {
+      this.handleShare('gesturesShare', sharableTarget)
+    }
 
   public static getInstance(): ShareService {
     return ShareService.instance
   }
 
-  // 注册分享监听，pageContext: 'home' 或 'player'
-  registerListeners(pageContext: string): void {
+  initialize(mainWindow: window.Window): void {
     if (!canIUse(CAPABILITY)) {
       Logger.info(TAG, 'HarmonyShare capability not supported')
       return
     }
-    this.pageContext = pageContext
-    this.context = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
-    this.resolveWindowId()
-    this.registerKnockShare(pageContext)
-    this.registerGesturesShare(pageContext)
+    try {
+      this.capabilityRegistry = { windowId: mainWindow.getWindowProperties().id }
+      this.registerKnockShare()
+      this.registerGesturesShare()
+    } catch (err) {
+      Logger.error(TAG, `initialize failed: ${JSON.stringify(err)}`)
+    }
   }
 
-  // 注销所有分享监听
-  unregisterListeners(): void {
+  shutdown(): void {
     this.unregisterKnockShare()
     this.unregisterGesturesShare()
+    this.capabilityRegistry = undefined
   }
 
-  private resolveWindowId(): void {
-    if (this.windowId !== -1) {
-      return
-    }
-    const win: window.Window | undefined = AppStorage.get<window.Window>(AppStorageKeyConstants.KEY_WINDOW)
-    if (win !== undefined) {
-      try {
-        const props: window.WindowProperties = win.getWindowProperties()
-        this.windowId = props.id
-      } catch (err) {
-        Logger.error(TAG, `getWindowProperties failed: ${JSON.stringify(err)}`)
-      }
-    }
-  }
-
-  // ═══════════ Knock Share (碰一碰) ═══════════
-
-  private registerKnockShare(pageContext: string): void {
-    if (this.isKnockListening) {
+  private registerKnockShare(): void {
+    if (this.isKnockListening || this.capabilityRegistry === undefined) {
       return
     }
     try {
-      harmonyShare.on('knockShare', this.knockCallback)
+      harmonyShare.on('knockShare', this.capabilityRegistry, this.knockCallback)
       this.isKnockListening = true
-      Logger.info(TAG, `knockShare registered, context: ${pageContext}`)
+      Logger.info(TAG, 'knockShare registered')
     } catch (err) {
       Logger.error(TAG, `knockShare register failed: ${JSON.stringify(err)}`)
     }
   }
 
   private unregisterKnockShare(): void {
-    if (!this.isKnockListening) {
+    if (!this.isKnockListening || this.capabilityRegistry === undefined) {
       return
     }
     try {
-      harmonyShare.off('knockShare', this.knockCallback)
+      harmonyShare.off('knockShare', this.capabilityRegistry, this.knockCallback)
       this.isKnockListening = false
       Logger.info(TAG, 'knockShare unregistered')
     } catch (err) {
@@ -98,32 +76,25 @@ export class ShareService {
     }
   }
 
-  // ═══════════ Gestures Share (隔空抓取) ═══════════
-
-  private registerGesturesShare(pageContext: string): void {
-    if (this.isGesturesListening) {
-      return
-    }
-    if (this.windowId === -1) {
-      Logger.warn(TAG, 'gesturesShare: windowId not available')
+  private registerGesturesShare(): void {
+    if (this.isGesturesListening || this.capabilityRegistry === undefined) {
       return
     }
     try {
-      const options: GesturesShareOptions = { windowId: this.windowId }
-      harmonyShare.on('gesturesShare', options, this.gesturesCallback)
+      harmonyShare.on('gesturesShare', this.capabilityRegistry, this.gesturesCallback)
       this.isGesturesListening = true
-      Logger.info(TAG, `gesturesShare registered, context: ${pageContext}`)
+      Logger.info(TAG, 'gesturesShare registered')
     } catch (err) {
       Logger.error(TAG, `gesturesShare register failed: ${JSON.stringify(err)}`)
     }
   }
 
   private unregisterGesturesShare(): void {
-    if (!this.isGesturesListening) {
+    if (!this.isGesturesListening || this.capabilityRegistry === undefined) {
       return
     }
     try {
-      harmonyShare.off('gesturesShare', this.gesturesCallback)
+      harmonyShare.off('gesturesShare', this.capabilityRegistry, this.gesturesCallback)
       this.isGesturesListening = false
       Logger.info(TAG, 'gesturesShare unregistered')
     } catch (err) {
@@ -131,91 +102,86 @@ export class ShareService {
     }
   }
 
-  // ═══════════ Share Handler ═══════════
-
   private handleShare(source: string, sharableTarget: harmonyShare.SharableTarget): void {
     Logger.info(TAG, `handleShare from ${source}`)
-    try {
-      // 判断当前页面上下文：player页面分享歌曲文件，home页面分享播放状态
-      const currentPage: string = this.getCurrentPageContext()
-      if (currentPage === 'player') {
-        this.shareSongFile(sharableTarget).catch((err: Error) => {
-          Logger.error(TAG, `shareSongFile async failed: ${JSON.stringify(err)}`)
-        })
-      } else {
-        this.sharePlaybackState(sharableTarget)
-      }
-    } catch (err) {
-      Logger.error(TAG, `handleShare error: ${JSON.stringify(err)}`)
-      try {
-        sharableTarget.reject(harmonyShare.SharableErrorCode.NO_CONTENT_ERROR)
-      } catch (rejectErr) {
-        Logger.error(TAG, `reject failed: ${JSON.stringify(rejectErr)}`)
-      }
-    }
+    this.shareCurrentSong(sharableTarget).catch((err: Error) => {
+      Logger.error(TAG, `shareCurrentSong async failed: ${JSON.stringify(err)}`)
+    })
   }
 
-  // 获取当前页面上下文
-  private getCurrentPageContext(): string {
-    return this.pageContext
-  }
-
-  // 分享当前歌曲文件
-  private async shareSongFile(sharableTarget: harmonyShare.SharableTarget): Promise<void> {
+  private async shareCurrentSong(sharableTarget: harmonyShare.SharableTarget): Promise<void> {
     const songList: SongInfo[] | undefined = AppStorage.get(AppStorageKeyConstants.KEY_SONG_LIST)
-    const currentIndex: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? 0
-    if (songList === undefined || currentIndex < 0 || currentIndex >= songList.length) {
-      const opts: Record<string, string> = {}
-      opts['message'] = '当前没有正在播放的歌曲'
-      await sharableTarget.clarifyNonShare(opts)
+    const currentTitle: string = AppStorage.get<string>('uplayer_current_title') ?? ''
+    const currentIndex: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? -1
+    if (currentTitle.length === 0 || songList === undefined || currentIndex < 0 || currentIndex >= songList.length) {
+      await sharableTarget.clarifyNonShare({ message: '当前没有正在播放的歌曲' })
       return
     }
+
     const song: SongInfo = songList[currentIndex]
     const accessPath: string = song.uri.length > 0 ? song.uri : song.filePath
-    try {
-      const shareUri: string = accessPath.indexOf('://') >= 0 ? accessPath : fileUri.getUriFromPath(accessPath)
-      const shareRecord: systemShare.SharedRecord = {
-        utd: utd.UniformDataType.AUDIO,
-        uri: shareUri,
-        title: song.title,
-        description: song.artist
-      }
-      const shareData: systemShare.SharedData = new systemShare.SharedData(shareRecord)
-      await sharableTarget.share(shareData)
-      Logger.info(TAG, `Shared song file: ${song.title}`)
-    } catch (err) {
-      Logger.error(TAG, `shareSongFile failed: ${JSON.stringify(err)}`)
-      await sharableTarget.reject(harmonyShare.SharableErrorCode.NO_CONTENT_ERROR)
-    }
-  }
-
-  // 分享当前播放状态
-  private sharePlaybackState(sharableTarget: harmonyShare.SharableTarget): void {
-    const title: string = AppStorage.get<string>('uplayer_current_title') ?? ''
-    const artist: string = AppStorage.get<string>('uplayer_current_artist') ?? ''
-    const currentTime: number | undefined = AppStorage.get<number>(AppStorageKeyConstants.KEY_CURRENT_TIME)
-    const progress: number = currentTime ?? 0
-
-    if (title.length === 0) {
-      const opts: Record<string, string> = {}
-      opts['message'] = '当前没有正在播放的歌曲'
-      sharableTarget.clarifyNonShare(opts)
+    if (accessPath.length === 0 || !song.isAvailable) {
+      await sharableTarget.clarifyNonShare({ message: '当前歌曲文件不可用' })
       return
     }
 
-    const stateRecord: Record<string, Object> = {}
-    stateRecord['title'] = title
-    stateRecord['artist'] = artist
-    stateRecord['progress'] = progress as Object
-    const content: string = JSON.stringify(stateRecord)
+    try {
+      fs.accessSync(accessPath)
+      const shareUri: string = accessPath.indexOf('://') >= 0 ? accessPath : fileUri.getUriFromPath(accessPath)
+      const shareRecord: systemShare.SharedRecord = {
+        utd: this.getAudioUtd(song.fileName),
+        uri: shareUri,
+        title: song.title.length > 0 ? song.title : song.name,
+        description: song.artist
+      }
+      await sharableTarget.share(new systemShare.SharedData(shareRecord))
+      Logger.info(TAG, `Shared song file: ${song.title}`)
+    } catch (err) {
+      Logger.error(TAG, `shareCurrentSong failed: ${JSON.stringify(err)}`)
+      await this.rejectNoContent(sharableTarget)
+    }
+  }
 
-    const shareData: systemShare.SharedData = new systemShare.SharedData({
-      utd: utd.UniformDataType.TEXT,
-      content: content,
-      title: 'UPlayer 播放状态',
-      description: `${title} - ${artist}`
-    })
-    sharableTarget.share(shareData)
-    Logger.info(TAG, `Shared playback state: ${title} - ${artist}`)
+  private getAudioUtd(fileName: string): string {
+    const lowerName: string = fileName.toLowerCase()
+    if (lowerName.endsWith('.mp3')) {
+      return utd.UniformDataType.MP3
+    }
+    if (lowerName.endsWith('.flac')) {
+      return utd.UniformDataType.FLAC
+    }
+    if (lowerName.endsWith('.aac')) {
+      return utd.UniformDataType.AAC
+    }
+    if (lowerName.endsWith('.m4a') || lowerName.endsWith('.mp4')) {
+      return utd.UniformDataType.MPEG_4_AUDIO
+    }
+    if (lowerName.endsWith('.ogg')) {
+      return utd.UniformDataType.OGG
+    }
+    if (lowerName.endsWith('.wav')) {
+      return utd.UniformDataType.WAVEFORM_AUDIO
+    }
+    if (lowerName.endsWith('.aiff') || lowerName.endsWith('.aif')) {
+      return utd.UniformDataType.AIFF
+    }
+    if (lowerName.endsWith('.alac')) {
+      return utd.UniformDataType.ALAC
+    }
+    if (lowerName.endsWith('.mp2')) {
+      return utd.UniformDataType.MP2
+    }
+    if (lowerName.endsWith('.mka')) {
+      return utd.UniformDataType.MATROSKA_AUDIO
+    }
+    return utd.UniformDataType.AUDIO
+  }
+
+  private async rejectNoContent(sharableTarget: harmonyShare.SharableTarget): Promise<void> {
+    try {
+      await sharableTarget.reject(harmonyShare.SharableErrorCode.NO_CONTENT_ERROR)
+    } catch (err) {
+      Logger.error(TAG, `reject failed: ${JSON.stringify(err)}`)
+    }
   }
 }

@@ -12,7 +12,6 @@ import { PlaylistContent } from './PlaylistContent'
 import { SettingsContent } from './SettingsContent'
 import { DataService } from '../service/DataService'
 import { ColorHelper } from '../common/utils/ColorHelper'
-import { ShareService } from '../service/ShareService'
 import Logger from '../common/utils/Logger'
 import { LrcEntry } from '../viewmodel/LrcEntry'
 import { parseKrcLyric, parseLrcLyric } from '../common/utils/LrcUtils'
@@ -64,7 +63,6 @@ struct MainPage {
   private rotationTimer: number = -1
   private dataService: DataService = DataService.getInstance()
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
-  private shareService: ShareService = ShareService.getInstance()
   private isPC: boolean = deviceInfo.deviceType === '2in1'
   private lyricLoadRequestId: number = 0
 
@@ -117,7 +115,6 @@ struct MainPage {
     this.dataService.initToAppStorage()
     this.updateGreeting()
     this.initBreakpoint()
-    this.shareService.registerListeners('home')
     this.loadCurrentLyrics()
     this.getUIContext()?.animateTo({ duration: 800, curve: Curve.EaseOut }, () => {
       this.greetingOpacity = 1
@@ -614,11 +611,6 @@ struct MainPage {
 
   aboutToDisappear(): void {
     this.stopRotation()
-    this.shareService.unregisterListeners()
-  }
-
-  onPageHide(): void {
-    this.shareService.unregisterListeners()
   }
 
   pageTransition() {

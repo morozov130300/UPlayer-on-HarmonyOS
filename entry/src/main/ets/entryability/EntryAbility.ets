@@ -11,6 +11,7 @@ import { BackgroundUtil } from '../common/utils/BackgroundUtil';
 import { LiveViewService } from '../service/LiveViewService';
 import Logger from '../common/utils/Logger';
 import { AudioMetadataService } from '../service/AudioMetadataService';
+import { ShareService } from '../service/ShareService';
 
 const DOMAIN = 0x0000;
 const TAG = '[EntryAbility]';
@@ -80,6 +81,7 @@ export default class EntryAbility extends UIAbility {
         AppStorage.setOrCreate(AppStorageKeyConstants.KEY_WINDOW_UTIL, windowUtil);
         AppStorage.setOrCreate(AppStorageKeyConstants.KEY_WINDOW, mainWindow);
         AppStorage.setOrCreate('windowClass', mainWindow);
+        ShareService.getInstance().initialize(mainWindow);
         windowUtil.setAvoidArea();
         windowUtil.updateAvoidArea();
         windowUtil.updateWindowInfo();
@@ -107,6 +109,7 @@ export default class EntryAbility extends UIAbility {
   }
 
   onWindowStageDestroy(): void {
+    ShareService.getInstance().shutdown();
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageDestroy');
   }
 

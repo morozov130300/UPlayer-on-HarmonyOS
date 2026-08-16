@@ -4,7 +4,6 @@ import { WindowUtil } from '../common/utils/WindowUtil';
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
 import { curves } from '@kit.ArkUI';
 import { ColorHelper } from '../common/utils/ColorHelper';
-import { ShareService } from '../service/ShareService';
 import { AVPlayerService } from '../service/AVPlayerService';
 import { SongInfo } from '../model/SongInfo';
 import { KeyCode } from '@kit.InputKit';
@@ -21,12 +20,10 @@ struct MusicPlayer {
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF';
   @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0;
   @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) isPlaying: boolean = false;
-  private shareService: ShareService = ShareService.getInstance();
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance();
 
   async aboutToAppear() {
     this.isLoading = false;
-    this.shareService.registerListeners('player');
     this.getUIContext()?.animateTo({ duration: 600, curve: Curve.EaseOut }, () => {
       this.bgOpacity = 1
     })
@@ -34,11 +31,6 @@ struct MusicPlayer {
 
   aboutToDisappear() {
     Logger.info(TAG, 'aboutToDisappear');
-    this.shareService.unregisterListeners();
-  }
-
-  onPageHide(): void {
-    this.shareService.unregisterListeners();
   }
 
   pageTransition() {
