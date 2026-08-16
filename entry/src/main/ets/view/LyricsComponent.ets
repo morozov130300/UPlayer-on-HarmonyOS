@@ -55,17 +55,21 @@ export struct LyricsComponent {
     if (!this.songList || this.selectIndex < 0 || this.selectIndex >= this.songList.length) {
       return;
     }
-    this.context.resourceManager.getRawFileContent(this.songList[this.selectIndex].lyric)
-      .then((value: Uint8Array) => {
-        let textDecoder = util.TextDecoder.create(PlayerConstants.ENCODING, { ignoreBOM: true });
-        let stringData = textDecoder.decodeToString(value, { stream: false });
-        if (this.songList[this.selectIndex].lyric.endsWith(LyricFile.KRC)) {
-          this.mLrcEntryList = parseKrcLyric(stringData);
-        } else if (this.songList[this.selectIndex].lyric.endsWith(LyricFile.LRC)) {
-          this.mLrcEntryList = parseLrcLyric(stringData);
-        }
-        Logger.info('mLrcEntryList', `mLrcEntryList: ${JSON.stringify(this.mLrcEntryList)}`)
-      })
+    try {
+      this.context.resourceManager.getRawFileContent(this.songList[this.selectIndex].lyric)
+        .then((value: Uint8Array) => {
+          let textDecoder = util.TextDecoder.create(PlayerConstants.ENCODING, { ignoreBOM: true });
+          let stringData = textDecoder.decodeToString(value, { stream: false });
+          if (this.songList[this.selectIndex].lyric.endsWith(LyricFile.KRC)) {
+            this.mLrcEntryList = parseKrcLyric(stringData);
+          } else if (this.songList[this.selectIndex].lyric.endsWith(LyricFile.LRC)) {
+            this.mLrcEntryList = parseLrcLyric(stringData);
+          }
+          Logger.info('mLrcEntryList', `mLrcEntryList: ${JSON.stringify(this.mLrcEntryList)}`)
+        })
+    } catch (err) {
+      Logger.error('getLrcEntryList', `Failed to get raw file: ${JSON.stringify(err)}`);
+    }
   }
 
   build() {

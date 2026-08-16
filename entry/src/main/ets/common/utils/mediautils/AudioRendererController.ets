@@ -96,32 +96,36 @@ export class AudioRendererController {
     let secondBufferWalk = SECOND_BUFFER_WALK;
     let bufferWalk = 0;
     let options: Options;
-    this.audioRenderer.on('writeData', (buffer) => {
-      if (!this.songRawFileDescriptor) {
-        return;
-      }
-      options = {
-        offset: this.currentOffset,
-        length: buffer.byteLength
-      };
-      fileIo.readSync(this.songRawFileDescriptor.fd, buffer, options);
-      this.currentOffset += buffer.byteLength;
-      this.bufferRead = this.currentOffset - this.initOffset;
-      bufferWalk += buffer.byteLength;
-      if (this.bufferRead <= this.bufferNeedRead) {
-        if (bufferWalk >= secondBufferWalk) { // 1s seek
-          let curMs = MediaTools.getMsFromByteLength(this.bufferRead);
-          this.seek(curMs);
-          bufferWalk = 0;
+    try {
+      this.audioRenderer.on('writeData', (buffer) => {
+        if (!this.songRawFileDescriptor) {
+          return;
         }
-      } else {
-        bufferWalk = 0;
-        let curMs = MediaTools.getMsFromByteLength(this.songRawFileDescriptor.length);
-        Logger.info(TAG, 'setWriteDataCallback CurMs is ' + curMs);
-        this.seek(curMs);
-        MediaControlCenterCallbackAction.getInstance().doPlayNextAction();
-      }
-    })
+        options = {
+          offset: this.currentOffset,
+          length: buffer.byteLength
+        };
+        fileIo.readSync(this.songRawFileDescriptor.fd, buffer, options);
+        this.currentOffset += buffer.byteLength;
+        this.bufferRead = this.currentOffset - this.initOffset;
+        bufferWalk += buffer.byteLength;
+        if (this.bufferRead <= this.bufferNeedRead) {
+          if (bufferWalk >= secondBufferWalk) { // 1s seek
+            let curMs = MediaTools.getMsFromByteLength(this.bufferRead);
+            this.seek(curMs);
+            bufferWalk = 0;
+          }
+        } else {
+          bufferWalk = 0;
+          let curMs = MediaTools.getMsFromByteLength(this.songRawFileDescriptor.length);
+          Logger.info(TAG, 'setWriteDataCallback CurMs is ' + curMs);
+          this.seek(curMs);
+          MediaControlCenterCallbackAction.getInstance().doPlayNextAction();
+        }
+      })
+    } catch (err) {
+      Logger.error(TAG, `setWriteDataCallback failed: ${JSON.stringify(err)}`);
+    }
   }
 
   // [End setWriteDataCallback]
@@ -131,7 +135,11 @@ export class AudioRendererController {
     if (!this.audioRenderer) {
       return;
     }
-    this.audioRenderer.on('audioInterrupt', this.interruptCallback);
+    try {
+      this.audioRenderer.on('audioInterrupt', this.interruptCallback);
+    } catch (err) {
+      Logger.error(TAG, `setInterruptCallback failed: ${JSON.stringify(err)}`);
+    }
   }
 
   private interruptCallback: (interruptEvent: audio.InterruptEvent) => void =
@@ -170,7 +178,11 @@ export class AudioRendererController {
     if (!this.audioRenderer) {
       return;
     }
-    this.audioRenderer.on('outputDeviceChangeWithInfo', this.outputDeviceChangeCallback);
+    try {
+      this.audioRenderer.on('outputDeviceChangeWithInfo', this.outputDeviceChangeCallback);
+    } catch (err) {
+      Logger.error(TAG, `setOutputDeviceChangeCallback failed: ${JSON.stringify(err)}`);
+    }
   }
 
   private outputDeviceChangeCallback(deviceChangeInfo: audio.AudioStreamDeviceChangeInfo) {

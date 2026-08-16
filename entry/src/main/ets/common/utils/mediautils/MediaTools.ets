@@ -25,9 +25,15 @@ const TAG = 'MediaTools';
 export class MediaTools {
   static async getPixelMapFromResource(context: common.UIAbilityContext,
     name: resourceManager.Resource): Promise<PixelMap> {
-    let resourceMgr = context.resourceManager;
-    let fileData: Uint8Array = await resourceMgr.getMediaContent(name.id);
-    return await image.createImageSource(fileData.buffer as ArrayBuffer).createPixelMap();
+    try {
+      let resourceMgr = context.resourceManager;
+      let fileData: Uint8Array = await resourceMgr.getMediaContent(name.id);
+      let imageSource = image.createImageSource(fileData.buffer as ArrayBuffer);
+      return await imageSource.createPixelMap();
+    } catch (err) {
+      Logger.error(TAG, `getPixelMapFromResource failed: ${JSON.stringify(err)}`);
+      throw new Error(`getPixelMapFromResource failed: ${JSON.stringify(err)}`);
+    }
   }
 
   static async getPixelMapFromFile(id: string, path: string): Promise<image.PixelMap> {
@@ -70,9 +76,14 @@ export class MediaTools {
     if (!filename) {
       return undefined;
     }
-    const lyricUint8Array: Uint8Array = await context.resourceManager.getRawFileContent(filename);
-    let textDecoder = util.TextDecoder.create('utf-8', { ignoreBOM: true });
-    let resStr: string = textDecoder.decodeToString(lyricUint8Array, { stream: false });
-    return resStr;
+    try {
+      const lyricUint8Array: Uint8Array = await context.resourceManager.getRawFileContent(filename);
+      let textDecoder = util.TextDecoder.create('utf-8', { ignoreBOM: true });
+      let resStr: string = textDecoder.decodeToString(lyricUint8Array, { stream: false });
+      return resStr;
+    } catch (err) {
+      Logger.error(TAG, `getLrcFromRawFile failed: ${JSON.stringify(err)}`);
+      return undefined;
+    }
   }
 }

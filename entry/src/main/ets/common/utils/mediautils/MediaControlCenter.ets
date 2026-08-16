@@ -110,16 +110,24 @@ export class MediaControlCenter {
     let strategy: audio.AudioSessionStrategy = {
       concurrencyMode: concurrencyMode
     };
-    await this.audioSessionManager.activateAudioSession(strategy);
-    Logger.info(TAG, 'activateAudioSession SUCCESS');
+    try {
+      await this.audioSessionManager.activateAudioSession(strategy);
+      Logger.info(TAG, 'activateAudioSession SUCCESS');
+    } catch (err) {
+      Logger.error(TAG, `activateAudioSession failed: ${JSON.stringify(err)}`);
+    }
   }
 
   private async deactivateAudioSession() {
     if (!this.audioSessionManager) {
       return;
     }
-    await this.audioSessionManager.deactivateAudioSession();
-    Logger.info(TAG, 'deactivateAudioSession SUCCESS');
+    try {
+      await this.audioSessionManager.deactivateAudioSession();
+      Logger.info(TAG, 'deactivateAudioSession SUCCESS');
+    } catch (err) {
+      Logger.error(TAG, `deactivateAudioSession failed: ${JSON.stringify(err)}`);
+    }
   }
 
   public async init() {
@@ -181,12 +189,15 @@ export class MediaControlCenter {
 
   // Obtain a secure random number between 0 and 1
   private getSecureRandom0To1(): number {
-    const rand = cryptoFramework.createRandom();
-    // Generate 1-byte random data (0-255)
-    const randData = rand.generateRandomSync(1);
-    // Convert floating-point numbers within the range
-    let randomMum: number = randData.data[0] * 1 / 255;
-    return randomMum;
+    try {
+      const rand = cryptoFramework.createRandom();
+      const randData = rand.generateRandomSync(1);
+      let randomMum: number = randData.data[0] * 1 / 255;
+      return randomMum;
+    } catch (err) {
+      Logger.error(TAG, `getSecureRandom0To1 failed: ${JSON.stringify(err)}`);
+      return Math.random();
+    }
   }
 
   // Set a secure random number

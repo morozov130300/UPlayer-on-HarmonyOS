@@ -94,13 +94,17 @@ export struct ControlAreaComponent {
       this.modeRotate += 360;
     });
     Logger.info(TAG, 'playModeIndex is' + this.playModeIndex);
-    this.promptAction.openToast({
-      message: `${this.playMode === MusicPlayMode.ORDER ?
-        this.resourceConversion.getStringValueFromResource($r('app.string.sequential_playback')) :
-        this.playMode === MusicPlayMode.RANDOM ?
-          this.resourceConversion.getStringValueFromResource($r('app.string.random_playback')) :
-          this.resourceConversion.getStringValueFromResource($r('app.string.single_playback'))}`
-    });
+    try {
+      this.promptAction.openToast({
+        message: `${this.playMode === MusicPlayMode.ORDER ?
+          this.resourceConversion.getStringValueFromResource($r('app.string.sequential_playback')) :
+          this.playMode === MusicPlayMode.RANDOM ?
+            this.resourceConversion.getStringValueFromResource($r('app.string.random_playback')) :
+            this.resourceConversion.getStringValueFromResource($r('app.string.single_playback'))}`
+      });
+    } catch (err) {
+      Logger.error(TAG, `openToast failed: ${JSON.stringify(err)}`);
+    }
     MediaControlCenter.getInstance().setPlayModel(this.playMode);
   }
 
