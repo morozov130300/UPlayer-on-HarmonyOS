@@ -139,14 +139,16 @@ export class ShareService {
       // 判断当前页面上下文：player页面分享歌曲文件，home页面分享播放状态
       const currentPage: string = this.getCurrentPageContext()
       if (currentPage === 'player') {
-        this.shareSongFile(sharableTarget)
+        this.shareSongFile(sharableTarget).catch((err: Error) => {
+          Logger.error(TAG, `shareSongFile async failed: ${JSON.stringify(err)}`)
+        })
       } else {
         this.sharePlaybackState(sharableTarget)
       }
     } catch (err) {
       Logger.error(TAG, `handleShare error: ${JSON.stringify(err)}`)
       try {
-        sharableTarget.reject(1)
+        sharableTarget.reject(harmonyShare.SharableErrorCode.NO_CONTENT_ERROR)
       } catch (rejectErr) {
         Logger.error(TAG, `reject failed: ${JSON.stringify(rejectErr)}`)
       }
@@ -159,32 +161,32 @@ export class ShareService {
   }
 
   // 分享当前歌曲文件
-  private shareSongFile(sharableTarget: harmonyShare.SharableTarget): void {
+  private async shareSongFile(sharableTarget: harmonyShare.SharableTarget): Promise<void> {
     const songList: SongInfo[] | undefined = AppStorage.get(AppStorageKeyConstants.KEY_SONG_LIST)
     const currentIndex: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? 0
     if (songList === undefined || currentIndex < 0 || currentIndex >= songList.length) {
       const opts: Record<string, string> = {}
       opts['message'] = '当前没有正在播放的歌曲'
-      sharableTarget.clarifyNonShare(opts)
+      await sharableTarget.clarifyNonShare(opts)
       return
     }
     const song: SongInfo = songList[currentIndex]
     const accessPath: string = song.uri.length > 0 ? song.uri : song.filePath
-    let shareUri: string = ''
     try {
-      shareUri = fileUri.getUriFromPath(accessPath)
+      const shareUri: string = accessPath.indexOf('://') >= 0 ? accessPath : fileUri.getUriFromPath(accessPath)
+      const shareRecord: systemShare.SharedRecord = {
+        utd: utd.UniformDataType.AUDIO,
+        uri: shareUri,
+        title: song.title,
+        description: song.artist
+      }
+      const shareData: systemShare.SharedData = new systemShare.SharedData(shareRecord)
+      await sharableTarget.share(shareData)
+      Logger.info(TAG, `Shared song file: ${song.title}`)
     } catch (err) {
-      Logger.error(TAG, `getUriFromPath failed: ${JSON.stringify(err)}`)
-      shareUri = accessPath
+      Logger.error(TAG, `shareSongFile failed: ${JSON.stringify(err)}`)
+      await sharableTarget.reject(harmonyShare.SharableErrorCode.NO_CONTENT_ERROR)
     }
-    const shareData: systemShare.SharedData = new systemShare.SharedData({
-      utd: utd.UniformDataType.AUDIO,
-      content: shareUri,
-      title: song.title,
-      description: song.artist
-    })
-    sharableTarget.share(shareData)
-    Logger.info(TAG, `Shared song file: ${song.title}`)
   }
 
   // 分享当前播放状态

@@ -347,6 +347,10 @@
     {
       "name": "reason_file_access_persist",
       "value": "持久化访问导入的音乐文件，重启后无需再次选择"
+    },
+    {
+      "name": "reason_detect_gesture",
+      "value": "根据用户握持方向调整设置预览位置"
     }
   ]
 }

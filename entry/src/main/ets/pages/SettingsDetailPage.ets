@@ -5,6 +5,8 @@ import { AVPlayerService } from '../service/AVPlayerService'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import Logger from '../common/utils/Logger'
+import { deviceInfo } from '@kit.BasicServicesKit'
+import { motion } from '@kit.MultimodalAwarenessKit'
 
 const TAG = 'SettingsDetailPage'
 const KEY_PRIMARY_COLOR = 'uplayer_primary_color'
@@ -36,8 +38,14 @@ struct SettingsDetailPage {
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
   @StorageLink('uplayer_tab_indicator_depth') tabIndicatorDepth: number = 50
   @State pageTitle: string = ''
+  @State previewOnRight: boolean = false
   private dataService: DataService = DataService.getInstance()
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
+  private isPC: boolean = deviceInfo.deviceType === '2in1'
+  private holdingHandCallback: (status: motion.HoldingHandStatus) => void =
+    (status: motion.HoldingHandStatus): void => {
+      this.previewOnRight = status === motion.HoldingHandStatus.LEFT_HAND_HELD
+    }
   private themeOptions: ThemeOption[] = [
     { label: '跟随系统', value: 'system' },
     { label: '深色模式', value: 'dark' },
@@ -65,6 +73,61 @@ struct SettingsDetailPage {
     const params = this.getUIContext()?.getRouter().getParams() as Record<string, string>
     const route: string = params?.category ?? 'customize'
     this.pageTitle = this.titleMap[route] ?? '设置'
+    this.registerHoldingHandListener()
+  }
+
+  aboutToDisappear(): void {
+    this.unregisterHoldingHandListener()
+  }
+
+  private registerHoldingHandListener(): void {
+    this.previewOnRight = false
+    if (this.isPC || !canIUse('SystemCapability.MultimodalAwareness.Motion')) {
+      return
+    }
+    try {
+      motion.on('holdingHandChanged', this.holdingHandCallback)
+    } catch (err) {
+      Logger.warn(TAG, `holdingHandChanged register failed: ${JSON.stringify(err)}`)
+    }
+  }
+
+  private unregisterHoldingHandListener(): void {
+    if (this.isPC || !canIUse('SystemCapability.MultimodalAwareness.Motion')) {
+      return
+    }
+    try {
+      motion.off('holdingHandChanged', this.holdingHandCallback)
+    } catch (err) {
+      Logger.warn(TAG, `holdingHandChanged unregister failed: ${JSON.stringify(err)}`)
+    }
+  }
+
+  private indicatorDarken(base: number, range: number): number {
+    const depth: number = 100 - this.tabIndicatorDepth
+    return Math.min(0.75, base + range * depth / 100)
+  }
+
+  @Builder
+  tabIndicatorPreview(): void {
+    Row()
+      .width(this.scaledSize(68))
+      .height(this.scaledSize(36))
+      .borderRadius(this.scaledSize(18))
+      .shadow({
+        radius: 14,
+        color: ColorHelper.hexWithAlpha(
+          ColorHelper.darken(this.primaryColor, this.indicatorDarken(0.12, 0.4)), 'CC')
+      })
+      .radialGradient({
+        center: ['50%', '50%'],
+        radius: '75%',
+        colors: [
+          [ColorHelper.darken(this.primaryColor, this.indicatorDarken(0.02, 0.32)), 0.0],
+          [ColorHelper.darken(this.primaryColor, this.indicatorDarken(0.12, 0.48)), 0.58],
+          [ColorHelper.darken(this.primaryColor, this.indicatorDarken(0.25, 0.5)), 1.0]
+        ]
+      })
   }
 
   private isDark(): boolean {
@@ -303,10 +366,16 @@ struct SettingsDetailPage {
       Column() {
         this.sectionTitle('经典 Tab 指示器深浅')
         Row() {
+          if (!this.previewOnRight) {
+            this.tabIndicatorPreview()
+          }
           Text('浅')
             .fontSize(this.scaledFont(11))
             .fontColor(this.settingTextColor())
-            .margin({ right: this.scaledSize(8) })
+            .margin({
+              left: this.previewOnRight ? 0 : this.scaledSize(14),
+              right: this.scaledSize(8)
+            })
           Slider({
             value: this.settings.tabIndicatorDepth,
             min: 0,
@@ -314,6 +383,7 @@ struct SettingsDetailPage {
             step: 1,
             style: SliderStyle.OutSet
           })
+            .width('55%')
             .layoutWeight(1)
             .selectedColor(this.primaryColor)
             .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
@@ -332,6 +402,10 @@ struct SettingsDetailPage {
             .fontSize(this.scaledFont(11))
             .fontColor(this.settingTextColor())
             .margin({ left: this.scaledSize(8) })
+          if (this.previewOnRight) {
+            Blank().width(this.scaledSize(14))
+            this.tabIndicatorPreview()
+          }
         }
         .padding({
           left: this.scaledSize(12), right: this.scaledSize(12),
