@@ -327,12 +327,12 @@ struct SettingsDetailPage {
 
   onEqBandChange(bandIndex: number, value: number, mode: SliderChangeMode): void {
     const bands: number[] = this.settings.eqBands.slice()
-    bands[bandIndex] = Math.round(value) - 12
+    bands[bandIndex] = Math.round(value) - 10
     this.settings.eqBands = bands
     this.settings = this.settings
     const applied: boolean = this.avPlayerService.updateEqualizerBands(bands)
-    if (!applied) {
-      Logger.error(TAG, `set equalizer band failed index=${bandIndex} value=${bands[bandIndex]}`)
+    if (!applied && (mode === SliderChangeMode.End || mode === SliderChangeMode.Click)) {
+      Logger.warn(TAG, `equalizer change not applied by native backend index=${bandIndex} value=${bands[bandIndex]}`)
     }
     if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
       this.updateSetting()
@@ -991,9 +991,9 @@ struct SettingsDetailPage {
                   .margin({ bottom: 4 })
                 Stack({ alignContent: Alignment.Center }) {
                   Slider({
-                    value: this.settings.eqBands[band.index] + 12,
+                    value: this.settings.eqBands[band.index] + 10,
                     min: 0,
-                    max: 24,
+                    max: 20,
                     step: 1,
                     style: SliderStyle.OutSet,
                     direction: Axis.Vertical,

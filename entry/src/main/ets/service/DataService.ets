@@ -17,6 +17,8 @@ const KEY_VIEW_MODE: string = 'uplayer_view_mode'
 const KEY_SELECTED_FOLDERS: string = 'uplayer_selected_folders'
 const KEY_FAVORITES_SELECTED: string = 'uplayer_favorites_selected'
 const KEY_PLAY_NEXT_QUEUE: string = 'uplayer_play_next_queue'
+const EQUALIZER_MIN_GAIN_DB: number = -10
+const EQUALIZER_MAX_GAIN_DB: number = 10
 
 export const AUDIO_EXTENSIONS: string[] = [
   '.mp3', '.flac', '.wav', '.aac', '.m4a', '.ogg', '.wma', '.ape',
@@ -357,10 +359,14 @@ export class DataService {
       s.showLyrics = r['showLyrics'] as boolean
       s.eqEnabled = r['eqEnabled'] as boolean
       let rawEqBands: Object | undefined = r['eqBands']
+      let eqBandsMigrated: boolean = false
       if (rawEqBands !== undefined) {
         const bands: number[] = rawEqBands as number[]
         for (let i = 0; i < bands.length && i < 10; i++) {
-          s.eqBands[i] = bands[i]
+          const normalized: number = Math.max(EQUALIZER_MIN_GAIN_DB,
+            Math.min(EQUALIZER_MAX_GAIN_DB, Math.round(bands[i])))
+          s.eqBands[i] = normalized
+          eqBandsMigrated = eqBandsMigrated || normalized !== bands[i]
         }
       }
       s.playSpeed = r['playSpeed'] as number
@@ -378,6 +384,9 @@ export class DataService {
       s.tabIndicatorDepth = rawTabIndicatorDepth !== undefined ? rawTabIndicatorDepth as number : 50
       let rawGlassBlurStrength: Object | undefined = r['glassBlurStrength']
       s.glassBlurStrength = rawGlassBlurStrength !== undefined ? rawGlassBlurStrength as number : 25
+      if (eqBandsMigrated) {
+        this.saveSettings(s)
+      }
       return s
     } catch (e) {
       return new AppSettingsData()
@@ -385,6 +394,12 @@ export class DataService {
   }
 
   saveSettings(settings: AppSettingsData): void {
+    const normalizedBands: number[] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    for (let i = 0; i < settings.eqBands.length && i < normalizedBands.length; i++) {
+      normalizedBands[i] = Math.max(EQUALIZER_MIN_GAIN_DB,
+        Math.min(EQUALIZER_MAX_GAIN_DB, Math.round(settings.eqBands[i])))
+    }
+    settings.eqBands = normalizedBands
     const r: Record<string, Object> = {}
     r['plusButtonScrollHide'] = settings.plusButtonScrollHide
     r['themeMode'] = settings.themeMode

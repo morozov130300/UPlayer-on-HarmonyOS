@@ -7,6 +7,7 @@ export const setEqualizerEnable: (enabled: boolean) => boolean
 export const setEqualizerEnabled: (enabled: boolean) => boolean
 export const isEqualizerEnabled: () => boolean
 export const setEqualizerBands: (bands: number[]) => boolean
+export const getEqualizerBands: () => number[]
 export const setPcmCaptureCallback: (callback: PcmCaptureCallback) => boolean
 export const clearPcmCaptureCallback: () => boolean
 export const setSpeed: (speed: number) => boolean

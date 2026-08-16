@@ -28,6 +28,8 @@ export class AVPlayerService {
   private fadeStep: number = 0
   private static FADE_STEPS: number = 6
   private static FADE_INTERVAL: number = 50
+  private static EQUALIZER_MIN_GAIN_DB: number = -10
+  private static EQUALIZER_MAX_GAIN_DB: number = 10
   private interruptedWhilePlaying: boolean = false
   public onSongComplete: (() => void) | undefined = undefined
   private sessionController: AVSessionController = AVSessionController.getInstance()
@@ -543,18 +545,40 @@ export class AVPlayerService {
     return minStr + ':' + secStr
   }
 
+  private normalizeEqualizerBands(bands: number[]): number[] {
+    const normalized: number[] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    for (let i = 0; i < bands.length && i < normalized.length; i++) {
+      normalized[i] = Math.max(AVPlayerService.EQUALIZER_MIN_GAIN_DB,
+        Math.min(AVPlayerService.EQUALIZER_MAX_GAIN_DB, Math.round(bands[i])))
+    }
+    return normalized
+  }
+
   updateEqualizerBands(bands: number[]): boolean {
-    this.equalizerBands = bands.slice(0, 10)
-    if (!this.equalizerEnabled) {
+    this.equalizerBands = this.normalizeEqualizerBands(bands)
+    if (!this.equalizerEnabled || !this.nativeMode) {
       return false
     }
-    return nativeAudio.setEqualizerBands(this.equalizerBands)
+    if (!nativeAudio.setEqualizerBands(this.equalizerBands)) {
+      return false
+    }
+    const actualBands: number[] = nativeAudio.getEqualizerBands()
+    if (actualBands.length !== this.equalizerBands.length) {
+      return false
+    }
+    for (let i = 0; i < this.equalizerBands.length; i++) {
+      if (actualBands[i] !== this.equalizerBands[i]) {
+        Logger.error(TAG, `equalizer verify failed index=${i} requested=${this.equalizerBands[i]} actual=${actualBands[i]}`)
+        return false
+      }
+    }
+    return true
   }
 
   async applyEqualizer(enabled: boolean, bands: number[]): Promise<void> {
     const previousEnabled: boolean = this.equalizerEnabled
     this.equalizerEnabled = enabled
-    this.equalizerBands = bands.slice(0, 10)
+    this.equalizerBands = this.normalizeEqualizerBands(bands)
     nativeAudio.setEqualizerEnable(enabled)
     if (enabled) {
       nativeAudio.setEqualizerBands(this.equalizerBands)

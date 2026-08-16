@@ -31,6 +31,8 @@
 namespace {
 constexpr unsigned int UPLAYER_LOG_DOMAIN = 0x0000;
 constexpr const char* UPLAYER_LOG_TAG = "UPlayerNative";
+constexpr double EQUALIZER_MIN_GAIN_DB = -10.0;
+constexpr double EQUALIZER_MAX_GAIN_DB = 10.0;
 
 std::mutex playerOperationMutex;
 std::atomic<uint64_t> latestPlayRequest = 0;
@@ -442,24 +444,32 @@ public:
 
     bool SetBands(const std::array<int32_t, EQUALIZER_BAND_NUM>& bands)
     {
-        if (!requestedEqEnabled_) {
-            return true;
-        }
         std::lock_guard<std::mutex> lock(effectMutex_);
         bands_ = bands;
+        if (!requestedEqEnabled_ || eqNode_ == nullptr) {
+            return true;
+        }
+        return ApplyBandsLocked(bands_, true);
+    }
+
+    std::array<int32_t, EQUALIZER_BAND_NUM> GetBands()
+    {
+        std::lock_guard<std::mutex> lock(effectMutex_);
         if (eqNode_ == nullptr) {
-            return IsEqualizerSupported();
+            return bands_;
         }
-        OH_EqualizerFrequencyBandGains gains = {};
-        for (size_t i = 0; i < bands.size(); i++) {
-            gains.gains[i] = bands[i];
-        }
-        OH_AudioSuite_Result result = OH_AudioSuiteEngine_SetEqualizerFrequencyBandGains(eqNode_, gains);
+        OH_EqualizerFrequencyBandGains current = {};
+        OH_AudioSuite_Result result = OH_AudioSuiteEngine_GetEqualizerFrequencyBandGains(eqNode_, &current);
         if (result != AUDIOSUITE_SUCCESS) {
             OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                "set equalizer bands failed code=%{public}d", result);
+                "get equalizer bands failed code=%{public}d", result);
+            return bands_;
         }
-        return result == AUDIOSUITE_SUCCESS;
+        std::array<int32_t, EQUALIZER_BAND_NUM> resultBands = {};
+        for (size_t i = 0; i < resultBands.size(); i++) {
+            resultBands[i] = current.gains[i];
+        }
+        return resultBands;
     }
 
     bool IsEqualizerEnabled() const
@@ -539,6 +549,61 @@ public:
     }
 
 private:
+    bool ApplyBandsLocked(const std::array<int32_t, EQUALIZER_BAND_NUM>& bands, bool verify)
+    {
+        if (eqNode_ == nullptr) {
+            return false;
+        }
+        OH_AudioSuite_Result bypassResult = OH_AudioSuiteEngine_BypassEffectNode(eqNode_, false);
+        if (bypassResult != AUDIOSUITE_SUCCESS) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "enable equalizer processing failed code=%{public}d", bypassResult);
+            return false;
+        }
+        bool bypassed = true;
+        OH_AudioSuite_Result bypassStateResult = OH_AudioSuiteEngine_GetNodeBypassStatus(eqNode_, &bypassed);
+        if (bypassStateResult != AUDIOSUITE_SUCCESS || bypassed) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "equalizer bypass verify failed code=%{public}d bypassed=%{public}d",
+                bypassStateResult, bypassed ? 1 : 0);
+            return false;
+        }
+        OH_EqualizerFrequencyBandGains gains = {};
+        for (size_t i = 0; i < bands.size(); i++) {
+            gains.gains[i] = bands[i];
+        }
+        OH_AudioSuite_Result setResult = OH_AudioSuiteEngine_SetEqualizerFrequencyBandGains(eqNode_, gains);
+        if (setResult != AUDIOSUITE_SUCCESS) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "set equalizer bands failed code=%{public}d", setResult);
+            return false;
+        }
+        if (!verify) {
+            return true;
+        }
+        OH_EqualizerFrequencyBandGains current = {};
+        OH_AudioSuite_Result getResult = OH_AudioSuiteEngine_GetEqualizerFrequencyBandGains(eqNode_, &current);
+        if (getResult != AUDIOSUITE_SUCCESS) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "verify equalizer bands failed code=%{public}d", getResult);
+            return false;
+        }
+        bool matched = true;
+        for (size_t i = 0; i < bands.size(); i++) {
+            matched = matched && current.gains[i] == bands[i];
+        }
+        OH_LOG_Print(LOG_APP, matched ? LOG_INFO : LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "equalizer bands applied matched=%{public}d bypassed=%{public}d requested=%{public}d,%{public}d,"
+            "%{public}d,%{public}d,%{public}d,%{public}d,%{public}d,%{public}d,%{public}d,%{public}d "
+            "actual=%{public}d,%{public}d,%{public}d,%{public}d,%{public}d,%{public}d,%{public}d,%{public}d,"
+            "%{public}d,%{public}d",
+            matched ? 1 : 0, bypassed ? 1 : 0, bands[0], bands[1], bands[2], bands[3], bands[4], bands[5],
+            bands[6], bands[7], bands[8], bands[9], current.gains[0], current.gains[1], current.gains[2],
+            current.gains[3], current.gains[4], current.gains[5], current.gains[6], current.gains[7],
+            current.gains[8], current.gains[9]);
+        return matched;
+    }
+
     NativeAudioPlayer() = default;
     ~NativeAudioPlayer()
     {
@@ -665,11 +730,12 @@ private:
             OH_AudioSuiteEngine_ConnectNodes(eqNode_, outputNode_) != AUDIOSUITE_SUCCESS) {
             return false;
         }
-        OH_EqualizerFrequencyBandGains gains = {};
-        for (size_t i = 0; i < bands_.size(); i++) {
-            gains.gains[i] = bands_[i];
+        {
+            std::lock_guard<std::mutex> lock(effectMutex_);
+            if (!ApplyBandsLocked(bands_, true)) {
+                return false;
+            }
         }
-        OH_AudioSuiteEngine_SetEqualizerFrequencyBandGains(eqNode_, gains);
         return OH_AudioSuiteEngine_StartPipeline(pipeline_) == AUDIOSUITE_SUCCESS;
     }
 
@@ -1152,9 +1218,23 @@ napi_value SetBands(napi_env env, napi_callback_info info)
             napi_get_value_double(env, item, &value) != napi_ok) {
             return BooleanValue(env, false);
         }
-        bands[i] = static_cast<int32_t>(std::clamp(value, -12.0, 12.0));
+        bands[i] = static_cast<int32_t>(
+            std::clamp(value, EQUALIZER_MIN_GAIN_DB, EQUALIZER_MAX_GAIN_DB));
     }
     return BooleanValue(env, NativeAudioPlayer::Instance().SetBands(bands));
+}
+
+napi_value GetBands(napi_env env, napi_callback_info)
+{
+    std::array<int32_t, EQUALIZER_BAND_NUM> bands = NativeAudioPlayer::Instance().GetBands();
+    napi_value result = nullptr;
+    napi_create_array_with_length(env, bands.size(), &result);
+    for (size_t i = 0; i < bands.size(); i++) {
+        napi_value value = nullptr;
+        napi_create_int32(env, bands[i], &value);
+        napi_set_element(env, result, static_cast<uint32_t>(i), value);
+    }
+    return result;
 }
 
 napi_value SetSpeed(napi_env env, napi_callback_info info)
@@ -1292,6 +1372,7 @@ napi_value Init(napi_env env, napi_value exports)
         { "setEqualizerEnabled", nullptr, SetEnabled, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "isEqualizerEnabled", nullptr, IsEnabled, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "setEqualizerBands", nullptr, SetBands, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "getEqualizerBands", nullptr, GetBands, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "setPcmCaptureCallback", nullptr, SetPcmCaptureCallback, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "clearPcmCaptureCallback", nullptr, ClearPcmCaptureCallback, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "setSpeed", nullptr, SetSpeed, nullptr, nullptr, nullptr, napi_default, nullptr },
