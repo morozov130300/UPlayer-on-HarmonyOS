@@ -73,7 +73,7 @@ export class WindowUtil {
       this.mainWindow.setWindowTitleMoveEnabled(true)
       const decorButtonStyle: window.DecorButtonStyle = {
         buttonBackgroundSize: 40,
-        spacingBetweenButtons: 4,
+        spacingBetweenButtons: 8,
         closeButtonRightMargin: 8,
         buttonIconSize: 18,
         buttonBackgroundCornerRadius: 8

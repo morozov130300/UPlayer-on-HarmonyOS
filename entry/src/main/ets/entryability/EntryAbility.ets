@@ -105,9 +105,11 @@ export default class EntryAbility extends UIAbility {
 
       windowStage.getMainWindow().then((mainWindow: window.Window) => {
         const isPC: boolean = deviceInfo.deviceType === '2in1';
-        mainWindow.setWindowLayoutFullScreen(true).catch((err: Error) => {
-          Logger.error(TAG, `setWindowLayoutFullScreen failed: ${JSON.stringify(err)}`);
-        });
+        if (!isPC) {
+          mainWindow.setWindowLayoutFullScreen(true).catch((err: Error) => {
+            Logger.error(TAG, `setWindowLayoutFullScreen failed: ${JSON.stringify(err)}`);
+          });
+        }
       });
     });
   }
