@@ -18,6 +18,7 @@ import { MediaTools } from '../common/utils/mediautils/MediaTools';
 import { WindowInfo } from '../common/utils/WindowUtil';
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
 import { audio } from '@kit.AudioKit';
+import { AlbumCover } from '../component/AlbumCover';
 
 const TAG = 'ControlAreaComponent';
 const SKIP_MS: number = 15000;
@@ -124,12 +125,7 @@ export struct ControlAreaComponent {
       return;
     }
     const song: SongInfo = this.songList[index];
-    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, index);
-    this.selectIndex = index;
-    AppStorage.setOrCreate('uplayer_current_title', song.title.length > 0 ? song.title : song.name);
-    AppStorage.setOrCreate('uplayer_current_artist', song.artist);
-    AppStorage.setOrCreate('uplayer_current_album_art', song.albumArtPath);
-    await this.avPlayerService.play(song.uri.length > 0 ? song.uri : song.filePath);
+    await this.avPlayerService.playSong(song, index);
   }
 
   private async playNext(): Promise<void> {
@@ -552,12 +548,9 @@ struct MusicListContainer {
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
           Row() {
-            Image(this.item.albumArtPath.length > 0 && !this.listItemArtFailed ?
-              'file://' + this.item.albumArtPath : $r('app.media.ic_public_music'))
-              .width($r('app.float.list_item_image_size'))
-              .height($r('app.float.list_item_image_size'))
+            AlbumCover({ song: this.item, coverWidth: $r('app.float.list_item_image_size'),
+              coverHeight: $r('app.float.list_item_image_size') })
               .margin({ right: $r('app.float.list_item_image_margin') })
-              .onError(() => { this.listItemArtFailed = true })
             Text(this.item.artist)
               .opacity($r('app.float.singer_opacity'))
               .fontColor(this.selectIndex === this.index && this.isPlay ? Color.Red : $r('app.color.text_primary'))
@@ -580,11 +573,7 @@ struct MusicListContainer {
       .justifyContent(FlexAlign.SpaceBetween)
       .onClick(() => {
         const avService: AVPlayerService = AVPlayerService.getInstance();
-        AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, this.index);
-        AppStorage.setOrCreate('uplayer_current_title', this.item.title.length > 0 ? this.item.title : this.item.name);
-        AppStorage.setOrCreate('uplayer_current_artist', this.item.artist);
-        AppStorage.setOrCreate('uplayer_current_album_art', this.item.albumArtPath);
-        avService.play(this.item.filePath);
+        avService.playSong(this.item, this.index);
       })
       .height($r('app.float.list_item_height'))
       .width(StyleConstants.FULL_WIDTH)

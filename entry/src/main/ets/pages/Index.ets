@@ -18,6 +18,7 @@ import { LrcEntry } from '../viewmodel/LrcEntry'
 import { parseKrcLyric, parseLrcLyric } from '../common/utils/LrcUtils'
 import { LyricFile } from '../common/constants/LyricConst'
 import { PlayerConstants } from '../common/constants/PlayerConstants'
+import { AlbumCover } from '../component/AlbumCover'
 
 const TAG = 'Index'
 
@@ -64,6 +65,7 @@ struct MainPage {
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
   private shareService: ShareService = ShareService.getInstance()
   private isPC: boolean = deviceInfo.deviceType === '2in1'
+  private lyricLoadRequestId: number = 0
 
   private scaledSize(size: number): number {
     return Math.round(size * this.displaySizeScale)
@@ -320,19 +322,16 @@ struct MainPage {
     } else {
       this.breakpoint = 'xxl'
     }
-    console.log('breakpoint:', this.breakpoint)
   }
 
   @Builder
   playerControl() {
     Row({ space: this.scaledSize(20) }) {
-      if (this.currentSongAlbumArt.length > 0 && !this.albumArtFailed) {
-        Image('file://' + this.currentSongAlbumArt)
+      if (this.currentSongTitle.length > 0) {
+        AlbumCover({ song: this.currentSong(), coverWidth: this.scaledSize(32),
+          coverHeight: this.scaledSize(32), coverRadius: this.scaledSize(16) })
           .width(this.scaledSize(32)).height(this.scaledSize(32))
-          .borderRadius(this.scaledSize(16))
-          .objectFit(ImageFit.Cover)
           .rotate({ angle: this.rotationAngle })
-          .onError(() => { this.albumArtFailed = true })
           .onClick(() => { this.openPlayer() })
       } else {
         Image($r('app.media.ic_public_music'))
@@ -442,6 +441,14 @@ struct MainPage {
     this.albumArtFailed = false
   }
 
+  private currentSong(): SongInfo {
+    const songs: SongInfo[] = this.dataService.getSongs()
+    if (this.selectedSongIndex >= 0 && this.selectedSongIndex < songs.length) {
+      return songs[this.selectedSongIndex]
+    }
+    return new SongInfo()
+  }
+
   onCurrentSongChange(): void {
     this.loadCurrentLyrics()
   }
@@ -460,7 +467,8 @@ struct MainPage {
       this.lyricEntries[currentIndex + 1].lineWords : ''
   }
 
-  loadCurrentLyrics(): void {
+  async loadCurrentLyrics(): Promise<void> {
+    const requestId: number = ++this.lyricLoadRequestId
     this.lyricEntries = []
     this.currentLyricLine = ''
     this.nextLyricLine = ''
@@ -478,19 +486,28 @@ struct MainPage {
     }
     let lyricFile: fs.File | undefined = undefined
     try {
-      lyricFile = fs.openSync(lyricPath, fs.OpenMode.READ_ONLY)
-      const fileSize: number = fs.statSync(lyricFile.fd).size
+      lyricFile = await fs.open(lyricPath, fs.OpenMode.READ_ONLY)
+      const fileSize: number = (await fs.stat(lyricFile.fd)).size
       const lyricBuffer: ArrayBuffer = new ArrayBuffer(fileSize)
-      fs.readSync(lyricFile.fd, lyricBuffer)
+      await fs.read(lyricFile.fd, lyricBuffer)
       const decoder = util.TextDecoder.create(PlayerConstants.ENCODING, { ignoreBOM: true })
       const lyricText: string = decoder.decodeToString(new Uint8Array(lyricBuffer), { stream: false })
-      this.lyricEntries = lyricPath.endsWith(LyricFile.KRC) ? parseKrcLyric(lyricText) : parseLrcLyric(lyricText)
+      const entries: LrcEntry[] = lyricPath.endsWith(LyricFile.KRC) ? parseKrcLyric(lyricText) : parseLrcLyric(lyricText)
+      if (requestId !== this.lyricLoadRequestId || this.selectedSongIndex < 0 ||
+        this.selectedSongIndex >= songs.length || songs[this.selectedSongIndex].id !== song.id) {
+        return
+      }
+      this.lyricEntries = entries
       this.onProgressChange()
     } catch (err) {
       Logger.warn(TAG, `loadCurrentLyrics failed: ${JSON.stringify(err)}`)
     } finally {
       if (lyricFile !== undefined) {
-        fs.closeSync(lyricFile)
+        try {
+          await fs.close(lyricFile)
+        } catch (e) {
+          Logger.warn(TAG, 'close lyric file failed')
+        }
       }
     }
   }
@@ -529,12 +546,8 @@ struct MainPage {
     }
     let idx: number = this.currentIndex >= 0 ? (AppStorage.get<number>(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? 0) : 0
     idx = idx <= 0 ? songList.length - 1 : idx - 1
-    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, idx)
     const song: SongInfo = songList[idx]
-    AppStorage.setOrCreate('uplayer_current_title', song.title.length > 0 ? song.title : song.name)
-    AppStorage.setOrCreate('uplayer_current_artist', song.artist)
-    AppStorage.setOrCreate('uplayer_current_album_art', song.albumArtPath)
-    this.avPlayerService.play(song.uri.length > 0 ? song.uri : song.filePath)
+    this.avPlayerService.playSong(song, idx)
   }
 
   playNext(): void {
@@ -544,12 +557,8 @@ struct MainPage {
     }
     let idx: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? 0
     idx = idx >= songList.length - 1 ? 0 : idx + 1
-    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, idx)
     const song: SongInfo = songList[idx]
-    AppStorage.setOrCreate('uplayer_current_title', song.title.length > 0 ? song.title : song.name)
-    AppStorage.setOrCreate('uplayer_current_artist', song.artist)
-    AppStorage.setOrCreate('uplayer_current_album_art', song.albumArtPath)
-    this.avPlayerService.play(song.uri.length > 0 ? song.uri : song.filePath)
+    this.avPlayerService.playSong(song, idx)
   }
 
   startRotation() {

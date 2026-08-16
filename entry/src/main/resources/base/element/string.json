@@ -285,10 +285,6 @@
       "value": "显示歌词"
     },
     {
-      "name": "notification_control",
-      "value": "通知栏控制"
-    },
-    {
       "name": "background_playback",
       "value": "后台播放"
     },

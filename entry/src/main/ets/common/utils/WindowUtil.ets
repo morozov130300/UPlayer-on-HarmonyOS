@@ -52,9 +52,14 @@ export class WindowUtil {
     }
 
   private updateTitleButtonRect(titleButtonRect: window.TitleButtonRect): void {
-    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TITLE_BUTTON_WIDTH, titleButtonRect.width)
-    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TITLE_BUTTON_HEIGHT, titleButtonRect.height)
-    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TOP_HEIGHT, titleButtonRect.height)
+    if (this.uiContext === undefined) {
+      return
+    }
+    const buttonWidth: number = this.uiContext.px2vp(titleButtonRect.width)
+    const buttonHeight: number = this.uiContext.px2vp(titleButtonRect.height)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TITLE_BUTTON_WIDTH, buttonWidth)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TITLE_BUTTON_HEIGHT, buttonHeight)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TOP_HEIGHT, buttonHeight)
   }
 
   setupImmersiveTitleButtons(): void {

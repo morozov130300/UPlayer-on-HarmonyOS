@@ -112,10 +112,8 @@ struct LockScreenPage {
       prevIdx = list.length - 1;
     }
     if (prevIdx >= 0 && prevIdx < list.length) {
-      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, prevIdx);
       const song: SongInfo = list[prevIdx];
-      const uri: string = song.uri.length > 0 ? song.uri : song.filePath;
-      this.playerService.play(uri);
+      this.playerService.playSong(song, prevIdx);
     }
   }
 
@@ -130,10 +128,8 @@ struct LockScreenPage {
       nextIdx = 0;
     }
     if (nextIdx < list.length) {
-      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, nextIdx);
       const song: SongInfo = list[nextIdx];
-      const uri: string = song.uri.length > 0 ? song.uri : song.filePath;
-      this.playerService.play(uri);
+      this.playerService.playSong(song, nextIdx);
     }
   }
 }

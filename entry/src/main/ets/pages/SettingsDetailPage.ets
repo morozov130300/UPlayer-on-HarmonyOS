@@ -224,6 +224,7 @@ struct SettingsDetailPage {
   onEqBandChange(bandIndex: number, value: number): void {
     this.settings.eqBands[bandIndex] = value - 12
     this.updateSetting()
+    this.avPlayerService.applyEqualizer(this.settings.eqEnabled, this.settings.eqBands)
   }
 
   pageTransition() {
@@ -546,12 +547,6 @@ struct SettingsDetailPage {
           AppStorage.setOrCreate('uplayer_show_lyrics', val)
         })
         Divider().color(ColorHelper.hexToRgba(this.primaryColor, 0.08)).margin({ left: 14, right: 14 })
-        this.toggleRow('通知栏控制', this.settings.enableNotification, (val: boolean) => {
-          this.settings.enableNotification = val
-          this.updateSetting()
-          AppStorage.setOrCreate('uplayer_notification', val)
-        })
-        Divider().color(ColorHelper.hexToRgba(this.primaryColor, 0.08)).margin({ left: 14, right: 14 })
         this.toggleRow('淡入淡出', this.settings.fadeInOut, (val: boolean) => {
           this.settings.fadeInOut = val
           this.updateSetting()
@@ -607,6 +602,7 @@ struct SettingsDetailPage {
         this.toggleRow('均衡器', this.settings.eqEnabled, (val: boolean) => {
           this.settings.eqEnabled = val
           this.updateSetting()
+          this.avPlayerService.applyEqualizer(val, this.settings.eqBands)
         })
       }
       .width('100%')

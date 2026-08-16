@@ -1,6 +1,5 @@
 import { common, wantAgent } from '@kit.AbilityKit';
 import { avSession } from '@kit.AVSessionKit';
-import { MediaTools } from './MediaTools';
 import { SongInfo } from '../../../model/SongInfo';
 import { AVPlayerService } from '../../../service/AVPlayerService';
 import { AudioMetadataService } from '../../../service/AudioMetadataService';
@@ -20,6 +19,7 @@ export class AVSessionController {
   private songList: SongInfo[] = [];
   private musicIndex: number = 0;
   private avPlayerService: AVPlayerService | undefined = undefined;
+  private metadataRequestId: number = 0;
 
   private getAvPlayerService(): AVPlayerService {
     if (this.avPlayerService === undefined) {
@@ -57,12 +57,12 @@ export class AVSessionController {
       Logger.error(TAG, `session create failed: ${JSON.stringify(err)}`);
       return;
     }
-    this.setInitialPlaybackState();
-    await this.setAVMetadata();
-    await this.setAVQueueItems();
-    this.setAVQueueTitle();
-    this.setLaunchAbility();
     this.setListenerForMesFromController();
+    this.setInitialPlaybackState();
+    this.setLaunchAbility();
+    this.setAVQueueTitle();
+    await this.setAVQueueItems();
+    await this.setAVMetadata();
     this.getAndUpdateFavoriteState(this.musicIndex.toString());
   }
 
@@ -165,7 +165,9 @@ export class AVSessionController {
   }
 
   public async setAVMetadata(): Promise<void> {
+    const requestId: number = ++this.metadataRequestId;
     this.musicIndex = AppStorage.get(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? 0;
+    const requestedIndex: number = this.musicIndex;
     Logger.info(TAG, 'current musicIndex is:' + this.musicIndex);
     this.refreshSongList();
     if (this.musicIndex < 0 || this.musicIndex >= this.songList.length) {
@@ -176,10 +178,13 @@ export class AVSessionController {
         const song: SongInfo = this.songList[this.musicIndex];
         // 按需从音频文件提取封面，不再使用缓存文件
         let mediaImage: image.PixelMap | undefined = undefined;
-        if (song.albumArtPath.length > 0) {
-          mediaImage = await MediaTools.getPixelMapFromFile(song.id, song.albumArtPath);
-        } else {
-          mediaImage = await this.extractCoverFromSong(song);
+        mediaImage = await this.extractCoverFromSong(song);
+        if (requestId !== this.metadataRequestId || requestedIndex !==
+          (AppStorage.get<number>(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? 0)) {
+          if (mediaImage !== undefined) {
+            mediaImage.release();
+          }
+          return;
         }
         const metadata: avSession.AVMetadata = {
           assetId: `${this.musicIndex}`,
@@ -253,8 +258,7 @@ export class AVSessionController {
       nextIdx = 0;
     }
     if (nextIdx < this.songList.length) {
-      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, nextIdx);
-      this.getAvPlayerService().play(this.songList[nextIdx].uri.length > 0 ? this.songList[nextIdx].uri : this.songList[nextIdx].filePath);
+      this.getAvPlayerService().playSong(this.songList[nextIdx], nextIdx);
     }
   }
 
@@ -267,8 +271,7 @@ export class AVSessionController {
       prevIdx = this.songList.length - 1;
     }
     if (prevIdx >= 0 && prevIdx < this.songList.length) {
-      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, prevIdx);
-      this.getAvPlayerService().play(this.songList[prevIdx].uri.length > 0 ? this.songList[prevIdx].uri : this.songList[prevIdx].filePath);
+      this.getAvPlayerService().playSong(this.songList[prevIdx], prevIdx);
     }
   }
 

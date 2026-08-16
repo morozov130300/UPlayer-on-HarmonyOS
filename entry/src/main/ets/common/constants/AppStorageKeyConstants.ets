@@ -28,6 +28,7 @@ export class AppStorageKeyConstants {
   public static readonly KEY_IMAGE_COLOR: string = BaseConstants.KEY_PREFIX + 'ImageColor'
   public static readonly KEY_PAGE_SHOW_TIME: string = BaseConstants.KEY_PREFIX + 'PageShowTime'
   public static readonly KEY_SONG_LIST: string = BaseConstants.KEY_PREFIX + 'SongList'
+  public static readonly KEY_LIBRARY_REVISION: string = BaseConstants.KEY_PREFIX + 'LibraryRevision'
   public static readonly KEY_PLAY_MODE: string = BaseConstants.KEY_PREFIX + 'PlayMode'
   public static readonly KEY_SELECT_INDEX: string = BaseConstants.KEY_PREFIX + 'SelectIndex'
   public static readonly KEY_IS_SILENT_MODE: string = BaseConstants.KEY_PREFIX + 'IsSilentMode'

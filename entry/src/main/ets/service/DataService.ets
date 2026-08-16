@@ -4,6 +4,8 @@ import { PreferencesUtil } from '../common/utils/PreferencesUtil'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { fileIo as fs, fileShare } from '@kit.CoreFileKit'
 import Logger from '../common/utils/Logger'
+import { common } from '@kit.AbilityKit'
+import { AudioMetadataService } from './AudioMetadataService'
 
 const TAG = 'DataService'
 
@@ -34,7 +36,6 @@ export class AppSettingsData {
   themeMode: string = 'system'
   primaryColor: string = '#007DFF'
   showLyrics: boolean = true
-  enableNotification: boolean = true
   eqEnabled: boolean = false
   eqBands: number[] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
   playSpeed: number = 1
@@ -187,33 +188,36 @@ export class DataService {
       records.push(this.songToRecord(songs[i]))
     }
     this.writeJsonArray(KEY_SONG_LIST, records as object[])
-    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SONG_LIST, songs)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SONG_LIST, songs.slice())
+    const revision: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_LIBRARY_REVISION) ?? 0
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_LIBRARY_REVISION, revision + 1)
+    const context: common.UIAbilityContext | undefined = AppStorage.get<common.UIAbilityContext>(
+      AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
+    if (context !== undefined) {
+      AudioMetadataService.getInstance().cleanupCoverCache(context, songs)
+    }
   }
 
   addSongs(newSongs: SongInfo[]): ImportResult {
-    this.songsCache = undefined
     const songs: SongInfo[] = this.getSongs()
-    const existingPaths: Set<string> = new Set()
+    const existingIndexes: Map<string, number> = new Map<string, number>()
     for (let i = 0; i < songs.length; i++) {
-      existingPaths.add(songs[i].filePath)
+      existingIndexes.set(songs[i].filePath, i)
     }
     const result: ImportResult = new ImportResult()
     for (let i = 0; i < newSongs.length; i++) {
-      if (existingPaths.has(newSongs[i].filePath)) {
-        for (let j = 0; j < songs.length; j++) {
-          if (songs[j].filePath === newSongs[i].filePath) {
-            songs[j].title = newSongs[i].title
-            songs[j].artist = newSongs[i].artist
-            songs[j].album = newSongs[i].album
-            songs[j].duration = newSongs[i].duration
-            songs[j].uri = newSongs[i].uri
-            songs[j].albumArtPath = newSongs[i].albumArtPath
-            songs[j].isAvailable = true
-            break
-          }
-        }
+      const existingIndex: number | undefined = existingIndexes.get(newSongs[i].filePath)
+      if (existingIndex !== undefined) {
+        songs[existingIndex].title = newSongs[i].title
+        songs[existingIndex].artist = newSongs[i].artist
+        songs[existingIndex].album = newSongs[i].album
+        songs[existingIndex].duration = newSongs[i].duration
+        songs[existingIndex].uri = newSongs[i].uri
+        songs[existingIndex].albumArtPath = newSongs[i].albumArtPath
+        songs[existingIndex].isAvailable = true
         result.dupCount++
       } else {
+        existingIndexes.set(newSongs[i].filePath, songs.length)
         songs.push(newSongs[i])
         result.newCount++
       }
@@ -350,7 +354,6 @@ export class DataService {
       s.themeMode = r['themeMode'] as string
       s.primaryColor = r['primaryColor'] as string
       s.showLyrics = r['showLyrics'] as boolean
-      s.enableNotification = r['enableNotification'] as boolean
       s.eqEnabled = r['eqEnabled'] as boolean
       let rawEqBands: Object | undefined = r['eqBands']
       if (rawEqBands !== undefined) {
@@ -384,7 +387,6 @@ export class DataService {
     r['themeMode'] = settings.themeMode
     r['primaryColor'] = settings.primaryColor
     r['showLyrics'] = settings.showLyrics
-    r['enableNotification'] = settings.enableNotification
     r['eqEnabled'] = settings.eqEnabled
     r['eqBands'] = settings.eqBands
     r['playSpeed'] = settings.playSpeed
@@ -522,6 +524,7 @@ export class DataService {
 
   initToAppStorage(): void {
     AppStorage.setOrCreate(KEY_SETTINGS, this.getSettings())
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_LIBRARY_REVISION, 0)
     AppStorage.setOrCreate(KEY_SORT_MODE, this.getSortMode())
     AppStorage.setOrCreate(KEY_VIEW_MODE, this.getViewMode())
     this.checkSongsAccessibility()
@@ -534,7 +537,6 @@ export class DataService {
     AppStorage.setOrCreate('uplayer_primary_color', s.primaryColor)
     AppStorage.setOrCreate('uplayer_theme_mode', s.themeMode)
     AppStorage.setOrCreate('uplayer_show_lyrics', s.showLyrics)
-    AppStorage.setOrCreate('uplayer_notification', s.enableNotification)
     AppStorage.setOrCreate('uplayer_fade_in_out', s.fadeInOut)
     AppStorage.setOrCreate('uplayer_font_size_scale', s.fontSizeScale)
     AppStorage.setOrCreate('uplayer_display_size_scale', s.displaySizeScale)

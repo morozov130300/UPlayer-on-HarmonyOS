@@ -3,7 +3,6 @@ import { curves } from '@kit.ArkUI';
 import { effectKit } from '@kit.ArkGraphics2D';
 import { image } from '@kit.ImageKit';
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
-import { fileIo as fs } from '@kit.CoreFileKit';
 import { LyricsComponent } from './LyricsComponent';
 import { MusicInfoComponent } from './MusicInfoComponent';
 import { StyleConstants } from '../common/constants/StyleConstants';
@@ -14,6 +13,7 @@ import { ColorConversion } from '../common/utils/ColorConversion';
 import { WindowInfo } from '../common/utils/WindowUtil';
 import { PromptActionClassNew } from '../viewmodel/PromptActionClassNew';
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
+import { AudioMetadataService } from '../service/AudioMetadataService';
 
 const TAG = 'PlayerInfoComponent'
 
@@ -42,6 +42,7 @@ export struct PlayerInfoComponent {
   @State prevImageOpacity: number = 0;
   @State currentSwiperIndex: number = 0;
   private context: common.UIAbilityContext | undefined = AppStorage.get(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT);
+  private imageLoadRequestId: number = 0;
 
   bottomHeightChange() {
   }
@@ -307,14 +308,11 @@ export struct PlayerInfoComponent {
       return;
     }
     const song: SongInfo = this.songList[this.selectIndex];
-    if (song.albumArtPath && song.albumArtPath.length > 0) {
-      this.loadAlbumArtFromFile(song.albumArtPath);
-    } else {
-      this.setDefaultBackground();
-    }
+    this.loadAlbumArt(song);
   }
 
   private setDefaultBackground() {
+    this.imageLoadRequestId++;
     let isDark: boolean = this.themeMode === 'dark';
     if (!isDark && this.themeMode === 'system' && this.context) {
       const config = this.context.config;
@@ -329,15 +327,22 @@ export struct PlayerInfoComponent {
     }
   }
 
-  private loadAlbumArtFromFile(artPath: string) {
+  private async loadAlbumArt(song: SongInfo): Promise<void> {
+    const requestId: number = ++this.imageLoadRequestId;
     try {
-      const file: fs.File = fs.openSync(artPath, fs.OpenMode.READ_ONLY);
-      const stat = fs.statSync(artPath);
-      const buffer: ArrayBuffer = new ArrayBuffer(stat.size);
-      fs.readSync(file.fd, buffer);
-      fs.closeSync(file);
-      image.createImageSource(buffer).createPixelMap().then((pixelMap: image.PixelMap) => {
+      const pixelMap: image.PixelMap | undefined = await AudioMetadataService.getInstance().fetchAlbumCover(song);
+      if (pixelMap === undefined) {
+        this.setDefaultBackground();
+        return;
+      }
+        if (requestId !== this.imageLoadRequestId) {
+          pixelMap.release();
+          return;
+        }
         effectKit.createColorPicker(pixelMap, (error: BusinessError, colorPicker: effectKit.ColorPicker) => {
+          if (requestId !== this.imageLoadRequestId) {
+            return;
+          }
           if (error) {
             Logger.error('Failed to create color picker.');
           } else {
@@ -350,6 +355,10 @@ export struct PlayerInfoComponent {
         if (headFilter !== null) {
           headFilter.blur(PlayerConstants.IMAGE_BLUR);
           headFilter.getEffectPixelMap().then((value: image.PixelMap) => {
+            if (requestId !== this.imageLoadRequestId) {
+              value.release();
+              return;
+            }
             this.prevImageLabel = this.imageLabel;
             this.getUIContext()?.animateTo({ duration: 600, curve: Curve.EaseOut }, () => {
               this.prevImageOpacity = 0.5;
@@ -362,11 +371,8 @@ export struct PlayerInfoComponent {
             }, 100);
           });
         }
-      }).catch((error: BusinessError) => {
-        Logger.error(`${error.code} + ${error.message}`);
-      });
     } catch (err) {
-      Logger.error(`loadAlbumArtFromFile failed: ${JSON.stringify(err)}`);
+      Logger.error(`loadAlbumArt failed: ${JSON.stringify(err)}`);
     }
   }
 }

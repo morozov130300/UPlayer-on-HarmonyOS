@@ -7,6 +7,7 @@ import { ColorHelper } from '../common/utils/ColorHelper'
 import { DisplayItemDataSource } from '../viewmodel/DisplayItemDataSource'
 import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
+import { AlbumCover } from '../component/AlbumCover'
 
 const TAG = 'HomeContent'
 
@@ -30,6 +31,7 @@ export struct HomeContent {
   @State isMultiSelectMode: boolean = false
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
   @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
+  @StorageLink(AppStorageKeyConstants.KEY_LIBRARY_REVISION) @Watch('onLibraryChange') libraryRevision: number = 0
   @State selectedIds: string[] = []
   @State failedArtIds: Set<string> = new Set<string>()
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
@@ -43,6 +45,10 @@ export struct HomeContent {
   }
 
   aboutToAppear(): void {
+    this.loadData()
+  }
+
+  onLibraryChange(): void {
     this.loadData()
   }
 
@@ -224,18 +230,13 @@ export struct HomeContent {
       this.toggleSelectItem(item.id)
       return
     }
-    AppStorage.setOrCreate('uplayer_current_title', item.title.length > 0 ? item.title : item.name)
-    AppStorage.setOrCreate('uplayer_current_artist', item.artist)
-    AppStorage.setOrCreate('uplayer_current_album_art', item.albumArtPath)
-    AppStorage.setOrCreate('uplayer_current_song_path', item.filePath)
     const allSongs: SongInfo[] = this.dataService.getSongs()
     for (let i = 0; i < allSongs.length; i++) {
       if (allSongs[i].id === item.id) {
-        AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, i)
+        this.avPlayerService.playSong(item, i)
         break
       }
     }
-    this.avPlayerService.play(item.uri.length > 0 ? item.uri : item.filePath)
   }
 
   onSongLongPress(item: SongInfo): void {
@@ -442,15 +443,15 @@ export struct HomeContent {
       if (!this.isMultiSelectMode && (this.isPlusVisible || !this.settings.plusButtonScrollHide)) {
         Row() {
           Text('+')
-            .fontSize(32)
+            .fontSize(this.scaledSize(32))
             .fontColor('#FFFFFF')
             .fontWeight(FontWeight.Bold)
         }
-        .width(40).height(40)
-        .borderRadius(20)
+        .width(this.scaledSize(40)).height(this.scaledSize(40))
+        .borderRadius(this.scaledSize(20))
         .backgroundColor(this.primaryColor)
         .shadow({ radius: 10, color: ColorHelper.hexWithAlpha(this.primaryColor, '44'), offsetY: 4 })
-        .position({ bottom: 12, right: 20 })
+        .position({ bottom: this.scaledSize(12), right: this.scaledSize(20) })
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
         .transition({ type: TransitionType.Insert, opacity: 0, scale: { x: 0.5, y: 0.5 } })
@@ -498,21 +499,10 @@ export struct HomeContent {
         .margin({ right: this.scaledSize(10) })
       }
 
-      if (item.albumArtPath.length > 0 && !this.failedArtIds.has(item.id)) {
-        Image('file://' + item.albumArtPath)
-          .width(this.scaledSize(36)).height(this.scaledSize(36))
-          .borderRadius(this.scaledSize(6))
-          .objectFit(ImageFit.Cover)
-          .margin({ right: this.scaledSize(10) })
-          .opacity(item.isAvailable ? 1 : 0.35)
-          .onError(() => { this.failedArtIds.add(item.id) })
-      } else {
-        Image($r('app.media.ic_public_music'))
-          .width(this.scaledSize(36)).height(this.scaledSize(36))
-          .fillColor($r('app.color.text_sixty_color'))
-          .margin({ right: this.scaledSize(10) })
-          .opacity(item.isAvailable ? 1 : 0.35)
-      }
+      AlbumCover({ song: item, coverWidth: this.scaledSize(36), coverHeight: this.scaledSize(36),
+        coverRadius: this.scaledSize(6) })
+        .margin({ right: this.scaledSize(10) })
+        .opacity(item.isAvailable ? 1 : 0.35)
 
       Column() {
         Text(item.title.length > 0 ? item.title : item.name)

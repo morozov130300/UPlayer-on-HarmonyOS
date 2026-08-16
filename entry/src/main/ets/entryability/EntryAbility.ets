@@ -10,6 +10,7 @@ import { AVSessionController } from '../common/utils/mediautils/AVSessionControl
 import { BackgroundUtil } from '../common/utils/BackgroundUtil';
 import { LiveViewService } from '../service/LiveViewService';
 import Logger from '../common/utils/Logger';
+import { AudioMetadataService } from '../service/AudioMetadataService';
 
 const DOMAIN = 0x0000;
 const TAG = '[EntryAbility]';
@@ -23,12 +24,22 @@ export default class EntryAbility extends UIAbility {
     }
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate');
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT, this.context);
-    AVSessionController.getInstance().initAVSession();
-    BackgroundUtil.startContinuousTask(this.context);
     LiveViewService.getInstance().setContext(this.context);
+    const dataService: DataService = DataService.getInstance();
+    const songs = dataService.getSongs();
+    AudioMetadataService.getInstance().migrateLegacyCovers(this.context, songs).then((changed: boolean) => {
+      if (changed) {
+        dataService.saveSongs(songs);
+      } else {
+        AudioMetadataService.getInstance().cleanupCoverCache(this.context, songs);
+      }
+    }).catch((err: Error) => {
+      Logger.warn(TAG, `migrateLegacyCovers failed: ${JSON.stringify(err)}`);
+    });
   }
 
   onDestroy(): void {
+    AudioMetadataService.getInstance().clearMemoryCache();
     AVPlayerService.getInstance().release();
     AVSessionController.getInstance().unregisterSessionListener();
     BackgroundUtil.stopContinuousTask(this.context);
@@ -40,8 +51,10 @@ export default class EntryAbility extends UIAbility {
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageCreate');
 
     DataService.getInstance().initToAppStorage();
+    AVSessionController.getInstance().initAVSession();
 
     const settings = DataService.getInstance().getSettings();
+    AVPlayerService.getInstance().applyEqualizer(settings.eqEnabled, settings.eqBands);
     try {
       if (settings.themeMode === 'light') {
         this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT);

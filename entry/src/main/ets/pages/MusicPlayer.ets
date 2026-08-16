@@ -86,11 +86,7 @@ struct MusicPlayer {
       targetIndex = songList.length - 1;
     }
     const song: SongInfo = songList[targetIndex];
-    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, targetIndex);
-    AppStorage.setOrCreate('uplayer_current_title', song.title.length > 0 ? song.title : song.name);
-    AppStorage.setOrCreate('uplayer_current_artist', song.artist);
-    AppStorage.setOrCreate('uplayer_current_album_art', song.albumArtPath);
-    this.avPlayerService.play(song.uri.length > 0 ? song.uri : song.filePath);
+    this.avPlayerService.playSong(song, targetIndex);
   }
 
   build() {

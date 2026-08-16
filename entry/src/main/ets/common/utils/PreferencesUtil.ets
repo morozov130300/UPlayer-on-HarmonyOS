@@ -25,6 +25,7 @@ export class PreferencesUtil {
   private static preferencesUtil: PreferencesUtil;
   private context: common.UIAbilityContext | undefined = AppStorage.get(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT);
   preferences: preferences.Preferences | undefined;
+  private flushTimer: number = -1;
 
   constructor() {
     let options: preferences.Options = { name: MY_STORE };
@@ -46,10 +47,25 @@ export class PreferencesUtil {
     }
     try {
       this.preferences.putSync(key, value);
-      this.preferences.flushSync();
+      this.scheduleFlush();
     } catch (err) {
       Logger.error(TAG, `preferencesPut failed: ${JSON.stringify(err)}`);
     }
+  }
+
+  private scheduleFlush(): void {
+    if (this.flushTimer !== -1) {
+      clearTimeout(this.flushTimer);
+    }
+    this.flushTimer = setTimeout(() => {
+      this.flushTimer = -1;
+      if (this.preferences === undefined) {
+        return;
+      }
+      this.preferences.flush().catch(() => {
+        Logger.error(TAG, 'preferences flush failed');
+      });
+    }, 300);
   }
 
   // Determine whether there is a certain data in the preferences

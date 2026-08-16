@@ -1,0 +1,24 @@
+export const play: (fd: number, size: number) => Promise<boolean>
+export const resume: () => boolean
+export const pause: () => boolean
+export const stop: () => boolean
+export const seek: (positionMs: number) => boolean
+export const setEqualizerEnable: (enabled: boolean) => boolean
+export const setEqualizerEnabled: (enabled: boolean) => boolean
+export const isEqualizerEnabled: () => boolean
+export const setEqualizerBands: (bands: number[]) => boolean
+export const setPcmCaptureCallback: (callback: PcmCaptureCallback) => boolean
+export const clearPcmCaptureCallback: () => boolean
+export const setSpeed: (speed: number) => boolean
+export const setVolume: (volume: number) => boolean
+export const isEqualizerSupported: () => boolean
+export const isPlaying: () => boolean
+export const isCompleted: () => boolean
+export const isReady: () => boolean
+export const hasFailed: () => boolean
+export const getPosition: () => number
+export const getDuration: () => number
+export const getAlbumCover: (fd: number, size: number, cacheKey: string) => ArrayBuffer | undefined
+export const cacheAlbumCover: (cacheKey: string, data: ArrayBuffer) => boolean
+export const clearAlbumCoverCache: () => boolean
+export type PcmCaptureCallback = (pcm: ArrayBuffer, sampleRate: number, channelCount: number) => void

@@ -26,6 +26,8 @@ export struct PlaylistContent {
   @StorageLink(AppStorageKeyConstants.KEY_TITLE_BUTTON_WIDTH) titleButtonWidth: number = 0
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
+  @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
+  @StorageLink(AppStorageKeyConstants.KEY_LIBRARY_REVISION) @Watch('onLibraryChange') libraryRevision: number = 0
   private dataService: DataService = DataService.getInstance()
   private songScanner: SongScanner = SongScanner.getInstance()
   private scroller: Scroller = new Scroller()
@@ -37,6 +39,14 @@ export struct PlaylistContent {
   aboutToAppear(): void {
     this.loadData()
     this.updateGridColumns()
+  }
+
+  private scaledSize(size: number): number {
+    return Math.round(size * this.displaySizeScale)
+  }
+
+  onLibraryChange(): void {
+    this.loadData()
   }
 
   private updateGridColumns(): void {
@@ -369,15 +379,15 @@ export struct PlaylistContent {
       if (!this.isEditMode && (this.isPlusVisible || !this.settings.plusButtonScrollHide)) {
         Row() {
           Text('+')
-            .fontSize(32)
+            .fontSize(this.scaledSize(32))
             .fontColor('#FFFFFF')
             .fontWeight(FontWeight.Bold)
         }
-        .width(40).height(40)
-        .borderRadius(20)
+        .width(this.scaledSize(40)).height(this.scaledSize(40))
+        .borderRadius(this.scaledSize(20))
         .backgroundColor(this.primaryColor)
         .shadow({ radius: 10, color: ColorHelper.hexWithAlpha(this.primaryColor, '44'), offsetY: 4 })
-        .position({ bottom: 12, right: 20 })
+        .position({ bottom: this.scaledSize(12), right: this.scaledSize(20) })
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
         .transition({ type: TransitionType.Insert, opacity: 0, scale: { x: 0.5, y: 0.5 } })

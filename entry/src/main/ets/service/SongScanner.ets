@@ -37,6 +37,7 @@ export class SongScanner {
       const metadataService: AudioMetadataService = AudioMetadataService.getInstance()
       Logger.info(TAG, `picker returned ${uris.length} URIs`)
       const allUrisToPersist: string[] = []
+      const metadataTasks: Promise<void>[] = []
       for (let i = 0; i < uris.length; i++) {
         const uri: string = uris[i]
         const fileName: string = this.getFileNameFromUri(uri)
@@ -53,10 +54,17 @@ export class SongScanner {
               song.lyricUri = ''
             }
           }
-          await metadataService.extractAndSaveMetadata(song, context)
           songs.push(song)
           allUrisToPersist.push(uri)
+          metadataTasks.push(metadataService.extractAndSaveMetadata(song, context))
+          if (metadataTasks.length >= 4) {
+            await Promise.all(metadataTasks)
+            metadataTasks.length = 0
+          }
         }
+      }
+      if (metadataTasks.length > 0) {
+        await Promise.all(metadataTasks)
       }
       await this.persistUris(allUrisToPersist)
       Logger.info(TAG, `picked ${songs.length} audio files`)

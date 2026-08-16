@@ -7,6 +7,7 @@ import { SongInfo } from '../model/SongInfo';
 import { DataService } from '../service/DataService';
 import { ControlAreaComponent } from './ControlAreaComponent';
 import { ColorHelper } from '../common/utils/ColorHelper';
+import { AlbumCover } from '../component/AlbumCover';
 
 @Component
 export struct MusicInfoComponent {
@@ -113,16 +114,13 @@ export struct MusicInfoComponent {
           .rotate({ angle: this.glowRotation })
           .opacity(this.isPlay ? 0.8 : 0)
           .animation({ duration: 500, curve: Curve.EaseInOut })
-        Image(this.songList && this.selectIndex >= 0 && this.selectIndex < this.songList.length &&
-          this.songList[this.selectIndex].albumArtPath.length > 0 && !this.coverArtFailed ?
-          'file://' + this.songList[this.selectIndex].albumArtPath : $r('app.media.ic_public_music'))
+        AlbumCover({ song: this.songList && this.selectIndex >= 0 && this.selectIndex < this.songList.length ?
+          this.songList[this.selectIndex] : new SongInfo(), coverWidth: '100%', coverHeight: '100%', coverRadius: 8 })
           .width('100%')
           .aspectRatio(1)
-          .borderRadius(8)
           .constraintSize({ maxWidth: '100%', maxHeight: '50%' })
           .shadow({ radius: 12, color: 'rgba(0,0,0,0.15)', offsetX: 0, offsetY: 4 })
           .animation({ duration: 500, curve: Curve.EaseInOut })
-          .onError(() => { this.coverArtFailed = true })
       }
       .width('100%')
       .constraintSize({ maxWidth: '100%', maxHeight: '50%' })

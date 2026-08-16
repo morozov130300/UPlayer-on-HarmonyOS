@@ -23,7 +23,7 @@ export struct SettingsContent {
   private dataService: DataService = DataService.getInstance()
   private categories: SettingCategory[] = [
     { title: '定制', description: '界面布局、主题配色等个性化选项', route: 'customize' },
-    { title: '播放', description: '播放速度、歌词显示、通知栏控制', route: 'playback' },
+    { title: '播放', description: '播放速度、歌词显示、淡入淡出', route: 'playback' },
     { title: '音效', description: '均衡器开关与频段调节', route: 'audio' }
   ]
 

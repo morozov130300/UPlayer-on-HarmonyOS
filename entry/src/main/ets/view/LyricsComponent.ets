@@ -13,6 +13,7 @@ import { WindowInfo } from '../common/utils/WindowUtil';
 import Logger from '../common/utils/Logger';
 import LrcListView from './LrcListView';
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
+import { AlbumCover } from '../component/AlbumCover';
 
 @Component
 export struct LyricsComponent {
@@ -30,12 +31,14 @@ export struct LyricsComponent {
   @State coverArtFailed: boolean = false;
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0;
   private context: common.UIAbilityContext | undefined = AppStorage.get(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT);
+  private lyricLoadRequestId: number = 0;
 
   aboutToAppear() {
     this.getLrcEntryList();
   }
 
-  getLrcEntryList() {
+  async getLrcEntryList(): Promise<void> {
+    const requestId: number = ++this.lyricLoadRequestId;
     this.coverArtFailed = false;
     this.mLrcEntryList = [];
     if (!this.songList || this.selectIndex < 0 || this.selectIndex >= this.songList.length) {
@@ -47,20 +50,25 @@ export struct LyricsComponent {
     }
     try {
       const lyricAccessPath: string = song.lyricUri.length > 0 ? song.lyricUri : song.lyricPath
-      const file: fs.File = fs.openSync(lyricAccessPath, fs.OpenMode.READ_ONLY);
-      const stat = fs.statSync(lyricAccessPath);
+      const file: fs.File = await fs.open(lyricAccessPath, fs.OpenMode.READ_ONLY);
+      const stat = await fs.stat(file.fd);
       const buffer: ArrayBuffer = new ArrayBuffer(stat.size);
-      fs.readSync(file.fd, buffer);
-      fs.closeSync(file);
+      await fs.read(file.fd, buffer);
+      await fs.close(file);
       const textDecoder = util.TextDecoder.create(PlayerConstants.ENCODING, { ignoreBOM: true });
       const stringData: string = textDecoder.decodeToString(new Uint8Array(buffer), { stream: false });
       const lyricCheckPath: string = song.lyricPath.length > 0 ? song.lyricPath : song.lyricUri
-      if (lyricCheckPath.endsWith(LyricFile.KRC)) {
-        this.mLrcEntryList = parseKrcLyric(stringData);
-      } else if (lyricCheckPath.endsWith(LyricFile.LRC)) {
-        this.mLrcEntryList = parseLrcLyric(stringData);
+      const entries: LrcEntry[] = lyricCheckPath.endsWith(LyricFile.KRC) ?
+        parseKrcLyric(stringData) : parseLrcLyric(stringData);
+      if (requestId !== this.lyricLoadRequestId || this.selectIndex < 0 ||
+        this.selectIndex >= this.songList.length || this.songList[this.selectIndex].id !== song.id) {
+        return;
       }
-      Logger.info('mLrcEntryList', `mLrcEntryList: ${JSON.stringify(this.mLrcEntryList)}`);
+      if (lyricCheckPath.endsWith(LyricFile.KRC)) {
+        this.mLrcEntryList = entries;
+      } else if (lyricCheckPath.endsWith(LyricFile.LRC)) {
+        this.mLrcEntryList = entries;
+      }
     } catch (err) {
       Logger.error('getLrcEntryList', `Failed to load lyric: ${JSON.stringify(err)}`);
     }
@@ -70,13 +78,10 @@ export struct LyricsComponent {
     Column() {
       if (this.mainWindowInfo.widthBp === WidthBreakpoint.WIDTH_SM) {
         Row() {
-          Image(this.songList && this.selectIndex >= 0 && this.selectIndex < this.songList.length &&
-            this.songList[this.selectIndex].albumArtPath.length > 0 && !this.coverArtFailed ?
-            'file://' + this.songList[this.selectIndex].albumArtPath : $r('app.media.ic_public_music'))
-            .width(48).height(48)
-            .borderRadius($r('app.float.label_border'))
+          AlbumCover({ song: this.songList && this.selectIndex >= 0 && this.selectIndex < this.songList.length ?
+            this.songList[this.selectIndex] : new SongInfo(), coverWidth: 48, coverHeight: 48,
+            coverRadius: $r('app.float.label_border') })
             .margin({ right: 16 })
-            .onError(() => { this.coverArtFailed = true })
           Column() {
             Text(this.songList && this.selectIndex >= 0 && this.selectIndex < this.songList.length ?
               this.songList[this.selectIndex].title : '')
