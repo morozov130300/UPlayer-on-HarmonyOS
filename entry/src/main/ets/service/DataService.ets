@@ -50,6 +50,7 @@ export class AppSettingsData {
   displaySizeScale: number = 1.0
   tabStyle: string = 'classic'
   glassBlurStrength: number = 25
+  homeTopBlurStrength: number = 25
   tabIndicatorOpacity: number = 50
 }
 
@@ -385,6 +386,8 @@ export class DataService {
       s.tabStyle = rawTabStyle !== undefined ? rawTabStyle as string : 'classic'
       let rawGlassBlurStrength: Object | undefined = r['glassBlurStrength']
       s.glassBlurStrength = rawGlassBlurStrength !== undefined ? rawGlassBlurStrength as number : 25
+      let rawHomeTopBlurStrength: Object | undefined = r['homeTopBlurStrength']
+      s.homeTopBlurStrength = rawHomeTopBlurStrength !== undefined ? rawHomeTopBlurStrength as number : 25
       let rawTabIndicatorOpacity: Object | undefined = r['tabIndicatorOpacity']
       s.tabIndicatorOpacity = rawTabIndicatorOpacity !== undefined ? rawTabIndicatorOpacity as number : 50
       if (eqBandsMigrated) {
@@ -417,6 +420,7 @@ export class DataService {
     r['displaySizeScale'] = settings.displaySizeScale
     r['tabStyle'] = settings.tabStyle
     r['glassBlurStrength'] = settings.glassBlurStrength
+    r['homeTopBlurStrength'] = settings.homeTopBlurStrength
     r['tabIndicatorOpacity'] = settings.tabIndicatorOpacity
     this.getPref().preferencesPut(KEY_SETTINGS, JSON.stringify(r))
     AppStorage.setOrCreate(KEY_SETTINGS, settings)
@@ -578,6 +582,7 @@ export class DataService {
     AppStorage.setOrCreate('uplayer_display_size_scale', settings.displaySizeScale)
     AppStorage.setOrCreate('uplayer_tab_style', settings.tabStyle)
     AppStorage.setOrCreate('uplayer_glass_blur_strength', settings.glassBlurStrength)
+    AppStorage.setOrCreate('uplayer_home_top_blur_strength', settings.homeTopBlurStrength)
     AppStorage.setOrCreate('uplayer_tab_indicator_opacity', settings.tabIndicatorOpacity)
     this.activatePersistedUris()
     return settings

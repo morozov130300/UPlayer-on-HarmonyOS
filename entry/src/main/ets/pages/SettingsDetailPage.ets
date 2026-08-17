@@ -36,7 +36,8 @@ interface TabStyleOption {
 @Entry
 @Component
 struct SettingsDetailPage {
-  private context: common.UIAbilityContext | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
+  private context: common.UIAbilityContext
+    | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
   @State settings: AppSettingsData = new AppSettingsData()
   @StorageLink(KEY_PRIMARY_COLOR) primaryColor: string = '#007DFF'
   @StorageLink(AppStorageKeyConstants.KEY_TITLE_BUTTON_WIDTH) titleButtonWidth: number = 0
@@ -45,6 +46,7 @@ struct SettingsDetailPage {
   @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
   @StorageLink('uplayer_glass_blur_strength') glassBlurStrength: number = 25
+  @StorageLink('uplayer_home_top_blur_strength') homeTopBlurStrength: number = 25
   @StorageLink('uplayer_tab_indicator_opacity') tabIndicatorOpacity: number = 50
   @State pageTitle: string = ''
   @State previewOnRight: boolean = false
@@ -93,7 +95,8 @@ struct SettingsDetailPage {
 
   aboutToAppear(): void {
     this.settings = this.dataService.getSettings()
-    const params = this.getUIContext()?.getRouter().getParams() as Record<string, string>
+    const params = this.getUIContext()?.getRouter()
+      .getParams() as Record<string, string>
     const route: string = params?.category ?? 'customize'
     this.pageTitle = this.titleMap[route] ?? '设置'
     ColorConversion.setSysBarLightBackground(this.isDark())
@@ -143,6 +146,48 @@ struct SettingsDetailPage {
     return 1 + this.glassBlurStrength * 0.0008
   }
 
+  private homeTopBlurRadius(): number {
+    return this.homeTopBlurStrength *
+      (1.6 - this.homeTopBlurStrength * 0.004)
+  }
+
+  @Builder
+  homeTopBlurPreview(): void {
+    Stack({ alignContent: Alignment.Center }) {
+      Text('首页上端')
+        .fontSize(this.scaledFont(12))
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.primaryColor)
+        .letterSpacing(this.scaledSize(1))
+      Row()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(Color.Transparent)
+        .linearGradientBlur(this.homeTopBlurRadius(), {
+          fractionStops: [[1, 0], [1, 0.5], [0, 1]],
+          direction: GradientDirection.Bottom
+        })
+      Row()
+        .width('100%')
+        .height('100%')
+        .borderRadius(this.scaledSize(18))
+        .linearGradient({
+          angle: 180,
+          colors: [
+            [ColorHelper.hexToRgba(this.primaryColor, 0.16), 0],
+            [ColorHelper.hexToRgba(this.primaryColor, 0.04), 0.55],
+            ['rgba(0,0,0,0)', 1]
+          ]
+        })
+        .border({ width: 1, color: 'rgba(255,255,255,0.28)' })
+        .shadow({ radius: 12, color: ColorHelper.hexWithAlpha(this.primaryColor, '44') })
+    }
+    .width(this.scaledSize(82))
+    .height(this.scaledSize(36))
+    .borderRadius(this.scaledSize(18))
+    .clip(true)
+  }
+
   @Builder
   glassBlurPreview(): void {
     Stack({ alignContent: Alignment.Center }) {
@@ -173,12 +218,13 @@ struct SettingsDetailPage {
   @Builder
   tabIndicatorPreview(): void {
     Row()
-      .width(this.scaledSize(68))
+      .width(this.scaledSize(82))
       .height(this.scaledSize(36))
       .borderRadius(this.scaledSize(18))
       .shadow({
         radius: 14,
-        color: ColorHelper.hexWithAlpha(this.primaryColor, this.indicatorAlpha(0.8).toString(16).padStart(2, '0'))
+        color: ColorHelper.hexWithAlpha(this.primaryColor, this.indicatorAlpha(0.8)
+          .toString(16).padStart(2, '0'))
       })
       .radialGradient({
         center: ['50%', '50%'],
@@ -197,7 +243,8 @@ struct SettingsDetailPage {
   }
 
   private indicatorGradientColor(base: number): ResourceColor {
-    return ColorHelper.hexWithAlpha(this.primaryColor, this.indicatorAlpha(base).toString(16).padStart(2, '0'))
+    return ColorHelper.hexWithAlpha(this.primaryColor, this.indicatorAlpha(base)
+      .toString(16).padStart(2, '0'))
   }
 
   private isDark(): boolean {
@@ -358,7 +405,7 @@ struct SettingsDetailPage {
           Row() {
             SymbolGlyph($r('sys.symbol.chevron_left'))
               .fontSize(this.scaledFont(32))
-              .fontColor([this.primaryColor])
+              .fontColor([this.settingTextColor()])
               .opacity(0.9)
           }
           .width(this.scaledSize(48))
@@ -366,7 +413,9 @@ struct SettingsDetailPage {
           .justifyContent(FlexAlign.Center)
           .borderRadius(this.scaledSize(24))
           .hoverEffect(HoverEffect.Scale)
-          .onClick(() => { this.getUIContext()?.getRouter().back() })
+          .onClick(() => {
+            this.getUIContext()?.getRouter().back()
+          })
 
           Text(this.pageTitle)
             .fontSize(this.scaledFont(17))
@@ -428,7 +477,8 @@ struct SettingsDetailPage {
   sectionTitle(title: string): void {
     Text(title)
       .fontSize(this.scaledFont(13))
-      .fontColor(this.isDark() ? ColorHelper.hexWithAlpha('#FFFFFF', '99') : ColorHelper.hexWithAlpha(this.primaryColor, '99'))
+      .fontColor(this.isDark() ? ColorHelper.hexWithAlpha('#FFFFFF', '99') : ColorHelper.hexWithAlpha(this.primaryColor,
+        '99'))
       .fontWeight(FontWeight.Medium)
       .width('100%')
       .padding({ left: this.scaledSize(4), top: this.scaledSize(6), bottom: this.scaledSize(2) })
@@ -438,8 +488,7 @@ struct SettingsDetailPage {
   buildCustomizeSection(): void {
     Column({ space: 10 }) {
       Column() {
-        this.sectionTitle('界面控制')
-        this.toggleRow('滚动隐藏加号按钮', this.settings.plusButtonScrollHide, (val: boolean) => {
+        this.toggleRow('向下滑动时隐藏加号按钮', this.settings.plusButtonScrollHide, (val: boolean) => {
           this.settings.plusButtonScrollHide = val
           this.updateSetting()
         })
@@ -449,38 +498,57 @@ struct SettingsDetailPage {
       .borderRadius(10)
 
       Column() {
-        this.sectionTitle('主题模式')
         Row() {
+          Text('主题模式')
+            .fontSize(this.scaledFont(14))
+            .fontColor(this.settingTextColor())
+          Blank()
           ForEach(this.themeOptions, (opt: ThemeOption) => {
             Column() {
               Text(opt.label)
                 .fontSize(this.scaledFont(11))
                 .fontColor(this.settings.themeMode === opt.value ? '#FFFFFF' : this.settingInactiveTextColor())
             }
-            .padding({ left: this.scaledSize(10), right: this.scaledSize(10), top: this.scaledSize(5), bottom: this.scaledSize(5) })
+            .padding({
+              left: this.scaledSize(10),
+              right: this.scaledSize(10),
+              top: this.scaledSize(5),
+              bottom: this.scaledSize(5)
+            })
             .backgroundColor(this.settings.themeMode === opt.value ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
             .borderRadius(this.scaledSize(14))
-            .onClick(() => { this.setThemeMode(opt.value) })
+            .onClick(() => {
+              this.setThemeMode(opt.value)
+            })
           }, (opt: ThemeOption) => opt.value)
         }
-        .padding({ left: 12, right: 12, top: 2, bottom: 10 })
+        .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
         .width('100%')
-        .justifyContent(FlexAlign.End)
+        .height(this.scaledSize(44))
+        .alignItems(VerticalAlign.Center)
       }
       .width('100%')
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(10)
 
       Column() {
-        this.sectionTitle('Tab栏样式')
         Row() {
+          Text('Tab栏样式')
+            .fontSize(this.scaledFont(14))
+            .fontColor(this.settingTextColor())
+          Blank()
           ForEach(this.tabStyleOptions, (opt: TabStyleOption) => {
             Column() {
               Text(opt.label)
                 .fontSize(this.scaledFont(11))
                 .fontColor(this.settings.tabStyle === opt.value ? '#FFFFFF' : this.settingInactiveTextColor())
             }
-            .padding({ left: this.scaledSize(10), right: this.scaledSize(10), top: this.scaledSize(5), bottom: this.scaledSize(5) })
+            .padding({
+              left: this.scaledSize(10),
+              right: this.scaledSize(10),
+              top: this.scaledSize(5),
+              bottom: this.scaledSize(5)
+            })
             .backgroundColor(this.settings.tabStyle === opt.value ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
             .borderRadius(this.scaledSize(14))
             .onClick(() => {
@@ -488,16 +556,73 @@ struct SettingsDetailPage {
             })
           }, (opt: TabStyleOption) => opt.value)
         }
-        .padding({ left: 12, right: 12, top: 2, bottom: 10 })
+        .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
         .width('100%')
-        .justifyContent(FlexAlign.End)
+        .height(this.scaledSize(44))
+        .alignItems(VerticalAlign.Center)
       }
       .width('100%')
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(10)
 
       Column() {
-        this.sectionTitle('Tab栏与播控条玻璃模糊强度')
+        this.sectionTitle('首页上端模糊强度')
+        Row() {
+          if (!this.previewOnRight) {
+            this.homeTopBlurPreview()
+          }
+          Text('弱')
+            .fontSize(this.scaledFont(11))
+            .fontColor(this.settingTextColor())
+            .margin({
+              left: this.previewOnRight ? 0 : this.scaledSize(14),
+              right: this.scaledSize(8)
+            })
+          Slider({
+            value: this.settings.homeTopBlurStrength,
+            min: 0,
+            max: 100,
+            step: 1,
+            style: SliderStyle.OutSet
+          })
+            .width('55%')
+            .layoutWeight(1)
+            .selectedColor(this.primaryColor)
+            .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+            .blockColor('#FFFFFF')
+            .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
+            .blockBorderColor(this.primaryColor)
+            .blockBorderWidth(3)
+            .onChange((value: number, mode: SliderChangeMode) => {
+              this.settings.homeTopBlurStrength = value
+              this.homeTopBlurStrength = value
+              if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+                this.updateSetting()
+              }
+            })
+          Text('强')
+            .fontSize(this.scaledFont(11))
+            .fontColor(this.settingTextColor())
+            .margin({ left: this.scaledSize(8) })
+          if (this.previewOnRight) {
+            Blank()
+              .width(this.scaledSize(14))
+            this.homeTopBlurPreview()
+          }
+        }
+        .padding({
+          left: this.scaledSize(12), right: this.scaledSize(12),
+          top: this.scaledSize(2), bottom: this.scaledSize(10)
+        })
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+      }
+      .width('100%')
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
+
+      Column() {
+        this.sectionTitle('Tab栏与播控条模糊强度')
         Row() {
           if (!this.previewOnRight) {
             this.glassBlurPreview()
@@ -536,7 +661,8 @@ struct SettingsDetailPage {
             .fontColor(this.settingTextColor())
             .margin({ left: this.scaledSize(8) })
           if (this.previewOnRight) {
-            Blank().width(this.scaledSize(14))
+            Blank()
+              .width(this.scaledSize(14))
             this.glassBlurPreview()
           }
         }
@@ -591,7 +717,8 @@ struct SettingsDetailPage {
             .fontColor(this.settingTextColor())
             .margin({ left: this.scaledSize(8) })
           if (this.previewOnRight) {
-            Blank().width(this.scaledSize(14))
+            Blank()
+              .width(this.scaledSize(14))
             this.tabIndicatorPreview()
           }
         }
@@ -633,7 +760,9 @@ struct SettingsDetailPage {
               .borderRadius(this.scaledSize(10))
               .backgroundColor(this.settings.primaryColor === option.value ?
                 ColorHelper.hexToRgba(option.value, 0.18) : ColorHelper.hexToRgba(this.primaryColor, 0.04))
-              .onClick(() => { this.setPrimaryColor(option.value) })
+              .onClick(() => {
+                this.setPrimaryColor(option.value)
+              })
             }
           }, (option: ThemeColorOption) => option.value)
         }
@@ -671,7 +800,9 @@ struct SettingsDetailPage {
         .margin({ top: this.scaledSize(8), bottom: this.scaledSize(10) })
         .borderRadius(this.scaledSize(10))
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.08))
-        .onClick(() => { this.openColorPicker() })
+        .onClick(() => {
+          this.openColorPicker()
+        })
       }
       .width('100%')
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
@@ -862,7 +993,8 @@ struct SettingsDetailPage {
           })
 
         Row() {
-          Text(this.currentPickerColor().toUpperCase())
+          Text(this.currentPickerColor()
+            .toUpperCase())
             .fontSize(this.scaledFont(12))
             .fontColor(this.settingTextColor())
             .fontWeight(FontWeight.Medium)
@@ -880,13 +1012,17 @@ struct SettingsDetailPage {
             .height(this.scaledSize(38))
             .fontColor(this.settingTextColor())
             .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.08))
-            .onClick(() => { this.cancelColorPicker() })
+            .onClick(() => {
+              this.cancelColorPicker()
+            })
           Button('确定')
             .layoutWeight(1)
             .height(this.scaledSize(38))
             .fontColor('#FFFFFF')
             .backgroundColor(this.currentPickerColor())
-            .onClick(() => { this.confirmColorPicker() })
+            .onClick(() => {
+              this.confirmColorPicker()
+            })
         }
         .width('100%')
       }
@@ -919,7 +1055,9 @@ struct SettingsDetailPage {
           this.updateSetting()
           AppStorage.setOrCreate('uplayer_show_lyrics', val)
         })
-        Divider().color(ColorHelper.hexToRgba(this.primaryColor, 0.08)).margin({ left: 14, right: 14 })
+        Divider()
+          .color(ColorHelper.hexToRgba(this.primaryColor, 0.08))
+          .margin({ left: 14, right: 14 })
         this.toggleRow('淡入淡出', this.settings.fadeInOut, (val: boolean) => {
           this.settings.fadeInOut = val
           this.updateSetting()
@@ -989,42 +1127,42 @@ struct SettingsDetailPage {
               ForEach(this.eqBands, (band: EqBandInfo) => {
                 Column() {
                   Text((this.settings.eqBands[band.index] >= 0 ? '+' : '') + this.settings.eqBands[band.index] + 'dB')
-                  .fontSize(this.scaledFont(9))
-                  .fontColor(ColorHelper.hexWithAlpha(this.primaryColor, '88'))
-                  .margin({ bottom: 4 })
-                Stack({ alignContent: Alignment.Center }) {
-                  Slider({
-                    value: this.settings.eqBands[band.index] + 10,
-                    min: 0,
-                    max: 20,
-                    step: 1,
-                    style: SliderStyle.OutSet,
-                    direction: Axis.Vertical,
-                    reverse: true
-                  })
-                    .width(this.scaledSize(40))
-                    .height(this.scaledSize(180))
-                    .selectedColor(this.primaryColor)
-                    .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.16))
-                    .blockColor('#FFFFFF')
-                    .blockSize({ width: this.scaledSize(26), height: this.scaledSize(14) })
-                    .blockBorderColor(this.primaryColor)
-                    .blockBorderWidth(2)
-                    .onChange((value: number, mode: SliderChangeMode) => {
-                      this.onEqBandChange(band.index, value, mode)
+                    .fontSize(this.scaledFont(9))
+                    .fontColor(ColorHelper.hexWithAlpha(this.primaryColor, '88'))
+                    .margin({ bottom: 4 })
+                  Stack({ alignContent: Alignment.Center }) {
+                    Slider({
+                      value: this.settings.eqBands[band.index] + 10,
+                      min: 0,
+                      max: 20,
+                      step: 1,
+                      style: SliderStyle.OutSet,
+                      direction: Axis.Vertical,
+                      reverse: true
                     })
-                }
-                .width(this.scaledSize(44))
-                .height(this.scaledSize(180))
+                      .width(this.scaledSize(40))
+                      .height(this.scaledSize(180))
+                      .selectedColor(this.primaryColor)
+                      .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.16))
+                      .blockColor('#FFFFFF')
+                      .blockSize({ width: this.scaledSize(26), height: this.scaledSize(14) })
+                      .blockBorderColor(this.primaryColor)
+                      .blockBorderWidth(2)
+                      .onChange((value: number, mode: SliderChangeMode) => {
+                        this.onEqBandChange(band.index, value, mode)
+                      })
+                  }
+                  .width(this.scaledSize(44))
+                  .height(this.scaledSize(180))
 
-                Text(band.freq)
-                  .fontSize(this.scaledFont(10))
-                  .fontColor(this.settingSubTextColor())
-                  .fontWeight(FontWeight.Medium)
-                  .margin({ top: 6 })
-              }
-              .alignItems(HorizontalAlign.Center)
-            }, (band: EqBandInfo) => band.freq)
+                  Text(band.freq)
+                    .fontSize(this.scaledFont(10))
+                    .fontColor(this.settingSubTextColor())
+                    .fontWeight(FontWeight.Medium)
+                    .margin({ top: 6 })
+                }
+                .alignItems(HorizontalAlign.Center)
+              }, (band: EqBandInfo) => band.freq)
             }
             .padding({ left: 8, right: 8, top: 12, bottom: 12 })
           }

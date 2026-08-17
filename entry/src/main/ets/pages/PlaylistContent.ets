@@ -251,7 +251,7 @@ export struct PlaylistContent {
         .padding({
           left: 16,
           right: this.titleButtonWidth + 12,
-          top: this.topContentPadding + 8,
+          top: this.topContentPadding + this.scaledSize(8),
           bottom: 12
         })
 

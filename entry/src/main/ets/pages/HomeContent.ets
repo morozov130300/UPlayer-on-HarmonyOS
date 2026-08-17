@@ -8,7 +8,7 @@ import { DisplayItemDataSource } from '../viewmodel/DisplayItemDataSource'
 import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { AlbumCover } from '../component/AlbumCover'
-import { AlbumCoverSize, AudioMetadataService } from '../service/AudioMetadataService'
+import { AlbumCoverSize, AudioMetadataService, CoverPriority } from '../service/AudioMetadataService'
 
 const TAG = 'HomeContent'
 
@@ -21,6 +21,7 @@ class DisplayItem {
 
 @Component
 export struct HomeContent {
+  topContentPadding: number = 0
   bottomContentPadding: number = 0
   private context: common.UIAbilityContext | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
   @State songs: SongInfo[] = []
@@ -37,6 +38,7 @@ export struct HomeContent {
   @State selectedIds: string[] = []
   @State failedArtIds: Set<string> = new Set<string>()
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
+  @StorageLink('uplayer_home_top_blur_strength') homeTopBlurStrength: number = 25
   private dataService: DataService = DataService.getInstance()
   private songScanner: SongScanner = SongScanner.getInstance()
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
@@ -44,6 +46,23 @@ export struct HomeContent {
 
   private scaledSize(size: number): number {
     return Math.round(size * this.displaySizeScale)
+  }
+
+  private glassBlurRadius(): number {
+    return this.homeTopBlurStrength *
+      (1.6 - this.homeTopBlurStrength * 0.004)
+  }
+
+  private headerOverlayHeight(): number {
+    return this.scaledSize(48)
+  }
+
+  private listTopPadding(): number {
+    return this.topContentPadding + this.headerOverlayHeight()
+  }
+
+  private scrollBarHeight(): string {
+    return 'calc(100% - ' + this.listTopPadding() + 'vp)'
   }
 
   aboutToAppear(): void {
@@ -57,13 +76,6 @@ export struct HomeContent {
   loadData(): void {
     this.failedArtIds = new Set<string>()
     this.songs = this.dataService.getSongs()
-    // 只预取首屏可见区域，避免一打开就触发全部歌曲的封面解码
-    const visible: SongInfo[] = []
-    const prefetchCount: number = Math.min(this.songs.length, 12)
-    for (let i = 0; i < prefetchCount; i++) {
-      if (this.songs[i].isAvailable) visible.push(this.songs[i])
-    }
-    AudioMetadataService.getInstance().prefetchAlbumCovers(visible, AlbumCoverSize.SMALL)
     this.settings = this.dataService.getSettings()
     this.viewMode = this.dataService.getViewMode()
     this.sortMode = this.dataService.getSortMode()
@@ -130,6 +142,14 @@ export struct HomeContent {
     }
     this.displayItems = items
     this.displayDataSource.reloadData(items)
+    const visible: SongInfo[] = []
+    for (let i = 0; i < items.length && visible.length < 12; i++) {
+      if (!items[i].isHeader && items[i].song.isAvailable) {
+        visible.push(items[i].song)
+      }
+    }
+    AudioMetadataService.getInstance().prefetchAlbumCovers(
+      visible, AlbumCoverSize.SMALL, CoverPriority.HIGH)
   }
 
   sortSongs(songs: SongInfo[]): SongInfo[] {
@@ -331,51 +351,16 @@ export struct HomeContent {
   @State lastScrollY: number = 0
 
   build() {
-    Stack() {
+    Stack({ alignContent: Alignment.Top }) {
       Column() {
-        Row() {
-          Row() {
-             Text(this.getFilterLabel())
-               .fontSize(Math.round(14 * this.fontSizeScale))
-               .fontColor($r('app.color.text_primary'))
-               .fontWeight(FontWeight.Bold)
-           }
-           .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-           .backgroundColor(this.hasActiveFilter() ? ColorHelper.hexToRgba(this.primaryColor, 0.12) : 'rgba(0,0,0,0.05)')
-           .borderRadius(16)
-           .onClick(() => { this.clearFilters() })
-
-          Blank()
-
-          Row() {
-            Image($r('app.media.ic_sort_list'))
-              .width(16).height(16)
-              .fillColor($r('app.color.text_primary'))
-            Text(this.getSortLabel())
-              .fontSize(Math.round(12 * this.fontSizeScale))
-              .fontColor($r('app.color.text_primary'))
-              .margin({ left: 4 })
-          }
-          .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-          .backgroundColor('rgba(0,0,0,0.05)')
-          .borderRadius(16)
-          .onClick(() => { this.switchSortMode() })
-
-          Row() {
-            Text(this.viewMode === 'flat' ? '平铺' : '文件夹')
-              .fontSize(Math.round(12 * this.fontSizeScale))
-              .fontColor($r('app.color.text_primary'))
-          }
-          .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-          .backgroundColor('rgba(0,0,0,0.05)')
-          .borderRadius(16)
-          .onClick(() => { this.toggleViewMode() })
-        }
-        .width('100%')
-        .padding({ left: 16, right: 16, top: 8, bottom: 8 })
-
         Stack() {
           List({ space: 0, scroller: this.scroller }) {
+            ListItem() {
+              Row()
+                .width('100%')
+                .height(this.listTopPadding())
+            }
+
             LazyForEach(this.displayDataSource, (item: DisplayItem, index: number) => {
               ListItem() {
                 if (item.isHeader) {
@@ -403,6 +388,7 @@ export struct HomeContent {
           }
           .width('100%')
           .height('100%')
+          .scrollBar(BarState.Off)
           .edgeEffect(EdgeEffect.Spring)
           .cachedCount(8)
           .onDidScroll(() => {
@@ -423,6 +409,15 @@ export struct HomeContent {
               .textAlign(TextAlign.Center)
               .onClick(() => { this.onPlusClick() })
           }
+
+          ScrollBar({
+            scroller: this.scroller,
+            direction: ScrollBarDirection.Vertical,
+            state: BarState.Auto
+          })
+          .width(this.scaledSize(4))
+          .height(this.scrollBarHeight())
+          .position({ top: this.listTopPadding(), right: 0 })
         }
         .width('100%')
         .layoutWeight(1)
@@ -458,6 +453,77 @@ export struct HomeContent {
       }
       .width('100%')
       .height('100%')
+
+      Stack({ alignContent: Alignment.Top }) {
+        Row()
+          .width('100%')
+          .height('100%')
+          .backgroundColor(Color.Transparent)
+          .linearGradientBlur(this.glassBlurRadius(), {
+            fractionStops: [[1, 0], [1, 0.5], [0, 1]],
+            direction: GradientDirection.Bottom
+          })
+
+        Row()
+          .width('100%')
+          .height('100%')
+          .linearGradient({
+            angle: 180,
+            colors: [
+              [ColorHelper.hexToRgba(this.primaryColor, 0.04), 0],
+              [ColorHelper.hexToRgba(this.primaryColor, 0.02), 0.5],
+              ['rgba(0,0,0,0)', 1]
+            ]
+          })
+
+        Row() {
+          Row() {
+            Text(this.getFilterLabel())
+              .fontSize(Math.round(14 * this.fontSizeScale))
+              .fontColor($r('app.color.text_primary'))
+              .fontWeight(FontWeight.Bold)
+          }
+          .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+          .backgroundColor(this.hasActiveFilter() ? ColorHelper.hexToRgba(this.primaryColor, 0.12) : 'rgba(0,0,0,0.05)')
+          .borderRadius(16)
+          .onClick(() => { this.clearFilters() })
+
+          Blank()
+
+          Row() {
+            Image($r('app.media.ic_sort_list'))
+              .width(16).height(16)
+              .fillColor($r('app.color.text_primary'))
+            Text(this.getSortLabel())
+              .fontSize(Math.round(12 * this.fontSizeScale))
+              .fontColor($r('app.color.text_primary'))
+              .margin({ left: 4 })
+          }
+          .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+          .backgroundColor('rgba(0,0,0,0.05)')
+          .borderRadius(16)
+          .onClick(() => { this.switchSortMode() })
+
+          Row() {
+            Text(this.viewMode === 'flat' ? '平铺' : '文件夹')
+              .fontSize(Math.round(12 * this.fontSizeScale))
+              .fontColor($r('app.color.text_primary'))
+          }
+          .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+          .backgroundColor('rgba(0,0,0,0.05)')
+          .borderRadius(16)
+          .onClick(() => { this.toggleViewMode() })
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+        .position({ top: this.topContentPadding })
+      }
+      .width('100%')
+      .height(this.listTopPadding())
+      .position({ top: 0 })
+      .clip(true)
+      .hitTestBehavior(HitTestMode.Transparent)
+      .zIndex(2)
 
       if (!this.isMultiSelectMode && (this.isPlusVisible || !this.settings.plusButtonScrollHide)) {
         Row() {

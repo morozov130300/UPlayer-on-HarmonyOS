@@ -13,8 +13,8 @@ const COVER_CACHE_MAX_ENTRIES: number = 40
 const COVER_CACHE_MAX_BYTES: number = 32 * 1024 * 1024
 const COVER_EXTRACTION_CONCURRENCY: number = 1
 const COVER_EXTRACTION_QUEUE_MAX: number = 24
-const FALLBACK_FAILURE_THRESHOLD: number = 1
-const FALLBACK_COOLDOWN_MS: number = 30000
+const FALLBACK_FAILURE_THRESHOLD: number = 3
+const FALLBACK_COOLDOWN_MS: number = 1000
 const NEGATIVE_COVER_COOLDOWN_MS: number = 60000
 
 export enum CoverPriority {
@@ -100,7 +100,7 @@ export class AudioMetadataService {
   private extractorQueue: ExtractorQueueItem[] = []
   private extractorActive: boolean = false
   private extractorGeneration: number = 0
-  // 单文件负缓存：确认无封面或单文件解析失败，key=sourcePath，value=记录时间戳
+  // 单文件负缓存：仅记录确认无嵌入封面的文件，key=sourcePath，value=记录时间戳
   private negativeCoverCache: Map<string, number> = new Map<string, number>()
   // 封面任务生命周期 generation：应用销毁/缓存清理后使排队与执行中的任务失效
   private coverLifecycleGeneration: number = 0
@@ -241,9 +241,10 @@ export class AudioMetadataService {
     })
   }
 
-  prefetchAlbumCovers(songs: SongInfo[], maxEdge: number = AlbumCoverSize.SMALL): void {
+  prefetchAlbumCovers(songs: SongInfo[], maxEdge: number = AlbumCoverSize.SMALL,
+    priority: CoverPriority = CoverPriority.LOW): void {
     for (let i = 0; i < songs.length; i++) {
-      if (songs[i].isAvailable) this.prefetchAlbumCover(songs[i], maxEdge)
+      if (songs[i].isAvailable) this.prefetchAlbumCover(songs[i], maxEdge, priority)
     }
   }
 
@@ -433,8 +434,11 @@ export class AudioMetadataService {
         this.negativeCoverCache.delete(sourcePath)
         return result.pixelMap
       }
-      // 确认无封面或单文件解析失败：写入单文件负缓存，不触发全局熔断
-      this.negativeCoverCache.set(sourcePath, new Date().getTime())
+      if (result.status === 'none') {
+        this.negativeCoverCache.set(sourcePath, new Date().getTime())
+      } else {
+        this.negativeCoverCache.delete(sourcePath)
+      }
       if (result.status === 'systemic') {
         this.recordFallbackFailure()
       }

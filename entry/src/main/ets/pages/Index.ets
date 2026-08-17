@@ -665,7 +665,14 @@ struct MainPage {
   build() {
     Stack() {
       Swiper(this.swiperController) {
-        Column() {
+        Stack({ alignContent: Alignment.Top }) {
+          HomeContent({
+            topContentPadding: this.homeHeaderHeight(),
+            bottomContentPadding: this.bottomOverlayInset()
+          })
+            .width('100%')
+            .height('100%')
+
           Stack() {
             Column()
               .width('140%')
@@ -687,7 +694,7 @@ struct MainPage {
                 .fontSize(Math.round(28 * this.fontSizeScale))
                 .fontColor($r('app.color.text_primary'))
                 .opacity(this.greetingOpacity)
-                .translate({ y: this.greetingOffset })
+                .translate({ y: this.greetingOffset + (this.isPC ? this.scaledSize(8) : 0) })
               Blank()
             }
             .width('100%')
@@ -702,9 +709,7 @@ struct MainPage {
           }
           .width('100%')
           .height(this.homeHeaderHeight())
-
-          HomeContent({ bottomContentPadding: this.bottomOverlayInset() })
-            .layoutWeight(1)
+          .hitTestBehavior(HitTestMode.Transparent)
         }
         .width('100%')
         .height('100%')

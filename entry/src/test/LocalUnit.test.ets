@@ -42,9 +42,18 @@ export default function localUnitTest() {
     });
     it('circuitBreakerThreshold', 0, () => {
       let failures: number = 0;
-      const threshold: number = 1;
+      const threshold: number = 3;
+      failures++;
+      expect(failures >= threshold).assertFalse();
+      failures++;
+      expect(failures >= threshold).assertFalse();
       failures++;
       expect(failures >= threshold).assertTrue();
+    });
+    it('circuitBreakerCooldownFitsCoverRetryWindow', 0, () => {
+      const retryDelays: number[] = [800, 1600];
+      const cooldownMs: number = 1000;
+      expect(cooldownMs < retryDelays[0] + retryDelays[1]).assertTrue();
     });
     it('liveViewColorFormat', 0, () => {
       const color: string = '#FF007DFF';
@@ -250,6 +259,16 @@ export default function localUnitTest() {
       const maxRetry: number = 2;
       const shouldRetry: boolean = !confirmedAbsent && retryCount < maxRetry;
       expect(shouldRetry).assertFalse();
+    });
+    it('coverTemporaryFailureDoesNotBecomeNegativeCache', 0, () => {
+      const status: string = 'fileError';
+      const shouldCacheAsAbsent: boolean = status === 'none';
+      expect(shouldCacheAsAbsent).assertFalse();
+    });
+    it('coverConfirmedAbsentBecomesNegativeCache', 0, () => {
+      const status: string = 'none';
+      const shouldCacheAsAbsent: boolean = status === 'none';
+      expect(shouldCacheAsAbsent).assertTrue();
     });
     it('coverLimitedRetryOnRecoverableFailure', 0, () => {
       const confirmedAbsent: boolean = false;
