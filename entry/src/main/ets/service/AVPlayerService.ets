@@ -259,7 +259,9 @@ export class AVPlayerService {
     this.prefetchSongCovers(index)
     AppStorage.setOrCreate('uplayer_current_title', song.title.length > 0 ? song.title : song.name)
     AppStorage.setOrCreate('uplayer_current_artist', song.artist)
-    AppStorage.setOrCreate('uplayer_current_album_art', song.albumArtPath)
+    AppStorage.setOrCreate('uplayer_current_song_id', song.id)
+    AppStorage.setOrCreate('uplayer_current_cover_state', 'placeholder')
+    AppStorage.setOrCreate('uplayer_current_album_art', '')
     AppStorage.setOrCreate('uplayer_current_song_path', song.filePath)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PROGRESS, 0)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_TIME, '00:00')
@@ -267,6 +269,7 @@ export class AVPlayerService {
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PROGRESS_MAX, song.duration)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TOTAL_TIME, this.formatTime(song.duration))
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, index)
+    this.liveViewService.updateLiveView()
     await this.play(song.uri.length > 0 ? song.uri : song.filePath)
   }
 

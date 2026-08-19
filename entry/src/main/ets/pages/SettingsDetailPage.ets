@@ -365,9 +365,11 @@ struct SettingsDetailPage {
     this.showColorPicker = false
   }
 
-  onSpeedChange(value: number): void {
+  onSpeedChange(value: number, mode: SliderChangeMode): void {
     this.settings.playSpeed = 0.5 + value / 100
-    this.updateSetting()
+    if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+      this.updateSetting()
+    }
     try {
       this.avPlayerService.setSpeed(this.settings.playSpeed)
     } catch (e) {
@@ -1092,8 +1094,8 @@ struct SettingsDetailPage {
             .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
             .blockBorderColor(this.primaryColor)
             .blockBorderWidth(3)
-            .onChange((value: number) => {
-              this.onSpeedChange(value)
+            .onChange((value: number, mode: SliderChangeMode) => {
+              this.onSpeedChange(value, mode)
             })
         }
         .width('100%')

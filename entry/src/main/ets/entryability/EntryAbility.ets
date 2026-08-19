@@ -13,6 +13,7 @@ import Logger from '../common/utils/Logger';
 import { AudioMetadataService } from '../service/AudioMetadataService';
 import { ShareService } from '../service/ShareService';
 import { ColorConversion } from '../common/utils/ColorConversion';
+import { PreferencesUtil } from '../common/utils/PreferencesUtil';
 
 const DOMAIN = 0x0000;
 const TAG = '[EntryAbility]';
@@ -41,6 +42,7 @@ export default class EntryAbility extends UIAbility {
   }
 
   onDestroy(): void {
+    PreferencesUtil.getInstance().flushNow();
     AudioMetadataService.getInstance().clearMemoryCache();
     AVPlayerService.getInstance().release();
     AVSessionController.getInstance().unregisterSessionListener();
@@ -123,6 +125,7 @@ export default class EntryAbility extends UIAbility {
   }
 
   onBackground(): void {
+    PreferencesUtil.getInstance().flushNow();
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onBackground');
   }
 }

@@ -108,6 +108,8 @@ export class LiveViewService {
     try {
       const title: string = AppStorage.get<string>('uplayer_current_title') ?? '未播放';
       const artist: string = AppStorage.get<string>('uplayer_current_artist') ?? '';
+      const songId: string = AppStorage.get<string>('uplayer_current_song_id') ?? '';
+      const coverState: string = AppStorage.get<string>('uplayer_current_cover_state') ?? 'placeholder';
       const isPlay: boolean = AppStorage.get<boolean>(AppStorageKeyConstants.KEY_IS_PLAY) ?? false;
       const clickAction: WantAgent | null = await this.buildClickAction();
       const textItem1: LiveViewTextItem = { text: artist.length > 0 ? artist : '未知歌手' };
@@ -147,7 +149,7 @@ export class LiveViewService {
       };
       await liveViewManager.startLiveView(liveView);
       this.isRunning = true;
-      this.lastSnapshot = `${title}\n${artist}\n${isPlay}`;
+      this.lastSnapshot = `${songId}\n${title}\n${artist}\n${coverState}\n${isPlay}`;
       Logger.info(TAG, 'startLiveView success');
     } catch (err) {
       this.cooldownUntil = new Date().getTime() + 30000;
@@ -169,8 +171,10 @@ export class LiveViewService {
     try {
       const title: string = AppStorage.get<string>('uplayer_current_title') ?? '未播放';
       const artist: string = AppStorage.get<string>('uplayer_current_artist') ?? '';
+      const songId: string = AppStorage.get<string>('uplayer_current_song_id') ?? '';
+      const coverState: string = AppStorage.get<string>('uplayer_current_cover_state') ?? 'placeholder';
       const isPlay: boolean = AppStorage.get<boolean>(AppStorageKeyConstants.KEY_IS_PLAY) ?? false;
-      const snapshot: string = `${title}\n${artist}\n${isPlay}`;
+      const snapshot: string = `${songId}\n${title}\n${artist}\n${coverState}\n${isPlay}`;
       if (snapshot === this.lastSnapshot) return;
       this.sequence++;
       const clickAction: WantAgent | null = await this.buildClickAction();

@@ -35,6 +35,7 @@ export struct HomeContent {
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
   @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
   @StorageLink(AppStorageKeyConstants.KEY_LIBRARY_REVISION) @Watch('onLibraryChange') libraryRevision: number = 0
+  @StorageLink(AppStorageKeyConstants.KEY_FILTER_REVISION) @Watch('onFilterChange') filterRevision: number = 0
   @State selectedIds: string[] = []
   @State failedArtIds: Set<string> = new Set<string>()
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
@@ -71,6 +72,10 @@ export struct HomeContent {
 
   onLibraryChange(): void {
     this.loadData()
+  }
+
+  onFilterChange(): void {
+    this.applyFilters()
   }
 
   loadData(): void {
@@ -174,9 +179,7 @@ export struct HomeContent {
   }
 
   clearFilters(): void {
-    this.dataService.setSelectedFolderPaths([])
-    this.dataService.setFavoritesSelected(false)
-    this.applyFilters()
+    this.dataService.setFilterState([], false)
   }
 
   hasActiveFilter(): boolean {

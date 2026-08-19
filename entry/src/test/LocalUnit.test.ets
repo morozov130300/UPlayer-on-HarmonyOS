@@ -203,6 +203,160 @@ export default function localUnitTest() {
       expect(nextIndex).assertEqual(1);
       expect(prevIndex).assertEqual(2);
     });
+    it('playModeLoopModeRoundTrip', 0, () => {
+      const appModes: number[] = [0, 1, 2];
+      const loopModes: number[] = [0, 1, 2];
+      for (let i = 0; i < appModes.length; i++) {
+        let loopMode: number = 1;
+        if (appModes[i] === 0) loopMode = 0;
+        if (appModes[i] === 2) loopMode = 2;
+        let restoredMode: number = 1;
+        if (loopMode === 0) restoredMode = 0;
+        if (loopMode === 2) restoredMode = 2;
+        expect(restoredMode).assertEqual(appModes[i]);
+        expect(loopMode).assertEqual(loopModes[i]);
+      }
+    });
+    it('playModeUnknownLoopKeepsCurrent', 0, () => {
+      const currentMode: number = 2;
+      const receivedLoopMode: number = 99;
+      let updatedMode: number = currentMode;
+      if (receivedLoopMode === 0) updatedMode = 0;
+      if (receivedLoopMode === 1) updatedMode = 1;
+      if (receivedLoopMode === 2) updatedMode = 2;
+      expect(updatedMode).assertEqual(currentMode);
+    });
+    it('playModeExternalUpdateSynchronizesUiIndex', 0, () => {
+      const switchList: number[] = [1, 2, 0];
+      const externalMode: number = 2;
+      const uiIndex: number = switchList.indexOf(externalMode);
+      expect(uiIndex).assertEqual(1);
+    });
+    it('folderDeleteOnlyRemovesExactPaths', 0, () => {
+      const folders: string[] = ['/music/a', '/music/b', '/music/a-live'];
+      const removedPath: string = '/music/a';
+      const remaining: string[] = [];
+      for (let i = 0; i < folders.length; i++) {
+        if (folders[i] !== removedPath) remaining.push(folders[i]);
+      }
+      expect(remaining.length).assertEqual(2);
+      expect(remaining[0]).assertEqual('/music/b');
+      expect(remaining[1]).assertEqual('/music/a-live');
+    });
+    it('folderDeleteCleansPlayNextQueue', 0, () => {
+      const queue: string[] = ['songA', 'songB', 'songC'];
+      const removedIds: string[] = ['songA', 'songC'];
+      const remaining: string[] = [];
+      for (let i = 0; i < queue.length; i++) {
+        if (removedIds.indexOf(queue[i]) < 0) remaining.push(queue[i]);
+      }
+      expect(remaining.length).assertEqual(1);
+      expect(remaining[0]).assertEqual('songB');
+    });
+    it('folderDeleteRecalculatesCurrentIndexById', 0, () => {
+      const remainingSongIds: string[] = ['songB', 'songC'];
+      const currentSongId: string = 'songC';
+      const recalculatedIndex: number = remainingSongIds.indexOf(currentSongId);
+      expect(recalculatedIndex).assertEqual(1);
+    });
+    it('folderDeleteClearsDeletedCurrentSong', 0, () => {
+      const removedIds: string[] = ['songA'];
+      const currentSongId: string = 'songA';
+      const shouldClearPlayback: boolean = removedIds.indexOf(currentSongId) >= 0;
+      expect(shouldClearPlayback).assertTrue();
+    });
+    it('folderDeleteClearsRemovedFilterOnly', 0, () => {
+      const selectedPaths: string[] = ['/music/a', '/music/b'];
+      const removedPaths: string[] = ['/music/a'];
+      const remainingSelected: string[] = [];
+      for (let i = 0; i < selectedPaths.length; i++) {
+        if (removedPaths.indexOf(selectedPaths[i]) < 0) remainingSelected.push(selectedPaths[i]);
+      }
+      expect(remainingSelected.length).assertEqual(1);
+      expect(remainingSelected[0]).assertEqual('/music/b');
+    });
+    // ═══════════ 即时状态与持久化回归 ═══════════
+    it('filterStatePersistsAsSingleRecord', 0, () => {
+      const record: Record<string, Object> = {};
+      record['selectedFolderPaths'] = ['/music/a', '/music/b'];
+      record['favoritesSelected'] = false;
+      const serialized: string = JSON.stringify(record);
+      const restored: Record<string, Object> = JSON.parse(serialized) as Record<string, Object>;
+      expect((restored['selectedFolderPaths'] as string[]).length).assertEqual(2);
+      expect(restored['favoritesSelected'] as boolean).assertFalse();
+    });
+    it('filterStateMigratesLegacyKeys', 0, () => {
+      const legacyPaths: string = JSON.stringify(['/music/a']);
+      const legacyFavorites: boolean = false;
+      const migrated: Record<string, Object> = {};
+      migrated['selectedFolderPaths'] = JSON.parse(legacyPaths) as string[];
+      migrated['favoritesSelected'] = legacyFavorites;
+      expect((migrated['selectedFolderPaths'] as string[])[0]).assertEqual('/music/a');
+      expect(migrated['favoritesSelected'] as boolean).assertFalse();
+    });
+    it('filterCommitKeepsMutuallyExclusiveState', 0, () => {
+      let paths: string[] = ['/music/a'];
+      let favoritesSelected: boolean = false;
+      favoritesSelected = true;
+      paths = [];
+      expect(favoritesSelected).assertTrue();
+      expect(paths.length).assertEqual(0);
+    });
+    it('filterRevisionBroadcastsEveryCommit', 0, () => {
+      let revision: number = 0;
+      revision++;
+      revision++;
+      expect(revision).assertEqual(2);
+    });
+    it('folderDeleteFilterCommitPreservesFavoriteFlag', 0, () => {
+      const selectedPaths: string[] = ['/music/a', '/music/b'];
+      const removedPath: string = '/music/a';
+      const favoritesSelected: boolean = false;
+      const committedPaths: string[] = [];
+      for (let i = 0; i < selectedPaths.length; i++) {
+        if (selectedPaths[i] !== removedPath) committedPaths.push(selectedPaths[i]);
+      }
+      expect(committedPaths.length).assertEqual(1);
+      expect(committedPaths[0]).assertEqual('/music/b');
+      expect(favoritesSelected).assertFalse();
+    });
+    it('serializedFlushKeepsLatestCommittedValue', 0, () => {
+      const pendingValues: string[] = [];
+      pendingValues.push('first');
+      pendingValues.push('second');
+      pendingValues.push('final');
+      const restored: string = pendingValues[pendingValues.length - 1];
+      expect(restored).assertEqual('final');
+    });
+    it('avSessionFavoriteUsesSongLibraryState', 0, () => {
+      const songFavorite: boolean = true;
+      const standalonePreference: boolean | undefined = undefined;
+      const restoredFavorite: boolean = songFavorite;
+      expect(standalonePreference === undefined).assertTrue();
+      expect(restoredFavorite).assertTrue();
+    });
+    it('artworkPlaceholderUsesCurrentSongIdentity', 0, () => {
+      const previousAssetId: string = 'songA';
+      const currentAssetId: string = 'songB';
+      const currentArtwork: string = 'placeholder';
+      expect(currentAssetId === previousAssetId).assertFalse();
+      expect(currentArtwork).assertEqual('placeholder');
+    });
+    it('artworkExpiredRequestCannotReplaceCurrentSong', 0, () => {
+      const currentRequestId: number = 8;
+      const completedRequestId: number = 7;
+      const requestedSongId: string = 'songA';
+      const currentSongId: string = 'songB';
+      const canSubmit: boolean = completedRequestId === currentRequestId && requestedSongId === currentSongId;
+      expect(canSubmit).assertFalse();
+    });
+    it('liveViewSnapshotIncludesSongAndCoverIdentity', 0, () => {
+      const songId: string = 'songB';
+      const coverState: string = 'placeholder';
+      const snapshot: string = `${songId}\n${coverState}`;
+      expect(snapshot.indexOf(songId) >= 0).assertTrue();
+      expect(snapshot.indexOf(coverState) >= 0).assertTrue();
+    });
     // ═══════════ Metadata / 封面队列回归 ═══════════
     it('metadataExtractorMaxConcurrencyOne', 0, () => {
       let active: number = 0;

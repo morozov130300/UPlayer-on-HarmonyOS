@@ -10,7 +10,6 @@ import { ResourceConversion } from '../common/utils/ResourceConversion';
 import { SongInfo } from '../model/SongInfo';
 import { SongDataSource } from '../viewmodel/SongDataSource';
 import { AVPlayerService } from '../service/AVPlayerService';
-import { DataService } from '../service/DataService';
 import { ColorHelper } from '../common/utils/ColorHelper';
 import { common } from '@kit.AbilityKit';
 import { MediaTools } from '../common/utils/mediautils/MediaTools';
@@ -36,7 +35,8 @@ export struct ControlAreaComponent {
   @StorageLink(AppStorageKeyConstants.KEY_PAGE_SHOW_TIME) pageShowTime: number = 0;
   @StorageLink(AppStorageKeyConstants.KEY_SONG_LIST) @Watch('onSongListChange') songList: SongInfo[] = [];
   @State isShowPlayList: boolean = false;
-  @StorageLink(AppStorageKeyConstants.KEY_PLAY_MODE) playMode: MusicPlayMode = PlayModeSwitchList[this.playModeIndex];
+  @StorageLink(AppStorageKeyConstants.KEY_PLAY_MODE) @Watch('onPlayModeChange')
+  playMode: MusicPlayMode = PlayModeSwitchList[this.playModeIndex];
   @StorageLink(AppStorageKeyConstants.KEY_SELECT_INDEX) selectIndex: number = 0;
   @StorageLink(AppStorageKeyConstants.KEY_IS_SILENT_MODE) isSilentMode: boolean = false;
   @StorageLink(AppStorageKeyConstants.KEY_CURRENT_SPEED) speed: number = 1;
@@ -86,6 +86,10 @@ export struct ControlAreaComponent {
     this.songDataSource.reloadData(this.songList);
   }
 
+  onPlayModeChange(): void {
+    this.syncPlayModeIndex();
+  }
+
   private async syncSystemVolume(): Promise<void> {
     try {
       const audioManager: audio.AudioManager = audio.getAudioManager();
@@ -119,8 +123,7 @@ export struct ControlAreaComponent {
       this.playModeIndex++;
     }
     this.playMode = PlayModeSwitchList[this.playModeIndex];
-    DataService.getInstance().setPlayMode(this.playMode);
-    AVSessionController.getInstance().setPlayModeToAVSession(this.playMode);
+    AVSessionController.getInstance().updatePlayMode(this.playMode);
     Logger.info(TAG, 'playModeIndex is' + this.playModeIndex);
     try {
       this.promptAction.openToast({

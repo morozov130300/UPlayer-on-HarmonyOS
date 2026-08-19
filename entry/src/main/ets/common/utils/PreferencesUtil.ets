@@ -26,6 +26,7 @@ export class PreferencesUtil {
   private context: common.UIAbilityContext | undefined = AppStorage.get(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT);
   preferences: preferences.Preferences | undefined;
   private flushTimer: number = -1;
+  private flushChain: Promise<void> = Promise.resolve();
 
   constructor() {
     let options: preferences.Options = { name: MY_STORE };
@@ -40,17 +41,37 @@ export class PreferencesUtil {
   }
 
   // Delete the data of the preferences
-  preferencesPut(key: string, value: preferences.ValueType) {
+  preferencesPut(key: string, value: preferences.ValueType, immediate: boolean = true): void {
     if (!this.preferences) {
       Logger.info(TAG, 'preferences is undefined');
       return;
     }
     try {
       this.preferences.putSync(key, value);
-      this.scheduleFlush();
+      if (immediate) {
+        this.flushNow();
+      } else {
+        this.scheduleFlush();
+      }
     } catch (err) {
       Logger.error(TAG, `preferencesPut failed: ${JSON.stringify(err)}`);
     }
+  }
+
+  flushNow(): Promise<void> {
+    if (this.flushTimer !== -1) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = -1;
+    }
+    this.flushChain = this.flushChain.then((): Promise<void> => {
+      if (this.preferences === undefined) {
+        return Promise.resolve();
+      }
+      return this.preferences.flush();
+    }).catch((err: Error): void => {
+      Logger.error(TAG, `preferences flush failed: ${JSON.stringify(err)}`);
+    });
+    return this.flushChain;
   }
 
   private scheduleFlush(): void {
@@ -59,12 +80,7 @@ export class PreferencesUtil {
     }
     this.flushTimer = setTimeout(() => {
       this.flushTimer = -1;
-      if (this.preferences === undefined) {
-        return;
-      }
-      this.preferences.flush().catch(() => {
-        Logger.error(TAG, 'preferences flush failed');
-      });
+      this.flushNow();
     }, 300);
   }
 
@@ -104,13 +120,14 @@ export class PreferencesUtil {
   }
 
   // Remove data by key
-  async removeKey(key: string) {
+  removeKey(key: string): void {
     if (!this.preferences) {
       Logger.info(TAG, 'preferences is undefined');
       return;
     }
     try {
       this.preferences.deleteSync(key);
+      this.flushNow();
     } catch (err) {
       Logger.error(TAG, `removeKey failed: ${JSON.stringify(err)}`);
     }

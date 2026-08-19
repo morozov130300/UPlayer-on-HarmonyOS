@@ -83,13 +83,6 @@ export struct PlayerInfoComponent {
 
   build() {
     Stack() {
-      Column()
-        .width('100%')
-        .height(this.topHeight)
-        .backgroundColor(this.imageColor)
-        .position({ top: 0 })
-        .zIndex(1)
-
       Image(this.prevImageLabel)
         .size(this.mainWindowInfo.heightBp !== HeightBreakpoint.HEIGHT_LG ?
           { width: PlayerConstants.BACK_IMAGE, height: '100%' } :
@@ -263,6 +256,7 @@ export struct PlayerInfoComponent {
     .height(StyleConstants.FULL_HEIGHT)
     .width(StyleConstants.FULL_WIDTH)
     .backgroundColor(this.imageColor)
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP])
     .animation({ duration: StyleConstants.ANIMATION_PLAYER_BACKGROUND_DURATION, curve: Curve.EaseInOut })
   }
 

@@ -16,6 +16,7 @@ const KEY_FOLDER_LIST: string = 'uplayer_folder_list'
 const KEY_SETTINGS: string = 'uplayer_settings'
 const KEY_SORT_MODE: string = 'uplayer_sort_mode'
 const KEY_VIEW_MODE: string = 'uplayer_view_mode'
+const KEY_FILTER_STATE: string = 'uplayer_filter_state'
 const KEY_SELECTED_FOLDERS: string = 'uplayer_selected_folders'
 const KEY_FAVORITES_SELECTED: string = 'uplayer_favorites_selected'
 const KEY_PLAY_NEXT_QUEUE: string = 'uplayer_play_next_queue'
@@ -34,6 +35,17 @@ export const AUDIO_EXTENSIONS: string[] = [
 export class ImportResult {
   newCount: number = 0
   dupCount: number = 0
+}
+
+export class LibraryDeleteResult {
+  removedSongIds: string[] = []
+  currentSongRemoved: boolean = false
+  currentSongIndex: number = -1
+}
+
+class FilterStateRecord {
+  selectedFolderPaths: string[] = []
+  favoritesSelected: boolean = false
 }
 
 export class AppSettingsData {
@@ -244,15 +256,92 @@ export class DataService {
     this.saveSongs(filtered)
   }
 
-  removeSongsByFolder(folderPath: string): void {
+  removeSongsByFolders(folderPaths: string[]): LibraryDeleteResult {
+    const result: LibraryDeleteResult = new LibraryDeleteResult()
+    if (folderPaths.length === 0) {
+      return result
+    }
+    const pathSet: Set<string> = new Set<string>()
+    for (let i = 0; i < folderPaths.length; i++) {
+      pathSet.add(folderPaths[i])
+    }
     const songs: SongInfo[] = this.getSongs()
-    const filtered: SongInfo[] = []
+    const currentPath: string = AppStorage.get<string>('uplayer_current_song_path') ?? ''
+    let currentSongId: string = ''
     for (let i = 0; i < songs.length; i++) {
-      if (songs[i].folderPath !== folderPath) {
-        filtered.push(songs[i])
+      if (songs[i].filePath === currentPath) {
+        currentSongId = songs[i].id
+        break
       }
     }
-    this.saveSongs(filtered)
+    const remainingSongs: SongInfo[] = []
+    const removedIds: Set<string> = new Set<string>()
+    for (let i = 0; i < songs.length; i++) {
+      if (pathSet.has(songs[i].folderPath)) {
+        result.removedSongIds.push(songs[i].id)
+        removedIds.add(songs[i].id)
+      } else {
+        remainingSongs.push(songs[i])
+      }
+    }
+    if (result.removedSongIds.length === 0) {
+      return result
+    }
+    const queue: string[] = this.getPlayNextQueue()
+    const remainingQueue: string[] = []
+    for (let i = 0; i < queue.length; i++) {
+      if (!removedIds.has(queue[i])) {
+        remainingQueue.push(queue[i])
+      }
+    }
+    this.setPlayNextQueue(remainingQueue)
+    const selectedPaths: string[] = this.getSelectedFolderPaths()
+    const remainingSelectedPaths: string[] = []
+    for (let i = 0; i < selectedPaths.length; i++) {
+      if (!pathSet.has(selectedPaths[i])) {
+        remainingSelectedPaths.push(selectedPaths[i])
+      }
+    }
+    this.setSelectedFolderPaths(remainingSelectedPaths)
+    const folders: FolderInfo[] = this.getFolders()
+    const remainingFolders: FolderInfo[] = []
+    for (let i = 0; i < folders.length; i++) {
+      if (!pathSet.has(folders[i].path)) {
+        remainingFolders.push(folders[i])
+      }
+    }
+    this.saveFolders(remainingFolders)
+    result.currentSongRemoved = currentSongId.length > 0 && removedIds.has(currentSongId)
+    if (!result.currentSongRemoved && currentSongId.length > 0) {
+      for (let i = 0; i < remainingSongs.length; i++) {
+        if (remainingSongs[i].id === currentSongId) {
+          result.currentSongIndex = i
+          break
+        }
+      }
+    }
+    if (result.currentSongRemoved) {
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, -1)
+      AppStorage.setOrCreate('uplayer_current_title', '')
+      AppStorage.setOrCreate('uplayer_current_artist', '')
+      AppStorage.setOrCreate('uplayer_current_song_id', '')
+      AppStorage.setOrCreate('uplayer_current_cover_state', 'placeholder')
+      AppStorage.setOrCreate('uplayer_current_album_art', '')
+      AppStorage.setOrCreate('uplayer_current_song_path', '')
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PROGRESS, 0)
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PROGRESS_MAX, 0)
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TOTAL_MS_TIME, 0)
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_TIME, '00:00')
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TOTAL_TIME, '00:00')
+    } else if (result.currentSongIndex >= 0) {
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, result.currentSongIndex)
+    }
+    this.saveSongs(remainingSongs)
+    return result
+  }
+
+  removeSongsByFolder(folderPath: string): void {
+    this.removeSongsByFolders([folderPath])
   }
 
   getFavoriteSongs(): SongInfo[] {
@@ -464,30 +553,70 @@ export class DataService {
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PLAY_MODE, mode)
   }
 
-  getSelectedFolderPaths(): string[] {
-    const raw = this.getPref().getValue(KEY_SELECTED_FOLDERS)
-    if (raw === undefined) return []
-    try {
-      return JSON.parse(raw as string) as string[]
-    } catch (e) {
-      return []
+  private readFilterState(): FilterStateRecord {
+    const pref: PreferencesUtil = this.getPref()
+    const rawState = pref.getValue(KEY_FILTER_STATE)
+    if (rawState !== undefined) {
+      try {
+        const record: Record<string, Object> = JSON.parse(rawState as string) as Record<string, Object>
+        const state: FilterStateRecord = new FilterStateRecord()
+        const rawPaths: Object | undefined = record['selectedFolderPaths']
+        const rawFavorites: Object | undefined = record['favoritesSelected']
+        state.selectedFolderPaths = rawPaths !== undefined ? (rawPaths as string[]).slice() : []
+        state.favoritesSelected = rawFavorites !== undefined ? rawFavorites as boolean : false
+        if (state.favoritesSelected) {
+          state.selectedFolderPaths = []
+        }
+        return state
+      } catch (e) {
+        Logger.error(TAG, 'readFilterState failed, falling back to legacy keys')
+      }
     }
+    const state: FilterStateRecord = new FilterStateRecord()
+    const rawPaths = pref.getValue(KEY_SELECTED_FOLDERS)
+    if (rawPaths !== undefined) {
+      try {
+        state.selectedFolderPaths = (JSON.parse(rawPaths as string) as string[]).slice()
+      } catch (e) {
+        state.selectedFolderPaths = []
+      }
+    }
+    const rawFavorites = pref.getValue(KEY_FAVORITES_SELECTED)
+    state.favoritesSelected = rawFavorites !== undefined ? rawFavorites as boolean : false
+    if (state.favoritesSelected) {
+      state.selectedFolderPaths = []
+    }
+    if (rawPaths !== undefined || rawFavorites !== undefined) {
+      pref.preferencesPut(KEY_FILTER_STATE, JSON.stringify(state))
+    }
+    return state
+  }
+
+  getSelectedFolderPaths(): string[] {
+    return this.readFilterState().selectedFolderPaths
+  }
+
+  setFilterState(paths: string[], favoritesSelected: boolean): void {
+    const state: FilterStateRecord = new FilterStateRecord()
+    state.selectedFolderPaths = favoritesSelected ? [] : paths.slice()
+    state.favoritesSelected = favoritesSelected
+    this.getPref().preferencesPut(KEY_FILTER_STATE, JSON.stringify(state))
+    AppStorage.setOrCreate(KEY_SELECTED_FOLDERS, state.selectedFolderPaths.slice())
+    AppStorage.setOrCreate(KEY_FAVORITES_SELECTED, state.favoritesSelected)
+    const revision: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_FILTER_REVISION) ?? 0
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_FILTER_REVISION, revision + 1)
   }
 
   setSelectedFolderPaths(paths: string[]): void {
-    this.getPref().preferencesPut(KEY_SELECTED_FOLDERS, JSON.stringify(paths))
-    AppStorage.setOrCreate(KEY_SELECTED_FOLDERS, paths)
+    this.setFilterState(paths, this.isFavoritesSelected())
   }
 
   isFavoritesSelected(): boolean {
-    const raw = this.getPref().getValue(KEY_FAVORITES_SELECTED)
-    if (raw === undefined) return false
-    return raw as boolean
+    return this.readFilterState().favoritesSelected
   }
 
   setFavoritesSelected(selected: boolean): void {
-    this.getPref().preferencesPut(KEY_FAVORITES_SELECTED, selected)
-    AppStorage.setOrCreate(KEY_FAVORITES_SELECTED, selected)
+    this.setFilterState(this.getSelectedFolderPaths(), selected)
   }
 
   // ═══════════ Play Next Queue ═══════════
@@ -565,6 +694,7 @@ export class DataService {
     const settings: AppSettingsData = this.getSettings()
     AppStorage.setOrCreate(KEY_SETTINGS, settings)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_LIBRARY_REVISION, 0)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_FILTER_REVISION, 0)
     AppStorage.setOrCreate(KEY_SORT_MODE, this.getSortMode())
     AppStorage.setOrCreate(KEY_VIEW_MODE, this.getViewMode())
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PLAY_MODE, this.getPlayMode())

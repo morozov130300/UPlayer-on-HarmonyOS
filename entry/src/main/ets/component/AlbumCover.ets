@@ -97,10 +97,22 @@ export struct AlbumCover {
   }
 
   build() {
-    Image(this.cover !== undefined ? this.cover : $r('app.media.ic_public_music'))
-      .width(this.coverWidth)
-      .height(this.coverHeight)
-      .borderRadius(this.coverRadius)
-      .objectFit(this.fit)
+    Stack({ alignContent: Alignment.Center }) {
+      if (this.cover !== undefined) {
+        Image(this.cover)
+          .width(this.coverWidth)
+          .height(this.coverHeight)
+          .objectFit(this.fit)
+      } else {
+        Image($r('app.media.ic_public_music'))
+          .width('42%')
+          .height('42%')
+          .objectFit(ImageFit.Contain)
+      }
+    }
+    .width(this.coverWidth)
+    .height(this.coverHeight)
+    .borderRadius(this.coverRadius)
+    .clip(true)
   }
 }

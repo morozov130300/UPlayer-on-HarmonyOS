@@ -6,7 +6,7 @@ import { AVPlayerService } from '../service/AVPlayerService';
 struct LockScreenPage {
   @StorageLink('uplayer_current_title') title: string = '';
   @StorageLink('uplayer_current_artist') artist: string = '';
-  @StorageLink('uplayer_current_album_art') albumArt: string = '';
+  @StorageLink('uplayer_current_song_id') songId: string = '';
   @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) isPlay: boolean = false;
 
   private playerService: AVPlayerService = AVPlayerService.getInstance();
@@ -14,17 +14,17 @@ struct LockScreenPage {
   build() {
     Column() {
       Column() {
-        if (this.albumArt.length > 0) {
-          Image('file://' + this.albumArt)
-            .width(120).height(120)
-            .borderRadius(12)
-            .objectFit(ImageFit.Cover)
-        } else {
+        Stack({ alignContent: Alignment.Center }) {
           Image($r('app.media.ic_public_music'))
-            .width(120).height(120)
-            .borderRadius(12)
+            .width(52)
+            .height(52)
+            .objectFit(ImageFit.Contain)
             .fillColor(Color.White)
         }
+        .width(120)
+        .height(120)
+        .borderRadius(12)
+        .clip(true)
         Text(this.title.length > 0 ? this.title : '未播放')
           .fontSize(22)
           .fontColor(Color.White)

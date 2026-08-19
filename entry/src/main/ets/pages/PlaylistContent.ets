@@ -1,12 +1,15 @@
 import { common } from '@kit.AbilityKit'
 import { FolderInfo } from '../model/FolderInfo'
 import { SongInfo } from '../model/SongInfo'
-import { DataService, AppSettingsData, ImportResult } from '../service/DataService'
+import { DataService, AppSettingsData, ImportResult, LibraryDeleteResult } from '../service/DataService'
 import { SongScanner } from '../service/SongScanner'
+import { AVPlayerService } from '../service/AVPlayerService'
+import { AVSessionController } from '../common/utils/mediautils/AVSessionController'
+import { LiveViewService } from '../service/LiveViewService'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
-import { LengthMetrics, display } from '@kit.ArkUI'
+import { display } from '@kit.ArkUI'
 import { deviceInfo } from '@kit.BasicServicesKit'
 
 const TAG = 'PlaylistContent'
@@ -30,6 +33,7 @@ export struct PlaylistContent {
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
   @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
   @StorageLink(AppStorageKeyConstants.KEY_LIBRARY_REVISION) @Watch('onLibraryChange') libraryRevision: number = 0
+  @StorageLink(AppStorageKeyConstants.KEY_FILTER_REVISION) @Watch('onFilterChange') filterRevision: number = 0
   private dataService: DataService = DataService.getInstance()
   private songScanner: SongScanner = SongScanner.getInstance()
   private scroller: Scroller = new Scroller()
@@ -49,6 +53,11 @@ export struct PlaylistContent {
 
   onLibraryChange(): void {
     this.loadData()
+  }
+
+  onFilterChange(): void {
+    this.selectedFolderPaths = this.dataService.getSelectedFolderPaths()
+    this.favoritesSelected = this.dataService.isFavoritesSelected()
   }
 
   private updateGridColumns(): void {
@@ -93,6 +102,7 @@ export struct PlaylistContent {
     const keys: string[] = Object.keys(countMap)
     for (let i = 0; i < keys.length; i++) {
       const folder: FolderInfo = FolderInfo.fromPath(keys[i])
+      folder.id = keys[i]
       folder.songCount = countMap[keys[i]] as number
       folder.isAvailable = true
       result.push(folder)
@@ -142,8 +152,7 @@ export struct PlaylistContent {
         this.selectedFolderPaths = newPaths
       }
     }
-    this.dataService.setSelectedFolderPaths(this.selectedFolderPaths)
-    this.dataService.setFavoritesSelected(this.favoritesSelected)
+    this.dataService.setFilterState(this.selectedFolderPaths, this.favoritesSelected)
   }
 
   isFolderSelected(folder: FolderInfo): boolean {
@@ -177,7 +186,8 @@ export struct PlaylistContent {
     this.editSelectedFolderIds = []
   }
 
-  deleteEditSelected(): void {
+  async deleteEditSelected(): Promise<void> {
+    const folderPaths: string[] = []
     for (let i = 0; i < this.editSelectedFolderIds.length; i++) {
       const fid: string = this.editSelectedFolderIds[i]
       if (fid === FAVORITES_FOLDER_ID) {
@@ -190,12 +200,20 @@ export struct PlaylistContent {
       } else {
         for (let j = 0; j < this.folders.length; j++) {
           if (this.folders[j].id === fid) {
-            this.dataService.removeSongsByFolder(this.folders[j].path)
-            this.dataService.removeFolder(fid)
+            folderPaths.push(this.folders[j].path)
             break
           }
         }
       }
+    }
+    if (folderPaths.length > 0) {
+      const deleteResult: LibraryDeleteResult = this.dataService.removeSongsByFolders(folderPaths)
+      if (deleteResult.currentSongRemoved) {
+        await AVPlayerService.getInstance().stop()
+        AVSessionController.getInstance().clearCurrentMedia()
+        await LiveViewService.getInstance().stopLiveView()
+      }
+      await AVSessionController.getInstance().setAVQueueItems()
     }
     this.exitEditMode()
     this.loadData()
@@ -251,7 +269,7 @@ export struct PlaylistContent {
         .padding({
           left: 16,
           right: this.titleButtonWidth + 12,
-          top: this.topContentPadding + this.scaledSize(8),
+          top: this.topContentPadding + this.scaledSize(20),
           bottom: 12
         })
 
@@ -374,7 +392,11 @@ export struct PlaylistContent {
             Text('删除')
               .fontSize(Math.round(14 * this.fontSizeScale))
               .fontColor('#FF3B30')
-              .onClick(() => { this.deleteEditSelected() })
+              .onClick(() => {
+                this.deleteEditSelected().catch((err: Error) => {
+                  Logger.error(TAG, `delete selected failed: ${JSON.stringify(err)}`)
+                })
+              })
           }
           .width('100%')
           .height(48)

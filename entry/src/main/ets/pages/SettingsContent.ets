@@ -77,7 +77,7 @@ export struct SettingsContent {
       .width('100%')
       .padding({
         left: this.scaledSize(16), right: this.titleButtonWidth + this.scaledSize(12),
-        top: this.topContentPadding + this.scaledSize(8), bottom: this.scaledSize(10)
+        top: this.topContentPadding + this.scaledSize(20), bottom: this.scaledSize(10)
       })
 
       Column({ space: this.scaledSize(8) }) {
