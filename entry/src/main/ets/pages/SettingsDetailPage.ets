@@ -72,14 +72,14 @@ struct SettingsDetailPage {
     { label: '沉浸', value: 'immersive' }
   ]
   private colorOptions: ThemeColorOption[] = [
-    { name: '鸿蒙蓝', value: '#007DFF' },
-    { name: '经典红', value: '#FF3B30' },
-    { name: '经典绿', value: '#34C759' },
-    { name: '经典橙', value: '#FF9500' },
-    { name: '经典紫', value: '#AF52DE' },
-    { name: '经典青', value: '#5AC8FA' },
+    { name: '绯霞红', value: '#FF3B30' },
+    { name: '琥珀橙', value: '#FF9500' },
     { name: '典雅金', value: '#C79A3B' },
-    { name: '沉浸靛', value: '#5856D6' }
+    { name: '翠微绿', value: '#34C759' },
+    { name: '天青蓝', value: '#5AC8FA' },
+    { name: '鸿蒙蓝', value: '#007DFF' },
+    { name: '沉浸靛', value: '#5856D6' },
+    { name: '紫罗兰', value: '#AF52DE' }
   ]
   private eqBands: EqBandInfo[] = [
     { freq: '32', index: 0 }, { freq: '64', index: 1 }, { freq: '125', index: 2 },
