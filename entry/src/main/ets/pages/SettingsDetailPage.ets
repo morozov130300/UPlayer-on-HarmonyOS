@@ -72,12 +72,12 @@ struct SettingsDetailPage {
     { label: '沉浸', value: 'immersive' }
   ]
   private colorOptions: ThemeColorOption[] = [
+    { name: '鸿蒙蓝', value: '#007DFF' },
     { name: '绯霞红', value: '#FF3B30' },
     { name: '琥珀橙', value: '#FF9500' },
     { name: '典雅金', value: '#C79A3B' },
     { name: '翠微绿', value: '#34C759' },
     { name: '天青蓝', value: '#5AC8FA' },
-    { name: '鸿蒙蓝', value: '#007DFF' },
     { name: '沉浸靛', value: '#5856D6' },
     { name: '紫罗兰', value: '#AF52DE' }
   ]
@@ -224,7 +224,8 @@ struct SettingsDetailPage {
       .shadow({
         radius: 14,
         color: ColorHelper.hexWithAlpha(this.primaryColor, this.indicatorAlpha(0.8)
-          .toString(16).padStart(2, '0'))
+          .toString(16)
+          .padStart(2, '0'))
       })
       .radialGradient({
         center: ['50%', '50%'],
@@ -244,7 +245,8 @@ struct SettingsDetailPage {
 
   private indicatorGradientColor(base: number): ResourceColor {
     return ColorHelper.hexWithAlpha(this.primaryColor, this.indicatorAlpha(base)
-      .toString(16).padStart(2, '0'))
+      .toString(16)
+      .padStart(2, '0'))
   }
 
   private isDark(): boolean {
@@ -416,7 +418,8 @@ struct SettingsDetailPage {
           .borderRadius(this.scaledSize(24))
           .hoverEffect(HoverEffect.Scale)
           .onClick(() => {
-            this.getUIContext()?.getRouter().back()
+            this.getUIContext()?.getRouter()
+              .back()
           })
 
           Text(this.pageTitle)
