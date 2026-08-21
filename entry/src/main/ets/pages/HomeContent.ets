@@ -494,7 +494,7 @@ export struct HomeContent {
             ListItem() {
               Row()
                 .width('100%')
-                .height(this.bottomContentPadding)
+                .height(this.isMultiSelectMode ? this.bottomContentPadding + 56 : this.bottomContentPadding)
             }
           }
           .width('100%')
@@ -541,27 +541,56 @@ export struct HomeContent {
               .fontSize(Math.round(14 * this.fontSizeScale))
               .fontColor($r('app.color.text_primary'))
             Blank()
-            Text(this.isAllSelected() ? '取消全选' : '全选')
-              .fontSize(Math.round(14 * this.fontSizeScale))
-              .fontColor(this.primaryColor)
-              .margin({ right: 16 })
-              .onClick(() => { this.toggleSelectAll() })
-            Text('取消')
-              .fontSize(Math.round(14 * this.fontSizeScale))
-              .fontColor(this.primaryColor)
-              .margin({ right: 16 })
-              .onClick(() => { this.exitMultiSelect() })
-            Text('删除')
-              .fontSize(Math.round(14 * this.fontSizeScale))
-              .fontColor('#FF3B30')
-              .onClick(() => { this.deleteSelected() })
+            // 全选按钮 - 带图标
+            Row({ space: 4 }) {
+              SymbolGlyph($r('sys.symbol.checkmark_circle'))
+                .fontSize(Math.round(16 * this.fontSizeScale))
+                .fontColor([this.primaryColor])
+              Text(this.isAllSelected() ? '取消全选' : '全选')
+                .fontSize(Math.round(14 * this.fontSizeScale))
+                .fontColor(this.primaryColor)
+            }
+            .margin({ right: 16 })
+            .onClick(() => { this.toggleSelectAll() })
+
+            // 取消按钮 - 带图标
+            Row({ space: 4 }) {
+              SymbolGlyph($r('sys.symbol.xmark'))
+                .fontSize(Math.round(16 * this.fontSizeScale))
+                .fontColor([$r('app.color.text_sixty_color')])
+              Text('取消')
+                .fontSize(Math.round(14 * this.fontSizeScale))
+                .fontColor(this.primaryColor)
+            }
+            .margin({ right: 16 })
+            .onClick(() => { this.exitMultiSelect() })
+
+            // 删除按钮 - 带图标
+            Row({ space: 4 }) {
+              SymbolGlyph($r('sys.symbol.trash'))
+                .fontSize(Math.round(16 * this.fontSizeScale))
+                .fontColor(['#FF3B30'])
+              Text('删除')
+                .fontSize(Math.round(14 * this.fontSizeScale))
+                .fontColor('#FF3B30')
+            }
+            .onClick(() => { this.deleteSelected() })
           }
           .width('100%')
-          .height(48)
+          .height(56)
           .padding({ left: 16, right: 16 })
-          .backgroundColor($r('app.color.page_background_sm'))
-          .border({ width: 1, color: $r('app.color.list_divider') })
-          .margin({ bottom: this.bottomContentPadding })
+          .backgroundColor(Color.Transparent)
+          .backgroundEffect({
+            radius: 20,
+            saturation: 1.0,
+            brightness: 1.0
+          })
+          .border({
+            width: { top: 1 },
+            color: { top: $r('app.color.list_divider') }
+          })
+          .position({ bottom: this.bottomContentPadding })
+          .zIndex(1)
         }
       }
       .width('100%')
@@ -684,8 +713,8 @@ export struct HomeContent {
           .fontSize(this.scaledSize(22))
           .fontColor(['#888888'])
           .renderingStrategy(SymbolRenderingStrategy.SINGLE)
-          .hitTestBehavior(HitTestMode.Block)
-          .margin({ right: this.scaledSize(10) })
+          .hitTestBehavior(HitTestMode.Transparent)
+          .margin({ right: this.scaledSize(16) })
       }
       if (this.isMultiSelectMode) {
         Row() {
@@ -702,7 +731,7 @@ export struct HomeContent {
         .border({ width: 1, color: this.isSelected(item.id) ? this.primaryColor : $r('app.color.list_divider') })
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
-        .margin({ right: this.scaledSize(10) })
+        .margin({ right: this.scaledSize(16) })
       }
 
       AlbumCover({ song: item, coverWidth: this.scaledSize(36), coverHeight: this.scaledSize(36),
@@ -768,12 +797,12 @@ export struct HomeContent {
     }
     .width('100%')
     .padding({
-      left: this.scaledSize(16), right: this.scaledSize(16),
+      left: this.scaledSize(20), right: this.scaledSize(20),
       top: this.scaledSize(10), bottom: this.scaledSize(10)
     })
     .constraintSize({ minHeight: this.scaledSize(52), maxHeight: this.scaledSize(96) })
     .alignItems(VerticalAlign.Center)
-    .gesture(
+    .parallelGesture(
       LongPressGesture()
         .onAction(() => {
           this.onSongLongPress(item)
