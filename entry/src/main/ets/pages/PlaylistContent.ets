@@ -28,7 +28,7 @@ export struct PlaylistContent {
   @State lastScrollY: number = 0
   @State selectedFolderPaths: string[] = []
   @State favoritesSelected: boolean = false
-  @StorageLink(AppStorageKeyConstants.KEY_TITLE_BUTTON_WIDTH) titleButtonWidth: number = 0
+  @StorageLink(AppStorageKeyConstants.KEY_TITLE_BUTTON_WIDTH) titleButtonWidth: number = 140
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
   @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
@@ -87,6 +87,13 @@ export struct PlaylistContent {
   }
 
   buildFoldersFromSongs(): void {
+    // 恢复持久化的文件夹自定义排序序号，避免每次重建都丢失
+    const persisted: FolderInfo[] = this.dataService.getFolders()
+    const sortOrderMap: Map<string, number> = new Map<string, number>()
+    for (let i = 0; i < persisted.length; i++) {
+      sortOrderMap.set(persisted[i].id, persisted[i].sortOrder)
+    }
+    let nextOrder: number = 1
     const countMap: Record<string, number> = {}
     for (let i = 0; i < this.songs.length; i++) {
       const key: string = this.songs[i].folderPath
@@ -105,10 +112,20 @@ export struct PlaylistContent {
       folder.id = keys[i]
       folder.songCount = countMap[keys[i]] as number
       folder.isAvailable = true
+      const persistedOrder: number | undefined = sortOrderMap.get(folder.id)
+      if (persistedOrder !== undefined) {
+        folder.sortOrder = persistedOrder
+      } else {
+        // 新出现的文件夹按首次构建顺序依次编号
+        folder.sortOrder = nextOrder
+        nextOrder++
+      }
       result.push(folder)
     }
     this.sortFolders(result)
     this.folders = result
+    // 同步持久化，保证新增文件夹的自定义序号被保存
+    this.dataService.saveFolders(result)
   }
 
   sortFolders(folders: FolderInfo[]): void {
@@ -259,16 +276,16 @@ export struct PlaylistContent {
             .fontSize(Math.round(18 * this.fontSizeScale))
             .fontColor($r('app.color.text_primary'))
             .fontWeight(FontWeight.Bold)
-          Blank()
           Text(this.sortModeLabel())
             .fontSize(Math.round(12 * this.fontSizeScale))
             .fontColor($r('app.color.text_sixty_color'))
+            .margin({ left: 10 })
             .onClick(() => { this.cycleSortMode() })
         }
         .width('100%')
         .padding({
           left: 16,
-          right: this.titleButtonWidth + 12,
+          right: Math.max(this.titleButtonWidth, 140) + 12,
           top: this.topContentPadding + this.scaledSize(20),
           bottom: 12
         })

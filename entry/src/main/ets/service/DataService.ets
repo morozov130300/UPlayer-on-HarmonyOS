@@ -4,9 +4,7 @@ import { PreferencesUtil } from '../common/utils/PreferencesUtil'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { fileIo as fs, fileShare } from '@kit.CoreFileKit'
 import Logger from '../common/utils/Logger'
-import { common } from '@kit.AbilityKit'
 import { BusinessError } from '@kit.BasicServicesKit'
-import { AudioMetadataService } from './AudioMetadataService'
 import { MusicPlayMode } from '../common/constants/PlayerConstants'
 
 const TAG = 'DataService'
@@ -69,9 +67,47 @@ export class AppSettingsData {
 export class DataService {
   private static instance: DataService = new DataService()
   private songsCache: SongInfo[] | undefined = undefined
+  // 拖拽重排等高频更新场景下，延迟并合并磁盘写入，降低擦写次数
+  private saveSongsTimer: number = -1
+  private pendingSongs: SongInfo[] | undefined = undefined
+  private readonly SAVE_SONGS_DEBOUNCE_MS: number = 300
 
   public static getInstance(): DataService {
     return DataService.instance
+  }
+
+  // 立即把暂存的歌曲列表写入磁盘（幂等，可安全多次调用）
+  flushPendingSongWrites(): void {
+    if (this.saveSongsTimer !== -1) {
+      clearTimeout(this.saveSongsTimer)
+      this.saveSongsTimer = -1
+    }
+    if (this.pendingSongs === undefined) {
+      return
+    }
+    const songs: SongInfo[] = this.pendingSongs
+    this.pendingSongs = undefined
+    const records: Record<string, Object>[] = []
+    for (let i = 0; i < songs.length; i++) {
+      records.push(this.songToRecord(songs[i]))
+    }
+    this.writeJsonArray(KEY_SONG_LIST, records as object[])
+  }
+
+  private scheduleSaveSongs(songs: SongInfo[]): void {
+    // 内存缓存与 AppStorage 同步立即生效；仅磁盘写做防抖合并
+    this.songsCache = songs
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SONG_LIST, songs.slice())
+    const revision: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_LIBRARY_REVISION) ?? 0
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_LIBRARY_REVISION, revision + 1)
+    this.pendingSongs = songs
+    if (this.saveSongsTimer !== -1) {
+      clearTimeout(this.saveSongsTimer)
+    }
+    this.saveSongsTimer = setTimeout(() => {
+      this.saveSongsTimer = -1
+      this.flushPendingSongWrites()
+    }, this.SAVE_SONGS_DEBOUNCE_MS)
   }
 
   private getPref(): PreferencesUtil {
@@ -114,8 +150,8 @@ export class DataService {
     r['duration'] = song.duration
     r['bitrate'] = song.bitrate
     r['sampleRate'] = song.sampleRate
-    r['albumArtPath'] = song.albumArtPath
     r['addedTime'] = song.addedTime
+    r['sortOrder'] = song.sortOrder
     r['isFavorite'] = song.isFavorite
     r['isAvailable'] = song.isAvailable
     r['lyricPath'] = song.lyricPath
@@ -146,9 +182,14 @@ export class DataService {
     song.bitrate = rawBitrate !== undefined ? rawBitrate as number : 0
     let rawSampleRate: Object | undefined = r['sampleRate']
     song.sampleRate = rawSampleRate !== undefined ? rawSampleRate as number : 0
-    let rawAlbumArt: Object | undefined = r['albumArtPath']
-    song.albumArtPath = rawAlbumArt !== undefined ? rawAlbumArt as string : ''
     song.addedTime = r['addedTime'] as number
+    const rawSortOrder: Object | undefined = r['sortOrder']
+    if (rawSortOrder !== undefined) {
+      song.sortOrder = rawSortOrder as number
+    } else {
+      // 旧数据迁移：早期版本无 sortOrder，用添加时间保证自定义排序的合理初始顺序
+      song.sortOrder = song.addedTime
+    }
     song.isFavorite = r['isFavorite'] as boolean
     song.isAvailable = r['isAvailable'] as boolean
     song.lyricPath = r['lyricPath'] as string
@@ -201,20 +242,7 @@ export class DataService {
   }
 
   saveSongs(songs: SongInfo[]): void {
-    this.songsCache = songs
-    const records: Record<string, Object>[] = []
-    for (let i = 0; i < songs.length; i++) {
-      records.push(this.songToRecord(songs[i]))
-    }
-    this.writeJsonArray(KEY_SONG_LIST, records as object[])
-    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SONG_LIST, songs.slice())
-    const revision: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_LIBRARY_REVISION) ?? 0
-    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_LIBRARY_REVISION, revision + 1)
-    const context: common.UIAbilityContext | undefined = AppStorage.get<common.UIAbilityContext>(
-      AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
-    if (context !== undefined) {
-      AudioMetadataService.getInstance().cleanupCoverCache(context, songs)
-    }
+    this.scheduleSaveSongs(songs)
   }
 
   addSongs(newSongs: SongInfo[]): ImportResult {
@@ -222,6 +250,13 @@ export class DataService {
     const existingIndexes: Map<string, number> = new Map<string, number>()
     for (let i = 0; i < songs.length; i++) {
       existingIndexes.set(songs[i].filePath, i)
+    }
+    // 新歌曲追加到自定义排序末尾：取当前最大 sortOrder 的下一个值，批量导入连续编号
+    let nextSortOrder: number = 1
+    for (let i = 0; i < songs.length; i++) {
+      if (songs[i].sortOrder >= nextSortOrder) {
+        nextSortOrder = songs[i].sortOrder + 1
+      }
     }
     const result: ImportResult = new ImportResult()
     for (let i = 0; i < newSongs.length; i++) {
@@ -232,10 +267,11 @@ export class DataService {
         songs[existingIndex].album = newSongs[i].album
         songs[existingIndex].duration = newSongs[i].duration
         songs[existingIndex].uri = newSongs[i].uri
-        songs[existingIndex].albumArtPath = newSongs[i].albumArtPath
         songs[existingIndex].isAvailable = true
         result.dupCount++
       } else {
+        newSongs[i].sortOrder = nextSortOrder
+        nextSortOrder++
         existingIndexes.set(newSongs[i].filePath, songs.length)
         songs.push(newSongs[i])
         result.newCount++
@@ -254,6 +290,7 @@ export class DataService {
       }
     }
     this.saveSongs(filtered)
+    this.flushPendingSongWrites()
   }
 
   removeSongsByFolders(folderPaths: string[]): LibraryDeleteResult {
@@ -337,6 +374,7 @@ export class DataService {
       AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, result.currentSongIndex)
     }
     this.saveSongs(remainingSongs)
+    this.flushPendingSongWrites()
     return result
   }
 
@@ -685,6 +723,8 @@ export class DataService {
     }
     if (changed) {
       this.saveSongs(songs)
+      // 启动期的可访问性修复立即落盘，避免残留待写缓存
+      this.flushPendingSongWrites()
     }
   }
 

@@ -181,7 +181,6 @@ export class AudioMetadataService {
         let metaDuration: number = Number(metadata.duration)
         if (metaDuration > 0) song.duration = metaDuration
       }
-      song.albumArtPath = ''
     } catch (err) {
       Logger.warn(TAG, `Metadata extraction failed for ${song.fileName}: ${JSON.stringify(err)}`)
     } finally {
@@ -194,21 +193,6 @@ export class AudioMetadataService {
       }
       if (file !== undefined) fs.closeSync(file)
     }
-  }
-
-  cleanupCoverCache(context: common.UIAbilityContext, songs: SongInfo[]): void {
-    for (let i = 0; i < songs.length; i++) songs[i].albumArtPath = ''
-  }
-
-  async migrateLegacyCovers(context: common.UIAbilityContext, songs: SongInfo[]): Promise<boolean> {
-    let changed: boolean = false
-    for (let i = 0; i < songs.length; i++) {
-      if (songs[i].albumArtPath.length > 0) {
-        songs[i].albumArtPath = ''
-        changed = true
-      }
-    }
-    return changed
   }
 
   async acquireAlbumCover(song: SongInfo, maxEdge: number = AlbumCoverSize.LARGE,

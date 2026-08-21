@@ -9,8 +9,12 @@ import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { AlbumCover } from '../component/AlbumCover'
 import { AlbumCoverSize, AudioMetadataService, CoverPriority } from '../service/AudioMetadataService'
+import { curves } from '@kit.ArkUI'
 
 const TAG = 'HomeContent'
+const PREFETCH_COUNT: number = 16
+const PREFETCH_THROTTLE_MS: number = 200
+const APPROX_ITEM_HEIGHT: number = 72
 
 class DisplayItem {
   isHeader: boolean = false
@@ -148,7 +152,7 @@ export struct HomeContent {
     this.displayItems = items
     this.displayDataSource.reloadData(items)
     const visible: SongInfo[] = []
-    for (let i = 0; i < items.length && visible.length < 12; i++) {
+    for (let i = 0; i < items.length && visible.length < PREFETCH_COUNT; i++) {
       if (!items[i].isHeader && items[i].song.isAvailable) {
         visible.push(items[i].song)
       }
@@ -172,7 +176,7 @@ export struct HomeContent {
       })
     } else {
       sorted.sort((a: SongInfo, b: SongInfo): number => {
-        return a.addedTime - b.addedTime
+        return a.sortOrder - b.sortOrder
       })
     }
     return sorted
@@ -255,6 +259,70 @@ export struct HomeContent {
         break
       }
     }
+  }
+
+  // 只有自定义排序模式才允许通过 onMove 重排
+  canDragSort(): boolean {
+    return this.sortMode === 'custom'
+  }
+
+  private get isCustomSort(): boolean {
+    return this.sortMode === 'custom'
+  }
+
+  // onMove 回调：只在自定义排序 + 平铺视图 + 多选模式下处理数据重排
+  onMoveListItem(from: number, to: number): void {
+    if (!this.canDragSort() || !this.isMultiSelectMode || this.viewMode !== 'flat'
+      || from === to || from < 0 || to < 0) {
+      return
+    }
+    if (from >= this.displayItems.length || to >= this.displayItems.length) {
+      return
+    }
+    // Q 弹动画：弹簧曲线包裹数据移动，落位时列表项跟随弹性回弹
+    this.getUIContext()?.animateTo({ curve: curves.interpolatingSpring(0, 1, 400, 28) }, () => {
+      this.displayDataSource.moveItem(from, to)
+      // 同步本组件持有的 displayItems 数组顺序，保证后续索引类逻辑一致
+      const movedItemArr: DisplayItem = this.displayItems.splice(from, 1)[0]
+      this.displayItems.splice(to, 0, movedItemArr)
+    })
+    // 同步重排底层 songs 数组：flat 视图下 displayItems 的顺序即 sortOrder 升序
+    const songs: SongInfo[] = this.dataService.getSongs()
+    const movedId: string = this.displayItems[to].song.id
+    const sortable: SongInfo[] = []
+    for (let i = 0; i < songs.length; i++) {
+      sortable.push(songs[i])
+    }
+    sortable.sort((a: SongInfo, b: SongInfo): number => {
+      return a.sortOrder - b.sortOrder
+    })
+    let fromIdx: number = -1
+    for (let i = 0; i < sortable.length; i++) {
+      if (sortable[i].id === movedId) {
+        fromIdx = i
+        break
+      }
+    }
+    if (fromIdx < 0) {
+      return
+    }
+    const moved: SongInfo = sortable.splice(fromIdx, 1)[0]
+    sortable.splice(to, 0, moved)
+    const lo: number = Math.min(fromIdx, to)
+    const hi: number = Math.max(fromIdx, to)
+    const orderMap: Map<string, number> = new Map<string, number>()
+    for (let i = 0; i < sortable.length; i++) {
+      if (i >= lo && i <= hi) {
+        orderMap.set(sortable[i].id, i + 1)
+      }
+    }
+    for (let i = 0; i < songs.length; i++) {
+      const o: number | undefined = orderMap.get(songs[i].id)
+      if (o !== undefined) {
+        songs[i].sortOrder = o
+      }
+    }
+    this.dataService.saveSongs(songs)
   }
 
   onSongTap(item: SongInfo): void {
@@ -351,7 +419,44 @@ export struct HomeContent {
     return '自定义'
   }
 
+  prefetchInScrollDirection(yOffset: number, scrollingDown: boolean): void {
+    const now: number = new Date().getTime()
+    if (now - this.lastPrefetchTime < PREFETCH_THROTTLE_MS) {
+      return
+    }
+    this.lastPrefetchTime = now
+    const adjustedY: number = Math.max(0, yOffset - this.listTopPadding())
+    const approxItemHeight: number = this.scaledSize(APPROX_ITEM_HEIGHT)
+    const estStartIndex: number = Math.floor(adjustedY / approxItemHeight)
+    const songs: SongInfo[] = []
+    if (scrollingDown) {
+      const start: number = estStartIndex + PREFETCH_COUNT
+      let count: number = 0
+      for (let i = start; i < this.displayItems.length && count < PREFETCH_COUNT; i++) {
+        if (!this.displayItems[i].isHeader && this.displayItems[i].song.isAvailable) {
+          songs.push(this.displayItems[i].song)
+          count++
+        }
+      }
+    } else {
+      const end: number = Math.max(0, estStartIndex)
+      const start: number = Math.max(0, end - PREFETCH_COUNT)
+      let count: number = 0
+      for (let i = start; i < end && count < PREFETCH_COUNT; i++) {
+        if (!this.displayItems[i].isHeader && this.displayItems[i].song.isAvailable) {
+          songs.push(this.displayItems[i].song)
+          count++
+        }
+      }
+    }
+    if (songs.length > 0) {
+      AudioMetadataService.getInstance().prefetchAlbumCovers(
+        songs, AlbumCoverSize.SMALL, CoverPriority.HIGH)
+    }
+  }
+
   @State lastScrollY: number = 0
+  private lastPrefetchTime: number = 0
 
   build() {
     Stack({ alignContent: Alignment.Top }) {
@@ -382,6 +487,9 @@ export struct HomeContent {
               }
               return 'empty_' + index
             })
+            .onMove((from: number, to: number) => {
+              this.onMoveListItem(from, to)
+            })
 
             ListItem() {
               Row()
@@ -399,8 +507,10 @@ export struct HomeContent {
             const yOffset: number = offset.yOffset
             if (yOffset > this.lastScrollY && (yOffset - this.lastScrollY) > 10) {
               this.isPlusVisible = false
+              this.prefetchInScrollDirection(yOffset, true)
             } else if (yOffset < this.lastScrollY) {
               this.isPlusVisible = true
+              this.prefetchInScrollDirection(yOffset, false)
             }
             this.lastScrollY = yOffset
           })
@@ -569,6 +679,14 @@ export struct HomeContent {
   @Builder
   songItemRow(item: SongInfo): void {
     Row() {
+      if (this.isCustomSort && this.isMultiSelectMode) {
+        SymbolGlyph($r('sys.symbol.line_3_horizontal'))
+          .fontSize(this.scaledSize(22))
+          .fontColor(['#888888'])
+          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+          .hitTestBehavior(HitTestMode.Block)
+          .margin({ right: this.scaledSize(10) })
+      }
       if (this.isMultiSelectMode) {
         Row() {
           if (this.isSelected(item.id)) {

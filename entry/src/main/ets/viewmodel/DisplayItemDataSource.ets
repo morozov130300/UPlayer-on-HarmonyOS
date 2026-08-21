@@ -79,4 +79,19 @@ export class DisplayItemDataSource implements IDataSource {
       this.listeners[i].onDataDelete(index)
     }
   }
+
+  notifyDataMove(from: number, to: number): void {
+    for (let i = 0; i < this.listeners.length; i++) {
+      this.listeners[i].onDataMove(from, to)
+    }
+  }
+
+  moveItem(from: number, to: number): void {
+    if (from < 0 || from >= this.dataArray.length || to < 0 || to > this.dataArray.length || from === to) {
+      return
+    }
+    const moved: DisplayItem = this.dataArray.splice(from, 1)[0]
+    this.dataArray.splice(to, 0, moved)
+    this.notifyDataMove(from, to)
+  }
 }

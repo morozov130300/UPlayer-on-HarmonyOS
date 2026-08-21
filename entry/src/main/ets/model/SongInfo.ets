@@ -13,8 +13,8 @@ export class SongInfo {
   duration: number = 0        // 时长(ms)
   bitrate: number = 0         // 比特率(bps)
   sampleRate: number = 0      // 采样率(Hz)
-  albumArtPath: string = ''   // 专辑封面缓存路径
   addedTime: number = Date.now()  // 添加时间戳
+  sortOrder: number = 0           // 自定义排序序号
   isFavorite: boolean = false // 是否收藏
   isAvailable: boolean = true // 文件是否可用
   lyricPath: string = ''      // 歌词文件路径（解码后）
@@ -43,7 +43,6 @@ export class SongInfo {
     song.duration = 0
     song.bitrate = 0
     song.sampleRate = 0
-    song.albumArtPath = ''
     song.addedTime = Date.now()
     song.isFavorite = false
     song.isAvailable = true

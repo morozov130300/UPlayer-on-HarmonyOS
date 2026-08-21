@@ -28,20 +28,10 @@ export default class EntryAbility extends UIAbility {
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate');
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT, this.context);
     LiveViewService.getInstance().setContext(this.context);
-    const dataService: DataService = DataService.getInstance();
-    const songs = dataService.getSongs();
-    AudioMetadataService.getInstance().migrateLegacyCovers(this.context, songs).then((changed: boolean) => {
-      if (changed) {
-        dataService.saveSongs(songs);
-      } else {
-        AudioMetadataService.getInstance().cleanupCoverCache(this.context, songs);
-      }
-    }).catch((err: Error) => {
-      Logger.warn(TAG, `migrateLegacyCovers failed: ${JSON.stringify(err)}`);
-    });
   }
 
   onDestroy(): void {
+    DataService.getInstance().flushPendingSongWrites();
     PreferencesUtil.getInstance().flushNow();
     AudioMetadataService.getInstance().clearMemoryCache();
     AVPlayerService.getInstance().release();
@@ -125,6 +115,7 @@ export default class EntryAbility extends UIAbility {
   }
 
   onBackground(): void {
+    DataService.getInstance().flushPendingSongWrites();
     PreferencesUtil.getInstance().flushNow();
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onBackground');
   }

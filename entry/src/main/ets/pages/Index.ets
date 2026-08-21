@@ -704,7 +704,7 @@ struct MainPage {
             .padding({
               top: this.topContentInset(),
               left: 16,
-              right: this.isPC ? this.titleButtonWidth + 12 : 8
+              right: this.isPC ? Math.max(this.titleButtonWidth, 140) + 12 : 8
             })
           }
           .width('100%')

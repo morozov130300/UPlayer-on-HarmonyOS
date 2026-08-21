@@ -14,7 +14,7 @@ const TAG = '[MusicPlayer]';
 @Component
 struct MusicPlayer {
   @State isShowPlay: boolean = false;
-  @State bgOpacity: number = 0;
+  @State bgOpacity: number = 1;
   @State isLoading: boolean = true;
   @StorageLink(AppStorageKeyConstants.KEY_WINDOW_UTIL) windowUtil: WindowUtil | undefined = undefined;
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF';
@@ -24,9 +24,6 @@ struct MusicPlayer {
 
   async aboutToAppear() {
     this.isLoading = false;
-    this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_BACKGROUND_FADE_DURATION, curve: Curve.EaseOut }, () => {
-      this.bgOpacity = 1
-    })
   }
 
   aboutToDisappear() {
