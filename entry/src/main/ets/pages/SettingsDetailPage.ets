@@ -55,6 +55,11 @@ struct SettingsDetailPage {
   @State pickerSaturation: number = 1
   @State pickerValue: number = 1
   @State pickerOriginalColor: string = '#007DFF'
+  @State eqRedrawTick: number = 0
+  private eqCurveSettings: RenderingContextSettings = new RenderingContextSettings(true)
+  private eqCurveCtx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.eqCurveSettings)
+  private eqCurveWidth: number = 0
+  private eqCurveHeight: number = 0
   private dataService: DataService = DataService.getInstance()
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
   private isPC: boolean = deviceInfo.deviceType === '2in1'
@@ -384,6 +389,7 @@ struct SettingsDetailPage {
     bands[bandIndex] = Math.round(value) - 10
     this.settings.eqBands = bands
     this.settings = this.settings
+    this.eqRedrawTick++
     const applied: boolean = this.avPlayerService.updateEqualizerBands(bands)
     if (!applied && (mode === SliderChangeMode.End || mode === SliderChangeMode.Click)) {
       Logger.error(TAG, `equalizer change not applied by native backend index=${bandIndex} value=${bands[bandIndex]}`)
@@ -1126,60 +1132,146 @@ struct SettingsDetailPage {
       .borderRadius(10)
 
       if (this.settings.eqEnabled) {
-        Column() {
-          Scroll() {
-            Row({ space: this.scaledSize(4) }) {
-              ForEach(this.eqBands, (band: EqBandInfo) => {
-                Column() {
-                  Text((this.settings.eqBands[band.index] >= 0 ? '+' : '') + this.settings.eqBands[band.index] + 'dB')
-                    .fontSize(this.scaledFont(9))
-                    .fontColor(ColorHelper.hexWithAlpha(this.primaryColor, '88'))
-                    .margin({ bottom: 4 })
-                  Stack({ alignContent: Alignment.Center }) {
-                    Slider({
-                      value: this.settings.eqBands[band.index] + 10,
-                      min: 0,
-                      max: 20,
-                      step: 1,
-                      style: SliderStyle.OutSet,
-                      direction: Axis.Vertical,
-                      reverse: true
+        Stack({ alignContent: Alignment.Bottom }) {
+          Row({ space: this.scaledSize(4) }) {
+            ForEach(this.eqBands, (band: EqBandInfo) => {
+              Column() {
+                Text((this.settings.eqBands[band.index] >= 0 ? '+' : '') + this.settings.eqBands[band.index] + 'dB')
+                  .fontSize(this.scaledFont(9))
+                  .fontColor(ColorHelper.hexWithAlpha(this.primaryColor, '88'))
+                  .margin({ bottom: 4 })
+                Stack({ alignContent: Alignment.Center }) {
+                  Slider({
+                    value: this.settings.eqBands[band.index] + 10,
+                    min: 0,
+                    max: 20,
+                    step: 1,
+                    style: SliderStyle.OutSet,
+                    direction: Axis.Vertical,
+                    reverse: true
+                  })
+                    .width(this.scaledSize(40))
+                    .height(this.scaledSize(180))
+                    .selectedColor(this.primaryColor)
+                    .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.16))
+                    .blockColor('#FFFFFF')
+                    .blockSize({ width: this.scaledSize(26), height: this.scaledSize(14) })
+                    .blockBorderColor(this.primaryColor)
+                    .blockBorderWidth(2)
+                    .onChange((value: number, mode: SliderChangeMode) => {
+                      this.onEqBandChange(band.index, value, mode)
                     })
-                      .width(this.scaledSize(40))
-                      .height(this.scaledSize(180))
-                      .selectedColor(this.primaryColor)
-                      .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.16))
-                      .blockColor('#FFFFFF')
-                      .blockSize({ width: this.scaledSize(26), height: this.scaledSize(14) })
-                      .blockBorderColor(this.primaryColor)
-                      .blockBorderWidth(2)
-                      .onChange((value: number, mode: SliderChangeMode) => {
-                        this.onEqBandChange(band.index, value, mode)
-                      })
-                  }
-                  .width(this.scaledSize(44))
-                  .height(this.scaledSize(180))
-
-                  Text(band.freq)
-                    .fontSize(this.scaledFont(10))
-                    .fontColor(this.settingSubTextColor())
-                    .fontWeight(FontWeight.Medium)
-                    .margin({ top: 6 })
                 }
-                .alignItems(HorizontalAlign.Center)
-              }, (band: EqBandInfo) => band.freq)
-            }
-            .padding({ left: 8, right: 8, top: 12, bottom: 12 })
+                .width(this.scaledSize(44))
+                .height(this.scaledSize(180))
+
+                Text(band.freq)
+                  .fontSize(this.scaledFont(10))
+                  .fontColor(this.settingSubTextColor())
+                  .fontWeight(FontWeight.Medium)
+                  .margin({ top: 6 })
+              }
+              .alignItems(HorizontalAlign.Center)
+            }, (band: EqBandInfo) => band.freq)
           }
-          .width('100%')
-          .scrollable(ScrollDirection.Horizontal)
-          .scrollBar(BarState.Auto)
+          .padding({ left: 8, right: 8, top: 12, bottom: 12 })
+
+          Canvas(this.eqCurveCtx)
+            .width('100%')
+            .height('100%')
+            .hitTestBehavior(HitTestMode.None)
+            .onAreaChange((_oldVal: Area, newVal: Area) => {
+              this.eqCurveWidth = newVal.width as number
+              this.eqCurveHeight = newVal.height as number
+              this.drawEqCurve()
+            })
+            .onReady(() => {
+              this.drawEqCurve()
+            })
         }
         .width('100%')
+        .height(this.scaledSize(230))
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
         .borderRadius(10)
       }
     }
+  }
+
+  private drawEqCurve(): void {
+    const ctx: CanvasRenderingContext2D = this.eqCurveCtx
+    const canvasW: number = this.eqCurveWidth
+    const canvasH: number = this.eqCurveHeight
+    if (canvasW <= 0 || canvasH <= 0) {
+      return
+    }
+    const bands: number[] = this.settings.eqBands
+    const color: string = this.primaryColor
+    ctx.clearRect(0, 0, canvasW, canvasH)
+    // 滑块区域在 Stack 中的布局参数（与 buildAudioSection 一致）
+    const rowPadTop: number = this.scaledSize(12)
+    const rowPadLeft: number = this.scaledSize(8)
+    const bandColW: number = this.scaledSize(44)
+    const bandGap: number = this.scaledSize(4)
+    const sliderH: number = this.scaledSize(180)
+    const dBTextH: number = this.scaledSize(13)
+    // Slider 滑轨在 Canvas 中的 y 范围
+    const sliderTop: number = rowPadTop + dBTextH
+    const sliderBottom: number = sliderTop + sliderH
+    const sliderMidY: number = (sliderTop + sliderBottom) / 2
+    // 每个频段滑块的中心 x 坐标
+    const bandCount: number = bands.length
+    const bandXs: number[] = []
+    for (let i = 0; i < bandCount; i++) {
+      bandXs.push(rowPadLeft + i * (bandColW + bandGap) + bandColW / 2)
+    }
+    // 构建数据点：左端点(0 dB) + 10 个频段 + 右端点(0 dB)
+    const points: number[] = []
+    points.push(0)
+    for (let i = 0; i < bandCount; i++) {
+      points.push(bands[i])
+    }
+    points.push(0)
+    // 对应的 x 坐标：左端点在第一个滑块左侧，右端点在最后一个滑块右侧
+    const xs: number[] = []
+    xs.push(bandXs[0] - bandColW / 2)
+    for (let i = 0; i < bandCount; i++) {
+      xs.push(bandXs[i])
+    }
+    xs.push(bandXs[bandCount - 1] + bandColW / 2)
+    const total: number = points.length
+    // dB → y 坐标：+10dB → 顶部(sliderTop)，-10dB → 底部(sliderBottom)，0dB → 中线(sliderMidY)
+    // Catmull-Rom → Bezier 控制点计算
+    ctx.beginPath()
+    ctx.moveTo(xs[0], sliderMidY)
+    for (let i = 0; i < total - 1; i++) {
+      const p0db: number = i > 0 ? points[i - 1] : points[i]
+      const p1db: number = points[i]
+      const p2db: number = points[i + 1]
+      const p3db: number = i + 2 < total ? points[i + 2] : points[i + 1]
+      const p0y: number = sliderMidY - (p0db / 10) * (sliderH / 2)
+      const p1y: number = sliderMidY - (p1db / 10) * (sliderH / 2)
+      const p2y: number = sliderMidY - (p2db / 10) * (sliderH / 2)
+      const p3y: number = sliderMidY - (p3db / 10) * (sliderH / 2)
+      const tension: number = 6
+      const prevX: number = i > 0 ? xs[i - 1] : xs[i]
+      const nextX: number = i + 2 < total ? xs[i + 2] : xs[i + 1]
+      const cp1x: number = xs[i] + (xs[i + 1] - prevX) / tension
+      const cp1y: number = p1y + (p2y - p0y) / tension
+      const cp2x: number = xs[i + 1] - (nextX - xs[i]) / tension
+      const cp2y: number = p2y - (p3y - p1y) / tension
+      ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, xs[i + 1], p2y)
+    }
+    ctx.strokeStyle = color
+    ctx.lineWidth = 2
+    ctx.lineJoin = 'round'
+    ctx.lineCap = 'round'
+    ctx.stroke()
+    // 曲线下方半透明填充
+    ctx.lineTo(xs[total - 1], sliderBottom)
+    ctx.lineTo(xs[0], sliderBottom)
+    ctx.closePath()
+    ctx.fillStyle = ColorHelper.hexToRgba(color, 0.1)
+    ctx.fill()
   }
 
   @Builder
