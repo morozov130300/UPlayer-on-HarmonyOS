@@ -9,11 +9,14 @@ import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { AlbumCover } from '../component/AlbumCover'
 import { AlbumCoverSize, AudioMetadataService, CoverPriority } from '../service/AudioMetadataService'
+import { curves } from '@kit.ArkUI'
 
 const TAG = 'HomeContent'
 const PREFETCH_COUNT: number = 16
 const PREFETCH_THROTTLE_MS: number = 200
 const APPROX_ITEM_HEIGHT: number = 72
+// 手柄拖拽：拖拽位移超过该距离（约一行高）时与相邻项交换位置
+const DRAG_SWAP_DISTANCE: number = 60
 
 class DisplayItem {
   isHeader: boolean = false
@@ -41,6 +44,13 @@ export struct HomeContent {
   @StorageLink(AppStorageKeyConstants.KEY_FILTER_REVISION) @Watch('onFilterChange') filterRevision: number = 0
   @State selectedIds: string[] = []
   @State failedArtIds: Set<string> = new Set<string>()
+  // 手动拖拽排序状态：dragSongId 为被拖拽歌曲 id，空串表示未拖拽。
+  // 必须用 id 定位（而非 index）：LazyForEach 数据移动/节点复用后 index 不可靠
+  @State dragSongId: string = ''
+  @State dragOffsetY: number = 0
+  private dragLastY: number = 0
+  // 最近一次长按触发的时间戳，用于丢弃长按结束后的那次 click
+  private longPressAtMs: number = 0
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
   @StorageLink('uplayer_home_top_blur_strength') homeTopBlurStrength: number = 25
   private dataService: DataService = DataService.getInstance()
@@ -260,12 +270,69 @@ export struct HomeContent {
     }
   }
 
-  // 只有自定义排序模式才允许通过 onMove 重排
+  // 只有自定义排序模式才允许通过手柄拖拽重排
   canDragSort(): boolean {
     return this.sortMode === 'custom'
   }
 
-  // onMove 回调：拖拽仅在「自定义排序 + 平铺视图 + 多选模式」下注册，此处仅做索引合法性校验
+  indexOfSong(songId: string): number {
+    for (let i = 0; i < this.displayItems.length; i++) {
+      const item: DisplayItem = this.displayItems[i]
+      if (!item.isHeader && item.song.id === songId) {
+        return i
+      }
+    }
+    return -1
+  }
+
+  isDraggingSong(item: DisplayItem): boolean {
+    return this.dragSongId.length > 0 && !item.isHeader && item.song.id === this.dragSongId
+  }
+
+  // 手柄拖拽位移更新：累计跟手偏移；每跨越约一行高度即与相邻项交换一次。
+  // 拖拽行始终用 song id 定位；交换时 layout 前移与 translate 回退相互抵消，保持跟手。
+  onHandleDragUpdate(offsetY: number): void {
+    if (this.dragSongId.length === 0) {
+      return
+    }
+    const cur: number = this.indexOfSong(this.dragSongId)
+    if (cur < 0) {
+      return
+    }
+    const dy: number = offsetY - this.dragLastY
+    this.dragLastY = offsetY
+    this.dragOffsetY = this.dragOffsetY + dy
+    const step: number = this.scaledSize(DRAG_SWAP_DISTANCE)
+    if (this.dragOffsetY >= step && cur < this.displayItems.length - 1) {
+      this.getUIContext()?.animateTo({ curve: curves.springMotion(0.3, 0.9) }, () => {
+        this.onMoveListItem(cur, cur + 1)
+        this.dragOffsetY = this.dragOffsetY - step
+      })
+    } else if (this.dragOffsetY <= -step && cur > 0) {
+      this.getUIContext()?.animateTo({ curve: curves.springMotion(0.3, 0.9) }, () => {
+        this.onMoveListItem(cur, cur - 1)
+        this.dragOffsetY = this.dragOffsetY + step
+      })
+    }
+  }
+
+  // 拖拽结束：被拖拽行以弹簧动画落位到当前槽位，并立即落盘排序结果
+  finishDrag(): void {
+    if (this.dragSongId.length === 0) {
+      return
+    }
+    this.getUIContext()?.animateTo({ curve: curves.springMotion(0.3, 0.9) }, () => {
+      this.dragSongId = ''
+      this.dragOffsetY = 0
+    })
+    this.dataService.flushPendingSongWrites()
+  }
+
+  // 重排公共入口：由拖拽手柄的 PanGesture 在跨越相邻项时调用（from/to 为相邻索引）。
+  // 同步重排 displayDataSource 与 displayItems，并同步底层 songs 的 sortOrder：
+  // flat 视图下 displayItems 的顺序即 sortOrder 升序；
+  // 持久化走 saveSongsNoReload（不 bump KEY_LIBRARY_REVISION），
+  // 避免拖拽过程中触发 @Watch(onLibraryChange) → 整体 reloadData 造成闪烁。
   onMoveListItem(from: number, to: number): void {
     if (from === to || from < 0 || to < 0) {
       return
@@ -273,13 +340,10 @@ export struct HomeContent {
     if (from >= this.displayItems.length || to >= this.displayItems.length) {
       return
     }
-    // Q 弹动画：弹簧曲线包裹数据移动，落位时列表项跟随弹性回弹
-    this.getUIContext()?.animateTo({ curve: curves.interpolatingSpring(0, 1, 400, 28) }, () => {
-      this.displayDataSource.moveItem(from, to)
-      // 同步本组件持有的 displayItems 数组顺序，保证后续索引类逻辑一致
-      const movedItemArr: DisplayItem = this.displayItems.splice(from, 1)[0]
-      this.displayItems.splice(to, 0, movedItemArr)
-    })
+    this.displayDataSource.moveItem(from, to)
+    // 同步本组件持有的 displayItems 数组顺序，保证后续索引类逻辑一致
+    const movedItem: DisplayItem = this.displayItems.splice(from, 1)[0]
+    this.displayItems.splice(to, 0, movedItem)
     // 同步重排底层 songs 数组：flat 视图下 displayItems 的顺序即 sortOrder 升序
     const songs: SongInfo[] = this.dataService.getSongs()
     const movedId: string = this.displayItems[to].song.id
@@ -316,10 +380,14 @@ export struct HomeContent {
         songs[i].sortOrder = o
       }
     }
-    this.dataService.saveSongs(songs)
+    this.dataService.saveSongsNoReload(songs)
   }
 
   onSongTap(item: SongInfo): void {
+    // 丢弃长按后松手派发的那次点击，防止把刚长按选中的项又取消掉
+    if (new Date().getTime() - this.longPressAtMs < 500) {
+      return
+    }
     if (this.isMultiSelectMode) {
       this.toggleSelectItem(item.id)
       return
@@ -338,6 +406,9 @@ export struct HomeContent {
       this.isMultiSelectMode = true
       this.selectedIds = []
     }
+    // 记录长按时间：长按结束后松手仍会派发一次 onClick，
+    // onSongTap 里据此丢弃这次点击，避免刚选中的项被取消、多选模式被退出
+    this.longPressAtMs = new Date().getTime()
     this.toggleSelectItem(item.id)
   }
 
@@ -463,50 +534,31 @@ export struct HomeContent {
                 .height(this.listTopPadding())
             }
 
-            // 仅在「自定义排序 + 多选模式 + 平铺视图」三者同时满足时才注册 onMove，
-            // 其余模式不注册，从而彻底关闭 List 内置的长按拖拽手势（避免名称/时间排序下误触）。
-            if (this.canDragSort() && this.isMultiSelectMode && this.viewMode === 'flat') {
-              LazyForEach(this.displayDataSource, (item: DisplayItem, index: number) => {
-                ListItem() {
-                  if (item.isHeader) {
-                    this.folderHeaderRow(item.headerText)
-                  } else if (!item.isHeader) {
-                    this.songItemRow(item.song)
-                  }
-                }
-                .reuseId(item.isHeader ? 'header' : 'song')
-              }, (item: DisplayItem, index: number) => {
+            // 不注册 LazyForEach.onMove（List 内置的整行长按拖拽）：
+            // 1) 内置手势触发区域是整行，无法限定在手柄上，且名称/时间排序下会误触；
+            // 2) 条件注册 onMove 会在进入多选时整树重挂，长按后立刻拖拽会失效回弹。
+            // 排序改为仅在拖拽手柄上通过 PanGesture 手动驱动（见 songItemRow）。
+            LazyForEach(this.displayDataSource, (item: DisplayItem, index: number) => {
+              ListItem() {
                 if (item.isHeader) {
-                  return 'h_' + item.headerText
+                  this.folderHeaderRow(item.headerText)
+                } else if (!item.isHeader) {
+                  this.songItemRow(item.song)
                 }
-                if (!item.isHeader) {
-                  return item.song.id + '_' + (item.song.isFavorite ? '1' : '0')
-                }
-                return 'empty_' + index
-              })
-              .onMove((from: number, to: number) => {
-                this.onMoveListItem(from, to)
-              })
-            } else {
-              LazyForEach(this.displayDataSource, (item: DisplayItem, index: number) => {
-                ListItem() {
-                  if (item.isHeader) {
-                    this.folderHeaderRow(item.headerText)
-                  } else if (!item.isHeader) {
-                    this.songItemRow(item.song)
-                  }
-                }
-                .reuseId(item.isHeader ? 'header' : 'song')
-              }, (item: DisplayItem, index: number) => {
-                if (item.isHeader) {
-                  return 'h_' + item.headerText
-                }
-                if (!item.isHeader) {
-                  return item.song.id + '_' + (item.song.isFavorite ? '1' : '0')
-                }
-                return 'empty_' + index
-              })
-            }
+              }
+              .reuseId(item.isHeader ? 'header' : 'song')
+              .translate({ y: this.isDraggingSong(item) ? this.dragOffsetY : 0 })
+              .scale(this.isDraggingSong(item) ? { x: 1.03, y: 1.03 } : { x: 1, y: 1 })
+              .zIndex(this.isDraggingSong(item) ? 100 : 0)
+            }, (item: DisplayItem, index: number) => {
+              if (item.isHeader) {
+                return 'h_' + item.headerText
+              }
+              if (!item.isHeader) {
+                return item.song.id + '_' + (item.song.isFavorite ? '1' : '0')
+              }
+              return 'empty_' + index
+            })
 
             ListItem() {
               Row()
@@ -725,13 +777,45 @@ export struct HomeContent {
   @Builder
   songItemRow(item: SongInfo): void {
     Row() {
+      // 拖拽手柄：只有按住该手柄上下拖动才会触发排序。
+      // 手柄区域 Block 阻断事件冒泡——不会误触行的长按/点击，也不影响列表其他区域的正常滚动。
       if (this.canDragSort() && this.isMultiSelectMode && this.viewMode === 'flat') {
-        SymbolGlyph($r('sys.symbol.line_3_horizontal'))
-          .fontSize(this.scaledSize(22))
-          .fontColor(['#888888'])
-          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
-          .hitTestBehavior(HitTestMode.Transparent)
-          .margin({ right: this.scaledSize(16) })
+        Row() {
+          SymbolGlyph($r('sys.symbol.line_3_horizontal'))
+            .fontSize(this.scaledSize(22))
+            .fontColor(['#888888'])
+            .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+        }
+        .padding({
+          left: this.scaledSize(4), right: this.scaledSize(4),
+          top: this.scaledSize(10), bottom: this.scaledSize(10)
+        })
+        .margin({ right: this.scaledSize(16) })
+        .hitTestBehavior(HitTestMode.Block)
+        .gesture(
+          PanGesture({ fingers: 1, direction: PanDirection.Vertical, distance: 5 })
+            .onActionStart((event: GestureEvent) => {
+              const idx: number = this.indexOfSong(item.id)
+              if (idx < 0) {
+                return
+              }
+              // 凸起动画：抬手柄瞬间以缩放浮起被拖拽行
+              this.getUIContext()?.animateTo({ duration: 150 }, () => {
+                this.dragSongId = item.id
+                this.dragOffsetY = 0
+                this.dragLastY = event.offsetY
+              })
+            })
+            .onActionUpdate((event: GestureEvent) => {
+              this.onHandleDragUpdate(event.offsetY)
+            })
+            .onActionEnd(() => {
+              this.finishDrag()
+            })
+            .onActionCancel(() => {
+              this.finishDrag()
+            })
+        )
       }
       if (this.isMultiSelectMode) {
         Row() {

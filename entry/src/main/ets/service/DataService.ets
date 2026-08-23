@@ -245,6 +245,21 @@ export class DataService {
     this.scheduleSaveSongs(songs)
   }
 
+  // 拖拽重排专用：仅更新内存缓存与磁盘（防抖合并），不 bump KEY_LIBRARY_REVISION，
+  // 避免首页列表在拖拽过程中被 @Watch 触发整体 reload 而闪烁/跳动。
+  saveSongsNoReload(songs: SongInfo[]): void {
+    this.songsCache = songs
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SONG_LIST, songs.slice())
+    this.pendingSongs = songs
+    if (this.saveSongsTimer !== -1) {
+      clearTimeout(this.saveSongsTimer)
+    }
+    this.saveSongsTimer = setTimeout(() => {
+      this.saveSongsTimer = -1
+      this.flushPendingSongWrites()
+    }, this.SAVE_SONGS_DEBOUNCE_MS)
+  }
+
   addSongs(newSongs: SongInfo[]): ImportResult {
     const songs: SongInfo[] = this.getSongs()
     const existingIndexes: Map<string, number> = new Map<string, number>()
