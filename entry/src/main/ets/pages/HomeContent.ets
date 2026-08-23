@@ -9,7 +9,6 @@ import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { AlbumCover } from '../component/AlbumCover'
 import { AlbumCoverSize, AudioMetadataService, CoverPriority } from '../service/AudioMetadataService'
-import { curves } from '@kit.ArkUI'
 
 const TAG = 'HomeContent'
 const PREFETCH_COUNT: number = 16
