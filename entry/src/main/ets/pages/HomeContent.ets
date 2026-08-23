@@ -20,7 +20,6 @@ class DisplayItem {
   isHeader: boolean = false
   headerText: string = ''
   song: SongInfo = new SongInfo()
-  key: string = ''
 }
 
 @Component
@@ -261,19 +260,15 @@ export struct HomeContent {
     }
   }
 
-  // 只有自定义排序模式才允许通过 onMove 重排
+  // 是否允许通过 onMove 触发拖拽重排：需同时满足自定义排序 + 多选模式 + 平铺视图
   canDragSort(): boolean {
     return this.sortMode === 'custom'
   }
 
-  private get isCustomSort(): boolean {
-    return this.sortMode === 'custom'
-  }
-
-  // onMove 回调：只在自定义排序 + 平铺视图 + 多选模式下处理数据重排
+  // onMove 回调：data 重排。注册前已保证「自定义排序 + 多选模式 + 平铺视图」，
+  // 这里仅做必要的索引合法性校验，避免越界或原地移动。
   onMoveListItem(from: number, to: number): void {
-    if (!this.canDragSort() || !this.isMultiSelectMode || this.viewMode !== 'flat'
-      || from === to || from < 0 || to < 0) {
+    if (from === to || from < 0 || to < 0) {
       return
     }
     if (from >= this.displayItems.length || to >= this.displayItems.length) {
@@ -458,62 +453,85 @@ export struct HomeContent {
   @State lastScrollY: number = 0
   private lastPrefetchTime: number = 0
 
+  // 列表滚动回调：根据滚动方向控制 + 按钮显隐并预取封面
+  private handleListScroll(): void {
+    const offset = this.scroller.currentOffset()
+    const yOffset: number = offset.yOffset
+    if (yOffset > this.lastScrollY && (yOffset - this.lastScrollY) > 10) {
+      this.isPlusVisible = false
+      this.prefetchInScrollDirection(yOffset, true)
+    } else if (yOffset < this.lastScrollY) {
+      this.isPlusVisible = true
+      this.prefetchInScrollDirection(yOffset, false)
+    }
+    this.lastScrollY = yOffset
+  }
+
+  // 列表内容（顶部占位 / 歌曲与分组 LazyForEach / 底部占位），供两种 List 分支复用
+  @Builder
+  songListContent(): void {
+    ListItem() {
+      Row()
+        .width('100%')
+        .height(this.listTopPadding())
+    }
+
+    LazyForEach(this.displayDataSource, (item: DisplayItem, index: number) => {
+      ListItem() {
+        if (item.isHeader) {
+          this.folderHeaderRow(item.headerText)
+        } else if (!item.isHeader) {
+          this.songItemRow(item.song)
+        }
+      }
+      .reuseId(item.isHeader ? 'header' : 'song')
+    }, (item: DisplayItem, index: number) => {
+      if (item.isHeader) {
+        return 'h_' + item.headerText
+      }
+      if (!item.isHeader) {
+        return item.song.id + '_' + (item.song.isFavorite ? '1' : '0')
+      }
+      return 'empty_' + index
+    })
+
+    ListItem() {
+      Row()
+        .width('100%')
+        .height(this.isMultiSelectMode ? this.bottomContentPadding + 56 : this.bottomContentPadding)
+    }
+  }
+
   build() {
     Stack({ alignContent: Alignment.Top }) {
       Column() {
         Stack() {
-          List({ space: 0, scroller: this.scroller }) {
-            ListItem() {
-              Row()
-                .width('100%')
-                .height(this.listTopPadding())
+          // 仅在「自定义排序 + 多选模式 + 平铺视图」三者同时满足时才挂载带 onMove 的 List，
+          // 其余模式下渲染不带 onMove 的 List，从而彻底关闭 List 内置的长按拖拽手势。
+          if (this.canDragSort() && this.isMultiSelectMode && this.viewMode === 'flat') {
+            List({ space: 0, scroller: this.scroller }) {
+              this.songListContent()
             }
-
-            LazyForEach(this.displayDataSource, (item: DisplayItem, index: number) => {
-              ListItem() {
-                if (item.isHeader) {
-                  this.folderHeaderRow(item.headerText)
-                } else if (!item.isHeader) {
-                  this.songItemRow(item.song)
-                }
-              }
-              .reuseId(item.isHeader ? 'header' : 'song')
-            }, (item: DisplayItem, index: number) => {
-              if (item.isHeader) {
-                return 'h_' + item.headerText
-              }
-              if (!item.isHeader) {
-                return item.song.id + '_' + (item.song.isFavorite ? '1' : '0')
-              }
-              return 'empty_' + index
-            })
-            .onMove((from: number, to: number) => {
+            .width('100%')
+            .height('100%')
+            .scrollBar(BarState.Off)
+            .edgeEffect(EdgeEffect.Spring)
+            .cachedCount(8)
+            .onDidScroll(() => { this.handleListScroll() })
+            .onMove((from: number, to: number): void => {
               this.onMoveListItem(from, to)
             })
-
-            ListItem() {
-              Row()
-                .width('100%')
-                .height(this.isMultiSelectMode ? this.bottomContentPadding + 56 : this.bottomContentPadding)
+          } else {
+            List({ space: 0, scroller: this.scroller }) {
+              this.songListContent()
             }
+            .width('100%')
+            .height('100%')
+            .scrollBar(BarState.Off)
+            .edgeEffect(EdgeEffect.Spring)
+            .cachedCount(8)
+            .onDidScroll(() => { this.handleListScroll() })
           }
-          .width('100%')
-          .height('100%')
-          .scrollBar(BarState.Off)
-          .edgeEffect(EdgeEffect.Spring)
-          .cachedCount(8)
-          .onDidScroll(() => {
-            const offset = this.scroller.currentOffset()
-            const yOffset: number = offset.yOffset
-            if (yOffset > this.lastScrollY && (yOffset - this.lastScrollY) > 10) {
-              this.isPlusVisible = false
-              this.prefetchInScrollDirection(yOffset, true)
-            } else if (yOffset < this.lastScrollY) {
-              this.isPlusVisible = true
-              this.prefetchInScrollDirection(yOffset, false)
-            }
-            this.lastScrollY = yOffset
-          })
 
           if (this.displayItems.length === 0) {
             Text('暂无歌曲，点击添加')
@@ -708,7 +726,7 @@ export struct HomeContent {
   @Builder
   songItemRow(item: SongInfo): void {
     Row() {
-      if (this.isCustomSort && this.isMultiSelectMode) {
+      if (this.canDragSort() && this.isMultiSelectMode && this.viewMode === 'flat') {
         SymbolGlyph($r('sys.symbol.line_3_horizontal'))
           .fontSize(this.scaledSize(22))
           .fontColor(['#888888'])

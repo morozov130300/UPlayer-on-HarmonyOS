@@ -31,6 +31,8 @@ export default struct LrcListView {
   @State isHasLyric: boolean = true;
   @StorageLink(AppStorageKeyConstants.KEY_IMAGE_COLOR) themeColor: string = 'rgba(0, 125, 255, 1)';
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance();
+  private isUserScrolling: boolean = false;
+  private scrollDebounceTimer: number = -1;
 
   onTimeUpdated() {
     if (!this.hasLrc()) {
@@ -40,7 +42,9 @@ export default struct LrcListView {
     let line = this.findShowLine(this.lyricMilliSecondsTime);
     if (line !== this.mCurrentLine) {
       this.mCurrentLine = line;
-      this.smoothScrollTo(line);
+      if (!this.isUserScrolling) {
+        this.smoothScrollTo(line);
+      }
     }
   }
 
@@ -51,6 +55,11 @@ export default struct LrcListView {
       this.isHasLyric = true;
     }
     this.mCurrentLine = NONE_LINE;
+    this.isUserScrolling = false;
+    if (this.scrollDebounceTimer !== -1) {
+      clearTimeout(this.scrollDebounceTimer);
+      this.scrollDebounceTimer = -1;
+    }
     this.onTimeUpdated();
   }
 
@@ -86,7 +95,38 @@ export default struct LrcListView {
   }
 
   onLyricLineClick(entry: LrcEntry): void {
+    this.isUserScrolling = false;
+    if (this.scrollDebounceTimer !== -1) {
+      clearTimeout(this.scrollDebounceTimer);
+      this.scrollDebounceTimer = -1;
+    }
     this.avPlayerService.seek(entry.lineStartTime);
+  }
+
+  aboutToDisappear() {
+    if (this.scrollDebounceTimer !== -1) {
+      clearTimeout(this.scrollDebounceTimer);
+      this.scrollDebounceTimer = -1;
+    }
+  }
+
+  onScrollStart() {
+    this.isUserScrolling = true;
+    if (this.scrollDebounceTimer !== -1) {
+      clearTimeout(this.scrollDebounceTimer);
+      this.scrollDebounceTimer = -1;
+    }
+  }
+
+  onScrollStop() {
+    if (this.scrollDebounceTimer !== -1) {
+      clearTimeout(this.scrollDebounceTimer);
+      this.scrollDebounceTimer = -1;
+    }
+    this.scrollDebounceTimer = setTimeout(() => {
+      this.isUserScrolling = false;
+      this.onTimeUpdated();
+    }, 2000);
   }
 
   build() {
@@ -119,6 +159,8 @@ export default struct LrcListView {
           })
         }
         .scrollBar(BarState.Off)
+        .onScrollStart(() => { this.onScrollStart(); })
+        .onScrollStop(() => { this.onScrollStop(); })
         /** 上下边缘淡出 80vp，增加沉浸感 */
         .fadingEdge(true, { fadingEdgeLength: LengthMetrics.vp(80) })
         .width('100%')
