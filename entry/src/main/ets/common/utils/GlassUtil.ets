@@ -52,15 +52,15 @@ export function isLiquidGlassAvailable(): boolean {
   return deviceInfo.apiAvailable('26.0.0')
 }
 
-// 构造一个用于页面级背景的液态玻璃材质（interactive + lightEffect 全开）。
-// 不可用时返回 undefined，配合 .systemMaterial(undefined) 关闭该效果。
+// 页面级背景只用档位，不开启 interactive 与 lightEffect：
+// - interactive 会让所有页面在按下/拖动时产生 Q 弹形变（页面级不需要）
+// - lightEffect 会让普通滚动也出现跟手光效（用户未同意，仅 Tab 栏保留）
+// 能力不足时返回 undefined，配合 .systemMaterial(undefined) 关闭该效果。
 export function createPageGlassMaterial(styleKey: string): uiMaterial.Material | undefined {
   if (!isLiquidGlassAvailable()) {
     return undefined
   }
   return new uiMaterial.ImmersiveMaterial({
-    style: glassImmersiveStyleFromKey(styleKey),
-    interactive: true,
-    lightEffect: { color: undefined }
+    style: glassImmersiveStyleFromKey(styleKey)
   })
 }

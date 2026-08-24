@@ -590,24 +590,32 @@ struct SettingsDetailPage {
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(10)
 
-      // 玻璃风格档位（仅 tab 样式为「玻璃」时生效；其他枚举值在经典样式下保留兼容）
-      Column() {
-        this.sectionTitle('玻璃风格档位')
-        Row() {
+      // 玻璃风格档位：标题（大）+ 说明（小、浅色）+ 三个独立档位 + 生效说明
+      Column({ space: this.scaledSize(6) }) {
+        Text('玻璃风格档位')
+          .fontSize(this.scaledFont(17))
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.settingTextColor())
+          .width('100%')
+        Text('控制玻璃材质的模糊档位：薄透光强、常规适中、厚更模糊。仅当 Tab 栏样式为「玻璃」且系统 ≥ API 26 时生效。')
+          .fontSize(this.scaledFont(12))
+          .fontColor(this.settingSubTextColor())
+          .width('100%')
+        Row({ space: this.scaledSize(10) }) {
           ForEach(GLASS_STYLE_OPTIONS, (opt: string) => {
             Column() {
               Text(glassStyleLabel(opt))
-                .fontSize(this.scaledFont(11))
+                .fontSize(this.scaledFont(13))
                 .fontColor(this.settings.glassStyle === opt ? '#FFFFFF' : this.settingInactiveTextColor())
             }
+            .layoutWeight(1)
             .padding({
-              left: this.scaledSize(12),
-              right: this.scaledSize(12),
-              top: this.scaledSize(5),
-              bottom: this.scaledSize(5)
+              top: this.scaledSize(10),
+              bottom: this.scaledSize(10)
             })
             .backgroundColor(this.settings.glassStyle === opt ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
-            .borderRadius(this.scaledSize(14))
+            .borderRadius(this.scaledSize(12))
+            .alignItems(HorizontalAlign.Center)
             .onClick(() => {
               this.settings.glassStyle = opt
               this.glassStyle = opt
@@ -615,25 +623,30 @@ struct SettingsDetailPage {
             })
           }, (opt: string) => opt)
         }
-        .padding({
-          left: this.scaledSize(14), right: this.scaledSize(14),
-          top: this.scaledSize(2), bottom: this.scaledSize(10)
-        })
         .width('100%')
-        .alignItems(VerticalAlign.Center)
+        .padding({ top: this.scaledSize(4), bottom: this.scaledSize(4) })
       }
       .width('100%')
-      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(10)
+      .padding({ top: this.scaledSize(12), left: this.scaledSize(14), right: this.scaledSize(14), bottom: this.scaledSize(12) })
+      .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
 
-      // 玻璃饱和度（设置 systemMaterial 之外的 backgroundEffect 饱和度档位）
-      Column() {
-        this.sectionTitle('玻璃饱和度')
+      // 玻璃饱和度
+      Column({ space: this.scaledSize(6) }) {
+        Text('玻璃饱和度')
+          .fontSize(this.scaledFont(17))
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.settingTextColor())
+          .width('100%')
+        Text('控制玻璃背后透出的颜色鲜艳程度（仅作用于 Tab 栏与首页上端的 backgroundEffect 模糊层）。值越高越鲜艳。')
+          .fontSize(this.scaledFont(12))
+          .fontColor(this.settingSubTextColor())
+          .width('100%')
         Row() {
           Text('淡')
-            .fontSize(this.scaledFont(11))
+            .fontSize(this.scaledFont(12))
             .fontColor(this.settingTextColor())
-            .margin({ left: this.scaledSize(14), right: this.scaledSize(8) })
+            .margin({ right: this.scaledSize(8) })
           Slider({
             value: this.settings.glassSaturation * 100,
             min: 100,
@@ -656,29 +669,35 @@ struct SettingsDetailPage {
               }
             })
           Text('浓')
-            .fontSize(this.scaledFont(11))
+            .fontSize(this.scaledFont(12))
             .fontColor(this.settingTextColor())
             .margin({ left: this.scaledSize(8) })
         }
-        .padding({
-          left: this.scaledSize(12), right: this.scaledSize(12),
-          top: this.scaledSize(2), bottom: this.scaledSize(10)
-        })
         .width('100%')
         .alignItems(VerticalAlign.Center)
+        .padding({ top: this.scaledSize(4), bottom: this.scaledSize(4) })
       }
       .width('100%')
-      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(10)
+      .padding({ top: this.scaledSize(12), left: this.scaledSize(14), right: this.scaledSize(14), bottom: this.scaledSize(12) })
+      .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
 
-      // 玻璃亮度（同上）
-      Column() {
-        this.sectionTitle('玻璃亮度')
+      // 玻璃亮度
+      Column({ space: this.scaledSize(6) }) {
+        Text('玻璃亮度')
+          .fontSize(this.scaledFont(17))
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.settingTextColor())
+          .width('100%')
+        Text('控制玻璃模糊层的明暗调整（仅作用于 Tab 栏与首页上端的 backgroundEffect 模糊层）。值越高越亮。')
+          .fontSize(this.scaledFont(12))
+          .fontColor(this.settingSubTextColor())
+          .width('100%')
         Row() {
           Text('暗')
-            .fontSize(this.scaledFont(11))
+            .fontSize(this.scaledFont(12))
             .fontColor(this.settingTextColor())
-            .margin({ left: this.scaledSize(14), right: this.scaledSize(8) })
+            .margin({ right: this.scaledSize(8) })
           Slider({
             value: this.settings.glassBrightness * 100,
             min: 80,
@@ -701,20 +720,64 @@ struct SettingsDetailPage {
               }
             })
           Text('亮')
-            .fontSize(this.scaledFont(11))
+            .fontSize(this.scaledFont(12))
             .fontColor(this.settingTextColor())
             .margin({ left: this.scaledSize(8) })
         }
-        .padding({
-          left: this.scaledSize(12), right: this.scaledSize(12),
-          top: this.scaledSize(2), bottom: this.scaledSize(10)
-        })
         .width('100%')
         .alignItems(VerticalAlign.Center)
+        .padding({ top: this.scaledSize(4), bottom: this.scaledSize(4) })
       }
       .width('100%')
-      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(10)
+      .padding({ top: this.scaledSize(12), left: this.scaledSize(14), right: this.scaledSize(14), bottom: this.scaledSize(12) })
+      .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
+
+      // 玻璃效果生效范围说明
+      Column({ space: this.scaledSize(6) }) {
+        Text('玻璃效果生效范围')
+          .fontSize(this.scaledFont(17))
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.settingTextColor())
+          .width('100%')
+        Text('以下位置会使用玻璃效果：')
+          .fontSize(this.scaledFont(12))
+          .fontColor(this.settingSubTextColor())
+          .width('100%')
+        Text('• 底部 Tab 栏（沉浸式玻璃，带光效跟手 + 按压 Q 弹形变）')
+          .fontSize(this.scaledFont(12))
+          .fontColor(this.settingSubTextColor())
+          .width('100%')
+        Text('• 首页上端毛玻璃层（顶部标题区，覆盖首页第一屏）')
+          .fontSize(this.scaledFont(12))
+          .fontColor(this.settingSubTextColor())
+          .width('100%')
+        Text('• 首页 / 歌单 / 设置 / 设置详情 四个一级页面的顶层背景（仅档位与材质，无无跟手光效）')
+          .fontSize(this.scaledFont(12))
+          .fontColor(this.settingSubTextColor())
+          .width('100%')
+        Text('以下位置不使用玻璃效果：')
+          .fontSize(this.scaledFont(12))
+          .fontColor(this.settingSubTextColor())
+          .width('100%')
+          .padding({ top: this.scaledSize(4) })
+        Text('• 经典 Tab 栏样式下所有玻璃元素均回退为普通背景')
+          .fontSize(this.scaledFont(12))
+          .fontColor(this.settingSubTextColor())
+          .width('100%')
+        Text('• 音乐播放器页面（pages/MusicPlayer）—— 始终使用原有样式')
+          .fontSize(this.scaledFont(12))
+          .fontColor(this.settingSubTextColor())
+          .width('100%')
+        Text('• 系统 ≤ API 26 时液态玻璃材质降级为 backgroundBlurStyle 背景模糊')
+          .fontSize(this.scaledFont(12))
+          .fontColor(this.settingSubTextColor())
+          .width('100%')
+      }
+      .width('100%')
+      .padding({ top: this.scaledSize(12), left: this.scaledSize(14), right: this.scaledSize(14), bottom: this.scaledSize(12) })
+      .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
 
       Column() {
         this.sectionTitle('首页上端模糊强度')
