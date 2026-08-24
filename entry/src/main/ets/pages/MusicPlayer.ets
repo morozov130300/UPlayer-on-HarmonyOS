@@ -77,7 +77,7 @@ struct MusicPlayer {
           Column()
             .width('100%')
             .height('100%')
-            .backgroundColor('#1A1A1A')
+            .backgroundColor('#000000')
           LoadingProgress()
             .width(48)
             .height(48)
