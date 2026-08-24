@@ -1,5 +1,5 @@
 import display from '@ohos.display'
-import { curves, window } from '@kit.ArkUI'
+import { curves, window, uiMaterial } from '@kit.ArkUI'
 import { common, ConfigurationConstant } from '@kit.AbilityKit'
 import { fileIo as fs } from '@kit.CoreFileKit'
 import { util } from '@kit.ArkTS'
@@ -134,6 +134,26 @@ struct MainPage {
     return 1 + this.glassBlurStrength * 0.0008
   }
 
+  // ── 液态玻璃（沉浸式系统材质，HarmonyOS API 26+）──
+  // THICK：官方推荐用于底部悬浮组件的材质档位；
+  // interactive: true 开启交互形变（按压/拖动时 Q 弹反馈），
+  // lightEffect 开启光效反馈（明亮光芒跟手流动），color 传 undefined 跟随系统默认光色。
+  private liquidGlassMaterial: uiMaterial.Material = new uiMaterial.ImmersiveMaterial({
+    style: uiMaterial.ImmersiveStyle.THICK,
+    interactive: true,
+    lightEffect: { color: undefined }
+  })
+
+  // 仅当「玻璃样式 + 设备系统达到 API 26」时启用真·液态玻璃；
+  // 其余情况（经典样式、老系统）回退到原有 backgroundEffect 玻璃模糊。
+  private liquidGlassEnabled(): boolean {
+    return this.tabStyle === 'immersive' && deviceInfo.apiAvailable('26.0.0')
+  }
+
+  private liquidGlassTabMaterial(): uiMaterial.Material | undefined {
+    return this.liquidGlassEnabled() ? this.liquidGlassMaterial : undefined
+  }
+
   private isSongInfoShort(): boolean {
     const artistLength: number = this.currentSongArtist.length > 0 ? this.currentSongArtist.length : 4
     return this.currentSongTitle.length + artistLength <= 16
@@ -254,11 +274,15 @@ struct MainPage {
       .height(this.scaledSize(40))
       .borderRadius(this.scaledSize(20))
       .backgroundColor(Color.Transparent)
+      // 真·液态玻璃启用时系统材质接管背景渲染，本地模糊关闭（radius 0）避免叠浊；
+      // 未启用时保留原有玻璃模糊作为回退
       .backgroundEffect({
-        radius: this.glassBlurRadius(),
-        saturation: this.glassSaturation(),
-        brightness: this.glassBrightness()
+        radius: this.liquidGlassEnabled() ? 0 : this.glassBlurRadius(),
+        saturation: this.liquidGlassEnabled() ? 1 : this.glassSaturation(),
+        brightness: this.liquidGlassEnabled() ? 1 : this.glassBrightness()
       })
+      // 液态玻璃：沉浸式系统材质 + 光效跟手 + 交互形变；能力不足时传 undefined 关闭
+      .systemMaterial(this.liquidGlassTabMaterial())
       .border({ width: 1, color: 'rgba(255,255,255,0.22)' })
       .shadow({ radius: 18, color: ColorHelper.hexWithAlpha(this.primaryColor, '44'), offsetY: 5 })
     }

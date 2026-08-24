@@ -73,7 +73,7 @@ struct SettingsDetailPage {
   ]
   private tabStyleOptions: TabStyleOption[] = [
     { label: '经典', value: 'classic' },
-    { label: '沉浸', value: 'immersive' }
+    { label: '玻璃', value: 'immersive' }
   ]
   private colorOptions: ThemeColorOption[] = [
     { name: '鸿蒙蓝', value: '#007DFF' },
