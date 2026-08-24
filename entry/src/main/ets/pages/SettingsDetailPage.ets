@@ -201,36 +201,37 @@ struct SettingsDetailPage {
   @Builder
   homeTopBlurPreview(): void {
     Stack({ alignContent: Alignment.Center }) {
+      Text('首页上端')
+        .fontSize(this.scaledFont(12))
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.primaryColor)
+        .letterSpacing(this.scaledSize(1))
       Row()
         .width('100%')
         .height('100%')
-        .linearGradient({
-          angle: 135,
-          colors: [
-            ['#FF6B6B', 0.0],
-            ['#FFD93D', 0.45],
-            ['#6BCB77', 0.75],
-            ['#4D96FF', 1.0]
-          ]
-        })
-        .borderRadius(this.scaledSize(10))
-        .linearGradientBlur(Math.max(0, this.settings.homeTopBlurStrength * 0.4), {
+        .backgroundColor(Color.Transparent)
+        .linearGradientBlur(this.homeTopBlurRadius(), {
           fractionStops: [[1, 0], [1, 0.5], [0, 1]],
           direction: GradientDirection.Bottom
         })
-      Text('顶部')
-        .fontSize(this.scaledFont(10))
-        .fontColor('#FFFFFF')
-        .fontWeight(FontWeight.Bold)
-        .textShadow({ radius: 2, color: '#00000088', offsetX: 0, offsetY: 1 })
+      Row()
+        .width('100%')
+        .height('100%')
+        .borderRadius(this.scaledSize(18))
+        .linearGradient({
+          angle: 180,
+          colors: [
+            [ColorHelper.hexToRgba(this.primaryColor, 0.16), 0],
+            [ColorHelper.hexToRgba(this.primaryColor, 0.04), 0.55],
+            ['rgba(0,0,0,0)', 1]
+          ]
+        })
+        .border({ width: 1, color: 'rgba(255,255,255,0.28)' })
+        .shadow({ radius: 12, color: ColorHelper.hexWithAlpha(this.primaryColor, '44') })
     }
-    .width(this.scaledSize(64))
-    .height(this.scaledSize(40))
-    .borderRadius(this.scaledSize(10))
-    .border({
-      width: 1,
-      color: this.isDark() ? ColorHelper.hexWithAlpha('#FFFFFF', '33') : ColorHelper.hexWithAlpha(this.primaryColor, '33')
-    })
+    .width(this.scaledSize(82))
+    .height(this.scaledSize(36))
+    .borderRadius(this.scaledSize(18))
     .clip(true)
   }
 
@@ -470,19 +471,16 @@ struct SettingsDetailPage {
   @Builder
   glassStylePreview(): void {
     Stack({ alignContent: Alignment.Center }) {
+      Text('玻璃档位')
+        .fontSize(this.scaledFont(12))
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.primaryColor)
+        .letterSpacing(this.scaledSize(1))
       Row()
         .width('100%')
         .height('100%')
-        .linearGradient({
-          angle: 135,
-          colors: [
-            ['#FF6B6B', 0.0],
-            ['#FFD93D', 0.45],
-            ['#6BCB77', 0.75],
-            ['#4D96FF', 1.0]
-          ]
-        })
-        .borderRadius(this.scaledSize(10))
+        .borderRadius(this.scaledSize(18))
+        .backgroundColor(Color.Transparent)
         .backgroundEffect(this.settings.glassStyle > 15 ? {
           radius: this.settings.glassStyle * 0.4,
           saturation: this.glassSaturation,
@@ -490,147 +488,115 @@ struct SettingsDetailPage {
         } : undefined)
         .systemMaterial(this.settings.glassStyle > 30 && isLiquidGlassAvailable()
           ? createPageGlassMaterial(this.settings.glassStyle) : undefined)
-      Text('档位')
-        .fontSize(this.scaledFont(10))
-        .fontColor('#FFFFFF')
-        .fontWeight(FontWeight.Bold)
-        .textShadow({ radius: 2, color: '#00000088', offsetX: 0, offsetY: 1 })
+        .border({ width: 1, color: 'rgba(255,255,255,0.28)' })
+        .shadow({ radius: 12, color: ColorHelper.hexWithAlpha(this.primaryColor, '44') })
     }
-    .width(this.scaledSize(64))
-    .height(this.scaledSize(40))
-    .borderRadius(this.scaledSize(10))
-    .border({
-      width: 1,
-      color: this.isDark() ? ColorHelper.hexWithAlpha('#FFFFFF', '33') : ColorHelper.hexWithAlpha(this.primaryColor, '33')
-    })
+    .width(this.scaledSize(82))
+    .height(this.scaledSize(36))
+    .borderRadius(this.scaledSize(18))
     .clip(true)
   }
 
-  // 玻璃饱和度实时预览：与所有预览器同尺寸同风格，叠 saturation 变化
+  // 玻璃饱和度实时预览：与 homeTopBlurPreview 同款 82×36 圆角 18 风格
   @Builder
   glassSaturationPreview(): void {
     Stack({ alignContent: Alignment.Center }) {
+      Text('玻璃饱和')
+        .fontSize(this.scaledFont(12))
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.primaryColor)
+        .letterSpacing(this.scaledSize(1))
       Row()
         .width('100%')
         .height('100%')
-        .linearGradient({
-          angle: 135,
-          colors: [
-            ['#FF6B6B', 0.0],
-            ['#FFD93D', 0.45],
-            ['#6BCB77', 0.75],
-            ['#4D96FF', 1.0]
-          ]
-        })
-        .borderRadius(this.scaledSize(10))
+        .borderRadius(this.scaledSize(18))
+        .backgroundColor(Color.Transparent)
         .backgroundEffect(this.settings.glassStyle > 15 ? {
           radius: this.settings.glassStyle * 0.4,
           saturation: this.settings.glassSaturation,
           brightness: this.glassBrightness
         } : undefined)
-      Text('饱和')
-        .fontSize(this.scaledFont(10))
-        .fontColor('#FFFFFF')
-        .fontWeight(FontWeight.Bold)
-        .textShadow({ radius: 2, color: '#00000088', offsetX: 0, offsetY: 1 })
+        .border({ width: 1, color: 'rgba(255,255,255,0.28)' })
+        .shadow({ radius: 12, color: ColorHelper.hexWithAlpha(this.primaryColor, '44') })
     }
-    .width(this.scaledSize(64))
-    .height(this.scaledSize(40))
-    .borderRadius(this.scaledSize(10))
-    .border({
-      width: 1,
-      color: this.isDark() ? ColorHelper.hexWithAlpha('#FFFFFF', '33') : ColorHelper.hexWithAlpha(this.primaryColor, '33')
-    })
+    .width(this.scaledSize(82))
+    .height(this.scaledSize(36))
+    .borderRadius(this.scaledSize(18))
     .clip(true)
   }
 
-  // 玻璃亮度实时预览：与所有预览器同尺寸同风格，叠 brightness 变化
+  // 玻璃亮度实时预览：与 homeTopBlurPreview 同款 82×36 圆角 18 风格
   @Builder
   glassBrightnessPreview(): void {
     Stack({ alignContent: Alignment.Center }) {
+      Text('玻璃亮度')
+        .fontSize(this.scaledFont(12))
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.primaryColor)
+        .letterSpacing(this.scaledSize(1))
       Row()
         .width('100%')
         .height('100%')
-        .linearGradient({
-          angle: 135,
-          colors: [
-            ['#FF6B6B', 0.0],
-            ['#FFD93D', 0.45],
-            ['#6BCB77', 0.75],
-            ['#4D96FF', 1.0]
-          ]
-        })
-        .borderRadius(this.scaledSize(10))
+        .borderRadius(this.scaledSize(18))
+        .backgroundColor(Color.Transparent)
         .backgroundEffect(this.settings.glassStyle > 15 ? {
           radius: this.settings.glassStyle * 0.4,
           saturation: this.glassSaturation,
           brightness: this.settings.glassBrightness
         } : undefined)
-      Text('亮度')
-        .fontSize(this.scaledFont(10))
-        .fontColor('#FFFFFF')
-        .fontWeight(FontWeight.Bold)
-        .textShadow({ radius: 2, color: '#00000088', offsetX: 0, offsetY: 1 })
+        .border({ width: 1, color: 'rgba(255,255,255,0.28)' })
+        .shadow({ radius: 12, color: ColorHelper.hexWithAlpha(this.primaryColor, '44') })
     }
-    .width(this.scaledSize(64))
-    .height(this.scaledSize(40))
-    .borderRadius(this.scaledSize(10))
-    .border({
-      width: 1,
-      color: this.isDark() ? ColorHelper.hexWithAlpha('#FFFFFF', '33') : ColorHelper.hexWithAlpha(this.primaryColor, '33')
-    })
+    .width(this.scaledSize(82))
+    .height(this.scaledSize(36))
+    .borderRadius(this.scaledSize(18))
     .clip(true)
   }
 
-  // 智感握姿实时预览：显示左右两个手形圆点，previewOnRight 决定哪个高亮
+  // 智感握姿实时预览：与 homeTopBlurPreview 同款 82×36 圆角 18 风格
+  // 内部在 Row 上覆盖两个小圆点（左右手），previewOnRight 决定哪个高亮；未开启时两个都暗
   @Builder
   holdingHandPreview(): void {
     Stack({ alignContent: Alignment.Center }) {
+      Text('智感握姿')
+        .fontSize(this.scaledFont(12))
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.primaryColor)
+        .letterSpacing(this.scaledSize(1))
       Row()
         .width('100%')
         .height('100%')
-        .linearGradient({
-          angle: 135,
-          colors: [
-            ['#FF6B6B', 0.0],
-            ['#FFD93D', 0.45],
-            ['#6BCB77', 0.75],
-            ['#4D96FF', 1.0]
-          ]
+        .borderRadius(this.scaledSize(18))
+        .backgroundColor(Color.Transparent)
+        .backgroundEffect({
+          radius: this.glassBlurRadius(),
+          saturation: this.glassSaturation,
+          brightness: this.glassBrightness
         })
-        .borderRadius(this.scaledSize(10))
+        .border({ width: 1, color: 'rgba(255,255,255,0.28)' })
+        .shadow({ radius: 12, color: ColorHelper.hexWithAlpha(this.primaryColor, '44') })
+      // 左右两个手形圆点：previewOnRight 决定哪个高亮；未开启时两个都暗
       Row() {
-        // 左手侧圆点：previewOnRight=false 时高亮
         Row()
           .width(this.scaledSize(8))
           .height(this.scaledSize(8))
           .borderRadius(this.scaledSize(4))
           .backgroundColor(this.settings.holdingHandEnabled && !this.previewOnRight
-            ? '#FFFFFF' : ColorHelper.hexWithAlpha('#FFFFFF', '55'))
+            ? this.primaryColor : ColorHelper.hexWithAlpha(this.primaryColor, '40'))
         Blank()
-        // 右手侧圆点：previewOnRight=true 时高亮
         Row()
           .width(this.scaledSize(8))
           .height(this.scaledSize(8))
           .borderRadius(this.scaledSize(4))
           .backgroundColor(this.settings.holdingHandEnabled && this.previewOnRight
-            ? '#FFFFFF' : ColorHelper.hexWithAlpha('#FFFFFF', '55'))
+            ? this.primaryColor : ColorHelper.hexWithAlpha(this.primaryColor, '40'))
       }
-      .width('80%')
+      .width('60%')
       .height('100%')
-      Text(this.settings.holdingHandEnabled ? (this.previewOnRight ? '右手' : '左手') : '关闭')
-        .fontSize(this.scaledFont(10))
-        .fontColor('#FFFFFF')
-        .fontWeight(FontWeight.Bold)
-        .textShadow({ radius: 2, color: '#00000088', offsetX: 0, offsetY: 1 })
     }
-    .width(this.scaledSize(64))
-    .height(this.scaledSize(40))
-    .borderRadius(this.scaledSize(10))
-    .border({
-      width: 1,
-      color: this.isDark() ? ColorHelper.hexWithAlpha('#FFFFFF', '33') : ColorHelper.hexWithAlpha(this.primaryColor, '33')
-    })
+    .width(this.scaledSize(82))
+    .height(this.scaledSize(36))
+    .borderRadius(this.scaledSize(18))
     .clip(true)
   }
 
