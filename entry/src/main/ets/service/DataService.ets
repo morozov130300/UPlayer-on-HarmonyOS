@@ -62,10 +62,12 @@ export class AppSettingsData {
   glassBlurStrength: number = 25
   homeTopBlurStrength: number = 25
   tabIndicatorOpacity: number = 50
-  // 玻璃风格细节：档位 + 饱和度 + 亮度（与玻璃模糊强度完全独立，所有参数用户可调）
-  glassStyle: string = 'regular'
+  // 玻璃风格细节：档位（0-100 连续滑轨）+ 饱和度 + 亮度（与玻璃模糊强度完全独立，所有参数用户可调）
+  glassStyle: number = 50
   glassSaturation: number = 1.4
   glassBrightness: number = 1.02
+  // 质感握姿：开启后系统根据单手握持方向自动让首页顶部模糊预览/控件靠左或靠右
+  holdingHandEnabled: boolean = true
 }
 
 export class DataService {
@@ -537,12 +539,28 @@ export class DataService {
       let rawTabIndicatorOpacity: Object | undefined = r['tabIndicatorOpacity']
       s.tabIndicatorOpacity = rawTabIndicatorOpacity !== undefined ? rawTabIndicatorOpacity as number : 50
       // 玻璃风格细节（带迁移默认值，老数据走默认值不会破坏既有体验）
+      // glassStyle 历史数据是 string（thin/regular/thick），新数据是 number（0-100）。这里两种都接受。
       let rawGlassStyle: Object | undefined = r['glassStyle']
-      s.glassStyle = rawGlassStyle !== undefined ? rawGlassStyle as string : 'regular'
+      if (typeof rawGlassStyle === 'number') {
+        s.glassStyle = Math.max(0, Math.min(100, rawGlassStyle as number))
+      } else if (typeof rawGlassStyle === 'string') {
+        const legacy: string = rawGlassStyle as string
+        if (legacy === 'thin') {
+          s.glassStyle = 20
+        } else if (legacy === 'thick') {
+          s.glassStyle = 80
+        } else {
+          s.glassStyle = 50
+        }
+      } else {
+        s.glassStyle = 50
+      }
       let rawGlassSaturation: Object | undefined = r['glassSaturation']
       s.glassSaturation = rawGlassSaturation !== undefined ? rawGlassSaturation as number : 1.4
       let rawGlassBrightness: Object | undefined = r['glassBrightness']
       s.glassBrightness = rawGlassBrightness !== undefined ? rawGlassBrightness as number : 1.02
+      let rawHoldingHandEnabled: Object | undefined = r['holdingHandEnabled']
+      s.holdingHandEnabled = rawHoldingHandEnabled !== undefined ? rawHoldingHandEnabled as boolean : true
       if (eqBandsMigrated) {
         this.saveSettings(s)
       }
@@ -578,6 +596,7 @@ export class DataService {
     r['glassStyle'] = settings.glassStyle
     r['glassSaturation'] = settings.glassSaturation
     r['glassBrightness'] = settings.glassBrightness
+    r['holdingHandEnabled'] = settings.holdingHandEnabled
     this.getPref().preferencesPut(KEY_SETTINGS, JSON.stringify(r))
     AppStorage.setOrCreate(KEY_SETTINGS, settings)
     AppStorage.setOrCreate('uplayer_fade_in_out', settings.fadeInOut)
@@ -786,6 +805,7 @@ export class DataService {
     AppStorage.setOrCreate('uplayer_glass_style', settings.glassStyle)
     AppStorage.setOrCreate('uplayer_glass_saturation', settings.glassSaturation)
     AppStorage.setOrCreate('uplayer_glass_brightness', settings.glassBrightness)
+    AppStorage.setOrCreate('uplayer_holding_hand_enabled', settings.holdingHandEnabled)
     this.activatePersistedUris()
     return settings
   }

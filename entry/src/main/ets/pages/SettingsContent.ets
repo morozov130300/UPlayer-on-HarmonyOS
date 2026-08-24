@@ -3,7 +3,7 @@ import { DataService, AppSettingsData } from '../service/DataService'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import Logger from '../common/utils/Logger'
-import { createPageGlassMaterial, DEFAULT_GLASS_STYLE, glassBlurStyleFromKey, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
+import { createPageGlassMaterial, DEFAULT_GLASS_STYLE, glassBlurStyleFromStrength, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
 
 const TAG = 'SettingsContent'
 const KEY_PRIMARY_COLOR = 'uplayer_primary_color'
@@ -25,7 +25,7 @@ export struct SettingsContent {
   @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
   private dataService: DataService = DataService.getInstance()
   @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
-  @StorageLink('uplayer_glass_style') glassStyle: string = DEFAULT_GLASS_STYLE
+  @StorageLink('uplayer_glass_style') glassStyle: number = DEFAULT_GLASS_STYLE
   private categories: SettingCategory[] = [
     { title: '定制', description: '界面布局、主题配色等个性化选项', route: 'customize' },
     { title: '播放', description: '播放速度、歌词显示、淡入淡出', route: 'playback' },
@@ -49,7 +49,7 @@ export struct SettingsContent {
   }
 
   pageBlurStyle(): BlurStyle | undefined {
-    return this.isGlassEnabled() ? glassBlurStyleFromKey(this.glassStyle) : undefined
+    return this.isGlassEnabled() ? glassBlurStyleFromStrength(this.glassStyle) : undefined
   }
 
   aboutToAppear(): void {

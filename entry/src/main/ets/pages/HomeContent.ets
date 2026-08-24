@@ -10,7 +10,7 @@ import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstan
 import { AlbumCover } from '../component/AlbumCover'
 import { AlbumCoverSize, AudioMetadataService, CoverPriority } from '../service/AudioMetadataService'
 import { curves, uiMaterial } from '@kit.ArkUI'
-import { createPageGlassMaterial, DEFAULT_GLASS_STYLE, glassBlurStyleFromKey, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
+import { createPageGlassMaterial, DEFAULT_GLASS_STYLE, glassBlurStyleFromStrength, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
 
 const TAG = 'HomeContent'
 const PREFETCH_COUNT: number = 16
@@ -45,7 +45,7 @@ export struct HomeContent {
   @StorageLink(AppStorageKeyConstants.KEY_FILTER_REVISION) @Watch('onFilterChange') filterRevision: number = 0
   // 玻璃风格状态（仅当 tabStyle==='immersive' 且系统 ≥ API 26 时才启用液态玻璃背景）
   @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
-  @StorageLink('uplayer_glass_style') glassStyle: string = DEFAULT_GLASS_STYLE
+  @StorageLink('uplayer_glass_style') glassStyle: number = DEFAULT_GLASS_STYLE
   @State selectedIds: string[] = []
   @State failedArtIds: Set<string> = new Set<string>()
   // 手动拖拽排序状态：dragSongId 为被拖拽歌曲 id，空串表示未拖拽。
@@ -294,7 +294,7 @@ export struct HomeContent {
 
   // 页面级 backgroundBlurStyle 对应的枚举（API 7+ 全版本可用）
   pageBlurStyle(): BlurStyle | undefined {
-    return this.isGlassEnabled() ? glassBlurStyleFromKey(this.glassStyle) : undefined
+    return this.isGlassEnabled() ? glassBlurStyleFromStrength(this.glassStyle) : undefined
   }
 
   indexOfSong(songId: string): number {

@@ -8,7 +8,7 @@ import Logger from '../common/utils/Logger'
 import { deviceInfo } from '@kit.BasicServicesKit'
 import { motion } from '@kit.MultimodalAwarenessKit'
 import { ColorConversion } from '../common/utils/ColorConversion'
-import { createPageGlassMaterial, DEFAULT_GLASS_STYLE, GLASS_STYLE_OPTIONS, glassBlurStyleFromKey, glassStyleLabel, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
+import { createPageGlassMaterial, DEFAULT_GLASS_STYLE, glassBlurStyleFromStrength, glassStyleLabel, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
 import { StyleConstants } from '../common/constants/StyleConstants'
 
 const TAG = 'SettingsDetailPage'
@@ -50,7 +50,7 @@ struct SettingsDetailPage {
   @StorageLink('uplayer_home_top_blur_strength') homeTopBlurStrength: number = 25
   @StorageLink('uplayer_tab_indicator_opacity') tabIndicatorOpacity: number = 50
   @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
-  @StorageLink('uplayer_glass_style') glassStyle: string = DEFAULT_GLASS_STYLE
+  @StorageLink('uplayer_glass_style') glassStyle: number = DEFAULT_GLASS_STYLE
   @StorageLink('uplayer_glass_saturation') glassSaturation: number = 1.4
   @StorageLink('uplayer_glass_brightness') glassBrightness: number = 1.02
   @State pageTitle: string = ''
@@ -67,9 +67,28 @@ struct SettingsDetailPage {
   private dataService: DataService = DataService.getInstance()
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
   private isPC: boolean = deviceInfo.deviceType === '2in1'
+  // 质感握姿：开关 + 置信度滤波（连续 N 帧同向才翻转，避免短暂切换造成的"跳变"）
+  @StorageLink('uplayer_holding_hand_enabled') @Watch('onHoldingHandEnabledChange') holdingHandEnabled: boolean = true
+  private holdLastStatus: motion.HoldingHandStatus | undefined = undefined
+  private holdStreakCount: number = 0
+  // 要求连续 HOLD_STREAK_REQUIRED 次同向事件才允许翻转（经验值：原值 1 太敏感，3 较稳）
+  private static readonly HOLD_STREAK_REQUIRED: number = 3
   private holdingHandCallback: (status: motion.HoldingHandStatus) => void =
     (status: motion.HoldingHandStatus): void => {
-      this.previewOnRight = status === motion.HoldingHandStatus.LEFT_HAND_HELD
+      // 置信度滤波：连续 N 次同向才允许翻转，避免传感器抖动引起频繁切边
+      if (status === this.holdLastStatus) {
+        this.holdStreakCount = this.holdStreakCount + 1
+      } else {
+        this.holdLastStatus = status
+        this.holdStreakCount = 1
+      }
+      if (this.holdStreakCount < SettingsDetailPage.HOLD_STREAK_REQUIRED) {
+        return
+      }
+      const targetOnRight: boolean = status === motion.HoldingHandStatus.LEFT_HAND_HELD
+      if (this.previewOnRight !== targetOnRight) {
+        this.previewOnRight = targetOnRight
+      }
     }
   private themeOptions: ThemeOption[] = [
     { label: '跟随系统', value: 'system' },
@@ -122,7 +141,10 @@ struct SettingsDetailPage {
 
   private registerHoldingHandListener(): void {
     this.previewOnRight = false
-    if (this.isPC || !canIUse('SystemCapability.MultimodalAwareness.Motion')) {
+    this.holdLastStatus = undefined
+    this.holdStreakCount = 0
+    // 开关关闭、PC、能力不足时一律不订阅
+    if (!this.holdingHandEnabled || this.isPC || !canIUse('SystemCapability.MultimodalAwareness.Motion')) {
       return
     }
     try {
@@ -141,6 +163,22 @@ struct SettingsDetailPage {
     } catch (err) {
       Logger.warn(TAG, `holdingHandChanged unregister failed: ${JSON.stringify(err)}`)
     }
+    this.holdLastStatus = undefined
+    this.holdStreakCount = 0
+  }
+
+  // 用户在设置页切换开关时调用：开→注册监听并重置 streak；关→注销并复位 previewOnRight
+  private refreshHoldingHandListener(): void {
+    this.unregisterHoldingHandListener()
+    this.registerHoldingHandListener()
+  }
+
+  // @Watch 回调：握姿开关被用户切换时重新绑定监听；只有当前在 customize 页时回调才生效（避免页面间冲突）
+  onHoldingHandEnabledChange(): void {
+    if (this.pageTitle !== '定制') {
+      return
+    }
+    this.refreshHoldingHandListener()
   }
 
   private glassBlurRadius(): number {
@@ -417,7 +455,48 @@ struct SettingsDetailPage {
   }
 
   pageBlurStyle(): BlurStyle | undefined {
-    return this.isGlassEnabled() ? glassBlurStyleFromKey(this.glassStyle) : undefined
+    return this.isGlassEnabled() ? glassBlurStyleFromStrength(this.glassStyle) : undefined
+  }
+
+  // 玻璃强度实时预览方块：纯渐变彩色背景 + 同步的 systemMaterial/blur，
+  // 用户拖滑轨时看到的就是实际玻璃效果。
+  @Builder
+  glassStylePreview(): void {
+    Stack({ alignContent: Alignment.Center }) {
+      Row()
+        .width('100%')
+        .height('100%')
+        .linearGradient({
+          angle: 135,
+          colors: [
+            ['#FF6B6B', 0.0],
+            ['#FFD93D', 0.45],
+            ['#6BCB77', 0.75],
+            ['#4D96FF', 1.0]
+          ]
+        })
+        .borderRadius(this.scaledSize(10))
+        .backgroundEffect(this.settings.glassStyle > 15 ? {
+          radius: this.settings.glassStyle * 0.4,
+          saturation: this.glassSaturation,
+          brightness: this.glassBrightness
+        } : undefined)
+        .systemMaterial(this.settings.glassStyle > 30 && isLiquidGlassAvailable()
+          ? createPageGlassMaterial(this.settings.glassStyle) : undefined)
+      Text(this.isDark() ? '预览' : '预览')
+        .fontSize(this.scaledFont(10))
+        .fontColor('#FFFFFF')
+        .fontWeight(FontWeight.Bold)
+        .textShadow({ radius: 2, color: '#00000088', offsetX: 0, offsetY: 1 })
+    }
+    .width(this.scaledSize(56))
+    .height(this.scaledSize(36))
+    .borderRadius(this.scaledSize(10))
+    .border({
+      width: 1,
+      color: this.isDark() ? ColorHelper.hexWithAlpha('#FFFFFF', '33') : ColorHelper.hexWithAlpha(this.primaryColor, '33')
+    })
+    .clip(true)
   }
 
   build() {
@@ -558,7 +637,7 @@ struct SettingsDetailPage {
 
       Column() {
         Row() {
-          Text('Tab栏样式')
+          Text('底部栏样式')
             .fontSize(this.scaledFont(14))
             .fontColor(this.settingTextColor())
           Blank()
@@ -590,41 +669,49 @@ struct SettingsDetailPage {
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(10)
 
-      // 玻璃风格档位：标题（大）+ 说明（小、浅色）+ 三个独立档位 + 生效说明
+      // 玻璃风格档位：标题（大）+ 说明（小、浅色）+ 滑轨 + 实时预览方块
       Column({ space: this.scaledSize(6) }) {
         Text('玻璃风格档位')
           .fontSize(this.scaledFont(17))
           .fontWeight(FontWeight.Bold)
           .fontColor(this.settingTextColor())
           .width('100%')
-        Text('控制玻璃材质的模糊档位：薄透光强、常规适中、厚更模糊。仅当 Tab 栏样式为「玻璃」且系统 ≥ API 26 时生效。')
+        Text('控制玻璃材质的模糊强度：值越大越模糊。调节时右侧预览方块会实时反映效果。仅当底部栏样式为「玻璃」时生效。')
           .fontSize(this.scaledFont(12))
           .fontColor(this.settingSubTextColor())
           .width('100%')
-        Row({ space: this.scaledSize(10) }) {
-          ForEach(GLASS_STYLE_OPTIONS, (opt: string) => {
-            Column() {
-              Text(glassStyleLabel(opt))
-                .fontSize(this.scaledFont(13))
-                .fontColor(this.settings.glassStyle === opt ? '#FFFFFF' : this.settingInactiveTextColor())
-            }
+        Row({ space: this.scaledSize(12) }) {
+          Slider({
+            value: this.settings.glassStyle,
+            min: 0,
+            max: 100,
+            step: 1,
+            style: SliderStyle.OutSet
+          })
             .layoutWeight(1)
-            .padding({
-              top: this.scaledSize(10),
-              bottom: this.scaledSize(10)
+            .selectedColor(this.primaryColor)
+            .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+            .blockColor('#FFFFFF')
+            .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
+            .blockBorderColor(this.primaryColor)
+            .blockBorderWidth(3)
+            .onChange((value: number, mode: SliderChangeMode) => {
+              this.settings.glassStyle = value
+              this.glassStyle = value
+              if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+                this.updateSetting()
+              }
             })
-            .backgroundColor(this.settings.glassStyle === opt ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
-            .borderRadius(this.scaledSize(12))
-            .alignItems(HorizontalAlign.Center)
-            .onClick(() => {
-              this.settings.glassStyle = opt
-              this.glassStyle = opt
-              this.updateSetting()
-            })
-          }, (opt: string) => opt)
+          this.glassStylePreview()
         }
         .width('100%')
+        .alignItems(VerticalAlign.Center)
         .padding({ top: this.scaledSize(4), bottom: this.scaledSize(4) })
+        Text('当前档位：' + glassStyleLabel(this.settings.glassStyle) + '（' + Math.round(this.settings.glassStyle) + '）')
+          .fontSize(this.scaledFont(11))
+          .fontColor(this.settingSubTextColor())
+          .width('100%')
+          .padding({ left: this.scaledSize(2), top: this.scaledSize(2) })
       }
       .width('100%')
       .padding({ top: this.scaledSize(12), left: this.scaledSize(14), right: this.scaledSize(14), bottom: this.scaledSize(12) })
@@ -638,7 +725,7 @@ struct SettingsDetailPage {
           .fontWeight(FontWeight.Bold)
           .fontColor(this.settingTextColor())
           .width('100%')
-        Text('控制玻璃背后透出的颜色鲜艳程度（仅作用于 Tab 栏与首页上端的 backgroundEffect 模糊层）。值越高越鲜艳。')
+        Text('控制玻璃背后透出的颜色鲜艳程度（仅作用于底部的 Tab 栏和顶部的模糊层）。值越高越鲜艳。')
           .fontSize(this.scaledFont(12))
           .fontColor(this.settingSubTextColor())
           .width('100%')
@@ -689,7 +776,7 @@ struct SettingsDetailPage {
           .fontWeight(FontWeight.Bold)
           .fontColor(this.settingTextColor())
           .width('100%')
-        Text('控制玻璃模糊层的明暗调整（仅作用于 Tab 栏与首页上端的 backgroundEffect 模糊层）。值越高越亮。')
+        Text('控制玻璃模糊层的明暗调整（仅作用于底部的 Tab 栏和顶部的模糊层）。值越高越亮。')
           .fontSize(this.scaledFont(12))
           .fontColor(this.settingSubTextColor())
           .width('100%')
@@ -748,11 +835,15 @@ struct SettingsDetailPage {
           .fontSize(this.scaledFont(12))
           .fontColor(this.settingSubTextColor())
           .width('100%')
-        Text('• 首页上端毛玻璃层（顶部标题区，覆盖首页第一屏）')
+        Text('• 右下角播控条（与底部 Tab 栏同款玻璃）')
           .fontSize(this.scaledFont(12))
           .fontColor(this.settingSubTextColor())
           .width('100%')
-        Text('• 首页 / 歌单 / 设置 / 设置详情 四个一级页面的顶层背景（仅档位与材质，无无跟手光效）')
+        Text('• 顶部的模糊层（首页顶部标题区，覆盖首页第一屏）')
+          .fontSize(this.scaledFont(12))
+          .fontColor(this.settingSubTextColor())
+          .width('100%')
+        Text('• 首页 / 歌单 / 设置 / 设置详情 四个一级页面的顶层背景（仅档位与材质，无跟手光效）')
           .fontSize(this.scaledFont(12))
           .fontColor(this.settingSubTextColor())
           .width('100%')
@@ -761,7 +852,7 @@ struct SettingsDetailPage {
           .fontColor(this.settingSubTextColor())
           .width('100%')
           .padding({ top: this.scaledSize(4) })
-        Text('• 经典 Tab 栏样式下所有玻璃元素均回退为普通背景')
+        Text('• 经典底部栏样式下所有玻璃元素均回退为普通背景')
           .fontSize(this.scaledFont(12))
           .fontColor(this.settingSubTextColor())
           .width('100%')
@@ -773,6 +864,29 @@ struct SettingsDetailPage {
           .fontSize(this.scaledFont(12))
           .fontColor(this.settingSubTextColor())
           .width('100%')
+      }
+      .width('100%')
+      .padding({ top: this.scaledSize(12), left: this.scaledSize(14), right: this.scaledSize(14), bottom: this.scaledSize(12) })
+      .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
+
+      // 质感握姿开关：标题（大）+ 说明（小、浅色）+ Toggle
+      Column({ space: this.scaledSize(4) }) {
+        Text('质感握姿')
+          .fontSize(this.scaledFont(17))
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.settingTextColor())
+          .width('100%')
+        Text('根据单手握持方向自动调整首页顶部预览与控件靠左/靠右。开启后系统会订阅传感器（已加置信度滤波，避免短暂切换）。关闭后所有相关订阅会停止。')
+          .fontSize(this.scaledFont(12))
+          .fontColor(this.settingSubTextColor())
+          .width('100%')
+        this.toggleRow('启用质感握姿', this.settings.holdingHandEnabled, (val: boolean) => {
+          this.settings.holdingHandEnabled = val
+          this.holdingHandEnabled = val
+          this.updateSetting()
+          this.refreshHoldingHandListener()
+        })
       }
       .width('100%')
       .padding({ top: this.scaledSize(12), left: this.scaledSize(14), right: this.scaledSize(14), bottom: this.scaledSize(12) })

@@ -12,7 +12,7 @@ import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstan
 import { display } from '@kit.ArkUI'
 import { deviceInfo } from '@kit.BasicServicesKit'
 import { curves, uiMaterial } from '@kit.ArkUI'
-import { createPageGlassMaterial, DEFAULT_GLASS_STYLE, glassBlurStyleFromKey, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
+import { createPageGlassMaterial, DEFAULT_GLASS_STYLE, glassBlurStyleFromStrength, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
 
 const TAG = 'PlaylistContent'
 const FAVORITES_FOLDER_ID: string = '__favorites__'
@@ -37,7 +37,7 @@ export struct PlaylistContent {
   @StorageLink(AppStorageKeyConstants.KEY_LIBRARY_REVISION) @Watch('onLibraryChange') libraryRevision: number = 0
   @StorageLink(AppStorageKeyConstants.KEY_FILTER_REVISION) @Watch('onFilterChange') filterRevision: number = 0
   @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
-  @StorageLink('uplayer_glass_style') glassStyle: string = DEFAULT_GLASS_STYLE
+  @StorageLink('uplayer_glass_style') glassStyle: number = DEFAULT_GLASS_STYLE
   private dataService: DataService = DataService.getInstance()
   private songScanner: SongScanner = SongScanner.getInstance()
   private scroller: Scroller = new Scroller()
@@ -95,7 +95,7 @@ export struct PlaylistContent {
   }
 
   pageBlurStyle(): BlurStyle | undefined {
-    return this.isGlassEnabled() ? glassBlurStyleFromKey(this.glassStyle) : undefined
+    return this.isGlassEnabled() ? glassBlurStyleFromStrength(this.glassStyle) : undefined
   }
 
   loadData(): void {
