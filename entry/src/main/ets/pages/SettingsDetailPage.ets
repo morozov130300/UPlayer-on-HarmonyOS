@@ -8,7 +8,7 @@ import Logger from '../common/utils/Logger'
 import { deviceInfo } from '@kit.BasicServicesKit'
 import { motion } from '@kit.MultimodalAwarenessKit'
 import { ColorConversion } from '../common/utils/ColorConversion'
-import { createPageGlassMaterial, DEFAULT_GLASS_STYLE, GLASS_STYLE_LABELS, GLASS_STYLE_OPTIONS, glassBlurStyleFromKey, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
+import { createPageGlassMaterial, DEFAULT_GLASS_STYLE, GLASS_STYLE_OPTIONS, glassBlurStyleFromKey, glassStyleLabel, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
 import { StyleConstants } from '../common/constants/StyleConstants'
 
 const TAG = 'SettingsDetailPage'
@@ -147,14 +147,6 @@ struct SettingsDetailPage {
     return this.glassBlurStrength * 0.5
   }
 
-  private glassSaturation(): number {
-    return 1 + this.glassBlurStrength * 0.0035
-  }
-
-  private glassBrightness(): number {
-    return 1 + this.glassBlurStrength * 0.0008
-  }
-
   private homeTopBlurRadius(): number {
     return this.homeTopBlurStrength *
       (1.6 - this.homeTopBlurStrength * 0.004)
@@ -212,8 +204,8 @@ struct SettingsDetailPage {
         .backgroundColor(Color.Transparent)
         .backgroundEffect({
           radius: this.glassBlurRadius(),
-          saturation: this.glassSaturation(),
-          brightness: this.glassBrightness()
+          saturation: this.glassSaturation,
+          brightness: this.glassBrightness
         })
         .border({ width: 1, color: 'rgba(255,255,255,0.28)' })
         .shadow({ radius: 12, color: ColorHelper.hexWithAlpha(this.primaryColor, '44') })
@@ -604,7 +596,7 @@ struct SettingsDetailPage {
         Row() {
           ForEach(GLASS_STYLE_OPTIONS, (opt: string) => {
             Column() {
-              Text(GLASS_STYLE_LABELS[opt])
+              Text(glassStyleLabel(opt))
                 .fontSize(this.scaledFont(11))
                 .fontColor(this.settings.glassStyle === opt ? '#FFFFFF' : this.settingInactiveTextColor())
             }

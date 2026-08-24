@@ -9,10 +9,18 @@ const STYLE_THICK: string = 'thick'
 export const DEFAULT_GLASS_STYLE: string = STYLE_REGULAR
 
 export const GLASS_STYLE_OPTIONS: string[] = [STYLE_THIN, STYLE_REGULAR, STYLE_THICK]
-export const GLASS_STYLE_LABELS: Record<string, string> = {
-  thin: '薄',
-  regular: '常规',
-  thick: '厚'
+
+// 严格 ArkTS 不允许裸对象字面量、也不允许对类做动态索引访问；
+// 用显式函数 + 字符串字面量匹配代替 GLASS_STYLE_LABELS[opt] 风格的索引。
+export function glassStyleLabel(key: string): string {
+  switch (key) {
+    case STYLE_THIN:
+      return '薄'
+    case STYLE_THICK:
+      return '厚'
+    default:
+      return '常规'
+  }
 }
 
 // backgroundBlurStyle 用的 BlurStyle 枚举（API 7+，所有设备可用）
