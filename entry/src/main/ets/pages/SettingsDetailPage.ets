@@ -8,7 +8,13 @@ import Logger from '../common/utils/Logger'
 import { deviceInfo } from '@kit.BasicServicesKit'
 import { motion } from '@kit.MultimodalAwarenessKit'
 import { ColorConversion } from '../common/utils/ColorConversion'
-import { createPageGlassMaterial, DEFAULT_GLASS_STYLE, glassBlurStyleFromStrength, glassStyleLabel, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
+import {
+  createPageGlassMaterial,
+  DEFAULT_GLASS_STYLE,
+  glassBlurStyleFromStrength,
+  glassStyleLabel,
+  isLiquidGlassAvailable
+} from '../common/utils/GlassUtil'
 import { StyleConstants } from '../common/constants/StyleConstants'
 
 const TAG = 'SettingsDetailPage'
@@ -815,8 +821,14 @@ struct SettingsDetailPage {
           .padding({ left: this.scaledSize(2), top: this.scaledSize(2) })
       }
       .width('100%')
-      .padding({ top: this.scaledSize(12), left: this.scaledSize(14), right: this.scaledSize(14), bottom: this.scaledSize(12) })
-      .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .padding({
+        top: this.scaledSize(12),
+        left: this.scaledSize(14),
+        right: this.scaledSize(14),
+        bottom: this.scaledSize(12)
+      })
+      .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor,
+        0.04))
       .borderRadius(this.scaledSize(10))
 
       // 玻璃饱和度
@@ -862,8 +874,14 @@ struct SettingsDetailPage {
         .padding({ top: this.scaledSize(4), bottom: this.scaledSize(4) })
       }
       .width('100%')
-      .padding({ top: this.scaledSize(12), left: this.scaledSize(14), right: this.scaledSize(14), bottom: this.scaledSize(12) })
-      .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .padding({
+        top: this.scaledSize(12),
+        left: this.scaledSize(14),
+        right: this.scaledSize(14),
+        bottom: this.scaledSize(12)
+      })
+      .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor,
+        0.04))
       .borderRadius(this.scaledSize(10))
 
       // 玻璃亮度
@@ -909,8 +927,14 @@ struct SettingsDetailPage {
         .padding({ top: this.scaledSize(4), bottom: this.scaledSize(4) })
       }
       .width('100%')
-      .padding({ top: this.scaledSize(12), left: this.scaledSize(14), right: this.scaledSize(14), bottom: this.scaledSize(12) })
-      .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .padding({
+        top: this.scaledSize(12),
+        left: this.scaledSize(14),
+        right: this.scaledSize(14),
+        bottom: this.scaledSize(12)
+      })
+      .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor,
+        0.04))
       .borderRadius(this.scaledSize(10))
 
       // 玻璃效果生效范围说明
@@ -928,7 +952,7 @@ struct SettingsDetailPage {
           .fontSize(this.scaledFont(12))
           .fontColor(this.settingSubTextColor())
           .width('100%')
-        Text('• 右下角播控条（与底部 Tab 栏同款玻璃）')
+        Text('• 右下角播控条')
           .fontSize(this.scaledFont(12))
           .fontColor(this.settingSubTextColor())
           .width('100%')
@@ -936,7 +960,7 @@ struct SettingsDetailPage {
           .fontSize(this.scaledFont(12))
           .fontColor(this.settingSubTextColor())
           .width('100%')
-        Text('• 首页 / 歌单 / 设置 / 设置详情 四个一级页面的顶层背景（仅档位与材质，无跟手光效）')
+        Text('• 首页 / 歌单 / 设置 / 设置详情 四个一级页面的顶层背景（仅档位与材质在此生效）')
           .fontSize(this.scaledFont(12))
           .fontColor(this.settingSubTextColor())
           .width('100%')
@@ -945,22 +969,24 @@ struct SettingsDetailPage {
           .fontColor(this.settingSubTextColor())
           .width('100%')
           .padding({ top: this.scaledSize(4) })
-        Text('• 经典底部栏样式下所有玻璃元素均回退为普通背景')
+        Text('• 音乐播放器页面')
           .fontSize(this.scaledFont(12))
           .fontColor(this.settingSubTextColor())
           .width('100%')
-        Text('• 音乐播放器页面（pages/MusicPlayer）—— 始终使用原有样式')
-          .fontSize(this.scaledFont(12))
-          .fontColor(this.settingSubTextColor())
-          .width('100%')
-        Text('• 系统 ≤ API 26 时液态玻璃材质降级为 backgroundBlurStyle 背景模糊')
+        Text('• 系统API ≤ 26 （液态玻璃材质降级为背景模糊）')
           .fontSize(this.scaledFont(12))
           .fontColor(this.settingSubTextColor())
           .width('100%')
       }
       .width('100%')
-      .padding({ top: this.scaledSize(12), left: this.scaledSize(14), right: this.scaledSize(14), bottom: this.scaledSize(12) })
-      .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .padding({
+        top: this.scaledSize(12),
+        left: this.scaledSize(14),
+        right: this.scaledSize(14),
+        bottom: this.scaledSize(12)
+      })
+      .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor,
+        0.04))
       .borderRadius(this.scaledSize(10))
 
       // 智感握姿开关：标题（大）+ 说明（小、浅色）+ Row 内 Toggle 与预览方块同侧
@@ -970,7 +996,7 @@ struct SettingsDetailPage {
           .fontWeight(FontWeight.Bold)
           .fontColor(this.settingTextColor())
           .width('100%')
-        Text('根据单手握持方向自动调整首页顶部预览与控件靠左/靠右。开启后系统会订阅传感器（已加置信度滤波，避免短暂切换）。关闭后所有相关订阅会停止。')
+        Text('根据单手握持方向自动调整首页顶部预览与控件靠左/靠右。开启后系统会监测传感器。')
           .fontSize(this.scaledFont(12))
           .fontColor(this.settingSubTextColor())
           .width('100%')
@@ -992,8 +1018,14 @@ struct SettingsDetailPage {
         .padding({ top: this.scaledSize(4), bottom: this.scaledSize(4) })
       }
       .width('100%')
-      .padding({ top: this.scaledSize(12), left: this.scaledSize(14), right: this.scaledSize(14), bottom: this.scaledSize(12) })
-      .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .padding({
+        top: this.scaledSize(12),
+        left: this.scaledSize(14),
+        right: this.scaledSize(14),
+        bottom: this.scaledSize(12)
+      })
+      .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor,
+        0.04))
       .borderRadius(this.scaledSize(10))
 
       Column({ space: this.scaledSize(6) }) {
@@ -1032,8 +1064,14 @@ struct SettingsDetailPage {
         .padding({ top: this.scaledSize(4), bottom: this.scaledSize(4) })
       }
       .width('100%')
-      .padding({ top: this.scaledSize(12), left: this.scaledSize(14), right: this.scaledSize(14), bottom: this.scaledSize(12) })
-      .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .padding({
+        top: this.scaledSize(12),
+        left: this.scaledSize(14),
+        right: this.scaledSize(14),
+        bottom: this.scaledSize(12)
+      })
+      .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor,
+        0.04))
       .borderRadius(this.scaledSize(10))
 
       Column() {
