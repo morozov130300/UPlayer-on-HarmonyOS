@@ -11,7 +11,7 @@ import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { display } from '@kit.ArkUI'
 import { deviceInfo } from '@kit.BasicServicesKit'
-import { curves, uiMaterial } from '@kit.ArkUI'
+import { curves, uiAppearance, uiMaterial } from '@kit.ArkUI'
 import { createPageGlassMaterial, DEFAULT_GLASS_STYLE, glassBlurStyleFromStrength, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
 
 const TAG = 'PlaylistContent'
@@ -87,6 +87,15 @@ export struct PlaylistContent {
     return this.tabStyle === 'immersive' && isLiquidGlassAvailable()
   }
 
+  // 暗黑模式判定：与 HomeContent / SettingsContent / SettingsDetailPage 保持一致
+  private isDark(): boolean {
+    try {
+      return uiAppearance.getDarkMode() === uiAppearance.DarkMode.ALWAYS_DARK
+    } catch (e) {
+      return false
+    }
+  }
+
   pageGlassMaterial(): uiMaterial.Material | undefined {
     if (!this.isGlassEnabled()) {
       return undefined
@@ -94,8 +103,15 @@ export struct PlaylistContent {
     return createPageGlassMaterial(this.glassStyle)
   }
 
+  // 暗黑模式 + 玻璃样式 + 非 API 26 时返回 undefined，保持纯黑底色
   pageBlurStyle(): BlurStyle | undefined {
-    return this.isGlassEnabled() ? glassBlurStyleFromStrength(this.glassStyle) : undefined
+    if (!this.isGlassEnabled()) {
+      return undefined
+    }
+    if (this.isDark()) {
+      return undefined
+    }
+    return glassBlurStyleFromStrength(this.glassStyle)
   }
 
   loadData(): void {

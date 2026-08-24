@@ -49,7 +49,13 @@ export struct SettingsContent {
   }
 
   pageBlurStyle(): BlurStyle | undefined {
-    return this.isGlassEnabled() ? glassBlurStyleFromStrength(this.glassStyle) : undefined
+    if (!this.isGlassEnabled()) {
+      return undefined
+    }
+    if (this.isDark()) {
+      return undefined
+    }
+    return glassBlurStyleFromStrength(this.glassStyle)
   }
 
   aboutToAppear(): void {
