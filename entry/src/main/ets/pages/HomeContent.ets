@@ -9,8 +9,7 @@ import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { AlbumCover } from '../component/AlbumCover'
 import { AlbumCoverSize, AudioMetadataService, CoverPriority } from '../service/AudioMetadataService'
-import { curves, uiAppearance, uiMaterial } from '@kit.ArkUI'
-import { createPageGlassMaterial, DEFAULT_GLASS_STYLE, glassBlurStyleFromStrength, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
+import { curves } from '@kit.ArkUI'
 
 const TAG = 'HomeContent'
 const PREFETCH_COUNT: number = 16
@@ -43,9 +42,6 @@ export struct HomeContent {
   @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
   @StorageLink(AppStorageKeyConstants.KEY_LIBRARY_REVISION) @Watch('onLibraryChange') libraryRevision: number = 0
   @StorageLink(AppStorageKeyConstants.KEY_FILTER_REVISION) @Watch('onFilterChange') filterRevision: number = 0
-  // 玻璃风格状态（仅当 tabStyle==='immersive' 且系统 ≥ API 26 时才启用液态玻璃背景）
-  @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
-  @StorageLink('uplayer_glass_style') glassStyle: number = DEFAULT_GLASS_STYLE
   @State selectedIds: string[] = []
   @State failedArtIds: Set<string> = new Set<string>()
   // 手动拖拽排序状态：dragSongId 为被拖拽歌曲 id，空串表示未拖拽。
@@ -277,41 +273,6 @@ export struct HomeContent {
   // 只有自定义排序模式才允许通过手柄拖拽重排
   canDragSort(): boolean {
     return this.sortMode === 'custom'
-  }
-
-  // 玻璃风格是否在本页启用（玻璃样式 + API 26）
-  isGlassEnabled(): boolean {
-    return this.tabStyle === 'immersive' && isLiquidGlassAvailable()
-  }
-
-  // 暗黑模式判定：与 SettingsContent / SettingsDetailPage 的逻辑保持一致
-  private isDark(): boolean {
-    try {
-      return uiAppearance.getDarkMode() === uiAppearance.DarkMode.ALWAYS_DARK
-    } catch (e) {
-      return false
-    }
-  }
-
-  // 页面级液态玻璃材质（API 26+ 时返回 ImmersiveMaterial，否则 undefined）
-  pageGlassMaterial(): uiMaterial.Material | undefined {
-    if (!this.isGlassEnabled()) {
-      return undefined
-    }
-    return createPageGlassMaterial(this.glassStyle)
-  }
-
-  // 页面级 backgroundBlurStyle 对应的枚举（API 7+ 全版本可用）
-  // 暗黑模式 + 玻璃样式 + 非 API 26 时返回 undefined：在纯黑底上叠 backgroundBlurStyle
-  // 会出现"半透白+黑"混合导致灰蒙蒙，所以暗黑模式优先保持纯黑，仅浅色模式走模糊回退
-  pageBlurStyle(): BlurStyle | undefined {
-    if (!this.isGlassEnabled()) {
-      return undefined
-    }
-    if (this.isDark()) {
-      return undefined
-    }
-    return glassBlurStyleFromStrength(this.glassStyle)
   }
 
   indexOfSong(songId: string): number {
@@ -796,11 +757,8 @@ export struct HomeContent {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(Color.Transparent)
-    // 玻璃风格时为整页加 systemMaterial + backgroundBlurStyle；
-    // 经典样式或老系统（< API 26）下两个属性传 undefined 自动关闭
-    .backgroundBlurStyle(this.pageBlurStyle())
-    .systemMaterial(this.pageGlassMaterial())
+    // 背景使用预设纯色（明暗自适应），不应用任何玻璃/模糊/透明度效果
+    .backgroundColor($r('app.color.page_background_sm'))
   }
 
   @Builder

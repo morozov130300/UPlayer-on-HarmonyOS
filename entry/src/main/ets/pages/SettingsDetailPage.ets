@@ -1,4 +1,4 @@
-import { curves, uiAppearance, uiMaterial } from '@kit.ArkUI'
+import { curves, uiAppearance } from '@kit.ArkUI'
 import { common, ConfigurationConstant } from '@kit.AbilityKit'
 import { DataService, AppSettingsData } from '../service/DataService'
 import { AVPlayerService } from '../service/AVPlayerService'
@@ -10,8 +10,6 @@ import { motion } from '@kit.MultimodalAwarenessKit'
 import { ColorConversion } from '../common/utils/ColorConversion'
 import {
   createPageGlassMaterial,
-  DEFAULT_GLASS_STYLE,
-  glassBlurStyleFromStrength,
   glassStyleLabel,
   isLiquidGlassAvailable
 } from '../common/utils/GlassUtil'
@@ -55,8 +53,6 @@ struct SettingsDetailPage {
   @StorageLink('uplayer_glass_blur_strength') glassBlurStrength: number = 25
   @StorageLink('uplayer_home_top_blur_strength') homeTopBlurStrength: number = 25
   @StorageLink('uplayer_tab_indicator_opacity') tabIndicatorOpacity: number = 50
-  @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
-  @StorageLink('uplayer_glass_style') glassStyle: number = DEFAULT_GLASS_STYLE
   @StorageLink('uplayer_glass_saturation') glassSaturation: number = 1.4
   @StorageLink('uplayer_glass_brightness') glassBrightness: number = 1.02
   @State pageTitle: string = ''
@@ -456,28 +452,6 @@ struct SettingsDetailPage {
       .opacity(0)
   }
 
-  // 玻璃风格是否在本页启用
-  isGlassEnabled(): boolean {
-    return this.tabStyle === 'immersive' && isLiquidGlassAvailable()
-  }
-
-  pageGlassMaterial(): uiMaterial.Material | undefined {
-    if (!this.isGlassEnabled()) {
-      return undefined
-    }
-    return createPageGlassMaterial(this.glassStyle)
-  }
-
-  pageBlurStyle(): BlurStyle | undefined {
-    if (!this.isGlassEnabled()) {
-      return undefined
-    }
-    if (this.isDark()) {
-      return undefined
-    }
-    return glassBlurStyleFromStrength(this.glassStyle)
-  }
-
   // 玻璃强度实时预览方块：与所有预览器同尺寸同风格，仅叠层不同
   // 这里叠的是 backgroundEffect.radius + 液态玻璃 systemMaterial
   @Builder
@@ -685,9 +659,8 @@ struct SettingsDetailPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(Color.Transparent)
-    .backgroundBlurStyle(this.pageBlurStyle())
-    .systemMaterial(this.pageGlassMaterial())
+    // 背景使用预设纯色（明暗自适应），不应用任何玻璃/模糊/透明度效果
+    .backgroundColor($r('app.color.page_background_sm'))
   }
 
   @Builder
@@ -782,9 +755,9 @@ struct SettingsDetailPage {
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(10)
 
-      // 玻璃风格档位：标题（大）+ 说明（小、浅色）+ 滑轨 + 实时预览方块
+      // 玻璃厚度：标题（大）+ 说明（小、浅色）+ 滑轨 + 实时预览方块
       Column({ space: this.scaledSize(6) }) {
-        Text('玻璃风格档位')
+        Text('玻璃厚度')
           .fontSize(this.scaledFont(17))
           .fontWeight(FontWeight.Bold)
           .fontColor(this.settingTextColor())
@@ -810,7 +783,6 @@ struct SettingsDetailPage {
             .blockBorderWidth(3)
             .onChange((value: number, mode: SliderChangeMode) => {
               this.settings.glassStyle = value
-              this.glassStyle = value
               if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
                 this.updateSetting()
               }
