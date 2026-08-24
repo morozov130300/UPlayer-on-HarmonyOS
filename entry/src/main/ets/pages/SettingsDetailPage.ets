@@ -469,7 +469,13 @@ struct SettingsDetailPage {
   }
 
   pageBlurStyle(): BlurStyle | undefined {
-    return this.isGlassEnabled() ? glassBlurStyleFromStrength(this.glassStyle) : undefined
+    if (!this.isGlassEnabled()) {
+      return undefined
+    }
+    if (this.isDark()) {
+      return undefined
+    }
+    return glassBlurStyleFromStrength(this.glassStyle)
   }
 
   // 玻璃强度实时预览方块：与所有预览器同尺寸同风格，仅叠层不同

@@ -284,8 +284,8 @@ struct MainPage {
       .borderRadius(this.scaledSize(20))
       .backgroundColor(Color.Transparent)
       // 真·液态玻璃启用时系统材质接管背景渲染，本地模糊关闭（radius 0）避免叠浊；
-      // 未启用时保留原有玻璃模糊作为回退
-      .backgroundEffect({
+      // 暗黑模式 + 非 API 26 时不应用 backgroundEffect，保持纯黑底（避免灰蒙蒙）
+      .backgroundEffect(this.isDarkTheme() ? undefined : {
         radius: this.liquidGlassEnabled() ? 0 : this.glassBlurRadius(),
         saturation: this.liquidGlassEnabled() ? 1 : this.glassSaturation,
         brightness: this.liquidGlassEnabled() ? 1 : this.glassBrightness
@@ -526,7 +526,9 @@ struct MainPage {
       top: this.scaledSize(4), bottom: this.scaledSize(4)
     })
     .backgroundColor(this.tabStyle === 'immersive' ? Color.Transparent : ColorHelper.hexToRgba(this.primaryColor, 0.08))
-    .backgroundEffect(this.tabStyle === 'immersive' ? {
+    // 玻璃样式 + 暗黑模式 + 非 API 26 时不应用 backgroundEffect，保持纯黑底；
+    // 真机 API 26+ 由 systemMaterial 接管；浅色模式保留原玻璃模糊回退
+    .backgroundEffect(this.tabStyle === 'immersive' && !this.isDarkTheme() ? {
       radius: this.liquidGlassEnabled() ? 0 : this.glassBlurRadius(),
       saturation: this.liquidGlassEnabled() ? 1 : this.glassSaturation,
       brightness: this.liquidGlassEnabled() ? 1 : this.glassBrightness
