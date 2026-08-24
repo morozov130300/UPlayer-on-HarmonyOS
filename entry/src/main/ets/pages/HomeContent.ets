@@ -9,7 +9,8 @@ import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { AlbumCover } from '../component/AlbumCover'
 import { AlbumCoverSize, AudioMetadataService, CoverPriority } from '../service/AudioMetadataService'
-import { curves } from '@kit.ArkUI'
+import { curves, uiMaterial } from '@kit.ArkUI'
+import { createPageGlassMaterial, DEFAULT_GLASS_STYLE, glassBlurStyleFromKey, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
 
 const TAG = 'HomeContent'
 const PREFETCH_COUNT: number = 16
@@ -42,6 +43,9 @@ export struct HomeContent {
   @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
   @StorageLink(AppStorageKeyConstants.KEY_LIBRARY_REVISION) @Watch('onLibraryChange') libraryRevision: number = 0
   @StorageLink(AppStorageKeyConstants.KEY_FILTER_REVISION) @Watch('onFilterChange') filterRevision: number = 0
+  // 玻璃风格状态（仅当 tabStyle==='immersive' 且系统 ≥ API 26 时才启用液态玻璃背景）
+  @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
+  @StorageLink('uplayer_glass_style') glassStyle: string = DEFAULT_GLASS_STYLE
   @State selectedIds: string[] = []
   @State failedArtIds: Set<string> = new Set<string>()
   // 手动拖拽排序状态：dragSongId 为被拖拽歌曲 id，空串表示未拖拽。
@@ -273,6 +277,24 @@ export struct HomeContent {
   // 只有自定义排序模式才允许通过手柄拖拽重排
   canDragSort(): boolean {
     return this.sortMode === 'custom'
+  }
+
+  // 玻璃风格是否在本页启用（玻璃样式 + API 26）
+  isGlassEnabled(): boolean {
+    return this.tabStyle === 'immersive' && isLiquidGlassAvailable()
+  }
+
+  // 页面级液态玻璃材质（API 26+ 时返回 ImmersiveMaterial，否则 undefined）
+  pageGlassMaterial(): uiMaterial.Material | undefined {
+    if (!this.isGlassEnabled()) {
+      return undefined
+    }
+    return createPageGlassMaterial(this.glassStyle)
+  }
+
+  // 页面级 backgroundBlurStyle 对应的枚举（API 7+ 全版本可用）
+  pageBlurStyle(): BlurStyle | undefined {
+    return this.isGlassEnabled() ? glassBlurStyleFromKey(this.glassStyle) : undefined
   }
 
   indexOfSong(songId: string): number {
@@ -757,6 +779,11 @@ export struct HomeContent {
     }
     .width('100%')
     .height('100%')
+    .backgroundColor(Color.Transparent)
+    // 玻璃风格时为整页加 systemMaterial + backgroundBlurStyle；
+    // 经典样式或老系统（< API 26）下两个属性传 undefined 自动关闭
+    .backgroundBlurStyle(this.pageBlurStyle())
+    .systemMaterial(this.pageGlassMaterial())
   }
 
   @Builder

@@ -1,8 +1,9 @@
-import { curves, uiAppearance } from '@kit.ArkUI'
+import { curves, uiAppearance, uiMaterial } from '@kit.ArkUI'
 import { DataService, AppSettingsData } from '../service/DataService'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import Logger from '../common/utils/Logger'
+import { createPageGlassMaterial, DEFAULT_GLASS_STYLE, glassBlurStyleFromKey, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
 
 const TAG = 'SettingsContent'
 const KEY_PRIMARY_COLOR = 'uplayer_primary_color'
@@ -23,6 +24,8 @@ export struct SettingsContent {
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
   @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
   private dataService: DataService = DataService.getInstance()
+  @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
+  @StorageLink('uplayer_glass_style') glassStyle: string = DEFAULT_GLASS_STYLE
   private categories: SettingCategory[] = [
     { title: '定制', description: '界面布局、主题配色等个性化选项', route: 'customize' },
     { title: '播放', description: '播放速度、歌词显示、淡入淡出', route: 'playback' },
@@ -31,6 +34,22 @@ export struct SettingsContent {
 
   private scaledSize(size: number): number {
     return Math.round(size * this.displaySizeScale)
+  }
+
+  // 玻璃风格是否在本页启用
+  isGlassEnabled(): boolean {
+    return this.tabStyle === 'immersive' && isLiquidGlassAvailable()
+  }
+
+  pageGlassMaterial(): uiMaterial.Material | undefined {
+    if (!this.isGlassEnabled()) {
+      return undefined
+    }
+    return createPageGlassMaterial(this.glassStyle)
+  }
+
+  pageBlurStyle(): BlurStyle | undefined {
+    return this.isGlassEnabled() ? glassBlurStyleFromKey(this.glassStyle) : undefined
   }
 
   aboutToAppear(): void {
@@ -114,6 +133,8 @@ export struct SettingsContent {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor($r('app.color.page_background_other'))
+    .backgroundColor(Color.Transparent)
+    .backgroundBlurStyle(this.pageBlurStyle())
+    .systemMaterial(this.pageGlassMaterial())
   }
 }

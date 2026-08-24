@@ -1,4 +1,4 @@
-import { curves, uiAppearance } from '@kit.ArkUI'
+import { curves, uiAppearance, uiMaterial } from '@kit.ArkUI'
 import { common, ConfigurationConstant } from '@kit.AbilityKit'
 import { DataService, AppSettingsData } from '../service/DataService'
 import { AVPlayerService } from '../service/AVPlayerService'
@@ -8,6 +8,7 @@ import Logger from '../common/utils/Logger'
 import { deviceInfo } from '@kit.BasicServicesKit'
 import { motion } from '@kit.MultimodalAwarenessKit'
 import { ColorConversion } from '../common/utils/ColorConversion'
+import { createPageGlassMaterial, DEFAULT_GLASS_STYLE, GLASS_STYLE_LABELS, GLASS_STYLE_OPTIONS, glassBlurStyleFromKey, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
 import { StyleConstants } from '../common/constants/StyleConstants'
 
 const TAG = 'SettingsDetailPage'
@@ -48,6 +49,10 @@ struct SettingsDetailPage {
   @StorageLink('uplayer_glass_blur_strength') glassBlurStrength: number = 25
   @StorageLink('uplayer_home_top_blur_strength') homeTopBlurStrength: number = 25
   @StorageLink('uplayer_tab_indicator_opacity') tabIndicatorOpacity: number = 50
+  @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
+  @StorageLink('uplayer_glass_style') glassStyle: string = DEFAULT_GLASS_STYLE
+  @StorageLink('uplayer_glass_saturation') glassSaturation: number = 1.4
+  @StorageLink('uplayer_glass_brightness') glassBrightness: number = 1.02
   @State pageTitle: string = ''
   @State previewOnRight: boolean = false
   @State showColorPicker: boolean = false
@@ -407,6 +412,22 @@ struct SettingsDetailPage {
       .opacity(0)
   }
 
+  // 玻璃风格是否在本页启用
+  isGlassEnabled(): boolean {
+    return this.tabStyle === 'immersive' && isLiquidGlassAvailable()
+  }
+
+  pageGlassMaterial(): uiMaterial.Material | undefined {
+    if (!this.isGlassEnabled()) {
+      return undefined
+    }
+    return createPageGlassMaterial(this.glassStyle)
+  }
+
+  pageBlurStyle(): BlurStyle | undefined {
+    return this.isGlassEnabled() ? glassBlurStyleFromKey(this.glassStyle) : undefined
+  }
+
   build() {
     Stack() {
       Column() {
@@ -480,7 +501,9 @@ struct SettingsDetailPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor($r('app.color.page_background_other'))
+    .backgroundColor(Color.Transparent)
+    .backgroundBlurStyle(this.pageBlurStyle())
+    .systemMaterial(this.pageGlassMaterial())
   }
 
   @Builder
@@ -569,6 +592,132 @@ struct SettingsDetailPage {
         .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
         .width('100%')
         .height(this.scaledSize(44))
+        .alignItems(VerticalAlign.Center)
+      }
+      .width('100%')
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(10)
+
+      // 玻璃风格档位（仅 tab 样式为「玻璃」时生效；其他枚举值在经典样式下保留兼容）
+      Column() {
+        this.sectionTitle('玻璃风格档位')
+        Row() {
+          ForEach(GLASS_STYLE_OPTIONS, (opt: string) => {
+            Column() {
+              Text(GLASS_STYLE_LABELS[opt])
+                .fontSize(this.scaledFont(11))
+                .fontColor(this.settings.glassStyle === opt ? '#FFFFFF' : this.settingInactiveTextColor())
+            }
+            .padding({
+              left: this.scaledSize(12),
+              right: this.scaledSize(12),
+              top: this.scaledSize(5),
+              bottom: this.scaledSize(5)
+            })
+            .backgroundColor(this.settings.glassStyle === opt ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+            .borderRadius(this.scaledSize(14))
+            .onClick(() => {
+              this.settings.glassStyle = opt
+              this.glassStyle = opt
+              this.updateSetting()
+            })
+          }, (opt: string) => opt)
+        }
+        .padding({
+          left: this.scaledSize(14), right: this.scaledSize(14),
+          top: this.scaledSize(2), bottom: this.scaledSize(10)
+        })
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+      }
+      .width('100%')
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(10)
+
+      // 玻璃饱和度（设置 systemMaterial 之外的 backgroundEffect 饱和度档位）
+      Column() {
+        this.sectionTitle('玻璃饱和度')
+        Row() {
+          Text('淡')
+            .fontSize(this.scaledFont(11))
+            .fontColor(this.settingTextColor())
+            .margin({ left: this.scaledSize(14), right: this.scaledSize(8) })
+          Slider({
+            value: this.settings.glassSaturation * 100,
+            min: 100,
+            max: 200,
+            step: 1,
+            style: SliderStyle.OutSet
+          })
+            .layoutWeight(1)
+            .selectedColor(this.primaryColor)
+            .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+            .blockColor('#FFFFFF')
+            .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
+            .blockBorderColor(this.primaryColor)
+            .blockBorderWidth(3)
+            .onChange((value: number, mode: SliderChangeMode) => {
+              this.settings.glassSaturation = value / 100
+              this.glassSaturation = this.settings.glassSaturation
+              if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+                this.updateSetting()
+              }
+            })
+          Text('浓')
+            .fontSize(this.scaledFont(11))
+            .fontColor(this.settingTextColor())
+            .margin({ left: this.scaledSize(8) })
+        }
+        .padding({
+          left: this.scaledSize(12), right: this.scaledSize(12),
+          top: this.scaledSize(2), bottom: this.scaledSize(10)
+        })
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+      }
+      .width('100%')
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(10)
+
+      // 玻璃亮度（同上）
+      Column() {
+        this.sectionTitle('玻璃亮度')
+        Row() {
+          Text('暗')
+            .fontSize(this.scaledFont(11))
+            .fontColor(this.settingTextColor())
+            .margin({ left: this.scaledSize(14), right: this.scaledSize(8) })
+          Slider({
+            value: this.settings.glassBrightness * 100,
+            min: 80,
+            max: 130,
+            step: 1,
+            style: SliderStyle.OutSet
+          })
+            .layoutWeight(1)
+            .selectedColor(this.primaryColor)
+            .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+            .blockColor('#FFFFFF')
+            .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
+            .blockBorderColor(this.primaryColor)
+            .blockBorderWidth(3)
+            .onChange((value: number, mode: SliderChangeMode) => {
+              this.settings.glassBrightness = value / 100
+              this.glassBrightness = this.settings.glassBrightness
+              if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+                this.updateSetting()
+              }
+            })
+          Text('亮')
+            .fontSize(this.scaledFont(11))
+            .fontColor(this.settingTextColor())
+            .margin({ left: this.scaledSize(8) })
+        }
+        .padding({
+          left: this.scaledSize(12), right: this.scaledSize(12),
+          top: this.scaledSize(2), bottom: this.scaledSize(10)
+        })
+        .width('100%')
         .alignItems(VerticalAlign.Center)
       }
       .width('100%')

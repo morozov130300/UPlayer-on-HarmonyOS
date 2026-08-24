@@ -11,6 +11,8 @@ import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { display } from '@kit.ArkUI'
 import { deviceInfo } from '@kit.BasicServicesKit'
+import { curves, uiMaterial } from '@kit.ArkUI'
+import { createPageGlassMaterial, DEFAULT_GLASS_STYLE, glassBlurStyleFromKey, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
 
 const TAG = 'PlaylistContent'
 const FAVORITES_FOLDER_ID: string = '__favorites__'
@@ -34,6 +36,8 @@ export struct PlaylistContent {
   @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
   @StorageLink(AppStorageKeyConstants.KEY_LIBRARY_REVISION) @Watch('onLibraryChange') libraryRevision: number = 0
   @StorageLink(AppStorageKeyConstants.KEY_FILTER_REVISION) @Watch('onFilterChange') filterRevision: number = 0
+  @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
+  @StorageLink('uplayer_glass_style') glassStyle: string = DEFAULT_GLASS_STYLE
   private dataService: DataService = DataService.getInstance()
   private songScanner: SongScanner = SongScanner.getInstance()
   private scroller: Scroller = new Scroller()
@@ -76,6 +80,22 @@ export struct PlaylistContent {
     } catch (e) {
       this.gridColumns = 2
     }
+  }
+
+  // 玻璃风格是否在本页启用（玻璃样式 + API 26）
+  isGlassEnabled(): boolean {
+    return this.tabStyle === 'immersive' && isLiquidGlassAvailable()
+  }
+
+  pageGlassMaterial(): uiMaterial.Material | undefined {
+    if (!this.isGlassEnabled()) {
+      return undefined
+    }
+    return createPageGlassMaterial(this.glassStyle)
+  }
+
+  pageBlurStyle(): BlurStyle | undefined {
+    return this.isGlassEnabled() ? glassBlurStyleFromKey(this.glassStyle) : undefined
   }
 
   loadData(): void {
@@ -447,6 +467,9 @@ export struct PlaylistContent {
     }
     .width('100%')
     .height('100%')
+    .backgroundColor(Color.Transparent)
+    .backgroundBlurStyle(this.pageBlurStyle())
+    .systemMaterial(this.pageGlassMaterial())
   }
 
   @Builder

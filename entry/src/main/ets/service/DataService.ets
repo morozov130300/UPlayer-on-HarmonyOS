@@ -62,6 +62,10 @@ export class AppSettingsData {
   glassBlurStrength: number = 25
   homeTopBlurStrength: number = 25
   tabIndicatorOpacity: number = 50
+  // 玻璃风格细节：档位 + 饱和度 + 亮度（与玻璃模糊强度完全独立，所有参数用户可调）
+  glassStyle: string = 'regular'
+  glassSaturation: number = 1.4
+  glassBrightness: number = 1.02
 }
 
 export class DataService {
@@ -532,6 +536,13 @@ export class DataService {
       s.homeTopBlurStrength = rawHomeTopBlurStrength !== undefined ? rawHomeTopBlurStrength as number : 25
       let rawTabIndicatorOpacity: Object | undefined = r['tabIndicatorOpacity']
       s.tabIndicatorOpacity = rawTabIndicatorOpacity !== undefined ? rawTabIndicatorOpacity as number : 50
+      // 玻璃风格细节（带迁移默认值，老数据走默认值不会破坏既有体验）
+      let rawGlassStyle: Object | undefined = r['glassStyle']
+      s.glassStyle = rawGlassStyle !== undefined ? rawGlassStyle as string : 'regular'
+      let rawGlassSaturation: Object | undefined = r['glassSaturation']
+      s.glassSaturation = rawGlassSaturation !== undefined ? rawGlassSaturation as number : 1.4
+      let rawGlassBrightness: Object | undefined = r['glassBrightness']
+      s.glassBrightness = rawGlassBrightness !== undefined ? rawGlassBrightness as number : 1.02
       if (eqBandsMigrated) {
         this.saveSettings(s)
       }
@@ -564,6 +575,9 @@ export class DataService {
     r['glassBlurStrength'] = settings.glassBlurStrength
     r['homeTopBlurStrength'] = settings.homeTopBlurStrength
     r['tabIndicatorOpacity'] = settings.tabIndicatorOpacity
+    r['glassStyle'] = settings.glassStyle
+    r['glassSaturation'] = settings.glassSaturation
+    r['glassBrightness'] = settings.glassBrightness
     this.getPref().preferencesPut(KEY_SETTINGS, JSON.stringify(r))
     AppStorage.setOrCreate(KEY_SETTINGS, settings)
     AppStorage.setOrCreate('uplayer_fade_in_out', settings.fadeInOut)
@@ -769,6 +783,9 @@ export class DataService {
     AppStorage.setOrCreate('uplayer_glass_blur_strength', settings.glassBlurStrength)
     AppStorage.setOrCreate('uplayer_home_top_blur_strength', settings.homeTopBlurStrength)
     AppStorage.setOrCreate('uplayer_tab_indicator_opacity', settings.tabIndicatorOpacity)
+    AppStorage.setOrCreate('uplayer_glass_style', settings.glassStyle)
+    AppStorage.setOrCreate('uplayer_glass_saturation', settings.glassSaturation)
+    AppStorage.setOrCreate('uplayer_glass_brightness', settings.glassBrightness)
     this.activatePersistedUris()
     return settings
   }

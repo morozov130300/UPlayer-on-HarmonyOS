@@ -12,6 +12,7 @@ import { PlaylistContent } from './PlaylistContent'
 import { SettingsContent } from './SettingsContent'
 import { DataService } from '../service/DataService'
 import { ColorHelper } from '../common/utils/ColorHelper'
+import { createPageGlassMaterial, DEFAULT_GLASS_STYLE, glassBlurStyleFromKey, glassImmersiveStyleFromKey, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
 import Logger from '../common/utils/Logger'
 import { LrcEntry } from '../viewmodel/LrcEntry'
 import { parseKrcLyric, parseLrcLyric } from '../common/utils/LrcUtils'
@@ -49,6 +50,10 @@ struct MainPage {
   @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
   @StorageLink('uplayer_glass_blur_strength') glassBlurStrength: number = 25
   @StorageLink('uplayer_tab_indicator_opacity') tabIndicatorOpacity: number = 50
+  // 玻璃风格可调参数（设置页可改）：档位/饱和度/亮度
+  @StorageLink('uplayer_glass_style') glassStyle: string = DEFAULT_GLASS_STYLE
+  @StorageLink('uplayer_glass_saturation') glassSaturation: number = 1.4
+  @StorageLink('uplayer_glass_brightness') glassBrightness: number = 1.02
   @State albumArtFailed: boolean = false
   @State isTitleMarqueeRunning: boolean = true
   @State isArtistMarqueeRunning: boolean = true
@@ -126,32 +131,36 @@ struct MainPage {
     return this.glassBlurStrength * 0.5
   }
 
-  private glassSaturation(): number {
-    return 1 + this.glassBlurStrength * 0.0035
+  // 当前 GlassStyle 字符串对应的 BlurStyle 枚举（用于 backgroundBlurStyle 通用属性）
+  private glassBlurStyle(): BlurStyle {
+    return glassBlurStyleFromKey(this.glassStyle)
   }
 
-  private glassBrightness(): number {
-    return 1 + this.glassBlurStrength * 0.0008
+  // 当前 GlassStyle 字符串对应的 ImmersiveStyle 枚举（用于 uiMaterial 沉浸材质）
+  private liquidGlassImmersiveStyle(): uiMaterial.ImmersiveStyle {
+    return glassImmersiveStyleFromKey(this.glassStyle)
   }
 
   // ── 液态玻璃（沉浸式系统材质，HarmonyOS API 26+）──
-  // THICK：官方推荐用于底部悬浮组件的材质档位；
+  // THICK：官方推荐用于底部悬浮组件的材质档位；用户在设置里可切换薄/常规/厚。
   // interactive: true 开启交互形变（按压/拖动时 Q 弹反馈），
   // lightEffect 开启光效反馈（明亮光芒跟手流动），color 传 undefined 跟随系统默认光色。
-  private liquidGlassMaterial: uiMaterial.Material = new uiMaterial.ImmersiveMaterial({
-    style: uiMaterial.ImmersiveStyle.THICK,
-    interactive: true,
-    lightEffect: { color: undefined }
-  })
+  private liquidGlassMaterial(): uiMaterial.Material {
+    return new uiMaterial.ImmersiveMaterial({
+      style: this.liquidGlassImmersiveStyle(),
+      interactive: true,
+      lightEffect: { color: undefined }
+    })
+  }
 
   // 仅当「玻璃样式 + 设备系统达到 API 26」时启用真·液态玻璃；
   // 其余情况（经典样式、老系统）回退到原有 backgroundEffect 玻璃模糊。
   private liquidGlassEnabled(): boolean {
-    return this.tabStyle === 'immersive' && deviceInfo.apiAvailable('26.0.0')
+    return this.tabStyle === 'immersive' && isLiquidGlassAvailable()
   }
 
   private liquidGlassTabMaterial(): uiMaterial.Material | undefined {
-    return this.liquidGlassEnabled() ? this.liquidGlassMaterial : undefined
+    return this.liquidGlassEnabled() ? this.liquidGlassMaterial() : undefined
   }
 
   private isSongInfoShort(): boolean {
@@ -210,8 +219,8 @@ struct MainPage {
         .backgroundColor(Color.Transparent)
         .backgroundEffect({
           radius: this.glassBlurRadius(),
-          saturation: this.glassSaturation(),
-          brightness: this.glassBrightness()
+          saturation: this.glassSaturation,
+          brightness: this.glassBrightness
         })
         .border({ width: 1, color: 'rgba(255,255,255,0.22)' })
         .shadow({ radius: 18, color: ColorHelper.hexWithAlpha(this.primaryColor, '44'), offsetY: 5 })
@@ -278,8 +287,8 @@ struct MainPage {
       // 未启用时保留原有玻璃模糊作为回退
       .backgroundEffect({
         radius: this.liquidGlassEnabled() ? 0 : this.glassBlurRadius(),
-        saturation: this.liquidGlassEnabled() ? 1 : this.glassSaturation(),
-        brightness: this.liquidGlassEnabled() ? 1 : this.glassBrightness()
+        saturation: this.liquidGlassEnabled() ? 1 : this.glassSaturation,
+        brightness: this.liquidGlassEnabled() ? 1 : this.glassBrightness
       })
       // 液态玻璃：沉浸式系统材质 + 光效跟手 + 交互形变；能力不足时传 undefined 关闭
       .systemMaterial(this.liquidGlassTabMaterial())
@@ -519,8 +528,8 @@ struct MainPage {
     .backgroundColor(Color.Transparent)
     .backgroundEffect({
       radius: this.glassBlurRadius(),
-      saturation: this.glassSaturation(),
-      brightness: this.glassBrightness()
+      saturation: this.glassSaturation,
+      brightness: this.glassBrightness
     })
     .border({
       width: 1,
