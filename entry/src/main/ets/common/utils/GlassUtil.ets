@@ -37,7 +37,7 @@ export function glassStyleLabel(value: number): string {
 // backgroundBlurStyle 用的 BlurStyle 枚举（API 7+，所有设备可用）
 export function glassBlurStyleFromStrength(value: number): BlurStyle {
   if (value < 15) {
-    return BlurStyle.None
+    return BlurStyle.NONE
   }
   if (value < 35) {
     return BlurStyle.Thin
