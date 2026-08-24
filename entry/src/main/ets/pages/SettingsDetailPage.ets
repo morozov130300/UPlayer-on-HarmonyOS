@@ -67,7 +67,7 @@ struct SettingsDetailPage {
   private dataService: DataService = DataService.getInstance()
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
   private isPC: boolean = deviceInfo.deviceType === '2in1'
-  // 质感握姿：开关 + 置信度滤波（连续 N 帧同向才翻转，避免短暂切换造成的"跳变"）
+  // 智感握姿：开关 + 置信度滤波（连续 N 帧同向才翻转，避免短暂切换造成的"跳变"）
   @StorageLink('uplayer_holding_hand_enabled') @Watch('onHoldingHandEnabledChange') holdingHandEnabled: boolean = true
   private holdLastStatus: motion.HoldingHandStatus | undefined = undefined
   private holdStreakCount: number = 0
@@ -190,40 +190,47 @@ struct SettingsDetailPage {
       (1.6 - this.homeTopBlurStrength * 0.004)
   }
 
+  // 统一预览方块规范：64×40 圆角方块，红→黄→绿→蓝渐变底 + 文字标签 + 1px 边框，
+  // 与设置页其他预览器（玻璃档位/饱和度/亮度/智感握姿）共用同尺寸同风格。
+  // 不同的是内部叠层：
+  //   - homeTopBlurPreview：渐变模糊 (linearGradientBlur) 强度随首页上端模糊强度变化
+  //   - glassStylePreview：模糊半径 + 液态玻璃材质叠加
+  //   - glassSaturationPreview：饱和度变化
+  //   - glassBrightnessPreview：亮度变化
+  //   - holdingHandPreview：左右切手示意
   @Builder
   homeTopBlurPreview(): void {
     Stack({ alignContent: Alignment.Center }) {
-      Text('首页上端')
-        .fontSize(this.scaledFont(12))
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryColor)
-        .letterSpacing(this.scaledSize(1))
       Row()
         .width('100%')
         .height('100%')
-        .backgroundColor(Color.Transparent)
-        .linearGradientBlur(this.homeTopBlurRadius(), {
+        .linearGradient({
+          angle: 135,
+          colors: [
+            ['#FF6B6B', 0.0],
+            ['#FFD93D', 0.45],
+            ['#6BCB77', 0.75],
+            ['#4D96FF', 1.0]
+          ]
+        })
+        .borderRadius(this.scaledSize(10))
+        .linearGradientBlur(Math.max(0, this.settings.homeTopBlurStrength * 0.4), {
           fractionStops: [[1, 0], [1, 0.5], [0, 1]],
           direction: GradientDirection.Bottom
         })
-      Row()
-        .width('100%')
-        .height('100%')
-        .borderRadius(this.scaledSize(18))
-        .linearGradient({
-          angle: 180,
-          colors: [
-            [ColorHelper.hexToRgba(this.primaryColor, 0.16), 0],
-            [ColorHelper.hexToRgba(this.primaryColor, 0.04), 0.55],
-            ['rgba(0,0,0,0)', 1]
-          ]
-        })
-        .border({ width: 1, color: 'rgba(255,255,255,0.28)' })
-        .shadow({ radius: 12, color: ColorHelper.hexWithAlpha(this.primaryColor, '44') })
+      Text('顶部')
+        .fontSize(this.scaledFont(10))
+        .fontColor('#FFFFFF')
+        .fontWeight(FontWeight.Bold)
+        .textShadow({ radius: 2, color: '#00000088', offsetX: 0, offsetY: 1 })
     }
-    .width(this.scaledSize(82))
-    .height(this.scaledSize(36))
-    .borderRadius(this.scaledSize(18))
+    .width(this.scaledSize(64))
+    .height(this.scaledSize(40))
+    .borderRadius(this.scaledSize(10))
+    .border({
+      width: 1,
+      color: this.isDark() ? ColorHelper.hexWithAlpha('#FFFFFF', '33') : ColorHelper.hexWithAlpha(this.primaryColor, '33')
+    })
     .clip(true)
   }
 
@@ -458,8 +465,8 @@ struct SettingsDetailPage {
     return this.isGlassEnabled() ? glassBlurStyleFromStrength(this.glassStyle) : undefined
   }
 
-  // 玻璃强度实时预览方块：纯渐变彩色背景 + 同步的 systemMaterial/blur，
-  // 用户拖滑轨时看到的就是实际玻璃效果。
+  // 玻璃强度实时预览方块：与所有预览器同尺寸同风格，仅叠层不同
+  // 这里叠的是 backgroundEffect.radius + 液态玻璃 systemMaterial
   @Builder
   glassStylePreview(): void {
     Stack({ alignContent: Alignment.Center }) {
@@ -483,14 +490,142 @@ struct SettingsDetailPage {
         } : undefined)
         .systemMaterial(this.settings.glassStyle > 30 && isLiquidGlassAvailable()
           ? createPageGlassMaterial(this.settings.glassStyle) : undefined)
-      Text(this.isDark() ? '预览' : '预览')
+      Text('档位')
         .fontSize(this.scaledFont(10))
         .fontColor('#FFFFFF')
         .fontWeight(FontWeight.Bold)
         .textShadow({ radius: 2, color: '#00000088', offsetX: 0, offsetY: 1 })
     }
-    .width(this.scaledSize(56))
-    .height(this.scaledSize(36))
+    .width(this.scaledSize(64))
+    .height(this.scaledSize(40))
+    .borderRadius(this.scaledSize(10))
+    .border({
+      width: 1,
+      color: this.isDark() ? ColorHelper.hexWithAlpha('#FFFFFF', '33') : ColorHelper.hexWithAlpha(this.primaryColor, '33')
+    })
+    .clip(true)
+  }
+
+  // 玻璃饱和度实时预览：与所有预览器同尺寸同风格，叠 saturation 变化
+  @Builder
+  glassSaturationPreview(): void {
+    Stack({ alignContent: Alignment.Center }) {
+      Row()
+        .width('100%')
+        .height('100%')
+        .linearGradient({
+          angle: 135,
+          colors: [
+            ['#FF6B6B', 0.0],
+            ['#FFD93D', 0.45],
+            ['#6BCB77', 0.75],
+            ['#4D96FF', 1.0]
+          ]
+        })
+        .borderRadius(this.scaledSize(10))
+        .backgroundEffect(this.settings.glassStyle > 15 ? {
+          radius: this.settings.glassStyle * 0.4,
+          saturation: this.settings.glassSaturation,
+          brightness: this.glassBrightness
+        } : undefined)
+      Text('饱和')
+        .fontSize(this.scaledFont(10))
+        .fontColor('#FFFFFF')
+        .fontWeight(FontWeight.Bold)
+        .textShadow({ radius: 2, color: '#00000088', offsetX: 0, offsetY: 1 })
+    }
+    .width(this.scaledSize(64))
+    .height(this.scaledSize(40))
+    .borderRadius(this.scaledSize(10))
+    .border({
+      width: 1,
+      color: this.isDark() ? ColorHelper.hexWithAlpha('#FFFFFF', '33') : ColorHelper.hexWithAlpha(this.primaryColor, '33')
+    })
+    .clip(true)
+  }
+
+  // 玻璃亮度实时预览：与所有预览器同尺寸同风格，叠 brightness 变化
+  @Builder
+  glassBrightnessPreview(): void {
+    Stack({ alignContent: Alignment.Center }) {
+      Row()
+        .width('100%')
+        .height('100%')
+        .linearGradient({
+          angle: 135,
+          colors: [
+            ['#FF6B6B', 0.0],
+            ['#FFD93D', 0.45],
+            ['#6BCB77', 0.75],
+            ['#4D96FF', 1.0]
+          ]
+        })
+        .borderRadius(this.scaledSize(10))
+        .backgroundEffect(this.settings.glassStyle > 15 ? {
+          radius: this.settings.glassStyle * 0.4,
+          saturation: this.glassSaturation,
+          brightness: this.settings.glassBrightness
+        } : undefined)
+      Text('亮度')
+        .fontSize(this.scaledFont(10))
+        .fontColor('#FFFFFF')
+        .fontWeight(FontWeight.Bold)
+        .textShadow({ radius: 2, color: '#00000088', offsetX: 0, offsetY: 1 })
+    }
+    .width(this.scaledSize(64))
+    .height(this.scaledSize(40))
+    .borderRadius(this.scaledSize(10))
+    .border({
+      width: 1,
+      color: this.isDark() ? ColorHelper.hexWithAlpha('#FFFFFF', '33') : ColorHelper.hexWithAlpha(this.primaryColor, '33')
+    })
+    .clip(true)
+  }
+
+  // 智感握姿实时预览：显示左右两个手形圆点，previewOnRight 决定哪个高亮
+  @Builder
+  holdingHandPreview(): void {
+    Stack({ alignContent: Alignment.Center }) {
+      Row()
+        .width('100%')
+        .height('100%')
+        .linearGradient({
+          angle: 135,
+          colors: [
+            ['#FF6B6B', 0.0],
+            ['#FFD93D', 0.45],
+            ['#6BCB77', 0.75],
+            ['#4D96FF', 1.0]
+          ]
+        })
+        .borderRadius(this.scaledSize(10))
+      Row() {
+        // 左手侧圆点：previewOnRight=false 时高亮
+        Row()
+          .width(this.scaledSize(8))
+          .height(this.scaledSize(8))
+          .borderRadius(this.scaledSize(4))
+          .backgroundColor(this.settings.holdingHandEnabled && !this.previewOnRight
+            ? '#FFFFFF' : ColorHelper.hexWithAlpha('#FFFFFF', '55'))
+        Blank()
+        // 右手侧圆点：previewOnRight=true 时高亮
+        Row()
+          .width(this.scaledSize(8))
+          .height(this.scaledSize(8))
+          .borderRadius(this.scaledSize(4))
+          .backgroundColor(this.settings.holdingHandEnabled && this.previewOnRight
+            ? '#FFFFFF' : ColorHelper.hexWithAlpha('#FFFFFF', '55'))
+      }
+      .width('80%')
+      .height('100%')
+      Text(this.settings.holdingHandEnabled ? (this.previewOnRight ? '右手' : '左手') : '关闭')
+        .fontSize(this.scaledFont(10))
+        .fontColor('#FFFFFF')
+        .fontWeight(FontWeight.Bold)
+        .textShadow({ radius: 2, color: '#00000088', offsetX: 0, offsetY: 1 })
+    }
+    .width(this.scaledSize(64))
+    .height(this.scaledSize(40))
     .borderRadius(this.scaledSize(10))
     .border({
       width: 1,
@@ -676,7 +811,7 @@ struct SettingsDetailPage {
           .fontWeight(FontWeight.Bold)
           .fontColor(this.settingTextColor())
           .width('100%')
-        Text('控制玻璃材质的模糊强度：值越大越模糊。调节时右侧预览方块会实时反映效果。仅当底部栏样式为「玻璃」时生效。')
+        Text('控制玻璃材质的模糊强度：值越大越模糊。调节时右侧预览方块会实时反映效果。作用于所有使用玻璃的位置：底部 Tab 栏、右下角播控条、顶部的模糊层、四个一级页面的背景。')
           .fontSize(this.scaledFont(12))
           .fontColor(this.settingSubTextColor())
           .width('100%')
@@ -729,11 +864,10 @@ struct SettingsDetailPage {
           .fontSize(this.scaledFont(12))
           .fontColor(this.settingSubTextColor())
           .width('100%')
-        Row() {
+        Row({ space: this.scaledSize(12) }) {
           Text('淡')
             .fontSize(this.scaledFont(12))
             .fontColor(this.settingTextColor())
-            .margin({ right: this.scaledSize(8) })
           Slider({
             value: this.settings.glassSaturation * 100,
             min: 100,
@@ -755,10 +889,7 @@ struct SettingsDetailPage {
                 this.updateSetting()
               }
             })
-          Text('浓')
-            .fontSize(this.scaledFont(12))
-            .fontColor(this.settingTextColor())
-            .margin({ left: this.scaledSize(8) })
+          this.glassSaturationPreview()
         }
         .width('100%')
         .alignItems(VerticalAlign.Center)
@@ -780,11 +911,10 @@ struct SettingsDetailPage {
           .fontSize(this.scaledFont(12))
           .fontColor(this.settingSubTextColor())
           .width('100%')
-        Row() {
+        Row({ space: this.scaledSize(12) }) {
           Text('暗')
             .fontSize(this.scaledFont(12))
             .fontColor(this.settingTextColor())
-            .margin({ right: this.scaledSize(8) })
           Slider({
             value: this.settings.glassBrightness * 100,
             min: 80,
@@ -806,10 +936,7 @@ struct SettingsDetailPage {
                 this.updateSetting()
               }
             })
-          Text('亮')
-            .fontSize(this.scaledFont(12))
-            .fontColor(this.settingTextColor())
-            .margin({ left: this.scaledSize(8) })
+          this.glassBrightnessPreview()
         }
         .width('100%')
         .alignItems(VerticalAlign.Center)
@@ -870,9 +997,9 @@ struct SettingsDetailPage {
       .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(this.scaledSize(10))
 
-      // 质感握姿开关：标题（大）+ 说明（小、浅色）+ Toggle
-      Column({ space: this.scaledSize(4) }) {
-        Text('质感握姿')
+      // 智感握姿开关：标题（大）+ 说明（小、浅色）+ Row 内 Toggle 与预览方块同侧
+      Column({ space: this.scaledSize(6) }) {
+        Text('智感握姿')
           .fontSize(this.scaledFont(17))
           .fontWeight(FontWeight.Bold)
           .fontColor(this.settingTextColor())
@@ -881,31 +1008,36 @@ struct SettingsDetailPage {
           .fontSize(this.scaledFont(12))
           .fontColor(this.settingSubTextColor())
           .width('100%')
-        this.toggleRow('启用质感握姿', this.settings.holdingHandEnabled, (val: boolean) => {
-          this.settings.holdingHandEnabled = val
-          this.holdingHandEnabled = val
-          this.updateSetting()
-          this.refreshHoldingHandListener()
-        })
+        Row({ space: this.scaledSize(12) }) {
+          Toggle({ type: ToggleType.Switch, isOn: this.settings.holdingHandEnabled })
+            .selectedColor(this.primaryColor)
+            .onChange((isOn: boolean) => {
+              this.settings.holdingHandEnabled = isOn
+              this.holdingHandEnabled = isOn
+              this.updateSetting()
+              this.refreshHoldingHandListener()
+            })
+            .flexShrink(0)
+          Blank()
+          this.holdingHandPreview()
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+        .padding({ top: this.scaledSize(4), bottom: this.scaledSize(4) })
       }
       .width('100%')
       .padding({ top: this.scaledSize(12), left: this.scaledSize(14), right: this.scaledSize(14), bottom: this.scaledSize(12) })
       .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(this.scaledSize(10))
 
-      Column() {
+      Column({ space: this.scaledSize(6) }) {
         this.sectionTitle('首页上端模糊强度')
-        Row() {
-          if (!this.previewOnRight) {
-            this.homeTopBlurPreview()
-          }
-          Text('弱')
-            .fontSize(this.scaledFont(11))
-            .fontColor(this.settingTextColor())
-            .margin({
-              left: this.previewOnRight ? 0 : this.scaledSize(14),
-              right: this.scaledSize(8)
-            })
+        Text('控制首页顶部标题区玻璃模糊的渐变强度。调节时右侧预览方块会实时反映效果。')
+          .fontSize(this.scaledFont(12))
+          .fontColor(this.settingSubTextColor())
+          .width('100%')
+          .padding({ left: this.scaledSize(2) })
+        Row({ space: this.scaledSize(12) }) {
           Slider({
             value: this.settings.homeTopBlurStrength,
             min: 0,
@@ -913,7 +1045,6 @@ struct SettingsDetailPage {
             step: 1,
             style: SliderStyle.OutSet
           })
-            .width('55%')
             .layoutWeight(1)
             .selectedColor(this.primaryColor)
             .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
@@ -928,21 +1059,12 @@ struct SettingsDetailPage {
                 this.updateSetting()
               }
             })
-          Text('强')
-            .fontSize(this.scaledFont(11))
-            .fontColor(this.settingTextColor())
-            .margin({ left: this.scaledSize(8) })
-          if (this.previewOnRight) {
-            Blank()
-              .width(this.scaledSize(14))
-            this.homeTopBlurPreview()
-          }
+          this.homeTopBlurPreview()
         }
-        .padding({
-          left: this.scaledSize(12), right: this.scaledSize(12),
-          top: this.scaledSize(2), bottom: this.scaledSize(10)
-        })
         .width('100%')
+        .alignItems(VerticalAlign.Center)
+        .padding({ top: this.scaledSize(4), bottom: this.scaledSize(4) })
+      }
         .alignItems(VerticalAlign.Center)
       }
       .width('100%')
