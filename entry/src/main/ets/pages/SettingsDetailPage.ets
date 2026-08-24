@@ -1065,10 +1065,9 @@ struct SettingsDetailPage {
         .alignItems(VerticalAlign.Center)
         .padding({ top: this.scaledSize(4), bottom: this.scaledSize(4) })
       }
-        .alignItems(VerticalAlign.Center)
-      }
       .width('100%')
-      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .padding({ top: this.scaledSize(12), left: this.scaledSize(14), right: this.scaledSize(14), bottom: this.scaledSize(12) })
+      .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(this.scaledSize(10))
 
       Column() {
