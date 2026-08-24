@@ -22,7 +22,7 @@
     },
     {
       "name": "music_player_bg",
-      "value": "#1A1A1A"
+      "value": "#000000"
     },
     {
       "name": "album_background",
@@ -46,7 +46,7 @@
     },
     {
       "name": "player_background",
-      "value": "#1A1A1A"
+      "value": "#000000"
     },
     {
       "name": "title_font",
@@ -54,7 +54,7 @@
     },
     {
       "name": "page_background_sm",
-      "value": "#1A1A1A"
+      "value": "#000000"
     },
     {
       "name": "page_background_other",
