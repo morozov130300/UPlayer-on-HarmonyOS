@@ -942,71 +942,7 @@ struct SettingsDetailPage {
           0.04))
         .borderRadius(this.scaledSize(10))
 
-        // 底部栏触摸反馈指示（玻璃模式下生效）：跟手光效 / 白色蒙版 二选一，互斥
-        Column({ space: this.scaledSize(6) }) {
-          this.subTitle('底部栏触摸指示')
-          Text('选择点击/拖动底部栏时的反馈样式：跟手光效或白色蒙版。同时仅一种生效。')
-            .fontSize(this.scaledFont(12))
-            .fontColor(this.settingSubTextColor())
-            .width('100%')
-          Row() {
-            Blank()
-            Column() {
-              Text('跟手光效')
-                .fontSize(this.scaledFont(11))
-                .fontColor(this.settings.tabTouchIndicator === 'light'
-                  ? '#FFFFFF' : this.settingInactiveTextColor())
-            }
-            .padding({
-              left: this.scaledSize(10),
-              right: this.scaledSize(10),
-              top: this.scaledSize(5),
-              bottom: this.scaledSize(5)
-            })
-            .backgroundColor(this.settings.tabTouchIndicator === 'light'
-              ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
-            .borderRadius(this.scaledSize(14))
-            .margin({ right: this.scaledSize(8) })
-            .onClick(() => {
-              this.settings.tabTouchIndicator = 'light'
-              this.updateSetting()
-              AppStorage.setOrCreate('uplayer_tab_touch_indicator', 'light')
-            })
-            Column() {
-              Text('白色蒙版')
-                .fontSize(this.scaledFont(11))
-                .fontColor(this.settings.tabTouchIndicator === 'mask'
-                  ? '#FFFFFF' : this.settingInactiveTextColor())
-            }
-            .padding({
-              left: this.scaledSize(10),
-              right: this.scaledSize(10),
-              top: this.scaledSize(5),
-              bottom: this.scaledSize(5)
-            })
-            .backgroundColor(this.settings.tabTouchIndicator === 'mask'
-              ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
-            .borderRadius(this.scaledSize(14))
-            .onClick(() => {
-              this.settings.tabTouchIndicator = 'mask'
-              this.updateSetting()
-              AppStorage.setOrCreate('uplayer_tab_touch_indicator', 'mask')
-            })
-          }
-          .width('100%')
-        }
-        .width('100%')
-        .padding({
-          top: this.scaledSize(10),
-          left: this.scaledSize(14),
-          right: this.scaledSize(14),
-          bottom: this.scaledSize(10)
-        })
-        .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor,
-          0.04))
-        .borderRadius(this.scaledSize(10))
-
-        // 玻璃效果生效范围说明：一级标题右上角的小叹号已经引出弹窗，这里只保留两张卡的占位开关（已折叠）
+        // 玻璃效果生效范围：已通过一级标题右上角的小叹号引出弹窗说明
       }
       .width('100%')
       .opacity(this.glassGroupOpacity)
