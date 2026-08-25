@@ -1,4 +1,4 @@
-import { curves, uiAppearance, TransitionEffect, TransitionEdge } from '@kit.ArkUI'
+import { curves, uiAppearance } from '@kit.ArkUI'
 import { common, ConfigurationConstant } from '@kit.AbilityKit'
 import { DataService, AppSettingsData } from '../service/DataService'
 import { AVPlayerService } from '../service/AVPlayerService'

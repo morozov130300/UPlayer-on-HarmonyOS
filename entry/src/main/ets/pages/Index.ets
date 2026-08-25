@@ -162,10 +162,10 @@ struct MainPage {
     })
   }
 
-  // 开启白色蒙版（按下雾蒙蒙的发白指示器）时返回 hoverEffect.Halo，否则返回 null
-  // Halo 是系统的按下态效果，按下时从触点散开一个白色光环，正好可以替代系统级"发白指示器"。
+  // 开启白色蒙版（按下雾蒙蒙的发白指示器）时返回 hoverEffect.Highlight，否则返回 Scale
+  // Highlight 是系统的按下态高亮效果，按下时出现白色蒙层，正好替代系统级"发白指示器"。
   private bottomHoverEffect(): HoverEffect {
-    return this.tabTouchIndicator === 'mask' ? HoverEffect.Halo : HoverEffect.Scale
+    return this.tabTouchIndicator === 'mask' ? HoverEffect.Highlight : HoverEffect.Scale
   }
 
   // 仅当「玻璃样式 + 设备系统达到 API 26」时启用真·液态玻璃；
