@@ -1185,12 +1185,6 @@ struct SettingsDetailPage {
           Row() {
             if (!this.previewOnRight) {
               this.glassBlurPreview()
-                .transition(TransitionEffect.asymmetric(
-                  TransitionEffect.OPACITY.combine(TransitionEffect.move(TransitionEdge.START))
-                    .animation({ duration: 320, curve: Curve.EaseInOut }),
-                  TransitionEffect.OPACITY.combine(TransitionEffect.move(TransitionEdge.START))
-                    .animation({ duration: 320, curve: Curve.EaseInOut })
-                ))
             }
             Text('弱')
               .fontSize(this.scaledFont(11))
@@ -1229,12 +1223,6 @@ struct SettingsDetailPage {
               Blank()
                 .width(this.scaledSize(14))
               this.glassBlurPreview()
-                .transition(TransitionEffect.asymmetric(
-                  TransitionEffect.OPACITY.combine(TransitionEffect.move(TransitionEdge.END))
-                    .animation({ duration: 320, curve: Curve.EaseInOut }),
-                  TransitionEffect.OPACITY.combine(TransitionEffect.move(TransitionEdge.END))
-                    .animation({ duration: 320, curve: Curve.EaseInOut })
-                ))
             }
           }
           .padding({
@@ -1253,12 +1241,6 @@ struct SettingsDetailPage {
           Row() {
             if (!this.previewOnRight) {
               this.tabIndicatorPreview()
-                .transition(TransitionEffect.asymmetric(
-                  TransitionEffect.OPACITY.combine(TransitionEffect.move(TransitionEdge.START))
-                    .animation({ duration: 320, curve: Curve.EaseInOut }),
-                  TransitionEffect.OPACITY.combine(TransitionEffect.move(TransitionEdge.START))
-                    .animation({ duration: 320, curve: Curve.EaseInOut })
-                ))
             }
             Text('浅')
               .fontSize(this.scaledFont(11))
@@ -1297,12 +1279,6 @@ struct SettingsDetailPage {
               Blank()
                 .width(this.scaledSize(14))
               this.tabIndicatorPreview()
-                .transition(TransitionEffect.asymmetric(
-                  TransitionEffect.OPACITY.combine(TransitionEffect.move(TransitionEdge.END))
-                    .animation({ duration: 320, curve: Curve.EaseInOut }),
-                  TransitionEffect.OPACITY.combine(TransitionEffect.move(TransitionEdge.END))
-                    .animation({ duration: 320, curve: Curve.EaseInOut })
-                ))
             }
           }
           .padding({
