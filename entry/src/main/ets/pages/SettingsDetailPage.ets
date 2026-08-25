@@ -55,9 +55,6 @@ struct SettingsDetailPage {
   @StorageLink('uplayer_glass_saturation') glassSaturation: number = 1.4
   @StorageLink('uplayer_glass_brightness') glassBrightness: number = 1.02
   @StorageLink('uplayer_glass_style') glassStyle: number = 50
-  @StorageLink('uplayer_light_color_mode') lightColorMode: string = 'theme'
-  @StorageLink('uplayer_tab_touch_indicator') tabTouchIndicator: string = 'light'
-  @StorageLink('uplayer_holding_hand_layout_animation') holdingHandLayoutAnimation: boolean = true
   @State pageTitle: string = ''
   @State previewOnRight: boolean = false
   @State showColorPicker: boolean = false
@@ -806,6 +803,132 @@ struct SettingsDetailPage {
       .width('100%')
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(10)
+
+      // ─── 一级标题「底部栏交互」（经典/玻璃两种样式下都生效，与底部栏样式相关）───
+      Column() {
+        this.groupTitle('底部栏交互', false)
+
+        // 跟手光效颜色：白光 / 主题色
+        Column() {
+          Row() {
+            this.subTitle('跟手光效颜色')
+            Blank()
+            Column() {
+              Text('白光')
+                .fontSize(this.scaledFont(11))
+                .fontColor(this.settings.lightColorMode === 'white'
+                  ? '#FFFFFF' : this.settingInactiveTextColor())
+            }
+            .padding({
+              left: this.scaledSize(10),
+              right: this.scaledSize(10),
+              top: this.scaledSize(5),
+              bottom: this.scaledSize(5)
+            })
+            .backgroundColor(this.settings.lightColorMode === 'white'
+              ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+            .borderRadius(this.scaledSize(14))
+            .margin({ right: this.scaledSize(8) })
+            .onClick(() => {
+              this.settings.lightColorMode = 'white'
+              this.updateSetting()
+              AppStorage.setOrCreate('uplayer_light_color_mode', 'white')
+            })
+            Column() {
+              Text('主题色')
+                .fontSize(this.scaledFont(11))
+                .fontColor(this.settings.lightColorMode === 'theme'
+                  ? '#FFFFFF' : this.settingInactiveTextColor())
+            }
+            .padding({
+              left: this.scaledSize(10),
+              right: this.scaledSize(10),
+              top: this.scaledSize(5),
+              bottom: this.scaledSize(5)
+            })
+            .backgroundColor(this.settings.lightColorMode === 'theme'
+              ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+            .borderRadius(this.scaledSize(14))
+            .onClick(() => {
+              this.settings.lightColorMode = 'theme'
+              this.updateSetting()
+              AppStorage.setOrCreate('uplayer_light_color_mode', 'theme')
+            })
+          }
+          .width('100%')
+          .padding({ left: this.scaledSize(2), right: this.scaledSize(2), top: this.scaledSize(2), bottom: this.scaledSize(6) })
+        }
+        .width('100%')
+        .padding({
+          top: this.scaledSize(10),
+          left: this.scaledSize(14),
+          right: this.scaledSize(14),
+          bottom: this.scaledSize(10)
+        })
+        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+        .borderRadius(this.scaledSize(10))
+
+        // 底部栏触摸指示：跟手光效 / 白色蒙版 二选一，互斥
+        Column() {
+          Row() {
+            this.subTitle('底部栏触摸指示')
+            Blank()
+            Column() {
+              Text('跟手光效')
+                .fontSize(this.scaledFont(11))
+                .fontColor(this.settings.tabTouchIndicator === 'light'
+                  ? '#FFFFFF' : this.settingInactiveTextColor())
+            }
+            .padding({
+              left: this.scaledSize(10),
+              right: this.scaledSize(10),
+              top: this.scaledSize(5),
+              bottom: this.scaledSize(5)
+            })
+            .backgroundColor(this.settings.tabTouchIndicator === 'light'
+              ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+            .borderRadius(this.scaledSize(14))
+            .margin({ right: this.scaledSize(8) })
+            .onClick(() => {
+              this.settings.tabTouchIndicator = 'light'
+              this.updateSetting()
+              AppStorage.setOrCreate('uplayer_tab_touch_indicator', 'light')
+            })
+            Column() {
+              Text('白色蒙版')
+                .fontSize(this.scaledFont(11))
+                .fontColor(this.settings.tabTouchIndicator === 'mask'
+                  ? '#FFFFFF' : this.settingInactiveTextColor())
+            }
+            .padding({
+              left: this.scaledSize(10),
+              right: this.scaledSize(10),
+              top: this.scaledSize(5),
+              bottom: this.scaledSize(5)
+            })
+            .backgroundColor(this.settings.tabTouchIndicator === 'mask'
+              ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+            .borderRadius(this.scaledSize(14))
+            .onClick(() => {
+              this.settings.tabTouchIndicator = 'mask'
+              this.updateSetting()
+              AppStorage.setOrCreate('uplayer_tab_touch_indicator', 'mask')
+            })
+          }
+          .width('100%')
+          .padding({ left: this.scaledSize(2), right: this.scaledSize(2), top: this.scaledSize(2), bottom: this.scaledSize(6) })
+        }
+        .width('100%')
+        .padding({
+          top: this.scaledSize(10),
+          left: this.scaledSize(14),
+          right: this.scaledSize(14),
+          bottom: this.scaledSize(10)
+        })
+        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+        .borderRadius(this.scaledSize(10))
+      }
+      .width('100%')
 
       // ─── 一级标题「高级样式」（玻璃模式下显示） + 右上角叹号角标 ───
       // 点击叹号弹窗说明玻璃效果所影响的所有位置
