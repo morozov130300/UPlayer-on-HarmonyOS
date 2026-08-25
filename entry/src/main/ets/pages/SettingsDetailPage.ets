@@ -1,4 +1,4 @@
-import { curves, uiAppearance } from '@kit.ArkUI'
+import { curves, uiAppearance, TransitionEffect, TransitionEdge } from '@kit.ArkUI'
 import { common, ConfigurationConstant } from '@kit.AbilityKit'
 import { DataService, AppSettingsData } from '../service/DataService'
 import { AVPlayerService } from '../service/AVPlayerService'
@@ -10,7 +10,6 @@ import { motion } from '@kit.MultimodalAwarenessKit'
 import { ColorConversion } from '../common/utils/ColorConversion'
 import {
   createPageGlassMaterial,
-  glassStyleLabel,
   isLiquidGlassAvailable
 } from '../common/utils/GlassUtil'
 import { StyleConstants } from '../common/constants/StyleConstants'
@@ -55,9 +54,17 @@ struct SettingsDetailPage {
   @StorageLink('uplayer_tab_indicator_opacity') tabIndicatorOpacity: number = 50
   @StorageLink('uplayer_glass_saturation') glassSaturation: number = 1.4
   @StorageLink('uplayer_glass_brightness') glassBrightness: number = 1.02
+  @StorageLink('uplayer_glass_style') glassStyle: number = 50
+  @StorageLink('uplayer_light_color_mode') lightColorMode: string = 'theme'
+  @StorageLink('uplayer_tab_touch_indicator') tabTouchIndicator: string = 'light'
+  @StorageLink('uplayer_holding_hand_layout_animation') holdingHandLayoutAnimation: boolean = true
   @State pageTitle: string = ''
   @State previewOnRight: boolean = false
   @State showColorPicker: boolean = false
+  @State showGlassScope: boolean = false
+  // 经典 / 玻璃切换的淡入淡出：0=完全隐藏，1=完全显示
+  @State classicGroupOpacity: number = 1
+  @State glassGroupOpacity: number = 0
   @State pickerHue: number = 210
   @State pickerSaturation: number = 1
   @State pickerValue: number = 1
@@ -130,7 +137,23 @@ struct SettingsDetailPage {
     const route: string = params?.category ?? 'customize'
     this.pageTitle = this.titleMap[route] ?? '设置'
     ColorConversion.setSysBarLightBackground(this.isDark())
+    // 切到"定制"页时按当前底部栏样式设置组可见度的初值（避免首次进入看到两边都/都不显示）
+    this.syncTabStyleGroups(this.settings.tabStyle, false)
     this.registerHoldingHandListener()
+  }
+
+  private syncTabStyleGroups(style: string, animate: boolean): void {
+    if (!animate) {
+      this.classicGroupOpacity = style === 'classic' ? 1 : 0
+      this.glassGroupOpacity = style === 'immersive' ? 1 : 0
+      return
+    }
+    const targetClassic: number = style === 'classic' ? 1 : 0
+    const targetGlass: number = style === 'immersive' ? 1 : 0
+    this.getUIContext()?.animateTo({ duration: 280, curve: Curve.EaseInOut }, () => {
+      this.classicGroupOpacity = targetClassic
+      this.glassGroupOpacity = targetGlass
+    })
   }
 
   aboutToDisappear(): void {
@@ -354,6 +377,8 @@ struct SettingsDetailPage {
     })
     this.updateSetting()
     AppStorage.setOrCreate('uplayer_tab_style', style)
+    // 触发经典/玻璃卡片组的淡入淡出
+    this.syncTabStyleGroups(style, true)
   }
 
   applyThemeMode(mode: string): void {
@@ -452,12 +477,13 @@ struct SettingsDetailPage {
       .opacity(0)
   }
 
-  // 玻璃强度实时预览方块：与所有预览器同尺寸同风格，仅叠层不同
-  // 这里叠的是 backgroundEffect.radius + 液态玻璃 systemMaterial
+  // "高级样式"三档（厚度/饱和度/亮度）共用一个预览方块，根据当前聚焦项在内部切换标签
+  // 修复了原先 0-15 无反应 / 16 突变的阈值问题：backgroundEffect 始终启用，radius 线性映射，
+  // 使滑轨从 0 到 100 的每一档都有渐变；预览与系统实际渲染比例一致。
   @Builder
-  glassStylePreview(): void {
+  glassAdvancedPreview(focusLabel: string): void {
     Stack({ alignContent: Alignment.Center }) {
-      Text('玻璃档位')
+      Text(focusLabel)
         .fontSize(this.scaledFont(12))
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryColor)
@@ -467,11 +493,11 @@ struct SettingsDetailPage {
         .height('100%')
         .borderRadius(this.scaledSize(18))
         .backgroundColor(Color.Transparent)
-        .backgroundEffect(this.settings.glassStyle > 15 ? {
-          radius: this.settings.glassStyle * 0.4,
-          saturation: this.glassSaturation,
-          brightness: this.glassBrightness
-        } : undefined)
+        .backgroundEffect({
+          radius: this.settings.glassStyle * 0.5,
+          saturation: this.settings.glassSaturation,
+          brightness: this.settings.glassBrightness
+        })
         .systemMaterial(this.settings.glassStyle > 30 && isLiquidGlassAvailable()
           ? createPageGlassMaterial(this.settings.glassStyle) : undefined)
         .border({ width: 1, color: 'rgba(255,255,255,0.28)' })
@@ -483,110 +509,7 @@ struct SettingsDetailPage {
     .clip(true)
   }
 
-  // 玻璃饱和度实时预览：与 homeTopBlurPreview 同款 82×36 圆角 18 风格
-  @Builder
-  glassSaturationPreview(): void {
-    Stack({ alignContent: Alignment.Center }) {
-      Text('玻璃饱和')
-        .fontSize(this.scaledFont(12))
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryColor)
-        .letterSpacing(this.scaledSize(1))
-      Row()
-        .width('100%')
-        .height('100%')
-        .borderRadius(this.scaledSize(18))
-        .backgroundColor(Color.Transparent)
-        .backgroundEffect(this.settings.glassStyle > 15 ? {
-          radius: this.settings.glassStyle * 0.4,
-          saturation: this.settings.glassSaturation,
-          brightness: this.glassBrightness
-        } : undefined)
-        .border({ width: 1, color: 'rgba(255,255,255,0.28)' })
-        .shadow({ radius: 12, color: ColorHelper.hexWithAlpha(this.primaryColor, '44') })
-    }
-    .width(this.scaledSize(82))
-    .height(this.scaledSize(36))
-    .borderRadius(this.scaledSize(18))
-    .clip(true)
-  }
-
-  // 玻璃亮度实时预览：与 homeTopBlurPreview 同款 82×36 圆角 18 风格
-  @Builder
-  glassBrightnessPreview(): void {
-    Stack({ alignContent: Alignment.Center }) {
-      Text('玻璃亮度')
-        .fontSize(this.scaledFont(12))
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryColor)
-        .letterSpacing(this.scaledSize(1))
-      Row()
-        .width('100%')
-        .height('100%')
-        .borderRadius(this.scaledSize(18))
-        .backgroundColor(Color.Transparent)
-        .backgroundEffect(this.settings.glassStyle > 15 ? {
-          radius: this.settings.glassStyle * 0.4,
-          saturation: this.glassSaturation,
-          brightness: this.settings.glassBrightness
-        } : undefined)
-        .border({ width: 1, color: 'rgba(255,255,255,0.28)' })
-        .shadow({ radius: 12, color: ColorHelper.hexWithAlpha(this.primaryColor, '44') })
-    }
-    .width(this.scaledSize(82))
-    .height(this.scaledSize(36))
-    .borderRadius(this.scaledSize(18))
-    .clip(true)
-  }
-
-  // 智感握姿实时预览：与 homeTopBlurPreview 同款 82×36 圆角 18 风格
-  // 内部在 Row 上覆盖两个小圆点（左右手），previewOnRight 决定哪个高亮；未开启时两个都暗
-  @Builder
-  holdingHandPreview(): void {
-    Stack({ alignContent: Alignment.Center }) {
-      Text('智感握姿')
-        .fontSize(this.scaledFont(12))
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryColor)
-        .letterSpacing(this.scaledSize(1))
-      Row()
-        .width('100%')
-        .height('100%')
-        .borderRadius(this.scaledSize(18))
-        .backgroundColor(Color.Transparent)
-        .backgroundEffect({
-          radius: this.glassBlurRadius(),
-          saturation: this.glassSaturation,
-          brightness: this.glassBrightness
-        })
-        .border({ width: 1, color: 'rgba(255,255,255,0.28)' })
-        .shadow({ radius: 12, color: ColorHelper.hexWithAlpha(this.primaryColor, '44') })
-      // 左右两个手形圆点：previewOnRight 决定哪个高亮；未开启时两个都暗
-      Row() {
-        Row()
-          .width(this.scaledSize(8))
-          .height(this.scaledSize(8))
-          .borderRadius(this.scaledSize(4))
-          .backgroundColor(this.settings.holdingHandEnabled && !this.previewOnRight
-            ? this.primaryColor : ColorHelper.hexWithAlpha(this.primaryColor, '40'))
-        Blank()
-        Row()
-          .width(this.scaledSize(8))
-          .height(this.scaledSize(8))
-          .borderRadius(this.scaledSize(4))
-          .backgroundColor(this.settings.holdingHandEnabled && this.previewOnRight
-            ? this.primaryColor : ColorHelper.hexWithAlpha(this.primaryColor, '40'))
-      }
-      .width('60%')
-      .height('100%')
-    }
-    .width(this.scaledSize(82))
-    .height(this.scaledSize(36))
-    .borderRadius(this.scaledSize(18))
-    .clip(true)
-  }
-
-  build() {
+    build() {
     Stack() {
       Column() {
         Row() {
@@ -650,6 +573,9 @@ struct SettingsDetailPage {
           if (this.showColorPicker) {
             this.colorPickerOverlay()
           }
+          if (this.showGlassScope) {
+            this.glassScopeOverlay()
+          }
         }
         .width('100%')
         .layoutWeight(1)
@@ -672,6 +598,132 @@ struct SettingsDetailPage {
       .fontWeight(FontWeight.Medium)
       .width('100%')
       .padding({ left: this.scaledSize(4), top: this.scaledSize(6), bottom: this.scaledSize(2) })
+  }
+
+  // 一级标题（用于把同类设置项聚合在一起，可选带右上角「叹号」角标以引出说明弹窗）
+  @Builder
+  groupTitle(title: string, hasHelpIcon: boolean): void {
+    Row() {
+      Text(title)
+        .fontSize(this.scaledFont(11))
+        .fontColor(this.isDark() ? ColorHelper.hexWithAlpha('#FFFFFF', '66')
+          : ColorHelper.hexWithAlpha(this.primaryColor, '77'))
+        .fontWeight(FontWeight.Bold)
+        .letterSpacing(this.scaledSize(2))
+      Blank()
+      if (hasHelpIcon) {
+        Stack({ alignContent: Alignment.Center }) {
+          Circle()
+            .width(this.scaledSize(18))
+            .height(this.scaledSize(18))
+            .fill(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+          SymbolGlyph($r('sys.symbol.questionmark_circle'))
+            .fontSize(this.scaledFont(13))
+            .fontColor([this.primaryColor])
+        }
+        .width(this.scaledSize(18))
+        .height(this.scaledSize(18))
+        .onClick(() => {
+          this.showGlassScope = true
+        })
+      }
+    }
+    .width('100%')
+    .padding({ left: this.scaledSize(8), top: this.scaledSize(14), bottom: this.scaledSize(4) })
+    .alignItems(VerticalAlign.Center)
+  }
+
+  // 二级标题（卡片组的子标题，紧贴在卡片上方）
+  @Builder
+  subTitle(title: string): void {
+    Text(title)
+      .fontSize(this.scaledFont(13))
+      .fontColor(this.isDark() ? ColorHelper.hexWithAlpha('#FFFFFF', '99') : ColorHelper.hexWithAlpha(this.primaryColor,
+        '99'))
+      .fontWeight(FontWeight.Medium)
+      .width('100%')
+      .padding({ left: this.scaledSize(4), bottom: this.scaledSize(4) })
+  }
+
+  // 玻璃效果生效范围说明弹窗
+  @Builder
+  glassScopeOverlay(): void {
+    Stack({ alignContent: Alignment.Center }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor('rgba(0,0,0,0.55)')
+        .onClick(() => {
+          this.showGlassScope = false
+        })
+
+      Column({ space: this.scaledSize(10) }) {
+        Row() {
+          Text('玻璃效果生效范围')
+            .fontSize(this.scaledFont(16))
+            .fontColor(this.settingTextColor())
+            .fontWeight(FontWeight.Bold)
+          Blank()
+          SymbolGlyph($r('sys.symbol.xmark'))
+            .fontSize(this.scaledFont(20))
+            .fontColor([this.settingTextColor()])
+            .onClick(() => {
+              this.showGlassScope = false
+            })
+        }
+        .width('100%')
+
+        Text('以下位置会使用玻璃效果：')
+          .fontSize(this.scaledFont(12))
+          .fontColor(this.settingSubTextColor())
+          .width('100%')
+          .padding({ top: this.scaledSize(2) })
+        this.scopeLine('• 底部 Tab 栏（沉浸式玻璃，带光效跟手 + 按压 Q 弹形变）')
+        this.scopeLine('• 右下角播控条')
+        this.scopeLine('• 顶部的模糊层（首页顶部标题区，覆盖首页第一屏）')
+        this.scopeLine('• 首页 / 歌单 / 设置 / 设置详情 四个一级页面的顶层背景（仅档位与材质在此生效）')
+
+        Text('以下位置不使用玻璃效果：')
+          .fontSize(this.scaledFont(12))
+          .fontColor(this.settingSubTextColor())
+          .width('100%')
+          .padding({ top: this.scaledSize(6) })
+        this.scopeLine('• 音乐播放器页面')
+        this.scopeLine('• 系统API ≤ 26 （液态玻璃材质降级为背景模糊）')
+
+        Row() {
+          Button('知道了')
+            .layoutWeight(1)
+            .height(this.scaledSize(38))
+            .fontColor('#FFFFFF')
+            .backgroundColor(this.primaryColor)
+            .borderRadius(this.scaledSize(10))
+            .onClick(() => {
+              this.showGlassScope = false
+            })
+        }
+        .width('100%')
+        .padding({ top: this.scaledSize(8) })
+      }
+      .width(this.scaledSize(304))
+      .padding(this.scaledSize(20))
+      .borderRadius(this.scaledSize(22))
+      .backgroundColor($r('app.color.page_background_other'))
+      .border({ width: 1, color: ColorHelper.hexToRgba(this.primaryColor, 0.2) })
+      .shadow({ radius: 28, color: '#66000000' })
+    }
+    .width('100%')
+    .height('100%')
+    .zIndex(60)
+  }
+
+  @Builder
+  scopeLine(text: string): void {
+    Text(text)
+      .fontSize(this.scaledFont(12))
+      .fontColor(this.settingSubTextColor())
+      .width('100%')
+      .padding({ top: this.scaledSize(2) })
   }
 
   @Builder
@@ -755,230 +807,228 @@ struct SettingsDetailPage {
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(10)
 
-      // 玻璃厚度：标题（大）+ 说明（小、浅色）+ 滑轨 + 实时预览方块
-      Column({ space: this.scaledSize(6) }) {
-        Text('玻璃厚度')
-          .fontSize(this.scaledFont(17))
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.settingTextColor())
-          .width('100%')
-        Text('控制玻璃材质的模糊强度：值越大越模糊。调节时右侧预览方块会实时反映效果。作用于所有使用玻璃的位置：底部 Tab 栏、右下角播控条、顶部的模糊层、四个一级页面的背景。')
-          .fontSize(this.scaledFont(12))
-          .fontColor(this.settingSubTextColor())
-          .width('100%')
-        Row({ space: this.scaledSize(12) }) {
-          Slider({
-            value: this.settings.glassStyle,
-            min: 0,
-            max: 100,
-            step: 1,
-            style: SliderStyle.OutSet
-          })
-            .layoutWeight(1)
-            .selectedColor(this.primaryColor)
-            .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-            .blockColor('#FFFFFF')
-            .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
-            .blockBorderColor(this.primaryColor)
-            .blockBorderWidth(3)
-            .onChange((value: number, mode: SliderChangeMode) => {
-              this.settings.glassStyle = value
-              if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-                this.updateSetting()
-              }
-            })
-          this.glassStylePreview()
-        }
-        .width('100%')
-        .alignItems(VerticalAlign.Center)
-        .padding({ top: this.scaledSize(4), bottom: this.scaledSize(4) })
-        Text('当前档位：' + glassStyleLabel(this.settings.glassStyle) + '（' + Math.round(this.settings.glassStyle) + '）')
-          .fontSize(this.scaledFont(11))
-          .fontColor(this.settingSubTextColor())
-          .width('100%')
-          .padding({ left: this.scaledSize(2), top: this.scaledSize(2) })
-      }
-      .width('100%')
-      .padding({
-        top: this.scaledSize(12),
-        left: this.scaledSize(14),
-        right: this.scaledSize(14),
-        bottom: this.scaledSize(12)
-      })
-      .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor,
-        0.04))
-      .borderRadius(this.scaledSize(10))
-
-      // 玻璃饱和度
-      Column({ space: this.scaledSize(6) }) {
-        Text('玻璃饱和度')
-          .fontSize(this.scaledFont(17))
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.settingTextColor())
-          .width('100%')
-        Text('控制玻璃背后透出的颜色鲜艳程度（仅作用于底部的 Tab 栏和顶部的模糊层）。值越高越鲜艳。')
-          .fontSize(this.scaledFont(12))
-          .fontColor(this.settingSubTextColor())
-          .width('100%')
-        Row({ space: this.scaledSize(12) }) {
-          Text('淡')
+      // ─── 一级标题「高级样式」（玻璃模式下显示） + 右上角叹号角标 ───
+      // 点击叹号弹窗说明玻璃效果所影响的所有位置
+      Column() {
+        this.groupTitle('高级样式', true)
+        // 三个滑块共享同一预览器（焦点标签由当前激活滑轨决定）
+        Column({ space: this.scaledSize(6) }) {
+          this.subTitle('玻璃厚度')
+          Text('控制玻璃材质的模糊强度：值越大越模糊。调节时预览方块会实时反映效果。')
             .fontSize(this.scaledFont(12))
-            .fontColor(this.settingTextColor())
-          Slider({
-            value: this.settings.glassSaturation * 100,
-            min: 100,
-            max: 200,
-            step: 1,
-            style: SliderStyle.OutSet
-          })
-            .layoutWeight(1)
-            .selectedColor(this.primaryColor)
-            .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-            .blockColor('#FFFFFF')
-            .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
-            .blockBorderColor(this.primaryColor)
-            .blockBorderWidth(3)
-            .onChange((value: number, mode: SliderChangeMode) => {
-              this.settings.glassSaturation = value / 100
-              this.glassSaturation = this.settings.glassSaturation
-              if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-                this.updateSetting()
-              }
+            .fontColor(this.settingSubTextColor())
+            .width('100%')
+          Row({ space: this.scaledSize(12) }) {
+            Slider({
+              value: this.settings.glassStyle,
+              min: 0,
+              max: 100,
+              step: 1,
+              style: SliderStyle.OutSet
             })
-          this.glassSaturationPreview()
+              .layoutWeight(1)
+              .selectedColor(this.primaryColor)
+              .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+              .blockColor('#FFFFFF')
+              .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
+              .blockBorderColor(this.primaryColor)
+              .blockBorderWidth(3)
+              .onChange((value: number, mode: SliderChangeMode) => {
+                this.settings.glassStyle = value
+                this.glassStyle = value
+                if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+                  this.updateSetting()
+                }
+              })
+            this.glassAdvancedPreview('玻璃厚度')
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
+          .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
         }
         .width('100%')
-        .alignItems(VerticalAlign.Center)
-        .padding({ top: this.scaledSize(4), bottom: this.scaledSize(4) })
-      }
-      .width('100%')
-      .padding({
-        top: this.scaledSize(12),
-        left: this.scaledSize(14),
-        right: this.scaledSize(14),
-        bottom: this.scaledSize(12)
-      })
-      .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor,
-        0.04))
-      .borderRadius(this.scaledSize(10))
+        .padding({
+          top: this.scaledSize(10),
+          left: this.scaledSize(14),
+          right: this.scaledSize(14),
+          bottom: this.scaledSize(10)
+        })
+        .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor,
+          0.04))
+        .borderRadius(this.scaledSize(10))
 
-      // 玻璃亮度
-      Column({ space: this.scaledSize(6) }) {
-        Text('玻璃亮度')
-          .fontSize(this.scaledFont(17))
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.settingTextColor())
-          .width('100%')
-        Text('控制玻璃模糊层的明暗调整（仅作用于底部的 Tab 栏和顶部的模糊层）。值越高越亮。')
-          .fontSize(this.scaledFont(12))
-          .fontColor(this.settingSubTextColor())
-          .width('100%')
-        Row({ space: this.scaledSize(12) }) {
-          Text('暗')
+        // 玻璃饱和度 / 亮度 共用同一预览器，预览标题根据最近一次滑动切换
+        Column({ space: this.scaledSize(6) }) {
+          this.subTitle('玻璃饱和度')
+          Text('控制玻璃背后透出的颜色鲜艳程度。值越高越鲜艳。')
             .fontSize(this.scaledFont(12))
-            .fontColor(this.settingTextColor())
-          Slider({
-            value: this.settings.glassBrightness * 100,
-            min: 80,
-            max: 130,
-            step: 1,
-            style: SliderStyle.OutSet
-          })
-            .layoutWeight(1)
-            .selectedColor(this.primaryColor)
-            .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-            .blockColor('#FFFFFF')
-            .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
-            .blockBorderColor(this.primaryColor)
-            .blockBorderWidth(3)
-            .onChange((value: number, mode: SliderChangeMode) => {
-              this.settings.glassBrightness = value / 100
-              this.glassBrightness = this.settings.glassBrightness
-              if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-                this.updateSetting()
-              }
+            .fontColor(this.settingSubTextColor())
+            .width('100%')
+          Row({ space: this.scaledSize(12) }) {
+            Text('淡')
+              .fontSize(this.scaledFont(11))
+              .fontColor(this.settingTextColor())
+            Slider({
+              value: this.settings.glassSaturation * 100,
+              min: 100,
+              max: 200,
+              step: 1,
+              style: SliderStyle.OutSet
             })
-          this.glassBrightnessPreview()
+              .layoutWeight(1)
+              .selectedColor(this.primaryColor)
+              .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+              .blockColor('#FFFFFF')
+              .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
+              .blockBorderColor(this.primaryColor)
+              .blockBorderWidth(3)
+              .onChange((value: number, mode: SliderChangeMode) => {
+                this.settings.glassSaturation = value / 100
+                this.glassSaturation = this.settings.glassSaturation
+                if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+                  this.updateSetting()
+                }
+              })
+            this.glassAdvancedPreview('玻璃饱和')
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
+          .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
+
+          this.subTitle('玻璃亮度')
+          Text('控制玻璃模糊层的明暗调整。值越高越亮。')
+            .fontSize(this.scaledFont(12))
+            .fontColor(this.settingSubTextColor())
+            .width('100%')
+          Row({ space: this.scaledSize(12) }) {
+            Text('暗')
+              .fontSize(this.scaledFont(11))
+              .fontColor(this.settingTextColor())
+            Slider({
+              value: this.settings.glassBrightness * 100,
+              min: 80,
+              max: 130,
+              step: 1,
+              style: SliderStyle.OutSet
+            })
+              .layoutWeight(1)
+              .selectedColor(this.primaryColor)
+              .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+              .blockColor('#FFFFFF')
+              .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
+              .blockBorderColor(this.primaryColor)
+              .blockBorderWidth(3)
+              .onChange((value: number, mode: SliderChangeMode) => {
+                this.settings.glassBrightness = value / 100
+                this.glassBrightness = this.settings.glassBrightness
+                if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+                  this.updateSetting()
+                }
+              })
+            this.glassAdvancedPreview('玻璃亮度')
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
+          .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
         }
         .width('100%')
-        .alignItems(VerticalAlign.Center)
-        .padding({ top: this.scaledSize(4), bottom: this.scaledSize(4) })
+        .padding({
+          top: this.scaledSize(10),
+          left: this.scaledSize(14),
+          right: this.scaledSize(14),
+          bottom: this.scaledSize(10)
+        })
+        .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor,
+          0.04))
+        .borderRadius(this.scaledSize(10))
+
+        // 底部栏触摸反馈指示（玻璃模式下生效）：跟手光效 / 白色蒙版 二选一，互斥
+        Column({ space: this.scaledSize(6) }) {
+          this.subTitle('底部栏触摸指示')
+          Text('选择点击/拖动底部栏时的反馈样式：跟手光效或白色蒙版。同时仅一种生效。')
+            .fontSize(this.scaledFont(12))
+            .fontColor(this.settingSubTextColor())
+            .width('100%')
+          Row() {
+            Blank()
+            Column() {
+              Text('跟手光效')
+                .fontSize(this.scaledFont(11))
+                .fontColor(this.settings.tabTouchIndicator === 'light'
+                  ? '#FFFFFF' : this.settingInactiveTextColor())
+            }
+            .padding({
+              left: this.scaledSize(10),
+              right: this.scaledSize(10),
+              top: this.scaledSize(5),
+              bottom: this.scaledSize(5)
+            })
+            .backgroundColor(this.settings.tabTouchIndicator === 'light'
+              ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+            .borderRadius(this.scaledSize(14))
+            .margin({ right: this.scaledSize(8) })
+            .onClick(() => {
+              this.settings.tabTouchIndicator = 'light'
+              this.updateSetting()
+              AppStorage.setOrCreate('uplayer_tab_touch_indicator', 'light')
+            })
+            Column() {
+              Text('白色蒙版')
+                .fontSize(this.scaledFont(11))
+                .fontColor(this.settings.tabTouchIndicator === 'mask'
+                  ? '#FFFFFF' : this.settingInactiveTextColor())
+            }
+            .padding({
+              left: this.scaledSize(10),
+              right: this.scaledSize(10),
+              top: this.scaledSize(5),
+              bottom: this.scaledSize(5)
+            })
+            .backgroundColor(this.settings.tabTouchIndicator === 'mask'
+              ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+            .borderRadius(this.scaledSize(14))
+            .onClick(() => {
+              this.settings.tabTouchIndicator = 'mask'
+              this.updateSetting()
+              AppStorage.setOrCreate('uplayer_tab_touch_indicator', 'mask')
+            })
+          }
+          .width('100%')
+        }
+        .width('100%')
+        .padding({
+          top: this.scaledSize(10),
+          left: this.scaledSize(14),
+          right: this.scaledSize(14),
+          bottom: this.scaledSize(10)
+        })
+        .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor,
+          0.04))
+        .borderRadius(this.scaledSize(10))
+
+        // 玻璃效果生效范围说明：一级标题右上角的小叹号已经引出弹窗，这里只保留两张卡的占位开关（已折叠）
       }
       .width('100%')
-      .padding({
-        top: this.scaledSize(12),
-        left: this.scaledSize(14),
-        right: this.scaledSize(14),
-        bottom: this.scaledSize(12)
-      })
-      .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor,
-        0.04))
-      .borderRadius(this.scaledSize(10))
+      .opacity(this.glassGroupOpacity)
+      .animation({ duration: 280, curve: Curve.EaseInOut })
+      .visibility(this.settings.tabStyle === 'immersive' ? Visibility.Visible : Visibility.None)
+      // 去掉玻璃卡片之间默认的 10vp 间隔间距，由内部 padding 自己控制
+      // ——已通过 groupTitle 与 .padding 处理
 
-      // 玻璃效果生效范围说明
+      // 智感握姿：只涉及组件位置，不涉及样式，所以右侧放开关 + 关闭预览方块
       Column({ space: this.scaledSize(6) }) {
-        Text('玻璃效果生效范围')
-          .fontSize(this.scaledFont(17))
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.settingTextColor())
-          .width('100%')
-        Text('以下位置会使用玻璃效果：')
-          .fontSize(this.scaledFont(12))
-          .fontColor(this.settingSubTextColor())
-          .width('100%')
-        Text('• 底部 Tab 栏（沉浸式玻璃，带光效跟手 + 按压 Q 弹形变）')
-          .fontSize(this.scaledFont(12))
-          .fontColor(this.settingSubTextColor())
-          .width('100%')
-        Text('• 右下角播控条')
-          .fontSize(this.scaledFont(12))
-          .fontColor(this.settingSubTextColor())
-          .width('100%')
-        Text('• 顶部的模糊层（首页顶部标题区，覆盖首页第一屏）')
-          .fontSize(this.scaledFont(12))
-          .fontColor(this.settingSubTextColor())
-          .width('100%')
-        Text('• 首页 / 歌单 / 设置 / 设置详情 四个一级页面的顶层背景（仅档位与材质在此生效）')
-          .fontSize(this.scaledFont(12))
-          .fontColor(this.settingSubTextColor())
-          .width('100%')
-        Text('以下位置不使用玻璃效果：')
-          .fontSize(this.scaledFont(12))
-          .fontColor(this.settingSubTextColor())
-          .width('100%')
-          .padding({ top: this.scaledSize(4) })
-        Text('• 音乐播放器页面')
-          .fontSize(this.scaledFont(12))
-          .fontColor(this.settingSubTextColor())
-          .width('100%')
-        Text('• 系统API ≤ 26 （液态玻璃材质降级为背景模糊）')
-          .fontSize(this.scaledFont(12))
-          .fontColor(this.settingSubTextColor())
-          .width('100%')
-      }
-      .width('100%')
-      .padding({
-        top: this.scaledSize(12),
-        left: this.scaledSize(14),
-        right: this.scaledSize(14),
-        bottom: this.scaledSize(12)
-      })
-      .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor,
-        0.04))
-      .borderRadius(this.scaledSize(10))
-
-      // 智感握姿开关：标题（大）+ 说明（小、浅色）+ Row 内 Toggle 与预览方块同侧
-      Column({ space: this.scaledSize(6) }) {
-        Text('智感握姿')
-          .fontSize(this.scaledFont(17))
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.settingTextColor())
-          .width('100%')
-        Text('根据单手握持方向自动调整首页顶部预览与控件靠左/靠右。开启后系统会监测传感器。')
-          .fontSize(this.scaledFont(12))
-          .fontColor(this.settingSubTextColor())
-          .width('100%')
-        Row({ space: this.scaledSize(12) }) {
+        Row() {
+          Column({ space: this.scaledSize(2) }) {
+            Text('智感握姿')
+              .fontSize(this.scaledFont(17))
+              .fontWeight(FontWeight.Bold)
+              .fontColor(this.settingTextColor())
+            Text('根据单手握持方向自动调整首页顶部预览与控件靠左/靠右。')
+              .fontSize(this.scaledFont(12))
+              .fontColor(this.settingSubTextColor())
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
           Toggle({ type: ToggleType.Switch, isOn: this.settings.holdingHandEnabled })
             .selectedColor(this.primaryColor)
             .onChange((isOn: boolean) => {
@@ -988,12 +1038,28 @@ struct SettingsDetailPage {
               this.refreshHoldingHandListener()
             })
             .flexShrink(0)
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+        .padding({ top: this.scaledSize(4), bottom: this.scaledSize(4) })
+        // 左右切换动画开启开关（仅放在感应开之后可选）
+        Row() {
+          Text('左右切换动画')
+            .fontSize(this.scaledFont(14))
+            .fontColor(this.settingTextColor())
           Blank()
-          this.holdingHandPreview()
+          Toggle({ type: ToggleType.Switch, isOn: this.settings.holdingHandLayoutAnimation })
+            .selectedColor(this.primaryColor)
+            .onChange((isOn: boolean) => {
+              this.settings.holdingHandLayoutAnimation = isOn
+              AppStorage.setOrCreate('uplayer_holding_hand_layout_animation', isOn)
+              this.updateSetting()
+            })
         }
         .width('100%')
+        .height(this.scaledSize(40))
+        .padding({ left: this.scaledSize(2), right: this.scaledSize(2), top: this.scaledSize(2) })
         .alignItems(VerticalAlign.Center)
-        .padding({ top: this.scaledSize(4), bottom: this.scaledSize(4) })
       }
       .width('100%')
       .padding({
@@ -1006,163 +1072,315 @@ struct SettingsDetailPage {
         0.04))
       .borderRadius(this.scaledSize(10))
 
-      Column({ space: this.scaledSize(6) }) {
-        this.sectionTitle('首页上端模糊强度')
-        Text('控制首页顶部标题区玻璃模糊的渐变强度。调节时右侧预览方块会实时反映效果。')
-          .fontSize(this.scaledFont(12))
-          .fontColor(this.settingSubTextColor())
+      // ─── 一级标题「经典模糊」（经典模式下显示）───
+      Column() {
+        this.groupTitle('经典模糊', false)
+
+        // 跟手光效颜色（仅经典模式展示，原先属于玻璃模式下的设计调色）
+        Column() {
+          Row() {
+            this.subTitle('跟手光效颜色')
+            Blank()
+            Column() {
+              Text('白光')
+                .fontSize(this.scaledFont(11))
+                .fontColor(this.settings.lightColorMode === 'white'
+                  ? '#FFFFFF' : this.settingInactiveTextColor())
+            }
+            .padding({
+              left: this.scaledSize(10),
+              right: this.scaledSize(10),
+              top: this.scaledSize(5),
+              bottom: this.scaledSize(5)
+            })
+            .backgroundColor(this.settings.lightColorMode === 'white'
+              ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+            .borderRadius(this.scaledSize(14))
+            .margin({ right: this.scaledSize(8) })
+            .onClick(() => {
+              this.settings.lightColorMode = 'white'
+              this.updateSetting()
+              AppStorage.setOrCreate('uplayer_light_color_mode', 'white')
+            })
+            Column() {
+              Text('主题色')
+                .fontSize(this.scaledFont(11))
+                .fontColor(this.settings.lightColorMode === 'theme'
+                  ? '#FFFFFF' : this.settingInactiveTextColor())
+            }
+            .padding({
+              left: this.scaledSize(10),
+              right: this.scaledSize(10),
+              top: this.scaledSize(5),
+              bottom: this.scaledSize(5)
+            })
+            .backgroundColor(this.settings.lightColorMode === 'theme'
+              ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+            .borderRadius(this.scaledSize(14))
+            .onClick(() => {
+              this.settings.lightColorMode = 'theme'
+              this.updateSetting()
+              AppStorage.setOrCreate('uplayer_light_color_mode', 'theme')
+            })
+          }
           .width('100%')
-          .padding({ left: this.scaledSize(2) })
-        Row({ space: this.scaledSize(12) }) {
-          Slider({
-            value: this.settings.homeTopBlurStrength,
-            min: 0,
-            max: 100,
-            step: 1,
-            style: SliderStyle.OutSet
-          })
-            .layoutWeight(1)
-            .selectedColor(this.primaryColor)
-            .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-            .blockColor('#FFFFFF')
-            .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
-            .blockBorderColor(this.primaryColor)
-            .blockBorderWidth(3)
-            .onChange((value: number, mode: SliderChangeMode) => {
-              this.settings.homeTopBlurStrength = value
-              this.homeTopBlurStrength = value
-              if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-                this.updateSetting()
-              }
-            })
-          this.homeTopBlurPreview()
+          .padding({ left: this.scaledSize(2), right: this.scaledSize(2), top: this.scaledSize(2), bottom: this.scaledSize(6) })
         }
         .width('100%')
-        .alignItems(VerticalAlign.Center)
-        .padding({ top: this.scaledSize(4), bottom: this.scaledSize(4) })
-      }
-      .width('100%')
-      .padding({
-        top: this.scaledSize(12),
-        left: this.scaledSize(14),
-        right: this.scaledSize(14),
-        bottom: this.scaledSize(12)
-      })
-      .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor,
-        0.04))
-      .borderRadius(this.scaledSize(10))
-
-      Column() {
-        this.sectionTitle('Tab栏与播控条模糊强度')
-        Row() {
-          if (!this.previewOnRight) {
-            this.glassBlurPreview()
-          }
-          Text('弱')
-            .fontSize(this.scaledFont(11))
-            .fontColor(this.settingTextColor())
-            .margin({
-              left: this.previewOnRight ? 0 : this.scaledSize(14),
-              right: this.scaledSize(8)
-            })
-          Slider({
-            value: this.settings.glassBlurStrength,
-            min: 0,
-            max: 100,
-            step: 1,
-            style: SliderStyle.OutSet
-          })
-            .width('55%')
-            .layoutWeight(1)
-            .selectedColor(this.primaryColor)
-            .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-            .blockColor('#FFFFFF')
-            .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
-            .blockBorderColor(this.primaryColor)
-            .blockBorderWidth(3)
-            .onChange((value: number, mode: SliderChangeMode) => {
-              this.settings.glassBlurStrength = value
-              this.glassBlurStrength = value
-              if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-                this.updateSetting()
-              }
-            })
-          Text('强')
-            .fontSize(this.scaledFont(11))
-            .fontColor(this.settingTextColor())
-            .margin({ left: this.scaledSize(8) })
-          if (this.previewOnRight) {
-            Blank()
-              .width(this.scaledSize(14))
-            this.glassBlurPreview()
-          }
-        }
         .padding({
-          left: this.scaledSize(12), right: this.scaledSize(12),
-          top: this.scaledSize(2), bottom: this.scaledSize(10)
+          top: this.scaledSize(10),
+          left: this.scaledSize(14),
+          right: this.scaledSize(14),
+          bottom: this.scaledSize(10)
         })
-        .width('100%')
-        .alignItems(VerticalAlign.Center)
-      }
-      .width('100%')
-      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(this.scaledSize(10))
+        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+        .borderRadius(this.scaledSize(10))
 
-      Column() {
-        this.sectionTitle('经典 Tab 指示器')
-        Row() {
-          if (!this.previewOnRight) {
-            this.tabIndicatorPreview()
-          }
-          Text('浅')
-            .fontSize(this.scaledFont(11))
-            .fontColor(this.settingTextColor())
-            .margin({
-              left: this.previewOnRight ? 0 : this.scaledSize(14),
-              right: this.scaledSize(8)
-            })
-          Slider({
-            value: this.settings.tabIndicatorOpacity,
-            min: 0,
-            max: 100,
-            step: 1,
-            style: SliderStyle.OutSet
-          })
-            .width('55%')
-            .layoutWeight(1)
-            .selectedColor(this.primaryColor)
-            .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-            .blockColor('#FFFFFF')
-            .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
-            .blockBorderColor(this.primaryColor)
-            .blockBorderWidth(3)
-            .onChange((value: number, mode: SliderChangeMode) => {
-              this.settings.tabIndicatorOpacity = value
-              this.tabIndicatorOpacity = value
-              if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-                this.updateSetting()
-              }
-            })
-          Text('深')
-            .fontSize(this.scaledFont(11))
-            .fontColor(this.settingTextColor())
-            .margin({ left: this.scaledSize(8) })
-          if (this.previewOnRight) {
+        // 底部栏触摸反馈指示（经典模式下也可生效）：跟手光效 / 白色蒙版
+        Column() {
+          Row() {
+            this.subTitle('底部栏触摸指示')
             Blank()
-              .width(this.scaledSize(14))
-            this.tabIndicatorPreview()
+            Column() {
+              Text('跟手光效')
+                .fontSize(this.scaledFont(11))
+                .fontColor(this.settings.tabTouchIndicator === 'light'
+                  ? '#FFFFFF' : this.settingInactiveTextColor())
+            }
+            .padding({
+              left: this.scaledSize(10),
+              right: this.scaledSize(10),
+              top: this.scaledSize(5),
+              bottom: this.scaledSize(5)
+            })
+            .backgroundColor(this.settings.tabTouchIndicator === 'light'
+              ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+            .borderRadius(this.scaledSize(14))
+            .margin({ right: this.scaledSize(8) })
+            .onClick(() => {
+              this.settings.tabTouchIndicator = 'light'
+              this.updateSetting()
+              AppStorage.setOrCreate('uplayer_tab_touch_indicator', 'light')
+            })
+            Column() {
+              Text('白色蒙版')
+                .fontSize(this.scaledFont(11))
+                .fontColor(this.settings.tabTouchIndicator === 'mask'
+                  ? '#FFFFFF' : this.settingInactiveTextColor())
+            }
+            .padding({
+              left: this.scaledSize(10),
+              right: this.scaledSize(10),
+              top: this.scaledSize(5),
+              bottom: this.scaledSize(5)
+            })
+            .backgroundColor(this.settings.tabTouchIndicator === 'mask'
+              ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+            .borderRadius(this.scaledSize(14))
+            .onClick(() => {
+              this.settings.tabTouchIndicator = 'mask'
+              this.updateSetting()
+              AppStorage.setOrCreate('uplayer_tab_touch_indicator', 'mask')
+            })
           }
+          .width('100%')
+          .padding({ left: this.scaledSize(2), right: this.scaledSize(2), top: this.scaledSize(2), bottom: this.scaledSize(6) })
         }
-        .padding({
-          left: this.scaledSize(12), right: this.scaledSize(12),
-          top: this.scaledSize(2), bottom: this.scaledSize(10)
-        })
         .width('100%')
-        .alignItems(VerticalAlign.Center)
+        .padding({
+          top: this.scaledSize(10),
+          left: this.scaledSize(14),
+          right: this.scaledSize(14),
+          bottom: this.scaledSize(10)
+        })
+        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+        .borderRadius(this.scaledSize(10))
+
+        // 首页上端模糊强度
+        Column({ space: this.scaledSize(6) }) {
+          this.subTitle('首页上端模糊强度')
+          Text('控制首页顶部标题区玻璃模糊的渐变强度。')
+            .fontSize(this.scaledFont(12))
+            .fontColor(this.settingSubTextColor())
+            .width('100%')
+          Row({ space: this.scaledSize(12) }) {
+            Slider({
+              value: this.settings.homeTopBlurStrength,
+              min: 0,
+              max: 100,
+              step: 1,
+              style: SliderStyle.OutSet
+            })
+              .layoutWeight(1)
+              .selectedColor(this.primaryColor)
+              .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+              .blockColor('#FFFFFF')
+              .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
+              .blockBorderColor(this.primaryColor)
+              .blockBorderWidth(3)
+              .onChange((value: number, mode: SliderChangeMode) => {
+                this.settings.homeTopBlurStrength = value
+                this.homeTopBlurStrength = value
+                if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+                  this.updateSetting()
+                }
+              })
+            this.homeTopBlurPreview()
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
+          .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
+        }
+        .width('100%')
+        .padding({
+          top: this.scaledSize(10),
+          left: this.scaledSize(14),
+          right: this.scaledSize(14),
+          bottom: this.scaledSize(10)
+        })
+        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+        .borderRadius(this.scaledSize(10))
+
+        Column() {
+          this.subTitle('Tab栏与播控条模糊强度')
+          Row() {
+            if (!this.previewOnRight) {
+              this.glassBlurPreview()
+                .transition(TransitionEffect.asymmetric(
+                  TransitionEffect.OPACITY.combine(TransitionEffect.move(TransitionEdge.START))
+                    .animation({ duration: 320, curve: Curve.EaseInOut }),
+                  TransitionEffect.OPACITY.combine(TransitionEffect.move(TransitionEdge.START))
+                    .animation({ duration: 320, curve: Curve.EaseInOut })
+                ))
+            }
+            Text('弱')
+              .fontSize(this.scaledFont(11))
+              .fontColor(this.settingTextColor())
+              .margin({
+                left: this.previewOnRight ? 0 : this.scaledSize(14),
+                right: this.scaledSize(8)
+              })
+            Slider({
+              value: this.settings.glassBlurStrength,
+              min: 0,
+              max: 100,
+              step: 1,
+              style: SliderStyle.OutSet
+            })
+              .width('55%')
+              .layoutWeight(1)
+              .selectedColor(this.primaryColor)
+              .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+              .blockColor('#FFFFFF')
+              .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
+              .blockBorderColor(this.primaryColor)
+              .blockBorderWidth(3)
+              .onChange((value: number, mode: SliderChangeMode) => {
+                this.settings.glassBlurStrength = value
+                this.glassBlurStrength = value
+                if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+                  this.updateSetting()
+                }
+              })
+            Text('强')
+              .fontSize(this.scaledFont(11))
+              .fontColor(this.settingTextColor())
+              .margin({ left: this.scaledSize(8) })
+            if (this.previewOnRight) {
+              Blank()
+                .width(this.scaledSize(14))
+              this.glassBlurPreview()
+                .transition(TransitionEffect.asymmetric(
+                  TransitionEffect.OPACITY.combine(TransitionEffect.move(TransitionEdge.END))
+                    .animation({ duration: 320, curve: Curve.EaseInOut }),
+                  TransitionEffect.OPACITY.combine(TransitionEffect.move(TransitionEdge.END))
+                    .animation({ duration: 320, curve: Curve.EaseInOut })
+                ))
+            }
+          }
+          .padding({
+            left: this.scaledSize(12), right: this.scaledSize(12),
+            top: this.scaledSize(2), bottom: this.scaledSize(6)
+          })
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
+        }
+        .width('100%')
+        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+        .borderRadius(this.scaledSize(10))
+
+        Column() {
+          this.subTitle('经典 Tab 指示器')
+          Row() {
+            if (!this.previewOnRight) {
+              this.tabIndicatorPreview()
+                .transition(TransitionEffect.asymmetric(
+                  TransitionEffect.OPACITY.combine(TransitionEffect.move(TransitionEdge.START))
+                    .animation({ duration: 320, curve: Curve.EaseInOut }),
+                  TransitionEffect.OPACITY.combine(TransitionEffect.move(TransitionEdge.START))
+                    .animation({ duration: 320, curve: Curve.EaseInOut })
+                ))
+            }
+            Text('浅')
+              .fontSize(this.scaledFont(11))
+              .fontColor(this.settingTextColor())
+              .margin({
+                left: this.previewOnRight ? 0 : this.scaledSize(14),
+                right: this.scaledSize(8)
+              })
+            Slider({
+              value: this.settings.tabIndicatorOpacity,
+              min: 0,
+              max: 100,
+              step: 1,
+              style: SliderStyle.OutSet
+            })
+              .width('55%')
+              .layoutWeight(1)
+              .selectedColor(this.primaryColor)
+              .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+              .blockColor('#FFFFFF')
+              .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
+              .blockBorderColor(this.primaryColor)
+              .blockBorderWidth(3)
+              .onChange((value: number, mode: SliderChangeMode) => {
+                this.settings.tabIndicatorOpacity = value
+                this.tabIndicatorOpacity = value
+                if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+                  this.updateSetting()
+                }
+              })
+            Text('深')
+              .fontSize(this.scaledFont(11))
+              .fontColor(this.settingTextColor())
+              .margin({ left: this.scaledSize(8) })
+            if (this.previewOnRight) {
+              Blank()
+                .width(this.scaledSize(14))
+              this.tabIndicatorPreview()
+                .transition(TransitionEffect.asymmetric(
+                  TransitionEffect.OPACITY.combine(TransitionEffect.move(TransitionEdge.END))
+                    .animation({ duration: 320, curve: Curve.EaseInOut }),
+                  TransitionEffect.OPACITY.combine(TransitionEffect.move(TransitionEdge.END))
+                    .animation({ duration: 320, curve: Curve.EaseInOut })
+                ))
+            }
+          }
+          .padding({
+            left: this.scaledSize(12), right: this.scaledSize(12),
+            top: this.scaledSize(2), bottom: this.scaledSize(6)
+          })
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
+        }
+        .width('100%')
+        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+        .borderRadius(this.scaledSize(10))
       }
       .width('100%')
-      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(this.scaledSize(10))
+      .opacity(this.classicGroupOpacity)
+      .animation({ duration: 280, curve: Curve.EaseInOut })
+      .visibility(this.settings.tabStyle === 'classic' ? Visibility.Visible : Visibility.None)
 
       Column() {
         this.sectionTitle('主题色')
