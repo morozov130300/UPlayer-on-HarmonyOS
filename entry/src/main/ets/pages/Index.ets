@@ -54,6 +54,9 @@ struct MainPage {
   @StorageLink('uplayer_glass_style') glassStyle: number = DEFAULT_GLASS_STYLE
   @StorageLink('uplayer_glass_saturation') glassSaturation: number = 1.4
   @StorageLink('uplayer_glass_brightness') glassBrightness: number = 1.02
+  @StorageLink('uplayer_light_color_mode') lightColorMode: string = 'theme'
+  @StorageLink('uplayer_tab_touch_indicator') tabTouchIndicator: string = 'light'
+  @StorageLink('uplayer_holding_hand_layout_animation') holdingHandLayoutAnimation: boolean = true
   @State albumArtFailed: boolean = false
   @State isTitleMarqueeRunning: boolean = true
   @State isArtistMarqueeRunning: boolean = true
@@ -145,12 +148,24 @@ struct MainPage {
   // THICK：官方推荐用于底部悬浮组件的材质档位；用户在设置里可切换薄/常规/厚。
   // interactive: true 开启交互形变（按压/拖动时 Q 弹反馈），
   // lightEffect 开启光效反馈（明亮光芒跟手流动），color 传 undefined 跟随系统默认光色。
+  // 颜色由 lightColorMode 控制（白/主题），仅在 tabTouchIndicator='light' 时开启，
+  // 否则传 undefined 让 lightEffect 完全关闭，便于外层使用系统自带的按压白色蒙版。
   private liquidGlassMaterial(): uiMaterial.Material {
+    const useLight: boolean = this.tabTouchIndicator === 'light'
+    const lightColor: string | undefined = useLight
+      ? (this.lightColorMode === 'white' ? '#FFFFFF' : this.primaryColor)
+      : undefined
     return new uiMaterial.ImmersiveMaterial({
       style: this.liquidGlassImmersiveStyle(),
       interactive: true,
-      lightEffect: { color: undefined }
+      lightEffect: lightColor !== undefined ? { color: lightColor } : undefined
     })
+  }
+
+  // 开启白色蒙版（按下雾蒙蒙的发白指示器）时返回 hoverEffect.Highlight，否则返回 Scale
+  // Highlight 是系统的按下态高亮效果，按下时出现白色蒙层，正好替代系统级"发白指示器"。
+  private bottomHoverEffect(): HoverEffect {
+    return this.tabTouchIndicator === 'mask' ? HoverEffect.Highlight : HoverEffect.Scale
   }
 
   // 仅当「玻璃样式 + 设备系统达到 API 26」时启用真·液态玻璃；
@@ -327,7 +342,7 @@ struct MainPage {
     })
     .scale({ x: this.hoverTabIndex === index ? 1.06 : 1, y: this.hoverTabIndex === index ? 1.06 : 1 })
     .animation({ duration: StyleConstants.ANIMATION_HOVER_DURATION, curve: Curve.EaseOut })
-    .hoverEffect(HoverEffect.Scale)
+    .hoverEffect(this.bottomHoverEffect())
     .onHover((isHover: boolean) => { this.hoverTabIndex = isHover ? index : -1 })
     .onClick(() => {
       this.switchPage(index)
@@ -362,7 +377,7 @@ struct MainPage {
     })
     .scale({ x: this.hoverTabIndex === index ? 1.06 : 1, y: this.hoverTabIndex === index ? 1.06 : 1 })
     .animation({ duration: StyleConstants.ANIMATION_HOVER_DURATION, curve: Curve.EaseOut })
-    .hoverEffect(HoverEffect.Scale)
+    .hoverEffect(this.bottomHoverEffect())
     .onHover((isHover: boolean) => { this.hoverTabIndex = isHover ? index : -1 })
     .onClick(() => {
       this.switchPage(index)

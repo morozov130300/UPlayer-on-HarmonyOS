@@ -68,6 +68,12 @@ export class AppSettingsData {
   glassBrightness: number = 1.02
   // 质感握姿：开启后系统根据单手握持方向自动让首页顶部模糊预览/控件靠左或靠右
   holdingHandEnabled: boolean = true
+  // 底部栏跟手光效颜色：white=纯白光，theme=跟随主题色
+  lightColorMode: string = 'theme'
+  // 底部栏点击/拖动指示器风格：light=跟手光效，mask=白色蒙版（与 light 互斥）
+  tabTouchIndicator: string = 'light'
+  // 质感握姿触发左右切换时启用 animateTo 动画
+  holdingHandLayoutAnimation: boolean = true
 }
 
 export class DataService {
@@ -561,6 +567,13 @@ export class DataService {
       s.glassBrightness = rawGlassBrightness !== undefined ? rawGlassBrightness as number : 1.02
       let rawHoldingHandEnabled: Object | undefined = r['holdingHandEnabled']
       s.holdingHandEnabled = rawHoldingHandEnabled !== undefined ? rawHoldingHandEnabled as boolean : true
+      let rawLightColorMode: Object | undefined = r['lightColorMode']
+      s.lightColorMode = rawLightColorMode !== undefined ? rawLightColorMode as string : 'theme'
+      let rawTabTouchIndicator: Object | undefined = r['tabTouchIndicator']
+      s.tabTouchIndicator = rawTabTouchIndicator !== undefined ? rawTabTouchIndicator as string : 'light'
+      let rawHoldingHandLayoutAnimation: Object | undefined = r['holdingHandLayoutAnimation']
+      s.holdingHandLayoutAnimation =
+        rawHoldingHandLayoutAnimation !== undefined ? rawHoldingHandLayoutAnimation as boolean : true
       if (eqBandsMigrated) {
         this.saveSettings(s)
       }
@@ -597,6 +610,9 @@ export class DataService {
     r['glassSaturation'] = settings.glassSaturation
     r['glassBrightness'] = settings.glassBrightness
     r['holdingHandEnabled'] = settings.holdingHandEnabled
+    r['lightColorMode'] = settings.lightColorMode
+    r['tabTouchIndicator'] = settings.tabTouchIndicator
+    r['holdingHandLayoutAnimation'] = settings.holdingHandLayoutAnimation
     this.getPref().preferencesPut(KEY_SETTINGS, JSON.stringify(r))
     AppStorage.setOrCreate(KEY_SETTINGS, settings)
     AppStorage.setOrCreate('uplayer_fade_in_out', settings.fadeInOut)
@@ -806,6 +822,9 @@ export class DataService {
     AppStorage.setOrCreate('uplayer_glass_saturation', settings.glassSaturation)
     AppStorage.setOrCreate('uplayer_glass_brightness', settings.glassBrightness)
     AppStorage.setOrCreate('uplayer_holding_hand_enabled', settings.holdingHandEnabled)
+    AppStorage.setOrCreate('uplayer_light_color_mode', settings.lightColorMode)
+    AppStorage.setOrCreate('uplayer_tab_touch_indicator', settings.tabTouchIndicator)
+    AppStorage.setOrCreate('uplayer_holding_hand_layout_animation', settings.holdingHandLayoutAnimation)
     this.activatePersistedUris()
     return settings
   }
