@@ -330,26 +330,29 @@ rl.on('line', async (line) => {
     // 对 tools/call 做参数适配：将 SearchDocumentsReq / GetDocumentsByIdRequest 包装层展开
     const forwardMsg = (() => {
       if (method === 'tools/call' && msg.params) {
-        const args = msg.params.arguments || msg.params;
-        // searchDocuments：展开 SearchDocumentsReq
-        if (args.SearchDocumentsReq) {
-          return {
-            ...msg,
-            params: {
-              ...msg.params,
-              arguments: args.SearchDocumentsReq
-            }
-          };
-        }
-        // getDocumentsById：展开 GetDocumentsByIdRequest
-        if (args.GetDocumentsByIdRequest) {
-          return {
-            ...msg,
-            params: {
-              ...msg.params,
-              arguments: args.GetDocumentsByIdRequest
-            }
-          };
+        // 正确提取 arguments：从 msg.params.arguments 获取
+        const args = msg.params.arguments;
+        if (args) {
+          // searchDocuments：展开 SearchDocumentsReq
+          if (args.SearchDocumentsReq) {
+            return {
+              ...msg,
+              params: {
+                ...msg.params,
+                arguments: args.SearchDocumentsReq
+              }
+            };
+          }
+          // getDocumentsById：展开 GetDocumentsByIdRequest
+          if (args.GetDocumentsByIdRequest) {
+            return {
+              ...msg,
+              params: {
+                ...msg.params,
+                arguments: args.GetDocumentsByIdRequest
+              }
+            };
+          }
         }
       }
       return msg;
