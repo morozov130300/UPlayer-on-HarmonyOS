@@ -754,6 +754,9 @@ struct SettingsDetailPage {
   @Builder
   buildCustomizeSection(): void {
     Column({ space: 10 }) {
+      Row(){
+        this.groupTitle('全局', false)
+      }
       Column() {
         this.toggleRow('向下滑动时隐藏加号按钮', this.settings.plusButtonScrollHide, (val: boolean) => {
           this.settings.plusButtonScrollHide = val
