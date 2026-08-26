@@ -1208,13 +1208,13 @@ struct SettingsDetailPage {
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
         .borderRadius(this.scaledSize(10))
 
-        Column() {
+        Column({ space: this.scaledSize(6) }) {
           Row({ space: this.scaledSize(8) }) {
             this.subTitleRow('Tab栏与播控条模糊强度')
             Blank()
           }
           .width('100%')
-          Row() {
+          Row({ space: this.scaledSize(12) }) {
             if (!this.previewOnRight) {
               this.glassBlurPreview()
             }
@@ -1232,7 +1232,6 @@ struct SettingsDetailPage {
               step: 1,
               style: SliderStyle.OutSet
             })
-              .width('55%')
               .layoutWeight(1)
               .selectedColor(this.primaryColor)
               .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
@@ -1257,24 +1256,27 @@ struct SettingsDetailPage {
               this.glassBlurPreview()
             }
           }
-          .padding({
-            left: this.scaledSize(12), right: this.scaledSize(12),
-            top: this.scaledSize(2), bottom: this.scaledSize(6)
-          })
           .width('100%')
           .alignItems(VerticalAlign.Center)
+          .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
         }
         .width('100%')
+        .padding({
+          top: this.scaledSize(10),
+          left: this.scaledSize(14),
+          right: this.scaledSize(14),
+          bottom: this.scaledSize(10)
+        })
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
         .borderRadius(this.scaledSize(10))
 
-        Column() {
+        Column({ space: this.scaledSize(6) }) {
           Row({ space: this.scaledSize(8) }) {
             this.subTitleRow('经典 Tab 指示器')
             Blank()
           }
           .width('100%')
-          Row() {
+          Row({ space: this.scaledSize(12) }) {
             if (!this.previewOnRight) {
               this.tabIndicatorPreview()
             }
@@ -1292,7 +1294,6 @@ struct SettingsDetailPage {
               step: 1,
               style: SliderStyle.OutSet
             })
-              .width('55%')
               .layoutWeight(1)
               .selectedColor(this.primaryColor)
               .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
@@ -1317,14 +1318,17 @@ struct SettingsDetailPage {
               this.tabIndicatorPreview()
             }
           }
-          .padding({
-            left: this.scaledSize(12), right: this.scaledSize(12),
-            top: this.scaledSize(2), bottom: this.scaledSize(6)
-          })
           .width('100%')
           .alignItems(VerticalAlign.Center)
+          .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
         }
         .width('100%')
+        .padding({
+          top: this.scaledSize(10),
+          left: this.scaledSize(14),
+          right: this.scaledSize(14),
+          bottom: this.scaledSize(10)
+        })
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
         .borderRadius(this.scaledSize(10))
       }
@@ -1333,7 +1337,7 @@ struct SettingsDetailPage {
       .animation({ duration: 280, curve: Curve.EaseInOut })
       .visibility(this.settings.tabStyle === 'classic' ? Visibility.Visible : Visibility.None)
 
-      Column() {
+      Column({ space: this.scaledSize(8) }) {
         Row({ space: this.scaledSize(8) }) {
           this.subTitleRow('主题色')
           Blank()
@@ -1373,7 +1377,7 @@ struct SettingsDetailPage {
         .columnsTemplate(this.isPC ? '1fr 1fr 1fr 1fr' : '1fr 1fr')
         .columnsGap(this.scaledSize(8))
         .rowsGap(this.scaledSize(8))
-        .padding({ left: this.scaledSize(12), right: this.scaledSize(12), top: 4 })
+        .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(4) })
         .width('100%')
 
         Row({ space: this.scaledSize(8) }) {
@@ -1399,7 +1403,6 @@ struct SettingsDetailPage {
         .width('100%')
         .height(this.scaledSize(42))
         .padding({ left: this.scaledSize(8), right: this.scaledSize(8) })
-        .margin({ top: this.scaledSize(8), bottom: this.scaledSize(8) })
         .borderRadius(this.scaledSize(10))
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
         .alignItems(VerticalAlign.Center)
@@ -1408,20 +1411,25 @@ struct SettingsDetailPage {
         })
       }
       .width('100%')
+      .padding({
+        top: this.scaledSize(10),
+        left: this.scaledSize(14),
+        right: this.scaledSize(14),
+        bottom: this.scaledSize(10)
+      })
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(this.scaledSize(10))
 
-      Column() {
+      Column({ space: this.scaledSize(6) }) {
         Row({ space: this.scaledSize(8) }) {
           this.subTitleRow('字体大小')
           Blank()
         }
         .width('100%')
-        Row() {
+        Row({ space: this.scaledSize(8) }) {
           Text('A')
             .fontSize(this.scaledFont(11))
             .fontColor(this.settingTextColor())
-            .margin({ right: 8 })
           Stack() {
             Slider({
               value: this.settings.fontSizeScale * 100,
@@ -1445,33 +1453,35 @@ struct SettingsDetailPage {
                 }
               })
           }
-          .width('100%')
           .layoutWeight(1)
-          .height(40)
+          .height(this.scaledSize(36))
           Text('A')
             .fontSize(this.scaledFont(20))
             .fontColor(this.settingTextColor())
-            .margin({ left: 8 })
         }
-        .padding({ left: 12, right: 12, top: 2, bottom: 10 })
         .width('100%')
         .alignItems(VerticalAlign.Center)
       }
       .width('100%')
+      .padding({
+        top: this.scaledSize(10),
+        left: this.scaledSize(14),
+        right: this.scaledSize(14),
+        bottom: this.scaledSize(10)
+      })
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(10)
+      .borderRadius(this.scaledSize(10))
 
-      Column() {
+      Column({ space: this.scaledSize(6) }) {
         Row({ space: this.scaledSize(8) }) {
           this.subTitleRow('显示大小')
           Blank()
         }
         .width('100%')
-        Row() {
+        Row({ space: this.scaledSize(8) }) {
           Text('小')
             .fontSize(this.scaledFont(11))
             .fontColor(this.settingTextColor())
-            .margin({ right: 8 })
           Stack() {
             Slider({
               value: this.settings.displaySizeScale * 100,
@@ -1495,21 +1505,24 @@ struct SettingsDetailPage {
                 }
               })
           }
-          .width('100%')
           .layoutWeight(1)
-          .height(40)
+          .height(this.scaledSize(36))
           Text('大')
             .fontSize(this.scaledFont(14))
             .fontColor(this.settingTextColor())
-            .margin({ left: 8 })
         }
-        .padding({ left: 12, right: 12, top: 2, bottom: 10 })
         .width('100%')
         .alignItems(VerticalAlign.Center)
       }
       .width('100%')
+      .padding({
+        top: this.scaledSize(10),
+        left: this.scaledSize(14),
+        right: this.scaledSize(14),
+        bottom: this.scaledSize(10)
+      })
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(10)
+      .borderRadius(this.scaledSize(10))
     }
     .width('100%')
     .constraintSize({ minWidth: 0, maxWidth: '100%' })
