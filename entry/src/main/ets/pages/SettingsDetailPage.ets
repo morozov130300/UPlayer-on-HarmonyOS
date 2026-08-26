@@ -810,8 +810,8 @@ struct SettingsDetailPage {
 
         // 跟手光效颜色：白光 / 主题色
         Column() {
+          this.subTitle('跟手光效颜色')
           Row() {
-            this.subTitle('跟手光效颜色')
             Blank()
             Column() {
               Text('白光')
@@ -870,8 +870,8 @@ struct SettingsDetailPage {
 
         // 底部栏触摸指示：跟手光效 / 白色蒙版 二选一，互斥
         Column() {
+          this.subTitle('底部栏触摸指示')
           Row() {
-            this.subTitle('底部栏触摸指示')
             Blank()
             Column() {
               Text('跟手光效')
@@ -942,6 +942,9 @@ struct SettingsDetailPage {
             .fontColor(this.settingSubTextColor())
             .width('100%')
           Row({ space: this.scaledSize(12) }) {
+            if (!this.previewOnRight) {
+              this.glassAdvancedPreview('玻璃厚度')
+            }
             Slider({
               value: this.settings.glassStyle,
               min: 0,
@@ -963,7 +966,10 @@ struct SettingsDetailPage {
                   this.updateSetting()
                 }
               })
-            this.glassAdvancedPreview('玻璃厚度')
+            if (this.previewOnRight) {
+              Blank().width(this.scaledSize(14))
+              this.glassAdvancedPreview('玻璃厚度')
+            }
           }
           .width('100%')
           .alignItems(VerticalAlign.Center)
@@ -988,6 +994,9 @@ struct SettingsDetailPage {
             .fontColor(this.settingSubTextColor())
             .width('100%')
           Row({ space: this.scaledSize(12) }) {
+            if (!this.previewOnRight) {
+              this.glassAdvancedPreview('玻璃饱和')
+            }
             Text('淡')
               .fontSize(this.scaledFont(11))
               .fontColor(this.settingTextColor())
@@ -1012,7 +1021,10 @@ struct SettingsDetailPage {
                   this.updateSetting()
                 }
               })
-            this.glassAdvancedPreview('玻璃饱和')
+            if (this.previewOnRight) {
+              Blank().width(this.scaledSize(14))
+              this.glassAdvancedPreview('玻璃饱和')
+            }
           }
           .width('100%')
           .alignItems(VerticalAlign.Center)
@@ -1024,6 +1036,9 @@ struct SettingsDetailPage {
             .fontColor(this.settingSubTextColor())
             .width('100%')
           Row({ space: this.scaledSize(12) }) {
+            if (!this.previewOnRight) {
+              this.glassAdvancedPreview('玻璃亮度')
+            }
             Text('暗')
               .fontSize(this.scaledFont(11))
               .fontColor(this.settingTextColor())
@@ -1048,7 +1063,10 @@ struct SettingsDetailPage {
                   this.updateSetting()
                 }
               })
-            this.glassAdvancedPreview('玻璃亮度')
+            if (this.previewOnRight) {
+              Blank().width(this.scaledSize(14))
+              this.glassAdvancedPreview('玻璃亮度')
+            }
           }
           .width('100%')
           .alignItems(VerticalAlign.Center)
@@ -1101,24 +1119,6 @@ struct SettingsDetailPage {
         .width('100%')
         .alignItems(VerticalAlign.Center)
         .padding({ top: this.scaledSize(4), bottom: this.scaledSize(4) })
-        // 左右切换动画开启开关（仅放在感应开之后可选）
-        Row() {
-          Text('左右切换动画')
-            .fontSize(this.scaledFont(14))
-            .fontColor(this.settingTextColor())
-          Blank()
-          Toggle({ type: ToggleType.Switch, isOn: this.settings.holdingHandLayoutAnimation })
-            .selectedColor(this.primaryColor)
-            .onChange((isOn: boolean) => {
-              this.settings.holdingHandLayoutAnimation = isOn
-              AppStorage.setOrCreate('uplayer_holding_hand_layout_animation', isOn)
-              this.updateSetting()
-            })
-        }
-        .width('100%')
-        .height(this.scaledSize(40))
-        .padding({ left: this.scaledSize(2), right: this.scaledSize(2), top: this.scaledSize(2) })
-        .alignItems(VerticalAlign.Center)
       }
       .width('100%')
       .padding({
@@ -1143,6 +1143,9 @@ struct SettingsDetailPage {
             .fontColor(this.settingSubTextColor())
             .width('100%')
           Row({ space: this.scaledSize(12) }) {
+            if (!this.previewOnRight) {
+              this.homeTopBlurPreview()
+            }
             Slider({
               value: this.settings.homeTopBlurStrength,
               min: 0,
@@ -1164,7 +1167,10 @@ struct SettingsDetailPage {
                   this.updateSetting()
                 }
               })
-            this.homeTopBlurPreview()
+            if (this.previewOnRight) {
+              Blank().width(this.scaledSize(14))
+              this.homeTopBlurPreview()
+            }
           }
           .width('100%')
           .alignItems(VerticalAlign.Center)
