@@ -608,7 +608,6 @@ struct SettingsDetailPage {
         .fontColor(this.isDark() ? ColorHelper.hexWithAlpha('#FFFFFF', '66')
           : ColorHelper.hexWithAlpha(this.primaryColor, '77'))
         .fontWeight(FontWeight.Bold)
-        .letterSpacing(this.scaledSize(2))
       if (helpIconLabel !== undefined) {
         Stack({ alignContent: Alignment.Center }) {
           Circle()
