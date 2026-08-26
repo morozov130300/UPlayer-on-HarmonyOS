@@ -855,7 +855,7 @@ struct SettingsDetailPage {
           })
           .backgroundColor(this.settings.lightColorMode === 'white'
             ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
-          .borderRadius(this.scaledSize(8))
+          .borderRadius(this.scaledSize(14))
           .onClick(() => {
             this.settings.lightColorMode = 'white'
             this.updateSetting()
@@ -875,7 +875,7 @@ struct SettingsDetailPage {
           })
           .backgroundColor(this.settings.lightColorMode === 'theme'
             ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
-          .borderRadius(this.scaledSize(8))
+          .borderRadius(this.scaledSize(14))
           .onClick(() => {
             this.settings.lightColorMode = 'theme'
             this.updateSetting()
@@ -907,7 +907,7 @@ struct SettingsDetailPage {
           })
           .backgroundColor(this.settings.tabTouchIndicator === 'light'
             ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
-          .borderRadius(this.scaledSize(6))
+          .borderRadius(this.scaledSize(14))
           .onClick(() => {
             this.settings.tabTouchIndicator = 'light'
             this.updateSetting()
@@ -927,7 +927,7 @@ struct SettingsDetailPage {
           })
           .backgroundColor(this.settings.tabTouchIndicator === 'mask'
             ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
-          .borderRadius(this.scaledSize(6))
+          .borderRadius(this.scaledSize(14))
           .onClick(() => {
             this.settings.tabTouchIndicator = 'mask'
             this.updateSetting()
