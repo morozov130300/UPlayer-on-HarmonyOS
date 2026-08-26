@@ -327,27 +327,13 @@ rl.on('line', async (line) => {
 
   // ---- 其它请求：转发 ----
   try {
-    // 调试日志：打印实际收到的请求
-    const msgStr = JSON.stringify(msg);
-    console.error('[mcp-proxy] method:', method, 'id:', id, 'msg:', msgStr.substring(0, 500));
-
     // 对 tools/call 做参数适配：将 SearchDocumentsReq / GetDocumentsByIdRequest 包装层展开
     const forwardMsg = (() => {
       if (method === 'tools/call' && msg.params) {
-        console.error('[mcp-proxy] params keys:', Object.keys(msg.params));
-        console.error('[mcp-proxy] arguments:', JSON.stringify(msg.params.arguments).substring(0, 500));
-
-        // 尝试多种可能的参数位置
-        let args = msg.params.arguments;
-        if (!args) {
-          // 如果没有 arguments，尝试直接使用 params
-          args = msg.params;
-        }
+        const args = msg.params.arguments;
         if (args) {
-          console.error('[mcp-proxy] args keys:', Object.keys(args));
           // searchDocuments：展开 SearchDocumentsReq
           if (args.SearchDocumentsReq) {
-            console.error('[mcp-proxy] found SearchDocumentsReq');
             return {
               ...msg,
               params: {
@@ -358,7 +344,6 @@ rl.on('line', async (line) => {
           }
           // getDocumentsById：展开 GetDocumentsByIdRequest
           if (args.GetDocumentsByIdRequest) {
-            console.error('[mcp-proxy] found GetDocumentsByIdRequest');
             return {
               ...msg,
               params: {
@@ -372,7 +357,6 @@ rl.on('line', async (line) => {
       return msg;
     })();
 
-    console.error('[mcp-proxy] forwarding:', JSON.stringify(forwardMsg).substring(0, 500));
     const resp = await remoteRequest(forwardMsg, false);
 
     if (Array.isArray(resp)) {
