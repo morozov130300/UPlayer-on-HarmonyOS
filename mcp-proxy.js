@@ -210,6 +210,9 @@ rl.on('line', async (line) => {
     return;
   }
 
+  // 调试日志：打印收到的所有请求
+  log('<<< received:', JSON.stringify(msg).substring(0, 500));
+
   const method = msg.method;
   const id = msg.id;
 
@@ -327,12 +330,18 @@ rl.on('line', async (line) => {
 
   // ---- 其它请求：转发 ----
   try {
+    log('method:', method, 'id:', id, 'params:', JSON.stringify(msg.params).substring(0, 300));
+
     // 对 tools/call 做参数适配：将 SearchDocumentsReq / GetDocumentsByIdRequest 包装层展开
     const forwardMsg = (() => {
-      if (method === 'tools/call' && msg.params?.arguments) {
-        const args = msg.params.arguments;
+      if (method === 'tools/call' && msg.params) {
+        // 尝试多种可能的参数位置
+        const args = msg.params.arguments || msg.params;
+        log('args type:', typeof args, 'keys:', args ? Object.keys(args) : 'null');
+
         // searchDocuments：展开 SearchDocumentsReq
         if (args.SearchDocumentsReq) {
+          log('expanding SearchDocumentsReq');
           return {
             ...msg,
             params: {
@@ -343,6 +352,7 @@ rl.on('line', async (line) => {
         }
         // getDocumentsById：展开 GetDocumentsByIdRequest
         if (args.GetDocumentsByIdRequest) {
+          log('expanding GetDocumentsByIdRequest');
           return {
             ...msg,
             params: {
@@ -355,6 +365,7 @@ rl.on('line', async (line) => {
       return msg;
     })();
 
+    log('forwarding:', JSON.stringify(forwardMsg).substring(0, 300));
     const resp = await remoteRequest(forwardMsg, false);
 
     if (Array.isArray(resp)) {
