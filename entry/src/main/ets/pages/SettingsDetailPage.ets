@@ -656,7 +656,6 @@ struct SettingsDetailPage {
       .fontSize(this.scaledFont(14))
       .fontColor(this.settingTextColor())
       .fontWeight(FontWeight.Medium)
-      .width('100%')
       .padding({ left: this.scaledSize(4), bottom: this.scaledSize(4) })
   }
 
