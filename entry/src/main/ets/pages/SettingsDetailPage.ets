@@ -931,6 +931,7 @@ struct SettingsDetailPage {
         .borderRadius(this.scaledSize(10))
       }
       .width('100%')
+      .constraintSize({ minWidth: 0, maxWidth: '100%' })
 
       // ─── 一级标题「高级样式」（玻璃模式下显示） + 右上角叹号角标 ───
       // 点击叹号弹窗说明玻璃效果所影响的所有位置
@@ -1119,6 +1120,7 @@ struct SettingsDetailPage {
           .width('100%')
       }
       .width('100%')
+      .constraintSize({ minWidth: 0, maxWidth: '100%' })
       .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
       .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(this.scaledSize(10))
