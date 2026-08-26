@@ -12,7 +12,7 @@ import { PlaylistContent } from './PlaylistContent'
 import { SettingsContent } from './SettingsContent'
 import { DataService } from '../service/DataService'
 import { ColorHelper } from '../common/utils/ColorHelper'
-import { createPageGlassMaterial, DEFAULT_GLASS_STYLE, glassBlurStyleFromStrength, glassImmersiveStyleFromStrength, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
+import { createPageGlassMaterial, DEFAULT_GLASS_STYLE, glassBlurStyleFromStrength, glassImmersiveStyleFromStrengthSmooth, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
 import Logger from '../common/utils/Logger'
 import { LrcEntry } from '../viewmodel/LrcEntry'
 import { parseKrcLyric, parseLrcLyric } from '../common/utils/LrcUtils'
@@ -50,8 +50,7 @@ struct MainPage {
   @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
   @StorageLink('uplayer_glass_blur_strength') glassBlurStrength: number = 25
   @StorageLink('uplayer_tab_indicator_opacity') tabIndicatorOpacity: number = 50
-  // 玻璃风格可调参数（设置页可改）：档位/饱和度/亮度
-  @StorageLink('uplayer_glass_style') glassStyle: number = DEFAULT_GLASS_STYLE
+  @StorageLink('uplayer_glass_thickness') glassThickness: number = DEFAULT_GLASS_STYLE
   @StorageLink('uplayer_glass_saturation') glassSaturation: number = 1.4
   @StorageLink('uplayer_glass_brightness') glassBrightness: number = 1.02
   @StorageLink('uplayer_light_color_mode') lightColorMode: string = 'theme'
@@ -136,12 +135,12 @@ struct MainPage {
 
   // 当前 GlassStyle 字符串对应的 BlurStyle 枚举（用于 backgroundBlurStyle 通用属性）
   private glassBlurStyle(): BlurStyle {
-    return glassBlurStyleFromStrength(this.glassStyle)
+    return glassBlurStyleFromStrength(this.glassThickness)
   }
 
-  // 当前 GlassStyle 字符串对应的 ImmersiveStyle 枚举（用于 uiMaterial 沉浸材质）
+  // 当前 GlassThickness 对应的 ImmersiveStyle 枚举（用于 uiMaterial 沉浸材质）
   private liquidGlassImmersiveStyle(): uiMaterial.ImmersiveStyle {
-    return glassImmersiveStyleFromStrength(this.glassStyle)
+    return glassImmersiveStyleFromStrengthSmooth(this.glassThickness)
   }
 
   // ── 液态玻璃（沉浸式系统材质，HarmonyOS API 26+）──
@@ -162,10 +161,10 @@ struct MainPage {
     })
   }
 
-  // 开启白色蒙版（按下雾蒙蒙的发白指示器）时返回 hoverEffect.Highlight，否则返回 Scale
-  // Highlight 是系统的按下态高亮效果，按下时出现白色蒙层，正好替代系统级"发白指示器"。
+  // 开启白色蒙版（按下雾蒙蒙的发白指示器）时返回 HoverEffect.Highlight，否则返回 None
+  // mask 模式下仅 Tab item 显示白色蒙版；light 模式下不做任何 hover 效果（避免白色蒙版）
   private bottomHoverEffect(): HoverEffect {
-    return this.tabTouchIndicator === 'mask' ? HoverEffect.Highlight : HoverEffect.Scale
+    return this.tabTouchIndicator === 'mask' ? HoverEffect.Highlight : HoverEffect.None
   }
 
   // 仅当「玻璃样式 + 设备系统达到 API 26」时启用真·液态玻璃；
@@ -298,12 +297,12 @@ struct MainPage {
       .height(this.scaledSize(40))
       .borderRadius(this.scaledSize(20))
       .backgroundColor(Color.Transparent)
-      // 真·液态玻璃启用时系统材质接管背景渲染，本地模糊关闭（radius 0）避免叠浊；
-      // 暗黑模式 + 非 API 26 时不应用 backgroundEffect，保持纯黑底（避免灰蒙蒙）
+      // 液态玻璃启用时 systemMaterial 接管渲染；backgroundEffect 作为兜底模糊保留，
+      // 确保 systemMaterial 低档位时 Tab 栏仍有半透明磨砂背景
       .backgroundEffect(this.isDarkTheme() ? undefined : {
-        radius: this.liquidGlassEnabled() ? 0 : this.glassBlurRadius(),
-        saturation: this.liquidGlassEnabled() ? 1 : this.glassSaturation,
-        brightness: this.liquidGlassEnabled() ? 1 : this.glassBrightness
+        radius: this.glassBlurRadius(),
+        saturation: this.glassSaturation,
+        brightness: this.glassBrightness
       })
       // 液态玻璃：沉浸式系统材质 + 光效跟手 + 交互形变；能力不足时传 undefined 关闭
       .systemMaterial(this.liquidGlassTabMaterial())
@@ -544,9 +543,9 @@ struct MainPage {
     // 玻璃样式 + 暗黑模式 + 非 API 26 时不应用 backgroundEffect，保持纯黑底；
     // 真机 API 26+ 由 systemMaterial 接管；浅色模式保留原玻璃模糊回退
     .backgroundEffect(this.tabStyle === 'immersive' && !this.isDarkTheme() ? {
-      radius: this.liquidGlassEnabled() ? 0 : this.glassBlurRadius(),
-      saturation: this.liquidGlassEnabled() ? 1 : this.glassSaturation,
-      brightness: this.liquidGlassEnabled() ? 1 : this.glassBrightness
+      radius: this.glassBlurRadius(),
+      saturation: this.glassSaturation,
+      brightness: this.glassBrightness
     } : undefined)
     .systemMaterial(this.tabStyle === 'immersive' ? this.liquidGlassTabMaterial() : undefined)
     .border({

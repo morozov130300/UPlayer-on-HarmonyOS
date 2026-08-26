@@ -59,6 +59,37 @@ export function glassImmersiveStyleFromStrength(value: number): uiMaterial.Immer
   return uiMaterial.ImmersiveStyle.THICK
 }
 
+// 平滑版：用分段指数插值替代阶跃，避免滑轨经过 35/65 时产生突跳
+// 输出归一化强度 [0, 1]：0=THIN，0.5=REGULAR，1=THICK
+function normalizeImmersiveStrength(value: number): number {
+  const clamped: number = Math.max(0, Math.min(100, value))
+  if (clamped <= 35) {
+    // THIN(0) -> REGULAR(0.5) 指数过渡
+    const t: number = clamped / 35
+    return 0.5 * (Math.exp(3 * t - 1.5) - Math.exp(-1.5)) / (Math.exp(1.5) - Math.exp(-1.5))
+  }
+  if (clamped <= 65) {
+    // REGULAR(0.5) 稳态区间，仅做线性微调避免平台边缘不连续
+    const t: number = (clamped - 35) / 30
+    return 0.5 + 0.02 * Math.sin(t * Math.PI)
+  }
+  // REGULAR(0.5) -> THICK(1.0) 指数过渡
+  const t: number = (clamped - 65) / 35
+  return 0.5 + 0.5 * (Math.exp(3 * t - 1.5) - Math.exp(-1.5)) / (Math.exp(1.5) - Math.exp(-1.5))
+}
+
+// 平滑版：根据归一化强度选择 ImmersiveStyle，同时支持无断档的 systemMaterial 回退阈值
+export function glassImmersiveStyleFromStrengthSmooth(value: number): uiMaterial.ImmersiveStyle {
+  const norm: number = normalizeImmersiveStrength(value)
+  if (norm < 0.45) {
+    return uiMaterial.ImmersiveStyle.THIN
+  }
+  if (norm < 0.75) {
+    return uiMaterial.ImmersiveStyle.REGULAR
+  }
+  return uiMaterial.ImmersiveStyle.THICK
+}
+
 // API 26+ 才能用 systemMaterial / uiMaterial.ImmersiveMaterial；老设备自动降级
 export function isLiquidGlassAvailable(): boolean {
   return deviceInfo.apiAvailable('26.0.0')

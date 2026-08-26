@@ -62,12 +62,15 @@ export class AppSettingsData {
   glassBlurStrength: number = 25
   homeTopBlurStrength: number = 25
   tabIndicatorOpacity: number = 50
-  // 玻璃风格细节：档位（0-100 连续滑轨）+ 饱和度 + 亮度（与玻璃模糊强度完全独立，所有参数用户可调）
-  glassStyle: number = 50
+  // 玻璃风格细节：厚度（0-100，独立控制 ImmersiveStyle 档位）+ 饱和度 + 亮度
+  // 厚度与模糊强度完全独立：thickness 控系统材质档位，blurStrength 控 backgroundEffect 半径
+  glassThickness: number = 50
   glassSaturation: number = 1.4
   glassBrightness: number = 1.02
   // 质感握姿：开启后系统根据单手握持方向自动让首页顶部模糊预览/控件靠左或靠右
   holdingHandEnabled: boolean = true
+  // 握姿切换时的布局动画开关
+  holdingHandLayoutAnimation: boolean = true
   // 底部栏跟手光效颜色：white=纯白光，theme=跟随主题色
   lightColorMode: string = 'theme'
   // 底部栏点击/拖动指示器风格：light=跟手光效，mask=白色蒙版（与 light 互斥）
@@ -543,21 +546,21 @@ export class DataService {
       let rawTabIndicatorOpacity: Object | undefined = r['tabIndicatorOpacity']
       s.tabIndicatorOpacity = rawTabIndicatorOpacity !== undefined ? rawTabIndicatorOpacity as number : 50
       // 玻璃风格细节（带迁移默认值，老数据走默认值不会破坏既有体验）
-      // glassStyle 历史数据是 string（thin/regular/thick），新数据是 number（0-100）。这里两种都接受。
-      let rawGlassStyle: Object | undefined = r['glassStyle']
-      if (typeof rawGlassStyle === 'number') {
-        s.glassStyle = Math.max(0, Math.min(100, rawGlassStyle as number))
-      } else if (typeof rawGlassStyle === 'string') {
-        const legacy: string = rawGlassStyle as string
-        if (legacy === 'thin') {
-          s.glassStyle = 20
-        } else if (legacy === 'thick') {
-          s.glassStyle = 80
-        } else {
-          s.glassStyle = 50
+      // glassThickness：新字段，0-100 连续值直接映射 ImmersiveStyle 档位
+      // glassStyle：旧字段（已废弃），兼容老数据时迁移到 glassThickness
+      let rawGlassThickness: Object | undefined = r['glassThickness']
+      s.glassThickness = rawGlassThickness !== undefined ? Math.max(0, Math.min(100, rawGlassThickness as number)) : 50
+      if (s.glassThickness === 50 && r['glassStyle'] !== undefined) {
+        // 老数据无 glassThickness，从旧 glassStyle 迁移
+        const raw: Object = r['glassStyle']
+        if (typeof raw === 'number') {
+          s.glassThickness = Math.max(0, Math.min(100, raw as number))
+        } else if (typeof raw === 'string') {
+          const legacy: string = raw as string
+          if (legacy === 'thin') s.glassThickness = 20
+          else if (legacy === 'thick') s.glassThickness = 80
+          else s.glassThickness = 50
         }
-      } else {
-        s.glassStyle = 50
       }
       let rawGlassSaturation: Object | undefined = r['glassSaturation']
       s.glassSaturation = rawGlassSaturation !== undefined ? rawGlassSaturation as number : 1.4
@@ -565,6 +568,8 @@ export class DataService {
       s.glassBrightness = rawGlassBrightness !== undefined ? rawGlassBrightness as number : 1.02
       let rawHoldingHandEnabled: Object | undefined = r['holdingHandEnabled']
       s.holdingHandEnabled = rawHoldingHandEnabled !== undefined ? rawHoldingHandEnabled as boolean : true
+      let rawHoldingHandLayoutAnimation: Object | undefined = r['holdingHandLayoutAnimation']
+      s.holdingHandLayoutAnimation = rawHoldingHandLayoutAnimation !== undefined ? rawHoldingHandLayoutAnimation as boolean : true
       let rawLightColorMode: Object | undefined = r['lightColorMode']
       s.lightColorMode = rawLightColorMode !== undefined ? rawLightColorMode as string : 'theme'
       let rawTabTouchIndicator: Object | undefined = r['tabTouchIndicator']
@@ -601,7 +606,7 @@ export class DataService {
     r['glassBlurStrength'] = settings.glassBlurStrength
     r['homeTopBlurStrength'] = settings.homeTopBlurStrength
     r['tabIndicatorOpacity'] = settings.tabIndicatorOpacity
-    r['glassStyle'] = settings.glassStyle
+    r['glassThickness'] = settings.glassThickness
     r['glassSaturation'] = settings.glassSaturation
     r['glassBrightness'] = settings.glassBrightness
     r['holdingHandEnabled'] = settings.holdingHandEnabled
@@ -813,7 +818,7 @@ export class DataService {
     AppStorage.setOrCreate('uplayer_glass_blur_strength', settings.glassBlurStrength)
     AppStorage.setOrCreate('uplayer_home_top_blur_strength', settings.homeTopBlurStrength)
     AppStorage.setOrCreate('uplayer_tab_indicator_opacity', settings.tabIndicatorOpacity)
-    AppStorage.setOrCreate('uplayer_glass_style', settings.glassStyle)
+    AppStorage.setOrCreate('uplayer_glass_thickness', settings.glassThickness)
     AppStorage.setOrCreate('uplayer_glass_saturation', settings.glassSaturation)
     AppStorage.setOrCreate('uplayer_glass_brightness', settings.glassBrightness)
     AppStorage.setOrCreate('uplayer_holding_hand_enabled', settings.holdingHandEnabled)

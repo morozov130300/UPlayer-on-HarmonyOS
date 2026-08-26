@@ -54,7 +54,7 @@ struct SettingsDetailPage {
   @StorageLink('uplayer_tab_indicator_opacity') tabIndicatorOpacity: number = 50
   @StorageLink('uplayer_glass_saturation') glassSaturation: number = 1.4
   @StorageLink('uplayer_glass_brightness') glassBrightness: number = 1.02
-  @StorageLink('uplayer_glass_style') glassStyle: number = 50
+  @StorageLink('uplayer_glass_thickness') glassThickness: number = 50
   @State pageTitle: string = ''
   @State previewOnRight: boolean = false
   @State showColorPicker: boolean = false
@@ -491,12 +491,12 @@ struct SettingsDetailPage {
         .borderRadius(this.scaledSize(18))
         .backgroundColor(Color.Transparent)
         .backgroundEffect({
-          radius: this.settings.glassStyle * 0.5,
+          radius: this.glassThickness * 0.5,
           saturation: this.settings.glassSaturation,
           brightness: this.settings.glassBrightness
         })
-        .systemMaterial(this.settings.glassStyle > 30 && isLiquidGlassAvailable()
-          ? createPageGlassMaterial(this.settings.glassStyle) : undefined)
+        .systemMaterial(this.glassThickness > 0 && isLiquidGlassAvailable()
+          ? createPageGlassMaterial(this.glassThickness) : undefined)
         .border({ width: 1, color: 'rgba(255,255,255,0.28)' })
         .shadow({ radius: 12, color: ColorHelper.hexWithAlpha(this.primaryColor, '44') })
     }
@@ -554,6 +554,7 @@ struct SettingsDetailPage {
                 }
               }
               .width('100%')
+              .constraintSize({ minWidth: 0, maxWidth: '100%' })
               .padding({
                 left: this.scaledSize(12), right: this.scaledSize(12),
                 top: this.scaledSize(16), bottom: this.scaledSize(40)
@@ -598,8 +599,9 @@ struct SettingsDetailPage {
   }
 
   // 一级标题（用于把同类设置项聚合在一起，可选带右上角「叹号」角标以引出说明弹窗）
+  // helpIconLabel 非空时，问号图标紧跟文字；为空时通过 Blank() 撑到行尾（兼容旧调用）
   @Builder
-  groupTitle(title: string, hasHelpIcon: boolean): void {
+  groupTitle(title: string, hasHelpIcon: boolean, helpIconLabel?: string): void {
     Row() {
       Text(title)
         .fontSize(this.scaledFont(11))
@@ -607,8 +609,25 @@ struct SettingsDetailPage {
           : ColorHelper.hexWithAlpha(this.primaryColor, '77'))
         .fontWeight(FontWeight.Bold)
         .letterSpacing(this.scaledSize(2))
-      Blank()
-      if (hasHelpIcon) {
+      if (helpIconLabel !== undefined) {
+        Stack({ alignContent: Alignment.Center }) {
+          Circle()
+            .width(this.scaledSize(18))
+            .height(this.scaledSize(18))
+            .fill(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+          SymbolGlyph($r('sys.symbol.questionmark_circle'))
+            .fontSize(this.scaledFont(13))
+            .fontColor([this.primaryColor])
+        }
+        .width(this.scaledSize(18))
+        .height(this.scaledSize(18))
+        .margin({ left: this.scaledSize(4) })
+        .onClick(() => {
+          this.showGlassScope = true
+        })
+      }
+      if (hasHelpIcon && helpIconLabel === undefined) {
+        Blank()
         Stack({ alignContent: Alignment.Center }) {
           Circle()
             .width(this.scaledSize(18))
@@ -634,9 +653,8 @@ struct SettingsDetailPage {
   @Builder
   subTitle(title: string): void {
     Text(title)
-      .fontSize(this.scaledFont(13))
-      .fontColor(this.isDark() ? ColorHelper.hexWithAlpha('#FFFFFF', '99') : ColorHelper.hexWithAlpha(this.primaryColor,
-        '99'))
+      .fontSize(this.scaledFont(14))
+      .fontColor(this.settingTextColor())
       .fontWeight(FontWeight.Medium)
       .width('100%')
       .padding({ left: this.scaledSize(4), bottom: this.scaledSize(4) })
@@ -809,122 +827,106 @@ struct SettingsDetailPage {
         this.groupTitle('底部栏交互', false)
 
         // 跟手光效颜色：白光 / 主题色
-        Column() {
+        Row({ space: this.scaledSize(8) }) {
           this.subTitle('跟手光效颜色')
-          Row() {
-            Blank()
-            Column() {
-              Text('白光')
-                .fontSize(this.scaledFont(11))
-                .fontColor(this.settings.lightColorMode === 'white'
-                  ? '#FFFFFF' : this.settingInactiveTextColor())
-            }
-            .padding({
-              left: this.scaledSize(10),
-              right: this.scaledSize(10),
-              top: this.scaledSize(5),
-              bottom: this.scaledSize(5)
-            })
-            .backgroundColor(this.settings.lightColorMode === 'white'
-              ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
-            .borderRadius(this.scaledSize(14))
-            .margin({ right: this.scaledSize(8) })
-            .onClick(() => {
-              this.settings.lightColorMode = 'white'
-              this.updateSetting()
-              AppStorage.setOrCreate('uplayer_light_color_mode', 'white')
-            })
-            Column() {
-              Text('主题色')
-                .fontSize(this.scaledFont(11))
-                .fontColor(this.settings.lightColorMode === 'theme'
-                  ? '#FFFFFF' : this.settingInactiveTextColor())
-            }
-            .padding({
-              left: this.scaledSize(10),
-              right: this.scaledSize(10),
-              top: this.scaledSize(5),
-              bottom: this.scaledSize(5)
-            })
-            .backgroundColor(this.settings.lightColorMode === 'theme'
-              ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
-            .borderRadius(this.scaledSize(14))
-            .onClick(() => {
-              this.settings.lightColorMode = 'theme'
-              this.updateSetting()
-              AppStorage.setOrCreate('uplayer_light_color_mode', 'theme')
-            })
+          Blank()
+          Column() {
+            Text('白光')
+              .fontSize(this.scaledFont(11))
+              .fontColor(this.settings.lightColorMode === 'white'
+                ? '#FFFFFF' : this.settingInactiveTextColor())
           }
-          .width('100%')
-          .padding({ left: this.scaledSize(2), right: this.scaledSize(2), top: this.scaledSize(2), bottom: this.scaledSize(6) })
+          .padding({
+            left: this.scaledSize(10),
+            right: this.scaledSize(10),
+            top: this.scaledSize(5),
+            bottom: this.scaledSize(5)
+          })
+          .backgroundColor(this.settings.lightColorMode === 'white'
+            ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+          .borderRadius(this.scaledSize(8))
+          .onClick(() => {
+            this.settings.lightColorMode = 'white'
+            this.updateSetting()
+            AppStorage.setOrCreate('uplayer_light_color_mode', 'white')
+          })
+          Column() {
+            Text('主题色')
+              .fontSize(this.scaledFont(11))
+              .fontColor( this.settings.lightColorMode === 'theme'
+                ? '#FFFFFF' : this.settingInactiveTextColor())
+          }
+          .padding({
+            left: this.scaledSize(10),
+            right: this.scaledSize(10),
+            top: this.scaledSize(5),
+            bottom: this.scaledSize(5)
+          })
+          .backgroundColor(this.settings.lightColorMode === 'theme'
+            ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+          .borderRadius(this.scaledSize(8))
+          .onClick(() => {
+            this.settings.lightColorMode = 'theme'
+            this.updateSetting()
+            AppStorage.setOrCreate('uplayer_light_color_mode', 'theme')
+          })
         }
         .width('100%')
-        .padding({
-          top: this.scaledSize(10),
-          left: this.scaledSize(14),
-          right: this.scaledSize(14),
-          bottom: this.scaledSize(10)
-        })
+        .constraintSize({ minWidth: 0, maxWidth: '100%' })
+        .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
+        .alignItems(VerticalAlign.Center)
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
         .borderRadius(this.scaledSize(10))
 
         // 底部栏触摸指示：跟手光效 / 白色蒙版 二选一，互斥
-        Column() {
+        Row({ space: this.scaledSize(8) }) {
           this.subTitle('底部栏触摸指示')
-          Row() {
-            Blank()
-            Column() {
-              Text('跟手光效')
-                .fontSize(this.scaledFont(11))
-                .fontColor(this.settings.tabTouchIndicator === 'light'
-                  ? '#FFFFFF' : this.settingInactiveTextColor())
-            }
-            .padding({
-              left: this.scaledSize(10),
-              right: this.scaledSize(10),
-              top: this.scaledSize(5),
-              bottom: this.scaledSize(5)
-            })
-            .backgroundColor(this.settings.tabTouchIndicator === 'light'
-              ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
-            .borderRadius(this.scaledSize(14))
-            .margin({ right: this.scaledSize(8) })
-            .onClick(() => {
-              this.settings.tabTouchIndicator = 'light'
-              this.updateSetting()
-              AppStorage.setOrCreate('uplayer_tab_touch_indicator', 'light')
-            })
-            Column() {
-              Text('白色蒙版')
-                .fontSize(this.scaledFont(11))
-                .fontColor(this.settings.tabTouchIndicator === 'mask'
-                  ? '#FFFFFF' : this.settingInactiveTextColor())
-            }
-            .padding({
-              left: this.scaledSize(10),
-              right: this.scaledSize(10),
-              top: this.scaledSize(5),
-              bottom: this.scaledSize(5)
-            })
-            .backgroundColor(this.settings.tabTouchIndicator === 'mask'
-              ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
-            .borderRadius(this.scaledSize(14))
-            .onClick(() => {
-              this.settings.tabTouchIndicator = 'mask'
-              this.updateSetting()
-              AppStorage.setOrCreate('uplayer_tab_touch_indicator', 'mask')
-            })
+          Blank()
+          Column() {
+            Text('跟手光效')
+              .fontSize(this.scaledFont(11))
+              .fontColor(this.settings.tabTouchIndicator === 'light'
+                ? '#FFFFFF' : this.settingInactiveTextColor())
           }
-          .width('100%')
-          .padding({ left: this.scaledSize(2), right: this.scaledSize(2), top: this.scaledSize(2), bottom: this.scaledSize(6) })
+          .padding({
+            left: this.scaledSize(10),
+            right: this.scaledSize(10),
+            top: this.scaledSize(5),
+            bottom: this.scaledSize(5)
+          })
+          .backgroundColor(this.settings.tabTouchIndicator === 'light'
+            ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+          .borderRadius(this.scaledSize(6))
+          .onClick(() => {
+            this.settings.tabTouchIndicator = 'light'
+            this.updateSetting()
+            AppStorage.setOrCreate('uplayer_tab_touch_indicator', 'light')
+          })
+          Column() {
+            Text('白色蒙版')
+              .fontSize(this.scaledFont(11))
+              .fontColor(this.settings.tabTouchIndicator === 'mask'
+                ? '#FFFFFF' : this.settingInactiveTextColor())
+          }
+          .padding({
+            left: this.scaledSize(10),
+            right: this.scaledSize(10),
+            top: this.scaledSize(5),
+            bottom: this.scaledSize(5)
+          })
+          .backgroundColor(this.settings.tabTouchIndicator === 'mask'
+            ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+          .borderRadius(this.scaledSize(6))
+          .onClick(() => {
+            this.settings.tabTouchIndicator = 'mask'
+            this.updateSetting()
+            AppStorage.setOrCreate('uplayer_tab_touch_indicator', 'mask')
+          })
         }
         .width('100%')
-        .padding({
-          top: this.scaledSize(10),
-          left: this.scaledSize(14),
-          right: this.scaledSize(14),
-          bottom: this.scaledSize(10)
-        })
+        .constraintSize({ minWidth: 0, maxWidth: '100%' })
+        .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
+        .alignItems(VerticalAlign.Center)
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
         .borderRadius(this.scaledSize(10))
       }
@@ -933,7 +935,7 @@ struct SettingsDetailPage {
       // ─── 一级标题「高级样式」（玻璃模式下显示） + 右上角叹号角标 ───
       // 点击叹号弹窗说明玻璃效果所影响的所有位置
       Column() {
-        this.groupTitle('高级样式', true)
+        this.groupTitle('高级样式', true, 'glass')
         // 三个滑块共享同一预览器（焦点标签由当前激活滑轨决定）
         Column({ space: this.scaledSize(6) }) {
           this.subTitle('玻璃厚度')
@@ -946,7 +948,7 @@ struct SettingsDetailPage {
               this.glassAdvancedPreview('玻璃厚度')
             }
             Slider({
-              value: this.settings.glassStyle,
+              value: this.settings.glassThickness,
               min: 0,
               max: 100,
               step: 1,
@@ -960,8 +962,8 @@ struct SettingsDetailPage {
               .blockBorderColor(this.primaryColor)
               .blockBorderWidth(3)
               .onChange((value: number, mode: SliderChangeMode) => {
-                this.settings.glassStyle = value
-                this.glassStyle = value
+                this.settings.glassThickness = value
+                this.glassThickness = value
                 if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
                   this.updateSetting()
                 }
@@ -986,7 +988,7 @@ struct SettingsDetailPage {
           0.04))
         .borderRadius(this.scaledSize(10))
 
-        // 玻璃饱和度 / 亮度 共用同一预览器，预览标题根据最近一次滑动切换
+        // 玻璃饱和度 / 亮度 独立调节
         Column({ space: this.scaledSize(6) }) {
           this.subTitle('玻璃饱和度')
           Text('控制玻璃背后透出的颜色鲜艳程度。值越高越鲜艳。')
@@ -1027,6 +1029,7 @@ struct SettingsDetailPage {
             }
           }
           .width('100%')
+          .constraintSize({ minWidth: 0, maxWidth: '100%' })
           .alignItems(VerticalAlign.Center)
           .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
 
@@ -1069,6 +1072,7 @@ struct SettingsDetailPage {
             }
           }
           .width('100%')
+          .constraintSize({ minWidth: 0, maxWidth: '100%' })
           .alignItems(VerticalAlign.Center)
           .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
         }
@@ -1094,18 +1098,9 @@ struct SettingsDetailPage {
 
       // 智感握姿：只涉及组件位置，不涉及样式，所以右侧放开关 + 关闭预览方块
       Column({ space: this.scaledSize(6) }) {
-        Row() {
-          Column({ space: this.scaledSize(2) }) {
-            Text('智感握姿')
-              .fontSize(this.scaledFont(17))
-              .fontWeight(FontWeight.Bold)
-              .fontColor(this.settingTextColor())
-            Text('根据单手握持方向自动调整首页顶部预览与控件靠左/靠右。')
-              .fontSize(this.scaledFont(12))
-              .fontColor(this.settingSubTextColor())
-          }
-          .alignItems(HorizontalAlign.Start)
-          .layoutWeight(1)
+        Row({ space: this.scaledSize(10) }) {
+          this.subTitle('智感握姿')
+          Blank()
           Toggle({ type: ToggleType.Switch, isOn: this.settings.holdingHandEnabled })
             .selectedColor(this.primaryColor)
             .onChange((isOn: boolean) => {
@@ -1118,17 +1113,14 @@ struct SettingsDetailPage {
         }
         .width('100%')
         .alignItems(VerticalAlign.Center)
-        .padding({ top: this.scaledSize(4), bottom: this.scaledSize(4) })
+        Text('根据单手握持方向自动调整首页顶部预览与控件靠左/靠右。')
+          .fontSize(this.scaledFont(12))
+          .fontColor(this.settingSubTextColor())
+          .width('100%')
       }
       .width('100%')
-      .padding({
-        top: this.scaledSize(12),
-        left: this.scaledSize(14),
-        right: this.scaledSize(14),
-        bottom: this.scaledSize(12)
-      })
-      .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor,
-        0.04))
+      .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
+      .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(this.scaledSize(10))
 
       // ─── 一级标题「经典模糊」（经典模式下显示）───
@@ -1304,7 +1296,7 @@ struct SettingsDetailPage {
       .visibility(this.settings.tabStyle === 'classic' ? Visibility.Visible : Visibility.None)
 
       Column() {
-        this.sectionTitle('主题色')
+        this.subTitle('主题色')
         Grid() {
           ForEach(this.colorOptions, (option: ThemeColorOption) => {
             GridItem() {
@@ -1342,34 +1334,33 @@ struct SettingsDetailPage {
         .padding({ left: this.scaledSize(12), right: this.scaledSize(12), top: 4 })
         .width('100%')
 
-        Row({ space: this.scaledSize(10) }) {
+        Row({ space: this.scaledSize(8) }) {
           Column()
-            .width(this.scaledSize(28))
-            .height(this.scaledSize(28))
-            .borderRadius(this.scaledSize(14))
+            .width(this.scaledSize(24))
+            .height(this.scaledSize(24))
+            .borderRadius(this.scaledSize(12))
             .backgroundColor(this.primaryColor)
-            .border({ width: 2, color: '#FFFFFF' })
-          Column() {
-            Text('自定义颜色')
-              .fontSize(this.scaledFont(12))
-              .fontColor(this.settingTextColor())
-              .fontWeight(FontWeight.Medium)
-            Text(this.primaryColor.toUpperCase())
-              .fontSize(this.scaledFont(10))
-              .fontColor(this.settingSubTextColor())
-          }
-          .alignItems(HorizontalAlign.Start)
+            .border({
+              width: this.settings.primaryColor === this.primaryColor ? 3 : 1,
+              color: this.settings.primaryColor === this.primaryColor ? '#FFFFFF' :
+                ColorHelper.hexToRgba(this.primaryColor, 0.25)
+            })
+          Text('自定义颜色')
+            .fontSize(this.scaledFont(11))
+            .fontColor(this.settingTextColor())
+            .maxLines(1)
           Blank()
           SymbolGlyph($r('sys.symbol.paintpalette'))
-            .fontSize(this.scaledFont(22))
+            .fontSize(this.scaledFont(16))
             .fontColor([this.primaryColor])
         }
         .width('100%')
-        .height(this.scaledSize(48))
-        .padding({ left: this.scaledSize(12), right: this.scaledSize(12) })
-        .margin({ top: this.scaledSize(8), bottom: this.scaledSize(10) })
+        .height(this.scaledSize(42))
+        .padding({ left: this.scaledSize(8), right: this.scaledSize(8) })
+        .margin({ top: this.scaledSize(8), bottom: this.scaledSize(8) })
         .borderRadius(this.scaledSize(10))
-        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.08))
+        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+        .alignItems(VerticalAlign.Center)
         .onClick(() => {
           this.openColorPicker()
         })
@@ -1379,7 +1370,7 @@ struct SettingsDetailPage {
       .borderRadius(this.scaledSize(10))
 
       Column() {
-        this.sectionTitle('字体大小')
+        this.subTitle('字体大小')
         Row() {
           Text('A')
             .fontSize(this.scaledFont(11))
@@ -1425,7 +1416,7 @@ struct SettingsDetailPage {
       .borderRadius(10)
 
       Column() {
-        this.sectionTitle('显示大小')
+        this.subTitle('显示大小')
         Row() {
           Text('小')
             .fontSize(this.scaledFont(11))
@@ -1470,6 +1461,8 @@ struct SettingsDetailPage {
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(10)
     }
+    .width('100%')
+    .constraintSize({ minWidth: 0, maxWidth: '100%' })
   }
 
   @Builder
@@ -1674,6 +1667,8 @@ struct SettingsDetailPage {
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(10)
     }
+    .width('100%')
+    .constraintSize({ minWidth: 0, maxWidth: '100%' })
   }
 
   @Builder
@@ -1779,6 +1774,8 @@ struct SettingsDetailPage {
         .borderRadius(10)
       }
     }
+    .width('100%')
+    .constraintSize({ minWidth: 0, maxWidth: '100%' })
   }
 
   private drawEqCurve(): void {
