@@ -652,12 +652,16 @@ struct SettingsDetailPage {
   // 二级标题（卡片组的子标题，紧贴在卡片上方）
   @Builder
   subTitle(title: string): void {
-    Text(title)
-      .fontSize(this.scaledFont(14))
-      .fontColor(this.settingTextColor())
-      .fontWeight(FontWeight.Medium)
-      .textAlign(TextAlign.Start)
-      .padding({ left: this.scaledSize(4), bottom: this.scaledSize(4) })
+    Row() {
+      Text(title)
+        .fontSize(this.scaledFont(14))
+        .fontColor(this.settingTextColor())
+        .fontWeight(FontWeight.Medium)
+        .padding({ right: this.scaledSize(4) })
+      Blank()
+    }
+    .width('100%')
+    .padding({ bottom: this.scaledSize(4) })
   }
 
   // 玻璃效果生效范围说明弹窗
