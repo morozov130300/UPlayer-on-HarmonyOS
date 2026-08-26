@@ -873,8 +873,8 @@ struct SettingsDetailPage {
         }
         .width('100%')
         .constraintSize({ minWidth: 0, maxWidth: '100%' })
-        .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
         .alignItems(VerticalAlign.Center)
+        .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
         .borderRadius(this.scaledSize(10))
 
@@ -925,8 +925,8 @@ struct SettingsDetailPage {
         }
         .width('100%')
         .constraintSize({ minWidth: 0, maxWidth: '100%' })
-        .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
         .alignItems(VerticalAlign.Center)
+        .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
         .borderRadius(this.scaledSize(10))
       }
