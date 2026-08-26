@@ -652,16 +652,23 @@ struct SettingsDetailPage {
   // 二级标题（卡片组的子标题，紧贴在卡片上方）
   @Builder
   subTitle(title: string): void {
-    Row() {
-      Text(title)
-        .fontSize(this.scaledFont(14))
-        .fontColor(this.settingTextColor())
-        .fontWeight(FontWeight.Medium)
-        .padding({ right: this.scaledSize(4) })
-      Blank()
-    }
-    .width('100%')
-    .padding({ bottom: this.scaledSize(4) })
+    Text(title)
+      .fontSize(this.scaledFont(14))
+      .fontColor(this.settingTextColor())
+      .fontWeight(FontWeight.Medium)
+      .width('100%')
+      .textAlign(TextAlign.Start)
+      .padding({ left: this.scaledSize(4), bottom: this.scaledSize(4) })
+  }
+
+  // 行内二级标题（用于 Row 内，不带 width 约束，避免溢出）
+  @Builder
+  subTitleRow(title: string): void {
+    Text(title)
+      .fontSize(this.scaledFont(14))
+      .fontColor(this.settingTextColor())
+      .fontWeight(FontWeight.Medium)
+      .padding({ right: this.scaledSize(4) })
   }
 
   // 玻璃效果生效范围说明弹窗
@@ -832,7 +839,7 @@ struct SettingsDetailPage {
 
         // 跟手光效颜色：白光 / 主题色
         Row({ space: this.scaledSize(8) }) {
-          this.subTitle('跟手光效颜色')
+          this.subTitleRow('跟手光效颜色')
           Blank()
           Column() {
             Text('白光')
@@ -884,7 +891,7 @@ struct SettingsDetailPage {
 
         // 底部栏触摸指示：跟手光效 / 白色蒙版 二选一，互斥
         Row({ space: this.scaledSize(8) }) {
-          this.subTitle('底部栏触摸指示')
+          this.subTitleRow('底部栏触摸指示')
           Blank()
           Column() {
             Text('跟手光效')
@@ -1104,7 +1111,7 @@ struct SettingsDetailPage {
       // 智感握姿：只涉及组件位置，不涉及样式，所以右侧放开关 + 关闭预览方块
       Column({ space: this.scaledSize(6) }) {
         Row({ space: this.scaledSize(10) }) {
-          this.subTitle('智感握姿')
+          this.subTitleRow('智感握姿')
           Blank()
           Toggle({ type: ToggleType.Switch, isOn: this.settings.holdingHandEnabled })
             .selectedColor(this.primaryColor)
@@ -1117,6 +1124,7 @@ struct SettingsDetailPage {
             .flexShrink(0)
         }
         .width('100%')
+        .constraintSize({ minWidth: 0, maxWidth: '100%' })
         .alignItems(VerticalAlign.Center)
         Text('根据单手握持方向自动调整首页顶部预览与控件靠左/靠右。')
           .fontSize(this.scaledFont(12))
