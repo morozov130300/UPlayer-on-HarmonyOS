@@ -950,7 +950,11 @@ struct SettingsDetailPage {
         this.groupTitle('高级样式', true, 'glass')
         // 三个滑块共享同一预览器（焦点标签由当前激活滑轨决定）
         Column({ space: this.scaledSize(6) }) {
-          this.subTitle('玻璃厚度')
+          Row({ space: this.scaledSize(8) }) {
+            this.subTitleRow('玻璃厚度')
+            Blank()
+          }
+          .width('100%')
           Text('控制玻璃材质的模糊强度：值越大越模糊。调节时预览方块会实时反映效果。')
             .fontSize(this.scaledFont(12))
             .fontColor(this.settingSubTextColor())
@@ -1002,7 +1006,11 @@ struct SettingsDetailPage {
 
         // 玻璃饱和度 / 亮度 独立调节
         Column({ space: this.scaledSize(6) }) {
-          this.subTitle('玻璃饱和度')
+          Row({ space: this.scaledSize(8) }) {
+            this.subTitleRow('玻璃饱和度')
+            Blank()
+          }
+          .width('100%')
           Text('控制玻璃背后透出的颜色鲜艳程度。值越高越鲜艳。')
             .fontSize(this.scaledFont(12))
             .fontColor(this.settingSubTextColor())
@@ -1045,7 +1053,11 @@ struct SettingsDetailPage {
           .alignItems(VerticalAlign.Center)
           .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
 
-          this.subTitle('玻璃亮度')
+          Row({ space: this.scaledSize(8) }) {
+            this.subTitleRow('玻璃亮度')
+            Blank()
+          }
+          .width('100%')
           Text('控制玻璃模糊层的明暗调整。值越高越亮。')
             .fontSize(this.scaledFont(12))
             .fontColor(this.settingSubTextColor())
@@ -1143,7 +1155,11 @@ struct SettingsDetailPage {
 
         // 首页上端模糊强度
         Column({ space: this.scaledSize(6) }) {
-          this.subTitle('首页上端模糊强度')
+          Row({ space: this.scaledSize(8) }) {
+            this.subTitleRow('首页上端模糊强度')
+            Blank()
+          }
+          .width('100%')
           Text('控制首页顶部标题区玻璃模糊的渐变强度。')
             .fontSize(this.scaledFont(12))
             .fontColor(this.settingSubTextColor())
@@ -1193,7 +1209,11 @@ struct SettingsDetailPage {
         .borderRadius(this.scaledSize(10))
 
         Column() {
-          this.subTitle('Tab栏与播控条模糊强度')
+          Row({ space: this.scaledSize(8) }) {
+            this.subTitleRow('Tab栏与播控条模糊强度')
+            Blank()
+          }
+          .width('100%')
           Row() {
             if (!this.previewOnRight) {
               this.glassBlurPreview()
@@ -1249,7 +1269,11 @@ struct SettingsDetailPage {
         .borderRadius(this.scaledSize(10))
 
         Column() {
-          this.subTitle('经典 Tab 指示器')
+          Row({ space: this.scaledSize(8) }) {
+            this.subTitleRow('经典 Tab 指示器')
+            Blank()
+          }
+          .width('100%')
           Row() {
             if (!this.previewOnRight) {
               this.tabIndicatorPreview()
@@ -1310,7 +1334,11 @@ struct SettingsDetailPage {
       .visibility(this.settings.tabStyle === 'classic' ? Visibility.Visible : Visibility.None)
 
       Column() {
-        this.subTitle('主题色')
+        Row({ space: this.scaledSize(8) }) {
+          this.subTitleRow('主题色')
+          Blank()
+        }
+        .width('100%')
         Grid() {
           ForEach(this.colorOptions, (option: ThemeColorOption) => {
             GridItem() {
@@ -1384,7 +1412,11 @@ struct SettingsDetailPage {
       .borderRadius(this.scaledSize(10))
 
       Column() {
-        this.subTitle('字体大小')
+        Row({ space: this.scaledSize(8) }) {
+          this.subTitleRow('字体大小')
+          Blank()
+        }
+        .width('100%')
         Row() {
           Text('A')
             .fontSize(this.scaledFont(11))
@@ -1430,7 +1462,11 @@ struct SettingsDetailPage {
       .borderRadius(10)
 
       Column() {
-        this.subTitle('显示大小')
+        Row({ space: this.scaledSize(8) }) {
+          this.subTitleRow('显示大小')
+          Blank()
+        }
+        .width('100%')
         Row() {
           Text('小')
             .fontSize(this.scaledFont(11))
