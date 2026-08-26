@@ -72,9 +72,7 @@ export class AppSettingsData {
   lightColorMode: string = 'theme'
   // 底部栏点击/拖动指示器风格：light=跟手光效，mask=白色蒙版（与 light 互斥）
   tabTouchIndicator: string = 'light'
-  // 质感握姿触发左右切换时启用 animateTo 动画
-  holdingHandLayoutAnimation: boolean = true
-}
+  }
 
 export class DataService {
   private static instance: DataService = new DataService()
@@ -571,9 +569,6 @@ export class DataService {
       s.lightColorMode = rawLightColorMode !== undefined ? rawLightColorMode as string : 'theme'
       let rawTabTouchIndicator: Object | undefined = r['tabTouchIndicator']
       s.tabTouchIndicator = rawTabTouchIndicator !== undefined ? rawTabTouchIndicator as string : 'light'
-      let rawHoldingHandLayoutAnimation: Object | undefined = r['holdingHandLayoutAnimation']
-      s.holdingHandLayoutAnimation =
-        rawHoldingHandLayoutAnimation !== undefined ? rawHoldingHandLayoutAnimation as boolean : true
       if (eqBandsMigrated) {
         this.saveSettings(s)
       }
