@@ -11,8 +11,14 @@
 - [快速开始](#快速开始)
 - [使用指南](#使用指南)
 - [高级扩展](#高级扩展)
+- [MCP 鸿蒙知识库接入](#mcp-鸿蒙知识库接入)
+  - [配置说明](#配置说明)
+  - [可用工具](#可用工具)
+  - [主动调用规则](#主动调用规则)
+  - [调用示例](#调用示例)
+  - [已知局限](#已知局限)
+  - [CreatePlan 工具常见问题](#createplan-工具常见问题)
 - [开发与编译](#开发与编译)
-- [已知局限](#已知局限)
 - [致谢与许可证](#致谢与许可证)
 
 ---
@@ -127,6 +133,120 @@ UPlayer 是一款专为鸿蒙设备设计的本地音频播放器，能够在全
 | `@ohos.multimedia.audio`                                  | 音量获取与流音量变更监听         |
 
 权限声明（`entry/src/main/module.json5`）：`ohos.permission.KEEP_BACKGROUND_RUNNING`、`ohos.permission.FILE_ACCESS_PERSIST`。
+
+## MCP 鸿蒙知识库接入
+
+本项目配置了 MCP（Model Context Protocol）客户端，用于在开发过程中实时查询华为官方文档和 API 知识库。
+
+### 配置说明
+
+MCP 代理脚本位于项目根目录 `mcp-proxy.js`，用于将 BitFun 的 stdio 协议转换为华为开发者知识 MCP 的 streamable-http 协议。
+
+**BitFun 外部 MCP 配置：**
+```json
+{
+  "command": "<node 完整路径>",
+  "args": ["D:/UPlayer/mcp-proxy.js"]
+}
+```
+
+例如使用 DevEco Studio 内置的 Node.js：
+- **command**: `D:/DevEco Studio/tools/node/node.exe`
+- **args**: `["D:/UPlayer/mcp-proxy.js"]`
+
+### 可用工具
+
+| 工具名称 | 功能说明 | 典型使用场景 |
+| :------- | :------- | :----------- |
+| `searchDocuments` | 根据关键词搜索鸿蒙开发文档和 API 说明 | 查询 ArkUI 组件用法、系统 API 参数、权限声明等 |
+| `getDocumentsById` | 通过文档 ID 获取完整的文档内容 | 获取特定 API 的详细使用示例和注意事项 |
+
+### 主动调用规则
+
+当进行以下开发活动时，AI 助手会**主动调用** MCP 工具查询官方文档，无需等待用户明确要求：
+
+- 编写或修改 HarmonyOS / ArkTS / ArkUI 相关代码
+- 使用系统 API（多媒体、文件系统、网络、存储、并发等）
+- 配置构建参数、权限声明、模块依赖
+- 排查编译错误、运行错误或兼容性问题
+- 查询生命周期、装饰器、状态管理等 ArkUI 特性
+
+**重要原则**：涉及 HarmonyOS 开发时，应优先查询官方文档，不要仅凭模型记忆猜测 API。
+
+### 调用示例
+
+#### 搜索文档
+```typescript
+// 搜索 ArkUI 按钮组件文档
+{
+  "SearchDocumentsReq": {
+    "query": "ArkUI Button 按钮组件用法"
+  }
+}
+
+// 查询多媒体权限
+{
+  "SearchDocumentsReq": {
+    "query": "ohos.permission 音频录制权限"
+  }
+}
+
+// 查找 AVPlayer API
+{
+  "SearchDocumentsReq": {
+    "query": "@ohos.multimedia.media AVPlayer 播放音频"
+  }
+}
+```
+
+#### 获取文档详情
+```typescript
+// 通过 ID 获取完整文档
+{
+  "GetDocumentsByIdReq": {
+    "ids": ["doc-arkui-button-usage"]
+  }
+}
+```
+
+### 已知局限
+
+- MCP 代理仅支持工具调用（tools），资源（resources）和提示词（prompts）功能暂未实现。
+- 网络连接依赖华为云端服务，离线状态下无法使用。
+- 搜索结果基于关键词匹配，可能需要多次尝试不同查询词以获得最佳结果。
+
+### CreatePlan 工具常见问题
+
+**问题现象**：CreatePlan 工具在调用时持续报 `stale spec` 错误，平台端的 catalog 同步存在延迟或不一致。
+
+**根本原因**：BitFun 平台的工具目录（catalog）与本地实际安装的工具之间存在同步滞后，导致工具规范（spec）版本校验失败。
+
+**解决方案**：
+
+1. **优先读取本地文件**：CreatePlan 计划内容已成功写入本地文件。遇到 `stale spec` 错误时，不应重试或放弃，而是直接读取已保存的计划文件（通常位于会话工作区或指定输出路径）。
+
+2. **忽略 stale spec 报错**：该报错属于平台侧同步问题，不影响本地计划文件的生成。可安全忽略此错误并继续后续工作。
+
+3. **验证计划文件完整性**：通过以下方式确认计划已成功保存：
+   ```bash
+   # 检查计划文件是否存在
+   ls .bitfun/plans/
+   # 或直接查看最近生成的计划文件
+   cat <latest-plan-file>
+   ```
+
+4. **如计划文件缺失**：手动创建计划文件，格式参考：
+   ```json
+   {
+     "title": "计划标题",
+     "description": "计划描述",
+     "steps": [
+       { "id": "1", "content": "步骤内容", "status": "pending" }
+     ]
+   }
+   ```
+
+---
 
 ## 开发与编译
 
