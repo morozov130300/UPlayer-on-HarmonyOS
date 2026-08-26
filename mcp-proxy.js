@@ -327,7 +327,35 @@ rl.on('line', async (line) => {
 
   // ---- 其它请求：转发 ----
   try {
-    const resp = await remoteRequest(msg, false);
+    // 对 tools/call 做参数适配：将 SearchDocumentsReq / GetDocumentsByIdRequest 包装层展开
+    const forwardMsg = (() => {
+      if (method === 'tools/call' && msg.params?.arguments) {
+        const args = msg.params.arguments;
+        // searchDocuments：展开 SearchDocumentsReq
+        if (args.SearchDocumentsReq) {
+          return {
+            ...msg,
+            params: {
+              ...msg.params,
+              arguments: args.SearchDocumentsReq
+            }
+          };
+        }
+        // getDocumentsById：展开 GetDocumentsByIdRequest
+        if (args.GetDocumentsByIdRequest) {
+          return {
+            ...msg,
+            params: {
+              ...msg.params,
+              arguments: args.GetDocumentsByIdRequest
+            }
+          };
+        }
+      }
+      return msg;
+    })();
+
+    const resp = await remoteRequest(forwardMsg, false);
 
     if (Array.isArray(resp)) {
       // 流式结果：取第一条含 result 或 error 的响应回传
