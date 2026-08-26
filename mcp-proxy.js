@@ -330,7 +330,12 @@ rl.on('line', async (line) => {
     // 对 tools/call 做参数适配：将 SearchDocumentsReq / GetDocumentsByIdRequest 包装层展开
     const forwardMsg = (() => {
       if (method === 'tools/call' && msg.params) {
-        const args = msg.params.arguments;
+        // 尝试多种可能的参数位置
+        let args = msg.params.arguments;
+        if (!args) {
+          // 如果没有 arguments，尝试直接使用 params
+          args = msg.params;
+        }
         if (args) {
           // searchDocuments：展开 SearchDocumentsReq
           if (args.SearchDocumentsReq) {
