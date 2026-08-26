@@ -557,7 +557,7 @@ struct SettingsDetailPage {
               .constraintSize({ minWidth: 0, maxWidth: '100%' })
               .padding({
                 left: this.scaledSize(12), right: this.scaledSize(12),
-                top: this.scaledSize(16), bottom: this.scaledSize(40)
+                top: this.scaledSize(5), bottom: this.scaledSize(40)
               })
             }
             .width('100%')
@@ -598,7 +598,7 @@ struct SettingsDetailPage {
       .padding({ left: this.scaledSize(4), top: this.scaledSize(6), bottom: this.scaledSize(2) })
   }
 
-  // 一级标题（用于把同类设置项聚合在一起，可选带右上角「叹号」角标以引出说明弹窗）
+  // 一级标题（用于把同类设置项聚合在一起，可选带右上角「问号」角标以引出说明弹窗）
   // helpIconLabel 非空时，问号图标紧跟文字；为空时通过 Blank() 撑到行尾（兼容旧调用）
   @Builder
   groupTitle(title: string, hasHelpIcon: boolean, helpIconLabel?: string): void {
@@ -644,7 +644,7 @@ struct SettingsDetailPage {
       }
     }
     .width('100%')
-    .padding({ left: this.scaledSize(8), top: this.scaledSize(14), bottom: this.scaledSize(4) })
+    .padding({ left: this.scaledSize(8), top: this.scaledSize(1), bottom: this.scaledSize(4) })
     .alignItems(VerticalAlign.Center)
   }
 
