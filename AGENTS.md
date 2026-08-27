@@ -155,6 +155,28 @@ hdc shell hilog
 }
 ```
 
+**运行环境说明：**
+- **Windows（主环境）**：BitFun 通过 Node.js 启动 `mcp-proxy.js`（`--jitless`），经 stdio JSON-RPC 与华为服务器通信。
+- **HarmonyOS 设备**： Hmmac 内核安全策略禁止执行 `/storage` 上的 ELF 二进制，Node 无法在此运行。MCP API 通过 HTTPS 直连可用，验证方式见下方。
+
+**验证 MCP 可用性（当前设备，使用 Python 作为验证手段）：**
+```bash
+# 直接调用华为 MCP API 验证连通性
+python3 -c "
+import urllib.request, ssl, json
+ctx = ssl.create_default_context()
+ctx.check_hostname = False
+ctx.verify_mode = ssl.CERT_NONE
+req = urllib.request.Request(
+    'https://connect-api.cloud.huawei.com/api/developerknowledge/mcp',
+    data=json.dumps({'jsonrpc':'2.0','id':1,'method':'tools/list','params':{}}).encode(),
+    headers={'Content-Type':'application/json'}, method='POST'
+)
+with urllib.request.urlopen(req, timeout=15, context=ctx) as r:
+    print(json.loads(r.read())['result']['tools'])
+"
+```
+
 **标准查询流程：**
 1. 先用 MCP 搜索工具查询相关 API 文档
 2. 以搜索结果为准，不要自行推断
