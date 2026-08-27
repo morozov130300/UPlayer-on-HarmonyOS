@@ -13,3 +13,7 @@
 .bitfun/
 .deveco/
 /.bitfun/search/flashgrep-index/
+# 本地图标库，不推送到云端
+/HarmonyOS图标库/
+/HarmonyOS_Icons/
+/HarmonyOS_Icons.zip
