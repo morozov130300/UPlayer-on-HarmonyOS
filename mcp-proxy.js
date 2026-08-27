@@ -2,10 +2,16 @@
 // 用途：让 BitFun 通过 stdio 方式连接华为「开发者知识 MCP」（streamable-http 服务器）
 // 本地处理 ping，转发 initialize / tools/list / tools/call 等，并维护远程会话。
 //
-// 用法：node --jitless mcp-proxy.js
+// Windows 用法（DevEco Studio 自带 Node）：
+//   node --jitless mcp-proxy.js
 // BitFun 外部 MCP 配置：
-//   command: <node 完整路径>  例如 D:\DevEco Studio\tools\node\node.exe
+//   command: D:\DevEco Studio\tools\node\node.exe
 //   args:    ["--jitless", "D:\\UPlayer\\mcp-proxy.js"]
+//
+// HarmonyOS/Linux 环境限制说明：
+//   此设备（HarmonyOS Hmmac 安全策略）禁止执行 /storage 上的 ELF 二进制。
+//   MCP API 可通过 Python HTTP 直连（https://connect-api.cloud.huawei.com/api/developerknowledge/mcp）
+//   作为备用通信通道，无需 Node 运行时。
 
 'use strict';
 
