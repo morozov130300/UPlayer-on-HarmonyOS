@@ -890,9 +890,10 @@ export struct HomeContent {
         .margin({ right: this.scaledSize(16) })
       }
 
-      Image(item.isFavorite ? $r('app.media.heart_fill') : $r('app.media.heart_gap'))
-        .width(this.scaledSize(22)).height(this.scaledSize(22))
-        .fillColor(item.isFavorite ? '#FF3B30' : $r('app.color.text_sixty_color'))
+      SymbolGlyph(item.isFavorite ? $r('sys.symbol.heart_fill') : $r('sys.symbol.heart'))
+        .fontSize(this.scaledSize(22))
+        .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+        .fontColor([item.isFavorite ? '#FF3B30' : $r('app.color.text_sixty_color')])
         .hitTestBehavior(HitTestMode.Block)
         .onClick(() => {
           this.toggleFavorite(item.id)
