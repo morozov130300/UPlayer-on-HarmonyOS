@@ -51,9 +51,7 @@ HarmonyOS 图标库包含以下类别图标：
 
 ---
 
-
-
-```bash
+## 命令行构建命令
 "D:\DevEco Studio\tools\node\node.exe" "D:\DevEco Studio\tools\hvigor\bin\hvigorw.js" --mode module -p product=default -p buildMode=debug assembleHap --analyze=normal --parallel --incremental --daemon
 ```
 
@@ -103,6 +101,8 @@ hdc shell hilog
 ### 涉及决策时
 - 任何不确定的、涉及架构或设计决策的问题，**必须向用户提问**
 - 不要自行假设，不要磨磨唧唧
+- **！！！！！！所有！！！！！！** 遇到任何问题、歧义、不确定项，**必须立即向用户报告并询问，由用户决策**
+- 禁止自行猜测用户意图或替代用户做选择
 
 ### MCP 知识库使用
 - 编辑 HarmonyOS/ArkTS 代码时，**主动调用 MCP 知识库查询官方文档**
