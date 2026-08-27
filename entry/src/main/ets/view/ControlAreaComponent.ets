@@ -214,7 +214,7 @@ export struct ControlAreaComponent {
         .justifyContent(FlexAlign.Center)
 
         Column() {
-          Image($r('app.media.ic_public_forward'))
+          Image($r('app.media.ic_public_play_last'))
             .controlImageBuilder()
             .width(32)
             .hoverEffect(HoverEffect.Scale)
@@ -227,7 +227,7 @@ export struct ControlAreaComponent {
         .justifyContent(FlexAlign.Center)
 
         Column() {
-          Image(this.isPlay ? $r('app.media.ic_public_play') : $r('app.media.ic_public_pause'))
+          Image(this.isPlay ? $r('app.media.ic_public_pause') : $r('app.media.ic_public_play'))
             .controlImageBuilder()
             .width(72)
             .scale({ x: this.playBtnScale, y: this.playBtnScale })
@@ -254,7 +254,7 @@ export struct ControlAreaComponent {
         .justifyContent(FlexAlign.Center)
 
         Column() {
-          Image($r('app.media.ic_public_next'))
+          Image($r('app.media.ic_public_play_next'))
             .controlImageBuilder()
             .width(32)
             .hoverEffect(HoverEffect.Scale)

@@ -544,7 +544,7 @@ struct SettingsDetailPage {
         Stack({ alignContent: Alignment.Center }) {
           Column() {
             Scroll() {
-              Column({ space: 10 }) {
+              Column({ space: this.scaledSize(10) }) {
                 if (this.pageTitle === '定制') {
                   this.buildCustomizeSection()
                 } else if (this.pageTitle === '播放') {
@@ -753,7 +753,7 @@ struct SettingsDetailPage {
 
   @Builder
   buildCustomizeSection(): void {
-    Column({ space: 10 }) {
+    Column({ space: this.scaledSize(10) }) {
       Row(){
         this.groupTitle('全局', false)
       }
@@ -765,7 +765,7 @@ struct SettingsDetailPage {
       }
       .width('100%')
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(10)
+      .borderRadius(this.scaledSize(10))
 
       Column() {
         Row() {
@@ -799,7 +799,7 @@ struct SettingsDetailPage {
       }
       .width('100%')
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(10)
+      .borderRadius(this.scaledSize(10))
 
       Column() {
         Row() {
@@ -833,7 +833,7 @@ struct SettingsDetailPage {
       }
       .width('100%')
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(10)
+      .borderRadius(this.scaledSize(10))
 
       // ─── 一级标题「底部栏交互」（经典/玻璃两种样式下都生效，与底部栏样式相关）───
       Column() {
@@ -1694,7 +1694,7 @@ struct SettingsDetailPage {
       }
       .width('100%')
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(10)
+      .borderRadius(this.scaledSize(10))
 
       Column() {
         this.sectionTitle('播放速度')
@@ -1730,7 +1730,7 @@ struct SettingsDetailPage {
       }
       .width('100%')
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(10)
+      .borderRadius(this.scaledSize(10))
     }
     .width('100%')
     .constraintSize({ minWidth: 0, maxWidth: '100%' })
@@ -1748,7 +1748,7 @@ struct SettingsDetailPage {
       }
       .width('100%')
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(10)
+      .borderRadius(this.scaledSize(10))
 
       if (this.settings.eqEnabled) {
         Stack({ alignContent: Alignment.Bottom }) {
@@ -1836,7 +1836,7 @@ struct SettingsDetailPage {
         .width('100%')
         .height(this.scaledSize(230))
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-        .borderRadius(10)
+        .borderRadius(this.scaledSize(10))
       }
     }
     .width('100%')
