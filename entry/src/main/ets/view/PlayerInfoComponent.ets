@@ -230,9 +230,10 @@ export struct PlayerInfoComponent {
       })
 
       Row() {
-        SymbolGlyph($r('sys.symbol.chevron_left'))
-          .fontSize(32)
-          .fontColor([Color.White])
+        Image($r('app.media.ic_public_arrow_left'))
+          .width(24)
+          .height(24)
+          .fillColor(Color.White)
           .opacity(0.8)
       }
       .width(Math.round(56 * this.sizeScale))

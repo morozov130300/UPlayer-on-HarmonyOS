@@ -511,9 +511,10 @@ struct SettingsDetailPage {
       Column() {
         Row() {
           Row() {
-            SymbolGlyph($r('sys.symbol.chevron_left'))
-              .fontSize(this.scaledFont(32))
-              .fontColor([this.settingTextColor()])
+            Image($r('app.media.ic_public_arrow_left'))
+              .width(24)
+              .height(24)
+              .fillColor(this.settingTextColor())
               .opacity(0.9)
           }
           .width(this.scaledSize(48))

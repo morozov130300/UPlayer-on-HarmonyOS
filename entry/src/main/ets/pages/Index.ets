@@ -517,10 +517,9 @@ struct MainPage {
         .height(this.scaledSize(18))
         .fillColor($r('app.color.player_icon_color'))
         .onClick(() => { this.playPrevious() })
-      SymbolGlyph(this.isPlaying ? $r('sys.symbol.pause_circle_fill') : $r('sys.symbol.play_circle_fill'))
-        .fontSize(this.scaledSize(22))
-        .renderingStrategy(SymbolRenderingStrategy.SINGLE)
-        .fontColor([$r('app.color.player_icon_color')])
+      Image(this.isPlaying ? $r('app.media.ic_public_pause') : $r('app.media.ic_public_play'))
+        .height(this.scaledSize(22))
+        .fillColor($r('app.color.player_icon_color'))
         .onClick(() => {
           this.togglePlay()
         })
