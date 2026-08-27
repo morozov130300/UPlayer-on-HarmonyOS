@@ -1,6 +1,57 @@
 # UPlayer 智能体构建规范
 
-## 命令行构建命令
+## 图标使用规范
+
+### ⚠️ 强制规定：所有图标必须使用 HarmonyOS 图标库
+
+**！！！！！！所有！！！！！！** 智能体生成的界面、组件、布局中的图标，**必须且只能**使用 `HarmonyOS图标库/` 目录下的 SVG 图标。
+
+#### 图标资源路径
+
+图标文件位于项目根目录：
+```
+D:/UPlayer/HarmonyOS图标库/
+```
+
+#### 使用方式
+
+在 ArkTS 代码中使用图标：
+
+```typescript
+// 方式一：使用 Image 组件加载 SVG
+Image($r('app.media.图标文件名'))
+  .width(24)
+  .height(24)
+
+// 方式二：在 @Builder 或 UI 中引用
+Image($r('app.media.ic_celiakeyboard_menu'))
+  .width(20)
+  .height(20)
+```
+
+#### 可用图标列表
+
+HarmonyOS 图标库包含以下类别图标：
+
+- **键盘相关**: `ic_celiakeyboard_menu.svg`, `ic_celiakeyboard_delete.svg`, `ic_celiakeyboard_enter.svg`, `ic_celiakeyboard_spell.svg`, `ic_celiakeyboard_handwritten.svg`, `ic_celiakeyboard_onehand.svg`, `ic_celiakeyboard_bihua.svg`, `ic_celiakeyboard_float.svg`, `ic_celiakeyboard_thumb_mode.svg`, `ic_celiakeyboard_switch_majuscule.svg`, `ic_celiakeyboard_switch_minuscule.svg`, `ic_celiakeyboard_menu_language.svg`
+- **通话相关**: `ic_Call 1 Dial.svg`, `ic_Call 2 Dial.svg`, `ic_Call HD.svg`, `ic_Call R.svg`, `ic_Call 1 Dial_line.svg`, `ic_Call 2 Dial_line.svg`
+- **亮度控制**: `ic_brightness_plus.svg`, `ic_brightness_reduce.svg`
+- **AI 摄影**: `ic_ai_photography_on.svg`, `ic_ai_photography_normal.svg`
+- **其他功能**: `fov_to_org.svg`, `icc_addcontact.svg`, `icc_addcontact_filled.svg`
+- **紧急/健康**: `ic_Allergies Emergency.svg`, `ic_Blood Emergency.svg`, `ic_Business cards.svg`, `ic_Business cards filled.svg`
+
+#### 禁止事项
+
+- ❌ **严禁使用任何其他图标库**（如 Material Icons、Font Awesome、自定义图标等）
+- ❌ **严禁使用 emoji 作为图标**
+- ❌ **严禁从网络下载或使用外部图标资源**
+- ❌ **严禁自行设计或绘制图标**
+- ✅ **必须从 `HarmonyOS图标库/` 目录中选择最合适的图标**
+- ✅ **如果现有图标不满足需求，必须向用户报告并请求补充**
+
+---
+
+
 
 ```bash
 "D:\DevEco Studio\tools\node\node.exe" "D:\DevEco Studio\tools\hvigor\bin\hvigorw.js" --mode module -p product=default -p buildMode=debug assembleHap --analyze=normal --parallel --incremental --daemon
