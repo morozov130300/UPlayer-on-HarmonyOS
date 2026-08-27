@@ -49,9 +49,28 @@ HarmonyOS 图标库包含以下类别图标：
 - ✅ **必须从 `HarmonyOS图标库/` 目录中选择最合适的图标**
 - ✅ **如果现有图标不满足需求，必须向用户报告并请求补充**
 
+#### 图标注册到资源
+
+将 SVG 文件复制到 `resources/base/media/` 目录后，在 `oh-package.json5` 或 `build-profile.json5` 中确保资源路径正确配置，代码中通过 `$r('app.media.文件名')` 引用。
+
+#### 图标命名规范
+
+- 文件名使用小写字母、数字和下划线，如 `ic_play.svg`
+- 命名格式：`ic_<功能>_<状态>.svg`，如 `ic_play_pause.svg`
+- 禁止使用中文文件名
+
+#### 图标尺寸规范
+
+- 标准图标：24 × 24 vp
+- 小图标：16 × 16 vp
+- 大图标：32 × 32 vp
+- 使用 `.vp` 单位而非 `.px`
+
 ---
 
 ## 命令行构建命令
+
+```bash
 "D:\DevEco Studio\tools\node\node.exe" "D:\DevEco Studio\tools\hvigor\bin\hvigorw.js" --mode module -p product=default -p buildMode=debug assembleHap --analyze=normal --parallel --incremental --daemon
 ```
 
