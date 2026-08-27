@@ -8,10 +8,8 @@
 //   command: D:\DevEco Studio\tools\node\node.exe
 //   args:    ["--jitless", "D:\\UPlayer\\mcp-proxy.js"]
 //
-// HarmonyOS/Linux 环境限制说明：
-//   此设备（HarmonyOS Hmmac 安全策略）禁止执行 /storage 上的 ELF 二进制。
-//   MCP API 可通过 Python HTTP 直连（https://connect-api.cloud.huawei.com/api/developerknowledge/mcp）
-//   作为备用通信通道，无需 Node 运行时。
+// 注意：此文件仅依赖 Node.js 标准库（https/readline），无需额外依赖。
+// 禁止使用 Python 或其他运行时替代此文件。
 
 'use strict';
 

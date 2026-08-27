@@ -142,21 +142,18 @@ hdc shell hilog
 
 项目已配置华为「开发者知识 MCP」代理（`mcp-proxy.js`），通过 `searchDocuments` 工具可检索官方文档。
 
-**MCP 通信架构（双模式）：**
-
-- **Windows 模式（主路径）**：BitFun 通过 Node.js 启动 `mcp-proxy.js`（`--jitless`），经 stdio JSON-RPC 与华为服务器通信。
-  ```json
-  {
-    "mcpServers": {
-      "鸿蒙开发华为官方知识库": {
-        "command": "D:\\DevEco Studio\\tools\\node\\node.exe",
-        "args": ["--jitless", "D:\\UPlayer\\mcp-proxy.js"],
-        "env": {}
-      }
+**MCP 配置（BitFun 设置 → MCP 服务器）：**
+```json
+{
+  "mcpServers": {
+    "鸿蒙开发华为官方知识库": {
+      "command": "D:\\DevEco Studio\\tools\\node\\node.exe",
+      "args": ["--jitless", "D:\\UPlayer\\mcp-proxy.js"],
+      "env": {}
     }
   }
-  ```
-- **HarmonyOS/Linux 模式（备用路径）**：此设备 Hmmac 安全策略禁止执行 `/storage` 上的 ELF 二进制，Node 无法运行。MCP API 通过 Python HTTP 直连 `https://connect-api.cloud.huawei.com/api/developerknowledge/mcp` 作为备用通道，功能等价。
+}
+```
 
 **标准查询流程：**
 1. 先用 MCP 搜索工具查询相关 API 文档
