@@ -122,10 +122,63 @@ hdc shell hilog
 - 禁止在未获用户确认前擅自实施任何设计方案
 - **！！！！！！所有！！！！！！** 遇到任何需要决策的事项，**必须立即向用户报告并询问，由用户决策，不得擅自行动**
 
-### MCP 知识库使用
-- 编辑 HarmonyOS/ArkTS 代码时，**主动调用 MCP 知识库查询官方文档**
-- 涉及系统 API、权限声明、构建配置时优先查文档
-- 不要仅凭记忆猜测
+### ⚠️ MCP 知识库使用（最高优先级）
+
+**！！！！！！必须主动使用！！！！！！** 编写、修改或排查任何 HarmonyOS / ArkTS / ArkUI 代码时，**必须优先调用 MCP 工具查询华为官方文档**，绝不允许仅凭记忆猜测 API。
+
+#### 触发条件（出现以下任一情况时必须查询 MCP）
+
+| 场景 | 说明 |
+|------|------|
+| 使用新 API 前 | 系统 API（media、audio、motion、network、data 等）的入参、返回值、API Level、设备兼容性 |
+| 遇到编译错误 | ArkTS 编译报错时先查官方文档确认正确用法 |
+| 组件属性/方法不确定 | Grid、Scroll、List、Navigation 等 ArkUI 组件的属性名、方法签名 |
+| 权限声明 | module.json5 中需要添加哪些权限，对应什么用途 |
+| 构建配置 | oh-package.json5、build-profile.json5 的配置项含义 |
+| ArkTS 语法约束 | 某些 TypeScript 写法在 ArkTS 中是否合法（如解构、any、enum 等） |
+| 设备适配 | 一多适配断点、deviceType 判断、窗口断点 API |
+
+#### 查询方式
+
+项目已配置华为「开发者知识 MCP」代理（`mcp-proxy.py`），通过 `searchDocuments` 工具可检索官方文档。
+
+**MCP 配置（BitFun 设置 → MCP 服务器）：**
+```json
+{
+  "mcpServers": {
+    "鸿蒙开发华为官方知识库": {
+      "command": "python3",
+      "args": ["/storage/Users/currentUser/Desktop/Develop/UPlayer-on-HarmonyOS/mcp-proxy.py"],
+      "env": {
+        "UV_THREADPOOL_SIZE": "1"
+      }
+    }
+  }
+}
+```
+
+**标准查询流程：**
+1. 先用 MCP 搜索工具查询相关 API 文档
+2. 以搜索结果为准，不要自行推断
+3. 若 MCP 无结果，再尝试 WebSearch 查找华为开发者文档链接
+
+#### 典型用法示例
+
+```typescript
+// 不确定 Grid 组件是否有 alignment 属性？
+// → 先调用 MCP searchDocuments 查询 "ArkUI Grid alignment property"
+// → 确认 Grid 没有 alignment 属性，GridAlign 不在 @kit.ArkUI 导出中
+// → 根据官方文档结论修改代码
+```
+
+#### 禁止事项
+
+- ❌ **严禁不查文档直接写 API 调用代码**
+- ❌ **严禁凭记忆编写不确定的 API 参数**
+- ❌ **严禁在 MCP 返回结果后仍按自己理解修改行为**
+- ✅ **不确定就查，查到再写**
+- ✅ **MCP 查询结果与已有代码冲突时，以 MCP 官方文档为准**
+
 
 ### 推送/提交
 - 代码完成后直接推送，不要问"要不要推送"
