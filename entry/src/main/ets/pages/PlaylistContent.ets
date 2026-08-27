@@ -312,10 +312,9 @@ export struct PlaylistContent {
                   .alignItems(VerticalAlign.Center)
                   .margin({ right: 8 })
                 }
-                SymbolGlyph($r('sys.symbol.heart_fill'))
-                  .fontSize(20)
-                  .renderingStrategy(SymbolRenderingStrategy.SINGLE)
-                  .fontColor([this.favoritesSelected ? Color.Red : this.primaryColor])
+                Image($r('app.media.ic_public_favor_filled'))
+                  .width(20).height(20)
+                  .fillColor(this.favoritesSelected ? Color.Red : this.primaryColor)
                   .margin({ right: 8 })
                 Text('我喜欢的')
                   .fontSize(Math.round(14 * this.fontSizeScale))
