@@ -11,7 +11,6 @@ import { SongInfo } from '../model/SongInfo';
 import Logger from '../common/utils/Logger';
 import { ColorConversion } from '../common/utils/ColorConversion';
 import { WindowInfo } from '../common/utils/WindowUtil';
-import { PromptActionClassNew } from '../viewmodel/PromptActionClassNew';
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
 import { AlbumCoverLease, AlbumCoverSize, AudioMetadataService } from '../service/AudioMetadataService';
 
@@ -57,12 +56,6 @@ export struct PlayerInfoComponent {
   mainWindowInfoChange() {
     Logger.info(
       `windowUtil is change,current width breakpoint is ${this.mainWindowInfo?.widthBp},height breakpoint is ${this.mainWindowInfo?.heightBp}`)
-    if (this.mainWindowInfo.heightBp === HeightBreakpoint.HEIGHT_MD &&
-      this.mainWindowInfo.widthBp === WidthBreakpoint.WIDTH_SM) {
-      PromptActionClassNew.openDialog();
-    } else {
-      PromptActionClassNew.closeDialog();
-    }
   }
 
   aboutToAppear(): void {

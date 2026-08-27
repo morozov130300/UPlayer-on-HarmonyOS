@@ -24,10 +24,6 @@ const TAG = 'ColorConversion';
 export class ColorConversion {
   /**
    * Generate an immersive background color for the image.
-   * @param rRGB
-   * @param gRGB
-   * @param bRGB
-   * @returns
    */
   public static dealColor(rRGB: number, gRGB: number, bRGB: number) {
     let max = Math.max(Math.max(rRGB, gRGB), bRGB);

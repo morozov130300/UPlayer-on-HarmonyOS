@@ -6,7 +6,6 @@ import { ContentConstants } from '../common/constants/ContentConstants';
 import { MusicPlayMode, PlayerConstants, PlayModeSwitchList, VOLUME_ID } from '../common/constants/PlayerConstants';
 import { StyleConstants } from '../common/constants/StyleConstants';
 import Logger from '../common/utils/Logger';
-import { ResourceConversion } from '../common/utils/ResourceConversion';
 import { SongInfo } from '../model/SongInfo';
 import { SongDataSource } from '../viewmodel/SongDataSource';
 import { AVPlayerService } from '../service/AVPlayerService';
@@ -49,7 +48,6 @@ export struct ControlAreaComponent {
   @State playBtnScale: number = 1.0;
   @State sliderGlow: number = 0;
   private scroller: Scroller = new Scroller();
-  private resourceConversion: ResourceConversion = new ResourceConversion();
   private context: common.UIAbilityContext | undefined = AppStorage.get(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT);
   uiContext: UIContext = this.getUIContext();
   promptAction: PromptAction = this.uiContext.getPromptAction();
@@ -128,10 +126,10 @@ export struct ControlAreaComponent {
     try {
       this.promptAction.openToast({
         message: `${this.playMode === MusicPlayMode.ORDER ?
-          this.resourceConversion.getStringValueFromResource($r('app.string.sequential_playback')) :
+          (this.context?.resourceManager?.getStringSync($r('app.string.sequential_playback').id) ?? '') :
           this.playMode === MusicPlayMode.RANDOM ?
-            this.resourceConversion.getStringValueFromResource($r('app.string.random_playback')) :
-            this.resourceConversion.getStringValueFromResource($r('app.string.single_playback'))}`
+            (this.context?.resourceManager?.getStringSync($r('app.string.random_playback').id) ?? '') :
+            (this.context?.resourceManager?.getStringSync($r('app.string.single_playback').id) ?? '')}`
       });
     } catch (err) {
       Logger.error(TAG, `openToast failed: ${JSON.stringify(err)}`);
