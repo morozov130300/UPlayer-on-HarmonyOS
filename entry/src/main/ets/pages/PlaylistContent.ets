@@ -11,7 +11,7 @@ import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { display } from '@kit.ArkUI'
 import { deviceInfo } from '@kit.BasicServicesKit'
-import { curves } from '@kit.ArkUI'
+import { curves, GridAlign } from '@kit.ArkUI'
 
 const TAG = 'PlaylistContent'
 const FAVORITES_FOLDER_ID: string = '__favorites__'
@@ -367,6 +367,7 @@ export struct PlaylistContent {
               .rowsGap(10)
               .padding({ left: 16, right: 16 })
               .width('100%')
+              .alignment(GridAlign.Start)
             } else {
               Text('暂无歌单，点击添加歌曲')
                 .fontSize(Math.round(14 * this.fontSizeScale))
