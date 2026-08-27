@@ -19,7 +19,6 @@ import { AlbumCover } from '../component/AlbumCover';
 import { AVSessionController } from '../common/utils/mediautils/AVSessionController';
 
 const TAG = 'ControlAreaComponent';
-const SKIP_MS: number = 15000;
 
 @Component
 export struct ControlAreaComponent {
@@ -136,18 +135,6 @@ export struct ControlAreaComponent {
     }
   }
 
-  private skipForward(): void {
-    const newPos: number = Math.min(this.value + SKIP_MS, this.max);
-    this.avPlayerService.seek(newPos);
-    this.pageShowTime = 0;
-  }
-
-  private skipBackward(): void {
-    const newPos: number = Math.max(this.value - SKIP_MS, 0);
-    this.avPlayerService.seek(newPos);
-    this.pageShowTime = 0;
-  }
-
   build() {
     Column() {
       Column() {
@@ -202,13 +189,11 @@ export struct ControlAreaComponent {
 
       Row() {
         Column() {
-          SymbolGlyph($r('sys.symbol.gobackward_15'))
-            .fontSize(28)
-            .renderingStrategy(SymbolRenderingStrategy.SINGLE)
-            .fontColor([Color.White])
-            .opacity(0.86)
+          Image($r('app.media.ic_public_play_last'))
+            .controlImageBuilder()
+            .width(32)
             .hoverEffect(HoverEffect.Scale)
-            .onClick(() => { this.skipBackward(); })
+            .onClick(() => { this.avPlayerService.playPreviousSong(); this.pageShowTime = 0; })
         }
         .layoutWeight(1)
         .justifyContent(FlexAlign.Center)
@@ -267,13 +252,11 @@ export struct ControlAreaComponent {
         .justifyContent(FlexAlign.Center)
 
         Column() {
-          SymbolGlyph($r('sys.symbol.goforward_15'))
-            .fontSize(28)
-            .renderingStrategy(SymbolRenderingStrategy.SINGLE)
-            .fontColor([Color.White])
-            .opacity(0.86)
+          Image($r('app.media.ic_public_play_next'))
+            .controlImageBuilder()
+            .width(32)
             .hoverEffect(HoverEffect.Scale)
-            .onClick(() => { this.skipForward(); })
+            .onClick(() => { this.avPlayerService.playNextSong(); this.pageShowTime = 0; })
         }
         .layoutWeight(1)
         .justifyContent(FlexAlign.Center)

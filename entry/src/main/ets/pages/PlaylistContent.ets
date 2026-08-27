@@ -472,9 +472,10 @@ export struct PlaylistContent {
         .alignItems(VerticalAlign.Center)
         .position({ x: 6, y: 6 })
       }
-      Image($r('app.media.ic_public_music'))
-        .width(28).height(28)
-        .fillColor($r('app.color.text_sixty_color'))
+      SymbolGlyph($r('sys.symbol.music_note_list'))
+        .fontSize(28)
+        .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+        .fontColor([$r('app.color.text_sixty_color')])
         .margin({ bottom: 6 })
       Text(item.name)
         .fontSize(Math.round(12 * this.fontSizeScale))

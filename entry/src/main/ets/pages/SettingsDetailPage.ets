@@ -838,8 +838,11 @@ struct SettingsDetailPage {
       // ─── 一级标题「底部栏交互」（经典/玻璃两种样式下都生效，与底部栏样式相关）───
       Column() {
         this.groupTitle('底部栏交互', false)
+      }
+      .width('100%')
 
-        // 跟手光效颜色：白光 / 主题色
+      // 跟手光效颜色：白光 / 主题色
+      Column() {
         Row({ space: this.scaledSize(8) }) {
           this.subTitleRow('跟手光效颜色')
           Blank()
@@ -888,10 +891,13 @@ struct SettingsDetailPage {
         .constraintSize({ minWidth: 0, maxWidth: '100%' })
         .alignItems(VerticalAlign.Center)
         .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
-        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-        .borderRadius(this.scaledSize(10))
+      }
+      .width('100%')
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
 
-        // 底部栏触摸指示：跟手光效 / 白色蒙版 二选一，互斥
+      // 底部栏触摸指示：跟手光效 / 白色蒙版 二选一，互斥
+      Column() {
         Row({ space: this.scaledSize(8) }) {
           this.subTitleRow('底部栏触摸指示')
           Blank()
@@ -940,11 +946,10 @@ struct SettingsDetailPage {
         .constraintSize({ minWidth: 0, maxWidth: '100%' })
         .alignItems(VerticalAlign.Center)
         .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
-        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-        .borderRadius(this.scaledSize(10))
       }
       .width('100%')
-      .constraintSize({ minWidth: 0, maxWidth: '100%' })
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
 
       // ─── 一级标题「高级样式」（玻璃模式下显示） + 右上角叹号角标 ───
       // 点击叹号弹窗说明玻璃效果所影响的所有位置
@@ -1170,6 +1175,13 @@ struct SettingsDetailPage {
             if (!this.previewOnRight) {
               this.homeTopBlurPreview()
             }
+            Text('浅')
+              .fontSize(this.scaledFont(11))
+              .fontColor(this.settingTextColor())
+              .margin({
+                left: this.previewOnRight ? 0 : this.scaledSize(14),
+                right: this.scaledSize(8)
+              })
             Slider({
               value: this.settings.homeTopBlurStrength,
               min: 0,
@@ -1191,6 +1203,10 @@ struct SettingsDetailPage {
                   this.updateSetting()
                 }
               })
+            Text('深')
+              .fontSize(this.scaledFont(11))
+              .fontColor(this.settingTextColor())
+              .margin({ left: this.scaledSize(8) })
             if (this.previewOnRight) {
               Blank().width(this.scaledSize(14))
               this.homeTopBlurPreview()

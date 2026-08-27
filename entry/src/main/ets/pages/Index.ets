@@ -513,10 +513,9 @@ struct MainPage {
         .alignItems(HorizontalAlign.Start)
         .onClick(() => { this.openPlayer() })
       }
-      SymbolGlyph($r('sys.symbol.gobackward_15'))
-        .fontSize(this.scaledSize(18))
-        .renderingStrategy(SymbolRenderingStrategy.SINGLE)
-        .fontColor([$r('app.color.player_icon_color')])
+      Image($r('app.media.ic_public_play_last'))
+        .height(this.scaledSize(18))
+        .fillColor($r('app.color.player_icon_color'))
         .onClick(() => { this.playPrevious() })
       SymbolGlyph(this.isPlaying ? $r('sys.symbol.pause_circle_fill') : $r('sys.symbol.play_circle_fill'))
         .fontSize(this.scaledSize(22))
@@ -525,10 +524,9 @@ struct MainPage {
         .onClick(() => {
           this.togglePlay()
         })
-      SymbolGlyph($r('sys.symbol.goforward_15'))
-        .fontSize(this.scaledSize(18))
-        .renderingStrategy(SymbolRenderingStrategy.SINGLE)
-        .fontColor([$r('app.color.player_icon_color')])
+      Image($r('app.media.ic_public_play_next'))
+        .height(this.scaledSize(18))
+        .fillColor($r('app.color.player_icon_color'))
         .onClick(() => { this.playNext() })
     }
     .constraintSize({ maxWidth: this.breakpoint === 'sm' || this.breakpoint === 'md' ? '85%' : '42%' })
