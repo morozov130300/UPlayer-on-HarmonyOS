@@ -140,18 +140,16 @@ hdc shell hilog
 
 #### 查询方式
 
-项目已配置华为「开发者知识 MCP」代理（`mcp-proxy.py`），通过 `searchDocuments` 工具可检索官方文档。
+项目已配置华为「开发者知识 MCP」代理（`mcp-proxy.js`），通过 `searchDocuments` 工具可检索官方文档。
 
 **MCP 配置（BitFun 设置 → MCP 服务器）：**
 ```json
 {
   "mcpServers": {
     "鸿蒙开发华为官方知识库": {
-      "command": "python3",
-      "args": ["/storage/Users/currentUser/Desktop/Develop/UPlayer-on-HarmonyOS/mcp-proxy.py"],
-      "env": {
-        "UV_THREADPOOL_SIZE": "1"
-      }
+      "command": "D:\\DevEco Studio\\tools\\node\\node.exe",
+      "args": ["--jitless", "D:\\UPlayer\\mcp-proxy.js"],
+      "env": {}
     }
   }
 }
