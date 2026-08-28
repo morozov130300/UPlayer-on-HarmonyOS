@@ -129,16 +129,29 @@ hdc shell hilog
 
 #### 查询方式
 
-项目已配置华为「开发者知识 MCP」代理（`mcp-proxy.js`），通过 `searchDocuments` 工具可检索官方文档。
+项目已配置华为「开发者知识 MCP」代理（`mcp-proxy.js`），通过 `searchDocuments` 工具可检索官方文档，直接在智能体向模型端暴露的工具即可调用。
 
 **标准查询流程：**
 1. 先用 MCP 搜索工具查询相关 API 文档
 2. 以搜索结果为准，禁止自行推断
 3. 若 MCP 无结果，再尝试 WebSearch 查找华为开发者文档链接
 
-### MCP 工具使用方法
+### MCP 工具使用方法（重要：deferred 工具调用规范）
 
-项目通过 BitFun MCP 工具连接华为「开发者知识 MCP」，提供两个工具：`searchDocuments` 和 `getDocumentsById`。
+项目通过 BitFun MCP 工具连接华为「开发者知识 MCP」，提供两个工具：`searchDocuments` 和 `getDocumentsById`。这两个工具是 **deferred 工具**，必须遵循以下调用顺序：
+
+#### ⚠️ Deferred 工具调用规则
+
+**必须先调用 `GetToolSpec` 加载工具 schema，再调用 `CallDeferredTool` 执行。** 不可直接调用 `CallDeferredTool`，否则会返回 `invalid_arguments` 错误。
+
+**正确步骤：**
+1. 第一次调用时，先执行 `GetToolSpec` 传入工具名（如 `mcp_______________searchDocuments`），获取工具的完整输入/输出 schema
+2. schema 加载成功后，该工具在对话中缓存在线，后续可直接用 `CallDeferredTool` 调用
+3. 只有当系统提示 schema 过期或不可用时，才需要重新调用 `GetToolSpec`
+
+```
+首次使用 → GetToolSpec(工具名) → 获取 schema → CallDeferredTool(工具名, 参数) → 后续直接使用 CallDeferredTool
+```
 
 #### searchDocuments（搜索文档）
 
