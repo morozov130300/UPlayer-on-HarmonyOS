@@ -1,3 +1,4 @@
+// ArkUI 26 Beta1: 接口定义变更（误报，本项目已是Stage模型）+ UX视觉布局变更（Text默认开启沉浸式材质，系统行为）
 import { common } from '@kit.AbilityKit'
 import { FolderInfo } from '../model/FolderInfo'
 import { SongInfo } from '../model/SongInfo'
@@ -11,7 +12,7 @@ import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { display } from '@kit.ArkUI'
 import { deviceInfo } from '@kit.BasicServicesKit'
-import { curves } from '@kit.ArkUI'
+import { curves, uiMaterial } from '@kit.ArkUI'
 
 const TAG = 'PlaylistContent'
 const FAVORITES_FOLDER_ID: string = '__favorites__'
@@ -251,7 +252,9 @@ export struct PlaylistContent {
       this.loadData()
       try {
         this.getUIContext()?.getPromptAction().showToast({
-          message: `新增 ${result.newCount} 首` + (result.dupCount > 0 ? `，${result.dupCount} 首已存在` : '')
+          message: `新增 ${result.newCount} 首` + (result.dupCount > 0 ? `，${result.dupCount} 首已存在` : ''),
+          // ArkUI 26 Beta1: 显式指定材质，避免依赖系统默认值（Dialog/Toast 默认开启沉浸式系统材质）
+          materialStyle: uiMaterial.ImmersiveStyle.REGULAR
         })
       } catch (e) {
         Logger.error(TAG, 'toast failed')
