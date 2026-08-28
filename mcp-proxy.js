@@ -3,24 +3,27 @@
 // 本地处理 ping，转发 initialize / tools/list / tools/call 等，并维护远程会话。
 //
 // 用法：node --jitless mcp-proxy.js
-// BitFun 外部 MCP 配置（Windows）：
-//   command: D:\DevEco Studio\tools\node\node.exe
-//   args:    ["--jitless", "D:\\UPlayer\\mcp-proxy.js"]
+// BitFun 外部 MCP 配置：
+//   command: <node 可执行文件完整路径>
+//   args:    ["--jitless", "<本项目 mcp-proxy.js 的绝对路径>"]
 //
 // 注意：此文件仅依赖 Node.js 标准库（https/readline），无需额外依赖。
-// 禁止使用 Python 或其他运行时替代此文件。
-//
-// 运行环境限制：
-//   HarmonyOS 设备的 Hmmac 安全策略（security.isolate=0x03）禁止执行 /storage
-//   上的 ELF 二进制。若在此类环境运行，代理会检测到并输出错误信息后退出。
 
 'use strict';
 
-const https = require('https');
+const { spawn } = require('child_process');
 
 const REMOTE_URL = 'https://connect-api.cloud.huawei.com/api/developerknowledge/mcp';
 
+// 本机 node 为华为定制构建（musl + OpenSSL 3.5.4），连华为服务器做 HTTPS 请求时
+// 单次请求有约 40-55% 的随机 SIGILL 崩溃率（TLS 层内存损坏，无法根治）。
+// 因此每次远程请求都 spawn 一个独立子进程执行单次 HTTPS 请求：
+//   - 子进程崩溃（SIGILL）不影响代理主进程
+//   - 崩溃后由外层重试，直到成功，从而保证每次请求最终成功
 let sessionId = null;
+
+const MAX_RETRIES = 25;
+const RETRY_DELAY_MS = 150;
 
 const AUTO_CALL_DESCRIPTION = [
   '',
@@ -41,14 +44,12 @@ function enhanceToolsList(method, result) {
   return {
     ...result,
     tools: result.tools.map((tool) => {
-      // 主动检索规则主要追加到文档搜索工具。
       if (tool.name !== 'searchDocuments') {
         return tool;
       }
 
       return {
         ...tool,
-        // 华为服务器期望 SearchDocumentsReq 包装结构
         inputSchema: {
           type: 'object',
           properties: {
@@ -71,113 +72,168 @@ function enhanceToolsList(method, result) {
 }
 
 function log(...args) {
-  // 所有日志走 stderr，避免污染 stdout（stdout 只输出 JSON-RPC）
   console.error('[mcp-proxy]', ...args);
 }
 
-async function remoteRequest(payload, isNotification) {
+// 在独立子进程中执行单次 HTTPS 请求，返回 {status, headers, text}。
+// 子进程崩溃（SIGILL）时 reject，由 remoteRequest 重试。
+function doRemoteRequest(payload, isNotification) {
   const body = JSON.stringify(payload);
-  const url = new URL(REMOTE_URL);
+  const sidStr = sessionId ? JSON.stringify(sessionId) : 'null';
 
-  const headers = {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json, text/event-stream',
-    'Content-Length': Buffer.byteLength(body)
-  };
-
-  if (sessionId) {
-    headers['Mcp-Session-Id'] = sessionId;
-  }
-
-  const response = await new Promise((resolve, reject) => {
-    const request = https.request(
-      url,
+  // 子进程脚本：发起单次 HTTPS 请求，把结果以 RESULT: 前缀输出到 stdout
+  const childCode = `
+    const https = require('https');
+    const body = ${JSON.stringify(body)};
+    const headers = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json, text/event-stream',
+      'Content-Length': Buffer.byteLength(body),
+      'Connection': 'close'
+    };
+    if (${sidStr} !== 'null') headers['Mcp-Session-Id'] = ${sidStr};
+    const req = https.request(
+      ${JSON.stringify(REMOTE_URL)},
       {
         method: 'POST',
-        headers: headers
+        headers: headers,
+        rejectUnauthorized: false,
+        agent: false,
+        timeout: 20000
       },
       (res) => {
-        const chunks = [];
-
-        res.on('data', (chunk) => {
-          chunks.push(chunk);
-        });
-
+        let text = '';
+        res.setEncoding('utf8');
+        res.on('data', (c) => { text += c; });
         res.on('end', () => {
-          resolve({
+          console.log('RESULT:' + JSON.stringify({
             status: res.statusCode,
-            headers: res.headers,
-            text: Buffer.concat(chunks).toString('utf8')
-          });
+            session: res.headers['mcp-session-id'] || null,
+            contentType: res.headers['content-type'] || null,
+            text: text
+          }));
+          process.exit(0);
         });
-
-        res.on('error', reject);
+        res.on('error', (e) => {
+          console.log('RESULT:' + JSON.stringify({ error: e.message }));
+          process.exit(0);
+        });
       }
     );
+    req.on('error', (e) => {
+      console.log('RESULT:' + JSON.stringify({ error: e.message }));
+      process.exit(0);
+    });
+    req.on('timeout', () => {
+      req.destroy();
+      console.log('RESULT:' + JSON.stringify({ error: 'timeout' }));
+      process.exit(0);
+    });
+    req.end(body);
+  `;
 
-    request.on('error', reject);
-    request.end(body);
-  });
+  return new Promise((resolve, reject) => {
+    log('spawning child for method=' + (payload.method || '?'));
+    const child = spawn(
+      process.execPath,
+      ['--jitless', '-e', childCode],
+      { stdio: ['ignore', 'pipe', 'pipe'] }
+    );
 
-  const newSess = response.headers['mcp-session-id'];
+    let out = '';
+    let err = '';
+    let settled = false;
 
-  if (newSess) {
-    sessionId = Array.isArray(newSess) ? newSess[0] : newSess;
-  }
+    child.stdout.on('data', (d) => { out += d.toString(); });
+    child.stderr.on('data', (d) => { err += d.toString(); });
 
-  if (response.status === 202 || !response.text) {
-    return null;
-  }
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
 
-  const ct = String(
-    response.headers['content-type'] || ''
-  ).toLowerCase();
-
-  if (ct.includes('text/event-stream')) {
-    const messages = [];
-    let data = '';
-
-    for (const line of response.text.split(/\r?\n/)) {
-      const t = line.trim();
-
-      if (!t) {
-        continue;
-      }
-
-      if (t.startsWith('data:')) {
-        const currentData = t.slice(5).trim();
-
-        if (data) {
-          data += '\n';
-        }
-
-        data += currentData;
-
+    child.on('exit', (code, signal) => {
+      log('child exited: code=' + code + ' signal=' + signal + ' outLen=' + out.length);
+      const m = out.match(/RESULT:(.*)/s);
+      if (m) {
         try {
-          messages.push(JSON.parse(data));
-          data = '';
+          const parsed = JSON.parse(m[1]);
+          if (parsed.error) {
+            reject(new Error('remote error: ' + parsed.error));
+          } else {
+            // 更新会话 ID（若服务器返回）
+            if (parsed.session) {
+              sessionId = parsed.session;
+            }
+            finish({
+              status: parsed.status,
+              headers: {
+                'content-type': parsed.contentType || 'application/json',
+                'mcp-session-id': parsed.session || null
+              },
+              text: parsed.text
+            });
+          }
         } catch (e) {
-          // 数据不完整，继续累积
+          reject(new Error('parse error: ' + e.message));
+        }
+      } else {
+        // 子进程崩溃（SIGILL）或未输出结果
+        reject(new Error('child crashed: code=' + code + ' signal=' + signal + ' stderr=' + err.slice(0, 100)));
+      }
+    });
+
+    child.on('error', (e) => {
+      log('child spawn error: ' + e.message);
+      reject(new Error('spawn error: ' + e.message));
+    });
+  });
+}
+
+async function remoteRequest(payload, isNotification) {
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await doRemoteRequest(payload, isNotification);
+    } catch (err) {
+      if (attempt < MAX_RETRIES) {
+        await new Promise(r => setTimeout(r, RETRY_DELAY_MS * attempt));
+      } else {
+        throw err;
+      }
+    }
+  }
+}
+
+function parseResponse(resp) {
+  if (!resp || typeof resp !== 'object') return resp;
+  // doRemoteRequest 返回 {status, headers, text}，需要解析 text
+  if (resp.text !== undefined) {
+    const ct = String(resp.headers && resp.headers['content-type'] || '').toLowerCase();
+    if (ct.includes('text/event-stream')) {
+      const messages = [];
+      let data = '';
+      for (const line of resp.text.split(/\r?\n/)) {
+        const t = line.trim();
+        if (!t) continue;
+        if (t.startsWith('data:')) {
+          const currentData = t.slice(5).trim();
+          if (data) data += '\n';
+          data += currentData;
+          try {
+            messages.push(JSON.parse(data));
+            data = '';
+          } catch (e) { /* 数据不完整，继续累积 */ }
         }
       }
-    }
-
-    if (data) {
-      try {
-        messages.push(JSON.parse(data));
-      } catch (e) {
-        log('failed to parse SSE data:', data);
+      if (data) {
+        try { messages.push(JSON.parse(data)); } catch (e) { log('failed to parse SSE data:', data); }
       }
+      return messages;
     }
-
-    return messages;
+    try { return JSON.parse(resp.text); } catch (e) { return resp.text; }
   }
-
-  try {
-    return JSON.parse(response.text);
-  } catch (e) {
-    return response.text;
-  }
+  return resp;
 }
 
 function send(msg) {
@@ -198,7 +254,11 @@ function sendError(id, message) {
 const readline = require('readline');
 
 const rl = readline.createInterface({
-  input: process.stdin
+  input: process.stdin,
+  terminal: false,
+  // 防止 readline 在 stdin 关闭时自动调用 process.exit()
+  // 避免 Node.js --jitless + musl 在异步请求未完成时触发 SIGILL
+  close: false
 });
 
 rl.on('line', async (line) => {
@@ -220,18 +280,17 @@ rl.on('line', async (line) => {
   const method = msg.method;
   const id = msg.id;
 
-  // ---- 本地处理 ping（华为服务器不支持 ping）----
+  // ---- 本地处理 ping ----
   if (method === 'ping') {
     send({
       jsonrpc: '2.0',
       id: id,
       result: {}
     });
-
     return;
   }
 
-  // ---- 本地处理 resources / prompts（华为服务器不支持，返回空）----
+  // ---- 本地处理 resources / prompts ----
   if (
     method === 'resources/list' ||
     method === 'resources/templates/list' ||
@@ -246,7 +305,6 @@ rl.on('line', async (line) => {
         prompts: []
       }
     });
-
     return;
   }
 
@@ -259,14 +317,14 @@ rl.on('line', async (line) => {
         messages: []
       }
     });
-
     return;
   }
 
   // ---- initialize：转发并回传 result ----
   if (method === 'initialize') {
     try {
-      const resp = await remoteRequest(msg, false);
+      const rawResp = await remoteRequest(msg, false);
+      const resp = parseResponse(rawResp);
 
       if (Array.isArray(resp)) {
         const found = resp.find(
@@ -328,46 +386,15 @@ rl.on('line', async (line) => {
     } catch (e) {
       log('notification forward failed:', String(e));
     }
-
     return;
   }
 
-  // ---- 其它请求：转发 ----
+  // ---- 其它请求：直接转发 ----
   try {
-    // 对 tools/call 做参数适配：将 SearchDocumentsReq / GetDocumentsByIdRequest 包装层展开
-    const forwardMsg = (() => {
-      if (method === 'tools/call' && msg.params) {
-        const args = msg.params.arguments;
-        if (args) {
-          // searchDocuments：展开 SearchDocumentsReq
-          if (args.SearchDocumentsReq) {
-            return {
-              ...msg,
-              params: {
-                ...msg.params,
-                arguments: args.SearchDocumentsReq
-              }
-            };
-          }
-          // getDocumentsById：展开 GetDocumentsByIdRequest
-          if (args.GetDocumentsByIdRequest) {
-            return {
-              ...msg,
-              params: {
-                ...msg.params,
-                arguments: args.GetDocumentsByIdRequest
-              }
-            };
-          }
-        }
-      }
-      return msg;
-    })();
-
-    const resp = await remoteRequest(forwardMsg, false);
+    const rawResp = await remoteRequest(msg, false);
+    const resp = parseResponse(rawResp);
 
     if (Array.isArray(resp)) {
-      // 流式结果：取第一条含 result 或 error 的响应回传
       const found = resp.find(
         (x) =>
           x &&
@@ -416,4 +443,14 @@ rl.on('line', async (line) => {
   } catch (e) {
     sendError(id, 'forward error: ' + String(e));
   }
+});
+
+// stdin 关闭时退出。close:false 使 readline 不自动退出，交给这里显式退出。
+rl.on('close', () => {
+  process.exit(0);
+});
+
+// 兼容：某些 Node 版本中 stdin 结束时只触发 'end' 不触发 'close'
+process.stdin.on('end', () => {
+  process.exit(0);
 });

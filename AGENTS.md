@@ -4,16 +4,16 @@
 
 ### ⚠️ 强制规定：所有图标必须使用 HarmonyOS 图标库
 
-**！！！！！！所有！！！！！！** 智能体生成的界面、组件、布局中的图标，**必须且只能**使用 `HarmonyOS图标库/` 目录下的 SVG 图标。
+**！！！！！！所有！！！！！！** 智能体生成的界面、组件、布局中的图标，**必须且只能**使用 `HarmonyOS图标库/` 目录下的 SVG 图标。如果实在找不到卢克且必须报告用户，绝不自以为是乱用图标。
 
 #### 图标资源路径
 
-图标文件位于项目根目录：
+图标文件位于项目工作区目录下：
 ```
-D:/UPlayer/HarmonyOS图标库/
+HarmonyOS图标库/
 ```
 
-#### 使用方式
+#### 使用方式(仅供参考)
 
 在 ArkTS 代码中使用图标：
 
@@ -29,21 +29,11 @@ Image($r('app.media.ic_celiakeyboard_menu'))
   .height(20)
 ```
 
-#### 可用图标列表
-
-HarmonyOS 图标库包含以下类别图标：
-
-- **键盘相关**: `ic_celiakeyboard_menu.svg`, `ic_celiakeyboard_delete.svg`, `ic_celiakeyboard_enter.svg`, `ic_celiakeyboard_spell.svg`, `ic_celiakeyboard_handwritten.svg`, `ic_celiakeyboard_onehand.svg`, `ic_celiakeyboard_bihua.svg`, `ic_celiakeyboard_float.svg`, `ic_celiakeyboard_thumb_mode.svg`, `ic_celiakeyboard_switch_majuscule.svg`, `ic_celiakeyboard_switch_minuscule.svg`, `ic_celiakeyboard_menu_language.svg`
-- **通话相关**: `ic_Call 1 Dial.svg`, `ic_Call 2 Dial.svg`, `ic_Call HD.svg`, `ic_Call R.svg`, `ic_Call 1 Dial_line.svg`, `ic_Call 2 Dial_line.svg`
-- **亮度控制**: `ic_brightness_plus.svg`, `ic_brightness_reduce.svg`
-- **AI 摄影**: `ic_ai_photography_on.svg`, `ic_ai_photography_normal.svg`
-- **其他功能**: `fov_to_org.svg`, `icc_addcontact.svg`, `icc_addcontact_filled.svg`
-- **紧急/健康**: `ic_Allergies Emergency.svg`, `ic_Blood Emergency.svg`, `ic_Business cards.svg`, `ic_Business cards filled.svg`
 
 #### 禁止事项
 
 - ❌ **严禁使用任何其他图标库**（如 Material Icons、Font Awesome、自定义图标等）
-- ❌ **严禁使用 emoji 作为图标**
+- ❌ **严禁使用任何 emoji 作为图标**
 - ❌ **严禁从网络下载或使用外部图标资源**
 - ❌ **严禁自行设计或绘制图标**
 - ✅ **必须从 `HarmonyOS图标库/` 目录中选择最合适的图标**
@@ -52,12 +42,6 @@ HarmonyOS 图标库包含以下类别图标：
 #### 图标注册到资源
 
 将 SVG 文件复制到 `resources/base/media/` 目录后，在 `oh-package.json5` 或 `build-profile.json5` 中确保资源路径正确配置，代码中通过 `$r('app.media.文件名')` 引用。
-
-#### 图标命名规范
-
-- 文件名使用小写字母、数字和下划线，如 `ic_play.svg`
-- 命名格式：`ic_<功能>_<状态>.svg`，如 `ic_play_pause.svg`
-- 禁止使用中文文件名
 
 #### 图标尺寸规范
 
@@ -68,7 +52,7 @@ HarmonyOS 图标库包含以下类别图标：
 
 ---
 
-## 命令行构建命令
+## 命令行构建命令（仅供参考）
 
 ```bash
 "D:\DevEco Studio\tools\node\node.exe" "D:\DevEco Studio\tools\hvigor\bin\hvigorw.js" --mode module -p product=default -p buildMode=debug assembleHap --analyze=normal --parallel --incremental --daemon
@@ -113,25 +97,30 @@ hdc shell hilog
 
 ## 构建产物位置
 
-- HAP 文件：`entry/build/default/outputs/default/entry-defaultSigned.hap`
+- HAP 文件：`entry/build/default/outputs/default`
 
 ## 开发规范
 
 ### 涉及决策时
-- 任何涉及设计的决策（技术方案、架构选型、功能范围、交互方式、视觉风格等），**必须第一时间向用户提问，等待用户明确确认后才能执行**
+- 任何涉及设计的决策（技术方案、架构选型、功能范围、交互方式、视觉风格等），**必须第一时间尽可能多的向用户提问方案细节，等待用户明确确认后才能执行**
 - 禁止在未获用户确认前擅自实施任何设计方案
 - **！！！！！！所有！！！！！！** 遇到任何需要决策的事项，**必须立即向用户报告并询问，由用户决策，不得擅自行动**
+- 在涉及大量文件和大体积文件的写入时，一定要敏感起来，尽可能减少磁盘擦写，延长磁盘寿命，降低空间占用。
+
+### 推送/提交
+- 代码完成后直接推送，不要问"要不要推送"
+- 提交信息简洁明了，在项目版本号大版本为1之前，所有的描述都要保持`项目初始版本`
 
 ### ⚠️ MCP 知识库使用（最高优先级）
 
-**！！！！！！必须主动使用！！！！！！** 编写、修改或排查任何 HarmonyOS / ArkTS / ArkUI 代码时，**必须优先调用 MCP 工具查询华为官方文档**，绝不允许仅凭记忆猜测 API。
+**！！！！！！必须主动使用！！！！！！** 编写、修改或排查任何涉及 HarmonyOS / ArkTS / ArkUI 代码或任何跟编译构建相关的内容时，**必须优先调用 MCP 工具查询华为官方文档**，绝不允许仅凭记忆猜测 API。
 
 #### 触发条件（出现以下任一情况时必须查询 MCP）
 
 | 场景 | 说明 |
 |------|------|
 | 使用新 API 前 | 系统 API（media、audio、motion、network、data 等）的入参、返回值、API Level、设备兼容性 |
-| 遇到编译错误 | ArkTS 编译报错时先查官方文档确认正确用法 |
+| 遇到任何编译错误 | ArkTS 编译报错时先查官方文档确认正确用法和错误来源/原因 |
 | 组件属性/方法不确定 | Grid、Scroll、List、Navigation 等 ArkUI 组件的属性名、方法签名 |
 | 权限声明 | module.json5 中需要添加哪些权限，对应什么用途 |
 | 构建配置 | oh-package.json5、build-profile.json5 的配置项含义 |
@@ -142,54 +131,10 @@ hdc shell hilog
 
 项目已配置华为「开发者知识 MCP」代理（`mcp-proxy.js`），通过 `searchDocuments` 工具可检索官方文档。
 
-**MCP 配置（BitFun 设置 → MCP 服务器）：**
-```json
-{
-  "mcpServers": {
-    "鸿蒙开发华为官方知识库": {
-      "command": "D:\\DevEco Studio\\tools\\node\\node.exe",
-      "args": ["--jitless", "D:\\UPlayer\\mcp-proxy.js"],
-      "env": {}
-    }
-  }
-}
-```
-
-**运行环境说明：**
-- **Windows（主环境）**：BitFun 通过 Node.js 启动 `mcp-proxy.js`（`--jitless`），经 stdio JSON-RPC 与华为服务器通信。
-- **HarmonyOS 设备**： Hmmac 内核安全策略禁止执行 `/storage` 上的 ELF 二进制，Node 无法在此运行。MCP API 通过 HTTPS 直连可用，验证方式见下方。
-
-**验证 MCP 可用性（当前设备，使用 Python 作为验证手段）：**
-```bash
-# 直接调用华为 MCP API 验证连通性
-python3 -c "
-import urllib.request, ssl, json
-ctx = ssl.create_default_context()
-ctx.check_hostname = False
-ctx.verify_mode = ssl.CERT_NONE
-req = urllib.request.Request(
-    'https://connect-api.cloud.huawei.com/api/developerknowledge/mcp',
-    data=json.dumps({'jsonrpc':'2.0','id':1,'method':'tools/list','params':{}}).encode(),
-    headers={'Content-Type':'application/json'}, method='POST'
-)
-with urllib.request.urlopen(req, timeout=15, context=ctx) as r:
-    print(json.loads(r.read())['result']['tools'])
-"
-```
-
 **标准查询流程：**
 1. 先用 MCP 搜索工具查询相关 API 文档
-2. 以搜索结果为准，不要自行推断
+2. 以搜索结果为准，禁止自行推断
 3. 若 MCP 无结果，再尝试 WebSearch 查找华为开发者文档链接
-
-#### 典型用法示例
-
-```typescript
-// 不确定 Grid 组件是否有 alignment 属性？
-// → 先调用 MCP searchDocuments 查询 "ArkUI Grid alignment property"
-// → 确认 Grid 没有 alignment 属性，GridAlign 不在 @kit.ArkUI 导出中
-// → 根据官方文档结论修改代码
-```
 
 #### 禁止事项
 
@@ -199,11 +144,6 @@ with urllib.request.urlopen(req, timeout=15, context=ctx) as r:
 - ✅ **不确定就查，查到再写**
 - ✅ **MCP 查询结果与已有代码冲突时，以 MCP 官方文档为准**
 
-
-### 推送/提交
-- 代码完成后直接推送，不要问"要不要推送"
-- 提交信息简洁明了
-
 ### ⚠️ 数据保护红线（绝对禁止）
 - **严禁执行任何卸载应用的命令**（如 `bm uninstall`、`hdc uninstall`）
 - **严禁清除用户数据**（如 `hdc shell bm clear --data`、删除 preferences 等）
@@ -211,7 +151,7 @@ with urllib.request.urlopen(req, timeout=15, context=ctx) as r:
 - 更新应用时只能使用 `install -r` 覆盖安装，绝不能先卸载再安装
 - 任何可能影响用户数据的操作都必须先向用户确认
 - 违反此规则视为严重错误
-- **如果你未经用户同意删除了用户的任何数据，用户会被他的老板残忍的殴打，请你谨言慎行！**
+- **如果你未经用户同意删除了用户的任何数据，用户会被他的老板虐待殴打，请你谨言慎行！不要让用户受罪**
 
 ## 项目信息
 
