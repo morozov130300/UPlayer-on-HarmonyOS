@@ -33,7 +33,7 @@
               "name": "default",
               "signingConfig": "debug",
               "targetSdkVersion": "26.0.0",
-              "compatibleSdkVersion": "26.0.0",
+              "compatibleSdkVersion": "24.0.0",
               "runtimeOS": "HarmonyOS",
               "buildOption": {
                 "strictMode": {
