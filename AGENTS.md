@@ -136,6 +136,80 @@ hdc shell hilog
 2. 以搜索结果为准，禁止自行推断
 3. 若 MCP 无结果，再尝试 WebSearch 查找华为开发者文档链接
 
+### MCP 工具使用方法
+
+项目通过 BitFun MCP 工具连接华为「开发者知识 MCP」，提供两个工具：`searchDocuments` 和 `getDocumentsById`。
+
+#### searchDocuments（搜索文档）
+
+用于按关键词搜索华为官方文档，返回匹配的文档片段列表。
+
+**入参结构：**
+```json
+{
+  "SearchDocumentsReq": {
+    "query": "搜索词"
+  }
+}
+```
+
+**示例调用：**
+```json
+{
+  "SearchDocumentsReq": {
+    "query": "Grid 布局"
+  }
+}
+```
+
+**返回值：**
+- `code: 0` 表示成功，`resultList` 为匹配文档列表
+- 每项包含 `content`（片段内容）、`parent`（文档唯一标识）、`name`（文档标题）
+- `parent` 字段是调用 `getDocumentsById` 的入参
+
+**使用场景：**
+- 搜索特定 API、组件、装饰器的用法和示例
+- 查找最佳实践、FAQ、开发指南
+- 确认 API Level、设备兼容性、版本差异
+
+#### getDocumentsById（获取完整文档）
+
+用于通过 `searchDocuments` 返回的 `parent` 标识获取文档完整内容。每次最多可检索 10 个文档。
+
+**入参结构：**
+```json
+{
+  "GetDocumentsByIdRequest": {
+    "names": ["文档唯一标识1", "文档唯一标识2"]
+  }
+}
+```
+
+**示例调用：**
+```json
+{
+  "GetDocumentsByIdRequest": {
+    "names": ["document/cn/harmonyos-guides/web-same-layer"]
+  }
+}
+```
+
+**返回值：**
+- `code: 0` 表示成功，`resultList` 为完整文档列表
+- 每项包含 `name`（文档标识）、`title`（文档标题）、`uri`（官方链接）、`content`（Markdown 完整内容）
+
+**典型工作流：**
+1. 先用 `searchDocuments` 搜索关键词，找到相关文档
+2. 从搜索结果中取出 `parent` 字段值
+3. 调用 `getDocumentsById` 传入 parent 值，获取完整文档内容
+4. 根据文档内容编写/修改代码
+
+#### 标准查询流程
+
+```
+搜索关键词 → searchDocuments → 获取 parent → getDocumentsById → 获取完整文档 → 编写代码
+```
+
 #### 禁止事项
 
 - ❌ **严禁不查文档直接写 API 调用代码**

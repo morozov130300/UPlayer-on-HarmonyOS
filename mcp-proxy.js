@@ -81,9 +81,12 @@ function doRemoteRequest(payload, isNotification) {
   const body = JSON.stringify(payload);
   const sidStr = sessionId ? JSON.stringify(sessionId) : 'null';
 
-  // 子进程脚本：发起单次 HTTPS 请求，把结果以 RESULT: 前缀输出到 stdout
+  // 子进程脚本：发起单次 HTTPS 请求，把结果以 RESULT: 前缀输出到 stdout。
+  // 注意：必须用 fs.writeSync(1, ...) 同步写 stdout，不能用 console.log，
+  // 否则大响应（如 getDocumentsById 返回的文档）会因 stdout 缓冲未 flush 而截断。
   const childCode = `
     const https = require('https');
+    const fs = require('fs');
     const body = ${JSON.stringify(body)};
     const headers = {
       'Content-Type': 'application/json',
@@ -92,6 +95,9 @@ function doRemoteRequest(payload, isNotification) {
       'Connection': 'close'
     };
     if (${sidStr} !== 'null') headers['Mcp-Session-Id'] = ${sidStr};
+    function emit(obj) {
+      fs.writeSync(1, 'RESULT:' + JSON.stringify(obj) + '\\n');
+    }
     const req = https.request(
       ${JSON.stringify(REMOTE_URL)},
       {
@@ -99,34 +105,37 @@ function doRemoteRequest(payload, isNotification) {
         headers: headers,
         rejectUnauthorized: false,
         agent: false,
-        timeout: 20000
+        timeout: 20000,
+        // 强制 TLS 1.2：本机华为定制 node 默认 TLS 协商（TLS 1.3）连华为服务器
+        // 会随机 SIGILL 崩溃（TLS 层内存损坏）。强制 TLS 1.2 后崩溃率降为 0。
+        secureProtocol: 'TLSv1_2_method'
       },
       (res) => {
         let text = '';
         res.setEncoding('utf8');
         res.on('data', (c) => { text += c; });
         res.on('end', () => {
-          console.log('RESULT:' + JSON.stringify({
+          emit({
             status: res.statusCode,
             session: res.headers['mcp-session-id'] || null,
             contentType: res.headers['content-type'] || null,
             text: text
-          }));
+          });
           process.exit(0);
         });
         res.on('error', (e) => {
-          console.log('RESULT:' + JSON.stringify({ error: e.message }));
+          emit({ error: e.message });
           process.exit(0);
         });
       }
     );
     req.on('error', (e) => {
-      console.log('RESULT:' + JSON.stringify({ error: e.message }));
+      emit({ error: e.message });
       process.exit(0);
     });
     req.on('timeout', () => {
       req.destroy();
-      console.log('RESULT:' + JSON.stringify({ error: 'timeout' }));
+      emit({ error: 'timeout' });
       process.exit(0);
     });
     req.end(body);
@@ -136,7 +145,9 @@ function doRemoteRequest(payload, isNotification) {
     log('spawning child for method=' + (payload.method || '?'));
     const child = spawn(
       process.execPath,
-      ['--jitless', '-e', childCode],
+      // --no-experimental-strip-types：--jitless 下 -e 代码会被当作 TS 解析，
+      // 需要 WebAssembly（被 --jitless 禁用）而随机报错，此标志可避免。
+      ['--jitless', '--no-experimental-strip-types', '-e', childCode],
       { stdio: ['ignore', 'pipe', 'pipe'] }
     );
 
