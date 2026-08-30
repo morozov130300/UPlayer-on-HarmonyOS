@@ -55,8 +55,8 @@ Image($r('app.media.ic_celiakeyboard_menu'))
 
 ## 命令行构建命令（仅供参考）
 
-```bash
-"D:\DevEco Studio\tools\node\node.exe" "D:\DevEco Studio\tools\hvigor\bin\hvigorw.js" --mode module -p product=default -p buildMode=debug assembleHap --analyze=normal --parallel --incremental --daemon
+```powershell
+& "D:\DevEco Studio\tools\node\node.exe" "D:\DevEco Studio\tools\hvigor\bin\hvigorw.js" --mode module -p module=entry@default -p product=default -p requiredDeviceType=2in1 -p buildMode=debug assembleHap --analyze=normal --parallel --incremental --daemon
 ```
 
 ### 参数说明（来自官方文档）
@@ -64,13 +64,17 @@ Image($r('app.media.ic_celiakeyboard_menu'))
 | 参数 | 说明 |
 | --- | --- |
 | `--mode module` | 模块模式构建 |
+| `-p module=entry@default` | 指定要构建的模块和目标（必填） |
 | `-p product=default` | 指定产品配置 |
+| `-p requiredDeviceType=2in1` | 指定目标设备类型（PC/平板，2in1） |
 | `-p buildMode=debug` | debug/release 构建模式 |
 | `assembleHap` | 构建 HAP 包目标 |
 | `--analyze=normal` | 正常分析模式 |
 | `--parallel` | 并行编译 |
 | `--incremental` | 增量编译 |
 | `--daemon` | 使用守护进程 |
+
+> **注意**：必须包含 `-p module=entry@default` 和 `-p requiredDeviceType=2in1`，否则 hvigor 无法解析 SDK 版本导致构建失败（错误码 00303312）。
 
 ## 真机调试命令
 
