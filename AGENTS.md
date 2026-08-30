@@ -1,14 +1,16 @@
 # UPlayer 智能体构建规范
+## 每一条对话都要调用mcp，注意是每一次都要，强制，要不然你会说胡话！！！！！！！
 
 ## 图标使用规范
 
 ### ⚠️ 强制规定：所有图标必须使用 HarmonyOS 图标库
 
-**！！！！！！所有！！！！！！** 智能体生成的界面、组件、布局中的图标，**必须且只能**使用 `HarmonyOS图标库/` 目录下的 SVG 图标。如果实在找不到卢克且必须报告用户，绝不自以为是乱用图标。
+**！！！！！！所有！！！！！！** 智能体生成的界面、组件、布局中的图标，**必须且只能**使用 `HarmonyOS图标库/` 目录下的 SVG 图标。如果实在找不到合适的图标必须报告用户，绝不自以为是乱用图标。
 
 #### 图标资源路径
 
 图标文件位于项目工作区目录下：
+
 ```
 HarmonyOS图标库/
 ```
@@ -28,7 +30,6 @@ Image($r('app.media.ic_celiakeyboard_menu'))
   .width(20)
   .height(20)
 ```
-
 
 #### 禁止事项
 
@@ -61,7 +62,7 @@ Image($r('app.media.ic_celiakeyboard_menu'))
 ### 参数说明（来自官方文档）
 
 | 参数 | 说明 |
-|------|------|
+| --- | --- |
 | `--mode module` | 模块模式构建 |
 | `-p product=default` | 指定产品配置 |
 | `-p buildMode=debug` | debug/release 构建模式 |
@@ -74,6 +75,7 @@ Image($r('app.media.ic_celiakeyboard_menu'))
 ## 真机调试命令
 
 ### hdc 工具路径
+
 - `D:\DevEco Studio\sdk\default\openharmony\toolchains\hdc.exe`
 
 ### 常用命令
@@ -93,6 +95,7 @@ hdc shell hilog
 ```
 
 ### bundleName
+
 - UPlayer: `cn.edu.whut.uplayer`
 
 ## 构建产物位置
@@ -102,12 +105,14 @@ hdc shell hilog
 ## 开发规范
 
 ### 涉及决策时
+
 - 任何涉及设计的决策（技术方案、架构选型、功能范围、交互方式、视觉风格等），**必须第一时间尽可能多的向用户提问方案细节，等待用户明确确认后才能执行**
 - 禁止在未获用户确认前擅自实施任何设计方案
 - **！！！！！！所有！！！！！！** 遇到任何需要决策的事项，**必须立即向用户报告并询问，由用户决策，不得擅自行动**
 - 在涉及大量文件和大体积文件的写入时，一定要敏感起来，尽可能减少磁盘擦写，延长磁盘寿命，降低空间占用。
 
 ### 推送/提交
+
 - 代码完成后直接推送，不要问"要不要推送"
 - 提交信息简洁明了，在项目版本号大版本为1之前，所有的描述都要保持`项目初始版本`
 
@@ -118,7 +123,7 @@ hdc shell hilog
 #### 触发条件（出现以下任一情况时必须查询 MCP）
 
 | 场景 | 说明 |
-|------|------|
+| --- | --- |
 | 使用新 API 前 | 系统 API（media、audio、motion、network、data 等）的入参、返回值、API Level、设备兼容性 |
 | 遇到任何编译错误 | ArkTS 编译报错时先查官方文档确认正确用法和错误来源/原因 |
 | 组件属性/方法不确定 | Grid、Scroll、List、Navigation 等 ArkUI 组件的属性名、方法签名 |
@@ -132,6 +137,7 @@ hdc shell hilog
 项目已配置华为「开发者知识 MCP」代理（`mcp-proxy.js`），通过 `searchDocuments` 工具可检索官方文档，直接在智能体向模型端暴露的工具即可调用。
 
 **标准查询流程：**
+
 1. 先用 MCP 搜索工具查询相关 API 文档
 2. 以搜索结果为准，禁止自行推断
 3. 若 MCP 无结果，再尝试 WebSearch 查找华为开发者文档链接
@@ -145,6 +151,7 @@ hdc shell hilog
 **必须先调用 `GetToolSpec` 加载工具 schema，再调用 `CallDeferredTool` 执行。** 不可直接调用 `CallDeferredTool`，否则会返回 `invalid_arguments` 错误。
 
 **正确步骤：**
+
 1. 第一次调用时，先执行 `GetToolSpec` 传入工具名（如 `mcp_______________searchDocuments`），获取工具的完整输入/输出 schema
 2. schema 加载成功后，该工具在对话中缓存在线，后续可直接用 `CallDeferredTool` 调用
 3. 只有当系统提示 schema 过期或不可用时，才需要重新调用 `GetToolSpec`
@@ -158,6 +165,7 @@ hdc shell hilog
 用于按关键词搜索华为官方文档，返回匹配的文档片段列表。
 
 **入参结构：**
+
 ```json
 {
   "SearchDocumentsReq": {
@@ -167,6 +175,7 @@ hdc shell hilog
 ```
 
 **示例调用：**
+
 ```json
 {
   "SearchDocumentsReq": {
@@ -176,11 +185,13 @@ hdc shell hilog
 ```
 
 **返回值：**
+
 - `code: 0` 表示成功，`resultList` 为匹配文档列表
 - 每项包含 `content`（片段内容）、`parent`（文档唯一标识）、`name`（文档标题）
 - `parent` 字段是调用 `getDocumentsById` 的入参
 
 **使用场景：**
+
 - 搜索特定 API、组件、装饰器的用法和示例
 - 查找最佳实践、FAQ、开发指南
 - 确认 API Level、设备兼容性、版本差异
@@ -190,6 +201,7 @@ hdc shell hilog
 用于通过 `searchDocuments` 返回的 `parent` 标识获取文档完整内容。每次最多可检索 10 个文档。
 
 **入参结构：**
+
 ```json
 {
   "GetDocumentsByIdRequest": {
@@ -199,6 +211,7 @@ hdc shell hilog
 ```
 
 **示例调用：**
+
 ```json
 {
   "GetDocumentsByIdRequest": {
@@ -208,10 +221,12 @@ hdc shell hilog
 ```
 
 **返回值：**
+
 - `code: 0` 表示成功，`resultList` 为完整文档列表
 - 每项包含 `name`（文档标识）、`title`（文档标题）、`uri`（官方链接）、`content`（Markdown 完整内容）
 
 **典型工作流：**
+
 1. 先用 `searchDocuments` 搜索关键词，找到相关文档
 2. 从搜索结果中取出 `parent` 字段值
 3. 调用 `getDocumentsById` 传入 parent 值，获取完整文档内容
@@ -232,6 +247,7 @@ hdc shell hilog
 - ✅ **MCP 查询结果与已有代码冲突时，以 MCP 官方文档为准**
 
 ### ⚠️ 数据保护红线（绝对禁止）
+
 - **严禁执行任何卸载应用的命令**（如 `bm uninstall`、`hdc uninstall`）
 - **严禁清除用户数据**（如 `hdc shell bm clear --data`、删除 preferences 等）
 - **所有安装必须使用覆盖安装（`install -r`），绝对禁止先卸载再安装！**
