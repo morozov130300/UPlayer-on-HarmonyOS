@@ -56,7 +56,6 @@ struct MainPage {
   @StorageLink('uplayer_glass_brightness') glassBrightness: number = 1.02
   @StorageLink('uplayer_light_color_mode') lightColorMode: string = 'theme'
   @StorageLink('uplayer_tab_touch_indicator') tabTouchIndicator: string = 'light'
-  @StorageLink('uplayer_holding_hand_layout_animation') holdingHandLayoutAnimation: boolean = true
   @StorageLink('uplayer_interactive') interactive: boolean = true
   @StorageLink('uplayer_material_color') materialColor: string = ''
   @StorageLink('uplayer_color_invert') colorInvert: boolean = false

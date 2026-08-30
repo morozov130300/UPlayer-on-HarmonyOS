@@ -69,8 +69,6 @@ export class AppSettingsData {
   glassBrightness: number = 1.02
   // 质感握姿：开启后系统根据单手握持方向自动让首页顶部模糊预览/控件靠左或靠右
   holdingHandEnabled: boolean = true
-  // 握姿切换时的布局动画开关
-  holdingHandLayoutAnimation: boolean = true
   // 底部栏跟手光效颜色：white=纯白光，theme=跟随主题色（暗黑默认白光，明亮默认主题色，由 SettingsDetailPage 按明暗模式初始化）
   lightColorMode: string = 'white'
   // 底部栏点击/拖动指示器风格：light=跟手光效，mask=白色蒙版（与 light 互斥）
@@ -576,8 +574,6 @@ export class DataService {
       s.glassBrightness = rawGlassBrightness !== undefined ? rawGlassBrightness as number : 1.02
       let rawHoldingHandEnabled: Object | undefined = r['holdingHandEnabled']
       s.holdingHandEnabled = rawHoldingHandEnabled !== undefined ? rawHoldingHandEnabled as boolean : true
-      let rawHoldingHandLayoutAnimation: Object | undefined = r['holdingHandLayoutAnimation']
-      s.holdingHandLayoutAnimation = rawHoldingHandLayoutAnimation !== undefined ? rawHoldingHandLayoutAnimation as boolean : true
       let rawLightColorMode: Object | undefined = r['lightColorMode']
       s.lightColorMode = rawLightColorMode !== undefined ? rawLightColorMode as string : 'white'
       let rawTabTouchIndicator: Object | undefined = r['tabTouchIndicator']
@@ -628,7 +624,6 @@ export class DataService {
     r['holdingHandEnabled'] = settings.holdingHandEnabled
     r['lightColorMode'] = settings.lightColorMode
     r['tabTouchIndicator'] = settings.tabTouchIndicator
-    r['holdingHandLayoutAnimation'] = settings.holdingHandLayoutAnimation
     r['interactive'] = settings.interactive
     r['materialColor'] = settings.materialColor
     r['colorInvert'] = settings.colorInvert
@@ -844,7 +839,6 @@ export class DataService {
     AppStorage.setOrCreate('uplayer_holding_hand_enabled', settings.holdingHandEnabled)
     AppStorage.setOrCreate('uplayer_light_color_mode', settings.lightColorMode)
     AppStorage.setOrCreate('uplayer_tab_touch_indicator', settings.tabTouchIndicator)
-    AppStorage.setOrCreate('uplayer_holding_hand_layout_animation', settings.holdingHandLayoutAnimation)
     AppStorage.setOrCreate('uplayer_interactive', settings.interactive)
     AppStorage.setOrCreate('uplayer_material_color', settings.materialColor ?? '')
     AppStorage.setOrCreate('uplayer_color_invert', settings.colorInvert)

@@ -81,7 +81,6 @@ struct SettingsDetailPage {
   private isPC: boolean = deviceInfo.deviceType === '2in1'
   // 智感握姿：开关 + 置信度滤波（连续 N 帧同向才翻转，避免短暂切换造成的"跳变"）
   @StorageLink('uplayer_holding_hand_enabled') @Watch('onHoldingHandEnabledChange') holdingHandEnabled: boolean = true
-  @StorageLink('uplayer_holding_hand_layout_animation') holdingHandLayoutAnimation: boolean = true
   private holdLastStatus: motion.HoldingHandStatus | undefined = undefined
   private holdStreakCount: number = 0
   // 要求连续 HOLD_STREAK_REQUIRED 次同向事件才允许翻转（经验值：原值 1 太敏感，3 较稳）
@@ -1394,22 +1393,6 @@ struct SettingsDetailPage {
               this.holdingHandEnabled = isOn
               this.updateSetting()
               this.refreshHoldingHandListener()
-            })
-            .flexShrink(0)
-        }
-        .width('100%')
-        .constraintSize({ minWidth: 0, maxWidth: '100%' })
-        .alignItems(VerticalAlign.Center)
-        // 布局动画：智感握姿切换时首页布局过渡动画
-        Row({ space: this.scaledSize(10) }) {
-          this.subTitleRow('布局动画')
-          Blank()
-          Toggle({ type: ToggleType.Switch, isOn: this.settings.holdingHandLayoutAnimation })
-            .selectedColor(this.primaryColor)
-            .onChange((val: boolean) => {
-              this.settings.holdingHandLayoutAnimation = val
-              this.holdingHandLayoutAnimation = val
-              this.updateSetting()
             })
             .flexShrink(0)
         }
