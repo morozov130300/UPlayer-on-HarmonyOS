@@ -44,7 +44,7 @@ UPlayer 是一款专为鸿蒙设备设计的本地音频播放器，能够在全
 - 工程根目录 `build-profile.json5` 中声明的 SDK 信息如下：
 
 ```json5
-"products": [
+"products"  : [
   {
     "name": "default",
     "signingConfig": "debug",

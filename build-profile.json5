@@ -40,7 +40,7 @@
                   "caseSensitiveCheck": true,
                   "useNormalizedOHMUrl": true
                 },
-                "debuggable": true,
+                "debuggable": false,
                 "nativeCompiler": "BiSheng"
               }
       }
