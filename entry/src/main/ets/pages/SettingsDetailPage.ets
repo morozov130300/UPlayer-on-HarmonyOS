@@ -525,8 +525,8 @@ struct SettingsDetailPage {
         Row() {
           Row() {
             Image($r('app.media.ic_public_arrow_left'))
-              .width(24)
-              .height(24)
+              .width(20)
+              .height(20)
               .fillColor(this.settingTextColor())
               .opacity(0.9)
           }
