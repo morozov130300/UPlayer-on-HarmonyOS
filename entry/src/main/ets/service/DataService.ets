@@ -625,7 +625,9 @@ export class DataService {
     r['lightColorMode'] = settings.lightColorMode
     r['tabTouchIndicator'] = settings.tabTouchIndicator
     r['interactive'] = settings.interactive
-    r['materialColor'] = settings.materialColor
+    if (settings.materialColor !== undefined) {
+      r['materialColor'] = settings.materialColor
+    }
     r['colorInvert'] = settings.colorInvert
     r['applyShadow'] = settings.applyShadow
     this.getPref().preferencesPut(KEY_SETTINGS, JSON.stringify(r))
