@@ -536,7 +536,7 @@ struct MainPage {
       left: this.scaledSize(12), right: this.scaledSize(16),
       top: this.scaledSize(4), bottom: this.scaledSize(4)
     })
-    .backgroundColor(this.tabStyle === 'immersive' ? Color.Transparent : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+    .backgroundColor(Color.Transparent)
     // 玻璃样式 + 暗黑模式 + 非 API 26 时不应用 backgroundEffect，保持纯黑底；
     // 真机 API 26+ 由 systemMaterial 接管；浅色模式保留原玻璃模糊回退
     .backgroundEffect(this.tabStyle === 'immersive' && !this.isDarkTheme() ? {
