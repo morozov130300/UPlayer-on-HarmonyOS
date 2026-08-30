@@ -78,6 +78,7 @@ struct SettingsDetailPage {
   private isPC: boolean = deviceInfo.deviceType === '2in1'
   // 智感握姿：开关 + 置信度滤波（连续 N 帧同向才翻转，避免短暂切换造成的"跳变"）
   @StorageLink('uplayer_holding_hand_enabled') @Watch('onHoldingHandEnabledChange') holdingHandEnabled: boolean = true
+  @StorageLink('uplayer_holding_hand_layout_animation') holdingHandLayoutAnimation: boolean = true
   private holdLastStatus: motion.HoldingHandStatus | undefined = undefined
   private holdStreakCount: number = 0
   // 要求连续 HOLD_STREAK_REQUIRED 次同向事件才允许翻转（经验值：原值 1 太敏感，3 较稳）
