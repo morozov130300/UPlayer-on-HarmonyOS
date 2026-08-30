@@ -1375,13 +1375,6 @@ struct SettingsDetailPage {
         })
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
         .borderRadius(this.scaledSize(10))
-
-        // 布局动画：智感握姿切换时首页布局带过渡动画
-        this.toggleRow('布局动画', this.settings.holdingHandLayoutAnimation, (val: boolean) => {
-          this.settings.holdingHandLayoutAnimation = val
-          this.holdingHandLayoutAnimation = val
-          this.updateSetting()
-        })
       }
       .width('100%')
       .opacity(this.classicGroupOpacity)
@@ -1390,6 +1383,7 @@ struct SettingsDetailPage {
 
       // 智感握姿：固定位置，不受经典/玻璃样式切换影响
       Column({ space: this.scaledSize(6) }) {
+        // 智感握姿开关
         Row({ space: this.scaledSize(10) }) {
           this.subTitleRow('智感握姿')
           Blank()
@@ -1400,6 +1394,22 @@ struct SettingsDetailPage {
               this.holdingHandEnabled = isOn
               this.updateSetting()
               this.refreshHoldingHandListener()
+            })
+            .flexShrink(0)
+        }
+        .width('100%')
+        .constraintSize({ minWidth: 0, maxWidth: '100%' })
+        .alignItems(VerticalAlign.Center)
+        // 布局动画：智感握姿切换时首页布局过渡动画
+        Row({ space: this.scaledSize(10) }) {
+          this.subTitleRow('布局动画')
+          Blank()
+          Toggle({ type: ToggleType.Switch, isOn: this.settings.holdingHandLayoutAnimation })
+            .selectedColor(this.primaryColor)
+            .onChange((val: boolean) => {
+              this.settings.holdingHandLayoutAnimation = val
+              this.holdingHandLayoutAnimation = val
+              this.updateSetting()
             })
             .flexShrink(0)
         }
