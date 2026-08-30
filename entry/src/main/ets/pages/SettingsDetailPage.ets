@@ -58,9 +58,6 @@ struct SettingsDetailPage {
   @StorageLink('uplayer_glass_brightness') glassBrightness: number = 1.02
   @StorageLink('uplayer_glass_thickness') glassThickness: number = 50
   @StorageLink('uplayer_interactive') interactive: boolean = true
-  @StorageLink('uplayer_material_color') materialColor: string = ''
-  @StorageLink('uplayer_color_invert') colorInvert: boolean = false
-  @StorageLink('uplayer_apply_shadow') applyShadow: boolean = true
   @State pageTitle: string = ''
   @State previewOnRight: boolean = false
   @State showColorPicker: boolean = false
@@ -1148,27 +1145,6 @@ struct SettingsDetailPage {
         this.toggleRow('交互形变', this.settings.interactive, (val: boolean) => {
           this.settings.interactive = val
           this.interactive = val
-          this.updateSetting()
-        })
-
-        // 材质赋色：叠加一层颜色降低折射可见程度
-        this.toggleRow('材质赋色', this.materialColor.length > 0, (val: boolean) => {
-          this.materialColor = val ? this.primaryColor : ''
-          this.settings.materialColor = val ? this.primaryColor : undefined
-          this.updateSetting()
-        })
-
-        // 自动反色：子树文字/图标根据材质背景色自动适配
-        this.toggleRow('自动反色', this.settings.colorInvert, (val: boolean) => {
-          this.settings.colorInvert = val
-          this.colorInvert = val
-          this.updateSetting()
-        })
-
-        // 材质阴影：启用时材质自带阴影，优先于 shadow 通用属性
-        this.toggleRow('材质阴影', this.settings.applyShadow, (val: boolean) => {
-          this.settings.applyShadow = val
-          this.applyShadow = val
           this.updateSetting()
         })
 
