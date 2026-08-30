@@ -506,7 +506,7 @@ struct SettingsDetailPage {
         .borderRadius(this.scaledSize(18))
         .backgroundColor(Color.Transparent)
         .backgroundEffect({
-          radius: this.glassThickness * 0.5,
+          radius: this.glassBlurStrength * 0.5,
           saturation: this.settings.glassSaturation,
           brightness: this.settings.glassBrightness
         })
