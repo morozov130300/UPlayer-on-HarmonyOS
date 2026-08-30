@@ -789,6 +789,7 @@ struct SettingsDetailPage {
             })
             .backgroundColor(this.settings.themeMode === opt.value ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
             .borderRadius(this.scaledSize(14))
+            .animation({ duration: 200, curve: Curve.EaseInOut })
             .onClick(() => {
               this.setThemeMode(opt.value)
             })
@@ -823,6 +824,7 @@ struct SettingsDetailPage {
             })
             .backgroundColor(this.settings.tabStyle === opt.value ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
             .borderRadius(this.scaledSize(14))
+            .animation({ duration: 200, curve: Curve.EaseInOut })
             .onClick(() => {
               this.setTabStyle(opt.value)
             })
@@ -845,7 +847,7 @@ struct SettingsDetailPage {
 
       // 跟手光效颜色：白光 / 主题色
       Column() {
-        Row({ space: this.scaledSize(8) }) {
+        Row() {
           this.subTitleRow('跟手光效颜色')
           Blank()
           Column() {
@@ -863,6 +865,7 @@ struct SettingsDetailPage {
           .backgroundColor(this.settings.lightColorMode === 'white'
             ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
           .borderRadius(this.scaledSize(14))
+          .animation({ duration: 200, curve: Curve.EaseInOut })
           .onClick(() => {
             this.settings.lightColorMode = 'white'
             this.updateSetting()
@@ -883,6 +886,7 @@ struct SettingsDetailPage {
           .backgroundColor(this.settings.lightColorMode === 'theme'
             ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
           .borderRadius(this.scaledSize(14))
+          .animation({ duration: 200, curve: Curve.EaseInOut })
           .onClick(() => {
             this.settings.lightColorMode = 'theme'
             this.updateSetting()
@@ -900,7 +904,7 @@ struct SettingsDetailPage {
 
       // 底部栏触摸指示：跟手光效 / 白色蒙版 二选一，互斥
       Column() {
-        Row({ space: this.scaledSize(8) }) {
+        Row() {
           this.subTitleRow('底部栏触摸指示')
           Blank()
           Column() {
@@ -918,6 +922,7 @@ struct SettingsDetailPage {
           .backgroundColor(this.settings.tabTouchIndicator === 'light'
             ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
           .borderRadius(this.scaledSize(14))
+          .animation({ duration: 200, curve: Curve.EaseInOut })
           .onClick(() => {
             this.settings.tabTouchIndicator = 'light'
             this.updateSetting()
@@ -938,6 +943,7 @@ struct SettingsDetailPage {
           .backgroundColor(this.settings.tabTouchIndicator === 'mask'
             ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
           .borderRadius(this.scaledSize(14))
+          .animation({ duration: 200, curve: Curve.EaseInOut })
           .onClick(() => {
             this.settings.tabTouchIndicator = 'mask'
             this.updateSetting()
@@ -959,7 +965,7 @@ struct SettingsDetailPage {
         this.groupTitle('高级样式', true, 'glass')
         // 三个滑块共享同一预览器（焦点标签由当前激活滑轨决定）
         Column({ space: this.scaledSize(6) }) {
-          Row({ space: this.scaledSize(8) }) {
+          Row() {
             this.subTitleRow('玻璃厚度')
             Blank()
           }
@@ -1015,7 +1021,7 @@ struct SettingsDetailPage {
 
         // 玻璃饱和度 / 亮度 独立调节
         Column({ space: this.scaledSize(6) }) {
-          Row({ space: this.scaledSize(8) }) {
+          Row() {
             this.subTitleRow('玻璃饱和度')
             Blank()
           }
@@ -1062,7 +1068,7 @@ struct SettingsDetailPage {
           .alignItems(VerticalAlign.Center)
           .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
 
-          Row({ space: this.scaledSize(8) }) {
+          Row() {
             this.subTitleRow('玻璃亮度')
             Blank()
           }
@@ -1164,7 +1170,7 @@ struct SettingsDetailPage {
 
         // 首页上端模糊强度
         Column({ space: this.scaledSize(6) }) {
-          Row({ space: this.scaledSize(8) }) {
+          Row() {
             this.subTitleRow('首页上端模糊强度')
             Blank()
           }
@@ -1229,7 +1235,7 @@ struct SettingsDetailPage {
         .borderRadius(this.scaledSize(10))
 
         Column({ space: this.scaledSize(6) }) {
-          Row({ space: this.scaledSize(8) }) {
+          Row() {
             this.subTitleRow('Tab栏与播控条模糊强度')
             Blank()
           }
@@ -1291,7 +1297,7 @@ struct SettingsDetailPage {
         .borderRadius(this.scaledSize(10))
 
         Column({ space: this.scaledSize(6) }) {
-          Row({ space: this.scaledSize(8) }) {
+          Row() {
             this.subTitleRow('经典 Tab 指示器')
             Blank()
           }
@@ -1358,7 +1364,7 @@ struct SettingsDetailPage {
       .visibility(this.settings.tabStyle === 'classic' ? Visibility.Visible : Visibility.None)
 
       Column({ space: this.scaledSize(8) }) {
-        Row({ space: this.scaledSize(8) }) {
+        Row() {
           this.subTitleRow('主题色')
           Blank()
         }
@@ -1366,7 +1372,7 @@ struct SettingsDetailPage {
         Grid() {
           ForEach(this.colorOptions, (option: ThemeColorOption) => {
             GridItem() {
-              Row({ space: this.scaledSize(8) }) {
+              Row() {
                 Column()
                   .width(this.scaledSize(24))
                   .height(this.scaledSize(24))
@@ -1400,7 +1406,7 @@ struct SettingsDetailPage {
         .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(4) })
         .width('100%')
 
-        Row({ space: this.scaledSize(8) }) {
+        Row() {
           Column()
             .width(this.scaledSize(24))
             .height(this.scaledSize(24))
@@ -1441,12 +1447,12 @@ struct SettingsDetailPage {
       .borderRadius(this.scaledSize(10))
 
       Column({ space: this.scaledSize(6) }) {
-        Row({ space: this.scaledSize(8) }) {
+        Row() {
           this.subTitleRow('字体大小')
           Blank()
         }
         .width('100%')
-        Row({ space: this.scaledSize(8) }) {
+        Row() {
           Text('A')
             .fontSize(this.scaledFont(11))
             .fontColor(this.settingTextColor())
@@ -1493,12 +1499,12 @@ struct SettingsDetailPage {
       .borderRadius(this.scaledSize(10))
 
       Column({ space: this.scaledSize(6) }) {
-        Row({ space: this.scaledSize(8) }) {
+        Row() {
           this.subTitleRow('显示大小')
           Blank()
         }
         .width('100%')
-        Row({ space: this.scaledSize(8) }) {
+        Row() {
           Text('小')
             .fontSize(this.scaledFont(11))
             .fontColor(this.settingTextColor())
