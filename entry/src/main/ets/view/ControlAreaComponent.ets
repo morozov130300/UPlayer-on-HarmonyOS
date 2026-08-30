@@ -131,8 +131,6 @@ export struct ControlAreaComponent {
           this.playMode === MusicPlayMode.RANDOM ?
             (this.context?.resourceManager?.getStringSync($r('app.string.random_playback').id) ?? '') :
             (this.context?.resourceManager?.getStringSync($r('app.string.single_playback').id) ?? '')}`,
-        // ArkUI 26 Beta1: 显式指定材质，避免依赖系统默认值（Dialog/Toast 默认开启沉浸式系统材质）
-        materialStyle: uiMaterial.ImmersiveStyle.REGULAR
       });
     } catch (err) {
       Logger.error(TAG, `openToast failed: ${JSON.stringify(err)}`);

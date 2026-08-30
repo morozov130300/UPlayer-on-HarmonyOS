@@ -253,8 +253,6 @@ export struct PlaylistContent {
       try {
         this.getUIContext()?.getPromptAction().showToast({
           message: `新增 ${result.newCount} 首` + (result.dupCount > 0 ? `，${result.dupCount} 首已存在` : ''),
-          // ArkUI 26 Beta1: 显式指定材质，避免依赖系统默认值（Dialog/Toast 默认开启沉浸式系统材质）
-          materialStyle: uiMaterial.ImmersiveStyle.REGULAR
         })
       } catch (e) {
         Logger.error(TAG, 'toast failed')
