@@ -57,6 +57,7 @@ struct SettingsDetailPage {
   @StorageLink('uplayer_glass_saturation') glassSaturation: number = 1.4
   @StorageLink('uplayer_glass_brightness') glassBrightness: number = 1.02
   @StorageLink('uplayer_glass_thickness') glassThickness: number = 50
+  @StorageLink('uplayer_interactive') interactive: boolean = true
   @State pageTitle: string = ''
   @State previewOnRight: boolean = false
   @State showColorPicker: boolean = false
@@ -1140,6 +1141,13 @@ struct SettingsDetailPage {
           0.04))
         .borderRadius(this.scaledSize(10))
 
+        // 交互形变：按压/拖动时液态玻璃产生 Q 弹反馈
+        this.toggleRow('交互形变', this.settings.interactive, (val: boolean) => {
+          this.settings.interactive = val
+          this.interactive = val
+          this.updateSetting()
+        })
+
         // 玻璃效果生效范围：已通过一级标题右上角的小叹号引出弹窗说明
       }
       .width('100%')
@@ -1342,6 +1350,13 @@ struct SettingsDetailPage {
         })
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
         .borderRadius(this.scaledSize(10))
+
+        // 布局动画：智感握姿切换时首页布局带过渡动画
+        this.toggleRow('布局动画', this.settings.holdingHandLayoutAnimation, (val: boolean) => {
+          this.settings.holdingHandLayoutAnimation = val
+          this.holdingHandLayoutAnimation = val
+          this.updateSetting()
+        })
       }
       .width('100%')
       .opacity(this.classicGroupOpacity)

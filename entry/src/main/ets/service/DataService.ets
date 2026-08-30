@@ -75,6 +75,8 @@ export class AppSettingsData {
   lightColorMode: string = 'white'
   // 底部栏点击/拖动指示器风格：light=跟手光效，mask=白色蒙版（与 light 互斥）
   tabTouchIndicator: string = 'light'
+  // 液态玻璃交互形变：按压/拖动时产生 Q 弹反馈
+  interactive: boolean = true
   }
 
 export class DataService {
@@ -574,6 +576,8 @@ export class DataService {
       s.lightColorMode = rawLightColorMode !== undefined ? rawLightColorMode as string : 'white'
       let rawTabTouchIndicator: Object | undefined = r['tabTouchIndicator']
       s.tabTouchIndicator = rawTabTouchIndicator !== undefined ? rawTabTouchIndicator as string : 'light'
+      let rawInteractive: Object | undefined = r['interactive']
+      s.interactive = rawInteractive !== undefined ? rawInteractive as boolean : true
       if (eqBandsMigrated) {
         this.saveSettings(s)
       }
@@ -613,6 +617,7 @@ export class DataService {
     r['lightColorMode'] = settings.lightColorMode
     r['tabTouchIndicator'] = settings.tabTouchIndicator
     r['holdingHandLayoutAnimation'] = settings.holdingHandLayoutAnimation
+    r['interactive'] = settings.interactive
     this.getPref().preferencesPut(KEY_SETTINGS, JSON.stringify(r))
     AppStorage.setOrCreate(KEY_SETTINGS, settings)
     AppStorage.setOrCreate('uplayer_fade_in_out', settings.fadeInOut)
@@ -825,6 +830,7 @@ export class DataService {
     AppStorage.setOrCreate('uplayer_light_color_mode', settings.lightColorMode)
     AppStorage.setOrCreate('uplayer_tab_touch_indicator', settings.tabTouchIndicator)
     AppStorage.setOrCreate('uplayer_holding_hand_layout_animation', settings.holdingHandLayoutAnimation)
+    AppStorage.setOrCreate('uplayer_interactive', settings.interactive)
     this.activatePersistedUris()
     return settings
   }

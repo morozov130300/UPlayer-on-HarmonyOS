@@ -57,6 +57,7 @@ struct MainPage {
   @StorageLink('uplayer_light_color_mode') lightColorMode: string = 'theme'
   @StorageLink('uplayer_tab_touch_indicator') tabTouchIndicator: string = 'light'
   @StorageLink('uplayer_holding_hand_layout_animation') holdingHandLayoutAnimation: boolean = true
+  @StorageLink('uplayer_interactive') interactive: boolean = true
   @State albumArtFailed: boolean = false
   @State isTitleMarqueeRunning: boolean = true
   @State isArtistMarqueeRunning: boolean = true
@@ -157,7 +158,7 @@ struct MainPage {
       : undefined
     return new uiMaterial.ImmersiveMaterial({
       style: this.liquidGlassImmersiveStyle(),
-      interactive: true,
+      interactive: this.interactive,
       lightEffect: lightColor !== undefined ? { color: lightColor } : undefined
     })
   }
