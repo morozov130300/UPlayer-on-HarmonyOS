@@ -71,8 +71,8 @@ export class AppSettingsData {
   holdingHandEnabled: boolean = true
   // 握姿切换时的布局动画开关
   holdingHandLayoutAnimation: boolean = true
-  // 底部栏跟手光效颜色：white=纯白光，theme=跟随主题色
-  lightColorMode: string = 'theme'
+  // 底部栏跟手光效颜色：white=纯白光，theme=跟随主题色（暗黑默认白光，明亮默认主题色，由 SettingsDetailPage 按明暗模式初始化）
+  lightColorMode: string = 'white'
   // 底部栏点击/拖动指示器风格：light=跟手光效，mask=白色蒙版（与 light 互斥）
   tabTouchIndicator: string = 'light'
   }
@@ -571,7 +571,7 @@ export class DataService {
       let rawHoldingHandLayoutAnimation: Object | undefined = r['holdingHandLayoutAnimation']
       s.holdingHandLayoutAnimation = rawHoldingHandLayoutAnimation !== undefined ? rawHoldingHandLayoutAnimation as boolean : true
       let rawLightColorMode: Object | undefined = r['lightColorMode']
-      s.lightColorMode = rawLightColorMode !== undefined ? rawLightColorMode as string : 'theme'
+      s.lightColorMode = rawLightColorMode !== undefined ? rawLightColorMode as string : 'white'
       let rawTabTouchIndicator: Object | undefined = r['tabTouchIndicator']
       s.tabTouchIndicator = rawTabTouchIndicator !== undefined ? rawTabTouchIndicator as string : 'light'
       if (eqBandsMigrated) {

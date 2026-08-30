@@ -138,6 +138,17 @@ struct SettingsDetailPage {
     // 切到"定制"页时按当前底部栏样式设置组可见度的初值（避免首次进入看到两边都/都不显示）
     this.syncTabStyleGroups(this.settings.tabStyle, false)
     this.registerHoldingHandListener()
+    // 按明暗模式初始化 lightColorMode：未手动设置过时，暗黑默认白光，明亮默认主题色
+    const existingLightMode: string = this.settings.lightColorMode
+    if (existingLightMode === undefined || existingLightMode === '') {
+      if (this.isDark()) {
+        this.settings.lightColorMode = 'white'
+      } else {
+        this.settings.lightColorMode = 'theme'
+        AppStorage.setOrCreate('uplayer_light_color_mode', 'theme')
+      }
+      this.updateSetting()
+    }
   }
 
   private syncTabStyleGroups(style: string, animate: boolean): void {
@@ -845,62 +856,64 @@ struct SettingsDetailPage {
       }
       .width('100%')
 
-      // 跟手光效颜色：白光 / 主题色
-      Column() {
-        Row() {
-          this.subTitleRow('跟手光效颜色')
-          Blank()
-          Column() {
-            Text('白光')
-              .fontSize(this.scaledFont(11))
-              .fontColor(this.settings.lightColorMode === 'white'
-                ? '#FFFFFF' : this.settingInactiveTextColor())
+      // 跟手光效颜色：白光 / 主题色（仅暗黑模式显示，明亮模式固定主题色并隐藏此设置项）
+      if (this.isDark()) {
+        Column() {
+          Row() {
+            this.subTitleRow('跟手光效颜色')
+            Blank()
+            Column() {
+              Text('白光')
+                .fontSize(this.scaledFont(11))
+                .fontColor(this.settings.lightColorMode === 'white'
+                  ? '#FFFFFF' : this.settingInactiveTextColor())
+            }
+            .padding({
+              left: this.scaledSize(10),
+              right: this.scaledSize(10),
+              top: this.scaledSize(5),
+              bottom: this.scaledSize(5)
+            })
+            .backgroundColor(this.settings.lightColorMode === 'white'
+              ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+            .borderRadius(this.scaledSize(14))
+            .animation({ duration: 200, curve: Curve.EaseInOut })
+            .onClick(() => {
+              this.settings.lightColorMode = 'white'
+              this.updateSetting()
+              AppStorage.setOrCreate('uplayer_light_color_mode', 'white')
+            })
+            Column() {
+              Text('主题色')
+                .fontSize(this.scaledFont(11))
+                .fontColor( this.settings.lightColorMode === 'theme'
+                  ? '#FFFFFF' : this.settingInactiveTextColor())
+            }
+            .padding({
+              left: this.scaledSize(10),
+              right: this.scaledSize(10),
+              top: this.scaledSize(5),
+              bottom: this.scaledSize(5)
+            })
+            .backgroundColor(this.settings.lightColorMode === 'theme'
+              ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+            .borderRadius(this.scaledSize(14))
+            .animation({ duration: 200, curve: Curve.EaseInOut })
+            .onClick(() => {
+              this.settings.lightColorMode = 'theme'
+              this.updateSetting()
+              AppStorage.setOrCreate('uplayer_light_color_mode', 'theme')
+            })
           }
-          .padding({
-            left: this.scaledSize(10),
-            right: this.scaledSize(10),
-            top: this.scaledSize(5),
-            bottom: this.scaledSize(5)
-          })
-          .backgroundColor(this.settings.lightColorMode === 'white'
-            ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
-          .borderRadius(this.scaledSize(14))
-          .animation({ duration: 200, curve: Curve.EaseInOut })
-          .onClick(() => {
-            this.settings.lightColorMode = 'white'
-            this.updateSetting()
-            AppStorage.setOrCreate('uplayer_light_color_mode', 'white')
-          })
-          Column() {
-            Text('主题色')
-              .fontSize(this.scaledFont(11))
-              .fontColor( this.settings.lightColorMode === 'theme'
-                ? '#FFFFFF' : this.settingInactiveTextColor())
-          }
-          .padding({
-            left: this.scaledSize(10),
-            right: this.scaledSize(10),
-            top: this.scaledSize(5),
-            bottom: this.scaledSize(5)
-          })
-          .backgroundColor(this.settings.lightColorMode === 'theme'
-            ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
-          .borderRadius(this.scaledSize(14))
-          .animation({ duration: 200, curve: Curve.EaseInOut })
-          .onClick(() => {
-            this.settings.lightColorMode = 'theme'
-            this.updateSetting()
-            AppStorage.setOrCreate('uplayer_light_color_mode', 'theme')
-          })
+          .width('100%')
+          .constraintSize({ minWidth: 0, maxWidth: '100%' })
+          .alignItems(VerticalAlign.Center)
+          .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
         }
         .width('100%')
-        .constraintSize({ minWidth: 0, maxWidth: '100%' })
-        .alignItems(VerticalAlign.Center)
-        .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
+        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+        .borderRadius(this.scaledSize(10))
       }
-      .width('100%')
-      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(this.scaledSize(10))
 
       // 底部栏触摸指示：跟手光效 / 白色蒙版 二选一，互斥
       Column() {
@@ -1135,35 +1148,6 @@ struct SettingsDetailPage {
       // 去掉玻璃卡片之间默认的 10vp 间隔间距，由内部 padding 自己控制
       // ——已通过 groupTitle 与 .padding 处理
 
-      // 智感握姿：只涉及组件位置，不涉及样式，所以右侧放开关 + 关闭预览方块
-      Column({ space: this.scaledSize(6) }) {
-        Row({ space: this.scaledSize(10) }) {
-          this.subTitleRow('智感握姿')
-          Blank()
-          Toggle({ type: ToggleType.Switch, isOn: this.settings.holdingHandEnabled })
-            .selectedColor(this.primaryColor)
-            .onChange((isOn: boolean) => {
-              this.settings.holdingHandEnabled = isOn
-              this.holdingHandEnabled = isOn
-              this.updateSetting()
-              this.refreshHoldingHandListener()
-            })
-            .flexShrink(0)
-        }
-        .width('100%')
-        .constraintSize({ minWidth: 0, maxWidth: '100%' })
-        .alignItems(VerticalAlign.Center)
-        Text('根据单手握持方向自动调整首页顶部预览与控件靠左/靠右。')
-          .fontSize(this.scaledFont(12))
-          .fontColor(this.settingSubTextColor())
-          .width('100%')
-      }
-      .width('100%')
-      .constraintSize({ minWidth: 0, maxWidth: '100%' })
-      .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
-      .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(this.scaledSize(10))
-
       // ─── 一级标题「经典模糊」（经典模式下显示）───
       Column() {
         this.groupTitle('经典模糊', false)
@@ -1362,6 +1346,35 @@ struct SettingsDetailPage {
       .opacity(this.classicGroupOpacity)
       .animation({ duration: 280, curve: Curve.EaseInOut })
       .visibility(this.settings.tabStyle === 'classic' ? Visibility.Visible : Visibility.None)
+
+      // 智感握姿：固定位置，不受经典/玻璃样式切换影响
+      Column({ space: this.scaledSize(6) }) {
+        Row({ space: this.scaledSize(10) }) {
+          this.subTitleRow('智感握姿')
+          Blank()
+          Toggle({ type: ToggleType.Switch, isOn: this.settings.holdingHandEnabled })
+            .selectedColor(this.primaryColor)
+            .onChange((isOn: boolean) => {
+              this.settings.holdingHandEnabled = isOn
+              this.holdingHandEnabled = isOn
+              this.updateSetting()
+              this.refreshHoldingHandListener()
+            })
+            .flexShrink(0)
+        }
+        .width('100%')
+        .constraintSize({ minWidth: 0, maxWidth: '100%' })
+        .alignItems(VerticalAlign.Center)
+        Text('根据单手握持方向自动调整首页顶部预览与控件靠左/靠右。')
+          .fontSize(this.scaledFont(12))
+          .fontColor(this.settingSubTextColor())
+          .width('100%')
+      }
+      .width('100%')
+      .constraintSize({ minWidth: 0, maxWidth: '100%' })
+      .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
+      .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
 
       Column({ space: this.scaledSize(8) }) {
         Row() {
