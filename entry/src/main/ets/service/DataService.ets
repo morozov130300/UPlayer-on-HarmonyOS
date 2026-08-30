@@ -77,6 +77,12 @@ export class AppSettingsData {
   tabTouchIndicator: string = 'light'
   // 液态玻璃交互形变：按压/拖动时产生 Q 弹反馈
   interactive: boolean = true
+  // 材质层赋色：叠加一层半透明颜色降低折射可见程度，undefined=不赋色
+  materialColor: string | undefined = undefined
+  // 自动反色：子树文字/图标根据材质背景色自动反色
+  colorInvert: boolean = false
+  // 材质阴影：启用时材质自带阴影效果，优先于 shadow 通用属性
+  applyShadow: boolean = true
   }
 
 export class DataService {
@@ -578,6 +584,12 @@ export class DataService {
       s.tabTouchIndicator = rawTabTouchIndicator !== undefined ? rawTabTouchIndicator as string : 'light'
       let rawInteractive: Object | undefined = r['interactive']
       s.interactive = rawInteractive !== undefined ? rawInteractive as boolean : true
+      let rawMaterialColor: Object | undefined = r['materialColor']
+      s.materialColor = rawMaterialColor !== undefined ? rawMaterialColor as string : undefined
+      let rawColorInvert: Object | undefined = r['colorInvert']
+      s.colorInvert = rawColorInvert !== undefined ? rawColorInvert as boolean : false
+      let rawApplyShadow: Object | undefined = r['applyShadow']
+      s.applyShadow = rawApplyShadow !== undefined ? rawApplyShadow as boolean : true
       if (eqBandsMigrated) {
         this.saveSettings(s)
       }
@@ -618,6 +630,9 @@ export class DataService {
     r['tabTouchIndicator'] = settings.tabTouchIndicator
     r['holdingHandLayoutAnimation'] = settings.holdingHandLayoutAnimation
     r['interactive'] = settings.interactive
+    r['materialColor'] = settings.materialColor
+    r['colorInvert'] = settings.colorInvert
+    r['applyShadow'] = settings.applyShadow
     this.getPref().preferencesPut(KEY_SETTINGS, JSON.stringify(r))
     AppStorage.setOrCreate(KEY_SETTINGS, settings)
     AppStorage.setOrCreate('uplayer_fade_in_out', settings.fadeInOut)
@@ -831,6 +846,9 @@ export class DataService {
     AppStorage.setOrCreate('uplayer_tab_touch_indicator', settings.tabTouchIndicator)
     AppStorage.setOrCreate('uplayer_holding_hand_layout_animation', settings.holdingHandLayoutAnimation)
     AppStorage.setOrCreate('uplayer_interactive', settings.interactive)
+    AppStorage.setOrCreate('uplayer_material_color', settings.materialColor ?? '')
+    AppStorage.setOrCreate('uplayer_color_invert', settings.colorInvert)
+    AppStorage.setOrCreate('uplayer_apply_shadow', settings.applyShadow)
     this.activatePersistedUris()
     return settings
   }
