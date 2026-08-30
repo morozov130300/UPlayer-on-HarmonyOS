@@ -45,6 +45,7 @@ struct SettingsDetailPage {
     | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
   @State settings: AppSettingsData = new AppSettingsData()
   @StorageLink(KEY_PRIMARY_COLOR) primaryColor: string = '#007DFF'
+  @StorageLink('uplayer_theme_mode') themeMode: string = 'system'
   @StorageLink(AppStorageKeyConstants.KEY_TITLE_BUTTON_WIDTH) titleButtonWidth: number = 0
   @StorageLink(AppStorageKeyConstants.KEY_TITLE_BUTTON_HEIGHT) titleButtonHeight: number = 0
   @StorageLink(AppStorageKeyConstants.KEY_TOP_HEIGHT) topSafeHeight: number = 0
@@ -331,10 +332,10 @@ struct SettingsDetailPage {
   }
 
   private isDark(): boolean {
-    if (this.settings.themeMode === 'dark') {
+    if (this.themeMode === 'dark') {
       return true
     }
-    if (this.settings.themeMode === 'system') {
+    if (this.themeMode === 'system') {
       try {
         return uiAppearance.getDarkMode() === uiAppearance.DarkMode.ALWAYS_DARK
       } catch (e) {

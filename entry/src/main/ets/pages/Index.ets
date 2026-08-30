@@ -334,7 +334,7 @@ struct MainPage {
     .width(this.scaledSize(this.tabWidth))
     .height(this.scaledSize(40))
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(this.hoverTabIndex === index ? 'rgba(255,255,255,0.16)' : Color.Transparent)
+    .backgroundColor(this.hoverTabIndex === index && this.tabTouchIndicator === 'mask' ? 'rgba(255,255,255,0.16)' : Color.Transparent)
     .borderRadius(this.scaledSize(18))
     .shadow({
       radius: this.hoverTabIndex === index ? 14 : 0,
@@ -369,7 +369,7 @@ struct MainPage {
     .width(this.scaledSize(this.tabWidth))
     .height(this.scaledSize(40))
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(this.hoverTabIndex === index ? 'rgba(255,255,255,0.18)' : Color.Transparent)
+    .backgroundColor(this.hoverTabIndex === index && this.tabTouchIndicator === 'mask' ? 'rgba(255,255,255,0.18)' : Color.Transparent)
     .borderRadius(this.scaledSize(18))
     .shadow({
       radius: this.hoverTabIndex === index ? 16 : 0,
