@@ -59,7 +59,6 @@ struct MainPage {
   @StorageLink('uplayer_interactive') interactive: boolean = true
   @StorageLink('uplayer_material_color') materialColor: string = ''
   @StorageLink('uplayer_color_invert') colorInvert: boolean = false
-  @StorageLink('uplayer_apply_shadow') applyShadow: boolean = true
   @State albumArtFailed: boolean = false
   @State isTitleMarqueeRunning: boolean = true
   @State isArtistMarqueeRunning: boolean = true
@@ -163,8 +162,7 @@ struct MainPage {
       interactive: this.interactive,
       lightEffect: lightColor !== undefined ? { color: lightColor } : undefined,
       materialColor: this.materialColor.length > 0 ? this.materialColor : undefined,
-      colorInvert: this.colorInvert,
-      applyShadow: this.applyShadow
+      colorInvert: this.colorInvert
     })
   }
 

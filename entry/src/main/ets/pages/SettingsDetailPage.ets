@@ -60,7 +60,6 @@ struct SettingsDetailPage {
   @StorageLink('uplayer_interactive') interactive: boolean = true
   @StorageLink('uplayer_material_color') materialColor: string = ''
   @StorageLink('uplayer_color_invert') colorInvert: boolean = false
-  @StorageLink('uplayer_apply_shadow') applyShadow: boolean = true
   @State pageTitle: string = ''
   @State previewOnRight: boolean = false
   @State showColorPicker: boolean = false
@@ -1151,27 +1150,17 @@ struct SettingsDetailPage {
           this.updateSetting()
         })
 
-        // 材质层赋色：叠加一层半透明颜色降低折射可见程度，避免玻璃效果过于明显
-        // 注意：使用不透明颜色会完全遮挡材质滤镜效果，需搭配透明度使用
+        // 材质赋色：叠加一层半透明颜色降低折射可见程度。注意传入不透明纯色会完全遮挡材质滤镜效果
         this.toggleRow('材质赋色', this.materialColor.length > 0, (val: boolean) => {
           this.materialColor = val ? this.primaryColor : ''
           this.settings.materialColor = val ? this.primaryColor : undefined
           this.updateSetting()
         })
 
-        // 自动反色：子树文字/图标根据材质背景色自动适配
-        // 仅当材质参数足够薄时生效，与玻璃厚度联动
+        // 自动反色：子树文字/图标根据材质背景色自动适配，仅材质参数足够薄时生效
         this.toggleRow('自动反色', this.settings.colorInvert, (val: boolean) => {
           this.settings.colorInvert = val
           this.colorInvert = val
-          this.updateSetting()
-        })
-
-        // 材质阴影：启用时材质自带阴影效果，优先于通用 shadow 属性
-        // 关闭后可用通用 shadow 属性自定义阴影样式
-        this.toggleRow('材质阴影', this.settings.applyShadow, (val: boolean) => {
-          this.settings.applyShadow = val
-          this.applyShadow = val
           this.updateSetting()
         })
 
