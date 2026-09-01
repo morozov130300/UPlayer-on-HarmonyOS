@@ -1144,25 +1144,46 @@ struct SettingsDetailPage {
         .borderRadius(this.scaledSize(10))
 
         // 交互形变：按压/拖动时液态玻璃产生 Q 弹反馈
-        this.toggleRow('交互形变', this.settings.interactive, (val: boolean) => {
-          this.settings.interactive = val
-          this.interactive = val
-          this.updateSetting()
-        })
+        Column({ space: this.scaledSize(4) }) {
+          this.toggleRow('交互形变', this.settings.interactive, (val: boolean) => {
+            this.settings.interactive = val
+            this.interactive = val
+            this.updateSetting()
+          })
+          Text('按压或拖动时，材质表面产生弹性形变反馈。')
+            .fontSize(this.scaledFont(12))
+            .fontColor(this.settingSubTextColor())
+            .width('100%')
+        }
+        .width('100%')
 
         // 自动反色：子树文字/图标根据材质背景色自动适配，仅材质足够薄时生效
-        this.toggleRow('自动反色', this.settings.colorInvert, (val: boolean) => {
-          this.settings.colorInvert = val
-          this.colorInvert = val
-          this.updateSetting()
-        })
+        Column({ space: this.scaledSize(4) }) {
+          this.toggleRow('自动反色', this.settings.colorInvert, (val: boolean) => {
+            this.settings.colorInvert = val
+            this.colorInvert = val
+            this.updateSetting()
+          })
+          Text('材质足够薄时，子元素文字/图标颜色自动适配背景，确保可读性。')
+            .fontSize(this.scaledFont(12))
+            .fontColor(this.settingSubTextColor())
+            .width('100%')
+        }
+        .width('100%')
 
         // 材质阴影：启用时材质自带阴影效果，优先于 shadow 通用属性
-        this.toggleRow('材质阴影', this.settings.applyShadow, (val: boolean) => {
-          this.settings.applyShadow = val
-          this.applyShadow = val
-          this.updateSetting()
-        })
+        Column({ space: this.scaledSize(4) }) {
+          this.toggleRow('材质阴影', this.settings.applyShadow, (val: boolean) => {
+            this.settings.applyShadow = val
+            this.applyShadow = val
+            this.updateSetting()
+          })
+          Text('材质自带阴影效果，优先于手动设置的 shadow 属性。')
+            .fontSize(this.scaledFont(12))
+            .fontColor(this.settingSubTextColor())
+            .width('100%')
+        }
+        .width('100%')
 
         // 玻璃效果生效范围：已通过一级标题右上角的小叹号引出弹窗说明
       }
@@ -1418,10 +1439,10 @@ struct SettingsDetailPage {
                   .borderRadius(this.scaledSize(12))
                   .backgroundColor(option.value)
                   .border({
-                    width: this.settings.primaryColor === option.value ? 3 : 1,
-                    color: this.settings.primaryColor === option.value ? '#FFFFFF' :
-                      ColorHelper.hexToRgba(this.primaryColor, 0.25)
+                    width: this.settings.primaryColor === option.value ? 3 : 0,
+                    color: '#FFFFFF'
                   })
+                  .margin({ left: this.scaledSize(8) })
                 Text(option.name)
                   .fontSize(this.scaledFont(11))
                   .fontColor(this.settingTextColor())
@@ -1429,7 +1450,7 @@ struct SettingsDetailPage {
               }
               .width('100%')
               .height(this.scaledSize(42))
-              .padding({ left: this.scaledSize(8), right: this.scaledSize(8) })
+              .padding({ left: this.scaledSize(8), right: this.scaledSize(8), top: this.scaledSize(4), bottom: this.scaledSize(4) })
               .borderRadius(this.scaledSize(10))
               .backgroundColor(this.settings.primaryColor === option.value ?
                 ColorHelper.hexToRgba(option.value, 0.18) : ColorHelper.hexToRgba(this.primaryColor, 0.04))
@@ -1442,7 +1463,7 @@ struct SettingsDetailPage {
         .columnsTemplate(this.isPC ? '1fr 1fr 1fr 1fr' : '1fr 1fr')
         .columnsGap(this.scaledSize(8))
         .rowsGap(this.scaledSize(8))
-        .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(4) })
+        .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
         .width('100%')
 
         Row() {
@@ -1452,9 +1473,8 @@ struct SettingsDetailPage {
             .borderRadius(this.scaledSize(12))
             .backgroundColor(this.primaryColor)
             .border({
-              width: this.settings.primaryColor === this.primaryColor ? 3 : 1,
-              color: this.settings.primaryColor === this.primaryColor ? '#FFFFFF' :
-                ColorHelper.hexToRgba(this.primaryColor, 0.25)
+              width: this.settings.primaryColor === this.primaryColor ? 3 : 0,
+              color: '#FFFFFF'
             })
           Text('自定义颜色')
             .fontSize(this.scaledFont(11))
@@ -1467,7 +1487,7 @@ struct SettingsDetailPage {
         }
         .width('100%')
         .height(this.scaledSize(42))
-        .padding({ left: this.scaledSize(8), right: this.scaledSize(8) })
+        .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
         .borderRadius(this.scaledSize(10))
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
         .alignItems(VerticalAlign.Center)
