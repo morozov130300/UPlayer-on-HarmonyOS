@@ -55,7 +55,20 @@ Image($r('app.media.ic_celiakeyboard_menu'))
 
 ## 命令行构建命令（仅供参考）
 
+### ⚠️ 编译必须由用户手动执行
+
+**智能体无法自行编译项目。所有编译操作必须由用户在本地 DevEco Studio 中执行，然后将编译输出粘贴给智能体。**
+
+原因：编译依赖用户本地的环境变量、SDK 路径、DevEco Studio 版本等配置，智能体端无法保证环境一致，直接调用必然失败。
+
+正确流程：
+1. 智能体完成代码修改后，告知用户需要编译验证
+2. 用户在本地终端执行构建命令
+3. 用户将完整编译输出（包括错误/warning）粘贴回对话
+4. 智能体根据输出进行分析和修复
+
 ```powershell
+# 用户执行的构建命令（仅供参考）
 & "D:\DevEco Studio\tools\node\node.exe" "D:\DevEco Studio\tools\hvigor\bin\hvigorw.js" --mode module -p module=entry@default -p product=default -p requiredDeviceType=2in1 -p buildMode=debug assembleHap --analyze=normal --parallel --incremental --daemon
 ```
 
