@@ -1034,6 +1034,13 @@ struct SettingsDetailPage {
             Row() {
               this.subTitleRow('玻璃饱和度')
               Blank()
+            }
+            .width('100%')
+            Text('控制玻璃背后透出的颜色鲜艳程度。值越高越鲜艳。')
+              .fontSize(this.scaledFont(12))
+              .fontColor(this.settingSubTextColor())
+              .width('100%')
+            Row({ space: this.scaledSize(12) }) {
               if (!this.previewOnRight) {
                 this.glassAdvancedPreview('玻璃饱和')
               }
@@ -1067,20 +1074,24 @@ struct SettingsDetailPage {
               }
             }
             .width('100%')
+            .constraintSize({ minWidth: 0, maxWidth: '100%' })
             .alignItems(VerticalAlign.Center)
-            .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-            Text('控制玻璃背后透出的颜色鲜艳程度。值越高越鲜艳。')
-              .fontSize(this.scaledFont(12))
-              .fontColor(this.settingSubTextColor())
-              .width('100%')
-              .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(2), bottom: this.scaledSize(10) })
+            .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
           }
           .width('100%')
+          .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
 
           Column() {
             Row() {
               this.subTitleRow('玻璃亮度')
               Blank()
+            }
+            .width('100%')
+            Text('控制玻璃模糊层的明暗调整。值越高越亮。')
+              .fontSize(this.scaledFont(12))
+              .fontColor(this.settingSubTextColor())
+              .width('100%')
+            Row({ space: this.scaledSize(12) }) {
               if (!this.previewOnRight) {
                 this.glassAdvancedPreview('玻璃亮度')
               }
@@ -1114,15 +1125,12 @@ struct SettingsDetailPage {
               }
             }
             .width('100%')
+            .constraintSize({ minWidth: 0, maxWidth: '100%' })
             .alignItems(VerticalAlign.Center)
-            .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-            Text('控制玻璃模糊层的明暗调整。值越高越亮。')
-              .fontSize(this.scaledFont(12))
-              .fontColor(this.settingSubTextColor())
-              .width('100%')
-              .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(2), bottom: this.scaledSize(10) })
+            .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
           }
           .width('100%')
+          .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
         }
         .width('100%')
         .padding({ top: this.scaledSize(10) })
