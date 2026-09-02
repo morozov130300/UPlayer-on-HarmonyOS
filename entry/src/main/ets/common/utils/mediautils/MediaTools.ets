@@ -18,7 +18,6 @@ import { common } from '@kit.AbilityKit';
 import { resourceManager } from '@kit.LocalizationKit';
 import { util } from '@kit.ArkTS';
 import Logger from '../Logger';
-import { SECOND_BUFFER_WALK } from '../../constants/PlayerConstants';
 
 
 const TAG = 'MediaTools';
@@ -60,17 +59,6 @@ export class MediaTools {
     return `${(days ? MediaTools.fill(days) + ':' : '')}${(hours ? MediaTools.fill(hours) + ':' : '')}
       ${MediaTools.fill(minutes)}:${MediaTools.fill(seconds)} `.trim();
   }
-
-  // Convert bytes to seconds
-  static getMsFromByteLength(byteLength: number): number {
-    return 1000 * (byteLength / SECOND_BUFFER_WALK);
-  }
-
-  // [Start getOffsetFromTime]
-  static getOffsetFromTime(curMs: number) {
-    return (curMs / 1000) * SECOND_BUFFER_WALK;
-  }
-  // [End getOffsetFromTime]
 
   static async getLrcFromRawFile(context: common.UIAbilityContext, filename: string): Promise<string | undefined> {
     if (!filename) {

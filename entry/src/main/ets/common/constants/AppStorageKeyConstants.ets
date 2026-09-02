@@ -32,7 +32,6 @@ export class AppStorageKeyConstants {
   public static readonly KEY_FILTER_REVISION: string = BaseConstants.KEY_PREFIX + 'FilterRevision'
   public static readonly KEY_PLAY_MODE: string = BaseConstants.KEY_PREFIX + 'PlayMode'
   public static readonly KEY_SELECT_INDEX: string = BaseConstants.KEY_PREFIX + 'SelectIndex'
-  public static readonly KEY_IS_SILENT_MODE: string = BaseConstants.KEY_PREFIX + 'IsSilentMode'
   public static readonly KEY_CURRENT_SPEED: string = BaseConstants.KEY_PREFIX + 'CurrentSpeed'
   public static readonly KEY_CURRENT_VOLUME: string = BaseConstants.KEY_PREFIX + 'CurrentVolume'
   public static readonly KEY_IS_FAVORITE: string = BaseConstants.KEY_PREFIX + 'IsFavorite'
@@ -42,5 +41,4 @@ export class AppStorageKeyConstants {
   public static readonly KEY_TITLE_BUTTON_HEIGHT: string = BaseConstants.KEY_PREFIX + 'TitleButtonHeight'
   public static readonly KEY_UI_ABILITY_CONTEXT: string = BaseConstants.KEY_PREFIX + 'UIAbilityContext'
   public static readonly KEY_WINDOW: string = BaseConstants.KEY_PREFIX + 'Window'
-  public static readonly KEY_TOTAL_BYTE_LENGTH: string = BaseConstants.KEY_PREFIX + 'TotalByteLength'
 }

@@ -72,7 +72,6 @@ export default class EntryAbility extends UIAbility {
         let windowUtil = new WindowUtil(mainWindow, uiContext);
         AppStorage.setOrCreate(AppStorageKeyConstants.KEY_WINDOW_UTIL, windowUtil);
         AppStorage.setOrCreate(AppStorageKeyConstants.KEY_WINDOW, mainWindow);
-        AppStorage.setOrCreate('windowClass', mainWindow);
         ShareService.getInstance().initialize(mainWindow);
         const isDarkStatusBackground: boolean = settings.themeMode === 'dark' ||
           (settings.themeMode === 'system' &&

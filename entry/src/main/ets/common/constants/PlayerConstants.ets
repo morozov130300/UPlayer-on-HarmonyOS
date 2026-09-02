@@ -39,32 +39,5 @@ export enum MusicPlayMode {
 
 export const PlayModeSwitchList = [MusicPlayMode.ORDER, MusicPlayMode.RANDOM, MusicPlayMode.SINGLE_CYCLE];
 
-export enum AudioPlayerState {
-  IDLE,
-  INITIALIZED,
-  LOAD,
-  PREPARED,
-  PLAY,
-  PAUSE,
-  STOP,
-  ERROR,
-  COMPLETED,
-  RELEASED,
-  PROGRESS_SPEED,
-  TIME_UPDATE,
-  VOLUME_CHANGE,
-  UNKNOWN
-}
-
-// [Start SECOND_BUFFER_WALK]
-export const SECOND_BUFFER_WALK = 48000 * 2 * (16 / 8);
-// [End SECOND_BUFFER_WALK]
-
 export const DEFAULT_VOLUME = 1;
 
-export const VOLUME_ID = 'volumeId';
-
-export class Options {
-  offset?: number;
-  length?: number;
-}

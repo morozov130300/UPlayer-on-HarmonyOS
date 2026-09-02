@@ -38,14 +38,6 @@ export const enum LyricScrollEffect {
   LetterStar
 }
 
-/**
- * Lyrics initial position
- */
-export const enum LyricTopPosition {
-  Top,
-  Middle
-}
-
 export class LyricFile {
   static readonly KRC: string = '.krc';
   static readonly LRC: string = '.lrc';

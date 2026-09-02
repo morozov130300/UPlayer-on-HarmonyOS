@@ -3,8 +3,8 @@ import {
   curves, LengthMetrics, PromptAction, SymbolGlyphModifier, uiMaterial
 } from '@kit.ArkUI';
 import { AVVolumePanel } from '@kit.AudioKit';
-import { ContentConstants } from '../common/constants/ContentConstants';
-import { MusicPlayMode, PlayerConstants, PlayModeSwitchList, VOLUME_ID } from '../common/constants/PlayerConstants';
+
+import { MusicPlayMode, PlayerConstants, PlayModeSwitchList } from '../common/constants/PlayerConstants';
 import { StyleConstants } from '../common/constants/StyleConstants';
 import Logger from '../common/utils/Logger';
 import { SongInfo } from '../model/SongInfo';
@@ -38,7 +38,6 @@ export struct ControlAreaComponent {
   @StorageLink(AppStorageKeyConstants.KEY_PLAY_MODE) @Watch('onPlayModeChange')
   playMode: MusicPlayMode = PlayModeSwitchList[this.playModeIndex];
   @StorageLink(AppStorageKeyConstants.KEY_SELECT_INDEX) selectIndex: number = 0;
-  @StorageLink(AppStorageKeyConstants.KEY_IS_SILENT_MODE) isSilentMode: boolean = false;
   @StorageLink(AppStorageKeyConstants.KEY_CURRENT_SPEED) speed: number = 1;
   @StorageLink(AppStorageKeyConstants.KEY_CURRENT_VOLUME) volume: number = 0;
   @State isShowSpeedBuild: boolean = false;
@@ -471,7 +470,7 @@ export struct ControlAreaComponent {
   @Builder
   playListTitle() {
     Text($r('app.string.play_list', this.songList.length))
-      .maxLines(ContentConstants.PLAY_ALL_MAX_LINES)
+      .maxLines(1)
       .fontColor($r('app.color.text_primary'))
       .fontWeight(FontWeight.Bold)
       .fontSize(20)

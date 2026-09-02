@@ -32,18 +32,6 @@ const krcWordRegex1 = new RegExp('< (\\d+),(\\d+),(\\d+)>([^<]*)', 'g');
 const krcWordRegex2 = new RegExp('< (\\d+),(\\d+),(\\d+)>(.*)');
 
 
-export async function getRawStringData(context: Context, rawFilePath: string): Promise<string> {
-  try {
-    let value = await context.resourceManager.getRawFileContent(rawFilePath);
-    let textDecoder = util.TextDecoder.create('utf-8', { ignoreBOM: true });
-    let stringData = textDecoder.decodeToString(value, { stream: false });
-    return stringData;
-  } catch (err) {
-    Logger.error('getRawStringData', `Failed to get raw file: ${JSON.stringify(err)}`);
-    return '';
-  }
-}
-
 /**
  * Analysis of the lrc structure, similar to the following: [00:21.98] prime embryo outlines the blue and white pen dark to light.
  *
@@ -140,14 +128,3 @@ export function parseKrcLyric(lyricText: string): LrcEntry[] {
   return lyricLines;
 }
 
-/**
- * The angle is converted into radians.
- * Because the trigonometric function of Math needs to pass in the radian system instead of the angle value,
- * the angle needs to be converted into radians. Angle / 180 * π
- *
- * @param angle
- * @returns
- */
-export function angleToRadian(angle: number): number {
-  return angle * Math.PI / 180;
-}

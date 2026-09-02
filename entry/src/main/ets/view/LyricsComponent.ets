@@ -6,7 +6,7 @@ import { curves } from '@kit.ArkUI';
 import { ControlAreaComponent } from './ControlAreaComponent';
 import { PlayerConstants } from '../common/constants/PlayerConstants';
 import { StyleConstants } from '../common/constants/StyleConstants';
-import { LyricFile, LyricScrollEffect, LyricTopPosition } from '../common/constants/LyricConst';
+import { LyricFile, LyricScrollEffect } from '../common/constants/LyricConst';
 import { LrcEntry } from '../viewmodel/LrcEntry';
 import { SongInfo } from '../model/SongInfo';
 import { parseKrcLyric, parseLrcLyric } from '../common/utils/LrcUtils';
