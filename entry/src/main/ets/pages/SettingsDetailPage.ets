@@ -1030,188 +1030,198 @@ struct SettingsDetailPage {
 
         // 玻璃饱和度 / 亮度 独立调节
         Column({ space: this.scaledSize(6) }) {
-          Row() {
-            this.subTitleRow('玻璃饱和度')
-            Blank()
-          }
-          .width('100%')
-          Text('控制玻璃背后透出的颜色鲜艳程度。值越高越鲜艳。')
-            .fontSize(this.scaledFont(12))
-            .fontColor(this.settingSubTextColor())
+          Column() {
+            Row() {
+              this.subTitleRow('玻璃饱和度')
+              Blank()
+            }
             .width('100%')
-          Row({ space: this.scaledSize(12) }) {
-            if (!this.previewOnRight) {
-              this.glassAdvancedPreview('玻璃饱和')
-            }
-            Text('淡')
-              .fontSize(this.scaledFont(11))
-              .fontColor(this.settingTextColor())
-            Slider({
-              value: this.settings.glassSaturation * 100,
-              min: 100,
-              max: 200,
-              step: 1,
-              style: SliderStyle.OutSet
-            })
-              .layoutWeight(1)
-              .selectedColor(this.primaryColor)
-              .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-              .blockColor('#FFFFFF')
-              .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
-              .blockBorderColor(this.primaryColor)
-              .blockBorderWidth(3)
-              .onChange((value: number, mode: SliderChangeMode) => {
-                this.settings.glassSaturation = value / 100
-                this.glassSaturation = this.settings.glassSaturation
-                if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-                  this.updateSetting()
-                }
+            Text('控制玻璃背后透出的颜色鲜艳程度。值越高越鲜艳。')
+              .fontSize(this.scaledFont(12))
+              .fontColor(this.settingSubTextColor())
+              .width('100%')
+            Row({ space: this.scaledSize(12) }) {
+              if (!this.previewOnRight) {
+                this.glassAdvancedPreview('玻璃饱和')
+              }
+              Text('淡')
+                .fontSize(this.scaledFont(11))
+                .fontColor(this.settingTextColor())
+              Slider({
+                value: this.settings.glassSaturation * 100,
+                min: 100,
+                max: 200,
+                step: 1,
+                style: SliderStyle.OutSet
               })
-            if (this.previewOnRight) {
-              Blank().width(this.scaledSize(14))
-              this.glassAdvancedPreview('玻璃饱和')
+                .layoutWeight(1)
+                .selectedColor(this.primaryColor)
+                .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+                .blockColor('#FFFFFF')
+                .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
+                .blockBorderColor(this.primaryColor)
+                .blockBorderWidth(3)
+                .onChange((value: number, mode: SliderChangeMode) => {
+                  this.settings.glassSaturation = value / 100
+                  this.glassSaturation = this.settings.glassSaturation
+                  if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+                    this.updateSetting()
+                  }
+                })
+              if (this.previewOnRight) {
+                Blank().width(this.scaledSize(14))
+                this.glassAdvancedPreview('玻璃饱和')
+              }
             }
+            .width('100%')
+            .constraintSize({ minWidth: 0, maxWidth: '100%' })
+            .alignItems(VerticalAlign.Center)
+            .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
           }
           .width('100%')
-          .constraintSize({ minWidth: 0, maxWidth: '100%' })
-          .alignItems(VerticalAlign.Center)
-          .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
+          .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
 
-          Row() {
-            this.subTitleRow('玻璃亮度')
-            Blank()
-          }
-          .width('100%')
-          Text('控制玻璃模糊层的明暗调整。值越高越亮。')
-            .fontSize(this.scaledFont(12))
-            .fontColor(this.settingSubTextColor())
+          Column() {
+            Row() {
+              this.subTitleRow('玻璃亮度')
+              Blank()
+            }
             .width('100%')
-          Row({ space: this.scaledSize(12) }) {
-            if (!this.previewOnRight) {
-              this.glassAdvancedPreview('玻璃亮度')
-            }
-            Text('暗')
-              .fontSize(this.scaledFont(11))
-              .fontColor(this.settingTextColor())
-            Slider({
-              value: this.settings.glassBrightness * 100,
-              min: 80,
-              max: 130,
-              step: 1,
-              style: SliderStyle.OutSet
-            })
-              .layoutWeight(1)
-              .selectedColor(this.primaryColor)
-              .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-              .blockColor('#FFFFFF')
-              .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
-              .blockBorderColor(this.primaryColor)
-              .blockBorderWidth(3)
-              .onChange((value: number, mode: SliderChangeMode) => {
-                this.settings.glassBrightness = value / 100
-                this.glassBrightness = this.settings.glassBrightness
-                if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-                  this.updateSetting()
-                }
+            Text('控制玻璃模糊层的明暗调整。值越高越亮。')
+              .fontSize(this.scaledFont(12))
+              .fontColor(this.settingSubTextColor())
+              .width('100%')
+            Row({ space: this.scaledSize(12) }) {
+              if (!this.previewOnRight) {
+                this.glassAdvancedPreview('玻璃亮度')
+              }
+              Text('暗')
+                .fontSize(this.scaledFont(11))
+                .fontColor(this.settingTextColor())
+              Slider({
+                value: this.settings.glassBrightness * 100,
+                min: 80,
+                max: 130,
+                step: 1,
+                style: SliderStyle.OutSet
               })
-            if (this.previewOnRight) {
-              Blank().width(this.scaledSize(14))
-              this.glassAdvancedPreview('玻璃亮度')
+                .layoutWeight(1)
+                .selectedColor(this.primaryColor)
+                .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+                .blockColor('#FFFFFF')
+                .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
+                .blockBorderColor(this.primaryColor)
+                .blockBorderWidth(3)
+                .onChange((value: number, mode: SliderChangeMode) => {
+                  this.settings.glassBrightness = value / 100
+                  this.glassBrightness = this.settings.glassBrightness
+                  if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+                    this.updateSetting()
+                  }
+                })
+              if (this.previewOnRight) {
+                Blank().width(this.scaledSize(14))
+                this.glassAdvancedPreview('玻璃亮度')
+              }
             }
+            .width('100%')
+            .constraintSize({ minWidth: 0, maxWidth: '100%' })
+            .alignItems(VerticalAlign.Center)
+            .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
           }
           .width('100%')
-          .constraintSize({ minWidth: 0, maxWidth: '100%' })
-          .alignItems(VerticalAlign.Center)
-          .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
+          .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
         }
         .width('100%')
-        .padding({
-          top: this.scaledSize(10),
-          left: this.scaledSize(14),
-          right: this.scaledSize(14),
-          bottom: this.scaledSize(10)
-        })
+        .padding({ top: this.scaledSize(10) })
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
         .borderRadius(this.scaledSize(10))
 
         // 交互形变：按压/拖动时液态玻璃产生 Q 弹反馈
         Column({ space: this.scaledSize(6) }) {
-          Row() {
-            this.subTitleRow('交互形变')
-            Blank()
-          }
-          .width('100%')
-          Text('按压或拖动时，材质表面产生弹性形变反馈。')
-            .fontSize(this.scaledFont(12))
-            .fontColor(this.settingSubTextColor())
+          Column() {
+            Row() {
+              this.subTitleRow('交互形变')
+              Blank()
+            }
             .width('100%')
-          Row() {
-            Blank()
-            Toggle({ type: ToggleType.Switch, isOn: this.settings.interactive })
-              .selectedColor(this.primaryColor)
-              .onChange((isOn: boolean) => {
-                this.settings.interactive = isOn
-                this.interactive = isOn
-                this.updateSetting()
-              })
+            Text('按压或拖动时，材质表面产生弹性形变反馈。')
+              .fontSize(this.scaledFont(12))
+              .fontColor(this.settingSubTextColor())
+              .width('100%')
+            Row() {
+              Blank()
+              Toggle({ type: ToggleType.Switch, isOn: this.settings.interactive })
+                .selectedColor(this.primaryColor)
+                .onChange((isOn: boolean) => {
+                  this.settings.interactive = isOn
+                  this.interactive = isOn
+                  this.updateSetting()
+                })
+            }
+            .width('100%')
+            .alignItems(VerticalAlign.Center)
+            .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
           }
           .width('100%')
-          .alignItems(VerticalAlign.Center)
-          .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(2), bottom: this.scaledSize(2) })
+          .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
 
-          Row() {
-            this.subTitleRow('自动反色')
-            Blank()
-          }
-          .width('100%')
-          Text('材质足够薄时，子元素文字/图标颜色自动适配背景，确保可读性。')
-            .fontSize(this.scaledFont(12))
-            .fontColor(this.settingSubTextColor())
+          Column() {
+            Row() {
+              this.subTitleRow('自动反色')
+              Blank()
+            }
             .width('100%')
-          Row() {
-            Blank()
-            Toggle({ type: ToggleType.Switch, isOn: this.settings.colorInvert })
-              .selectedColor(this.primaryColor)
-              .onChange((isOn: boolean) => {
-                this.settings.colorInvert = isOn
-                this.colorInvert = isOn
-                this.updateSetting()
-              })
+            Text('材质足够薄时，子元素文字/图标颜色自动适配背景，确保可读性。')
+              .fontSize(this.scaledFont(12))
+              .fontColor(this.settingSubTextColor())
+              .width('100%')
+            Row() {
+              Blank()
+              Toggle({ type: ToggleType.Switch, isOn: this.settings.colorInvert })
+                .selectedColor(this.primaryColor)
+                .onChange((isOn: boolean) => {
+                  this.settings.colorInvert = isOn
+                  this.colorInvert = isOn
+                  this.updateSetting()
+                })
+            }
+            .width('100%')
+            .alignItems(VerticalAlign.Center)
+            .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
           }
           .width('100%')
-          .alignItems(VerticalAlign.Center)
-          .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(2), bottom: this.scaledSize(2) })
+          .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
 
-          Row() {
-            this.subTitleRow('材质阴影')
-            Blank()
-          }
-          .width('100%')
-          Text('材质自带阴影效果，优先于手动设置的 shadow 属性。')
-            .fontSize(this.scaledFont(12))
-            .fontColor(this.settingSubTextColor())
+          Column() {
+            Row() {
+              this.subTitleRow('材质阴影')
+              Blank()
+            }
             .width('100%')
-          Row() {
-            Blank()
-            Toggle({ type: ToggleType.Switch, isOn: this.settings.applyShadow })
-              .selectedColor(this.primaryColor)
-              .onChange((isOn: boolean) => {
-                this.settings.applyShadow = isOn
-                this.applyShadow = isOn
-                this.updateSetting()
-              })
+            Text('材质自带阴影效果，优先于手动设置的 shadow 属性。')
+              .fontSize(this.scaledFont(12))
+              .fontColor(this.settingSubTextColor())
+              .width('100%')
+            Row() {
+              Blank()
+              Toggle({ type: ToggleType.Switch, isOn: this.settings.applyShadow })
+                .selectedColor(this.primaryColor)
+                .onChange((isOn: boolean) => {
+                  this.settings.applyShadow = isOn
+                  this.applyShadow = isOn
+                  this.updateSetting()
+                })
+            }
+            .width('100%')
+            .alignItems(VerticalAlign.Center)
+            .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
           }
           .width('100%')
-          .alignItems(VerticalAlign.Center)
-          .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(2), bottom: this.scaledSize(2) })
+          .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
         }
         .width('100%')
-        .padding({
-          top: this.scaledSize(10),
-          left: this.scaledSize(14),
-          right: this.scaledSize(14),
-          bottom: this.scaledSize(10)
-        })
+        .padding({ top: this.scaledSize(10) })
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
         .borderRadius(this.scaledSize(10))
 
