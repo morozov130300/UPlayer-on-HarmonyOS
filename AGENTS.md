@@ -120,6 +120,53 @@ hdc shell hilog
 - 代码完成后直接推送，不要问"要不要推送"
 - 提交信息简洁明了，在项目版本号大版本为1之前，所有的描述都要保持`项目初始版本`
 
+### ⚠️ Git 工具使用规范（最高优先级）
+
+**所有 Git 操作必须使用 Git 工具，禁止使用命令行调用 git。**
+
+#### 触发条件（出现以下任一情况时必须使用 Git 工具）
+
+| 场景 | 说明 |
+| --- | --- |
+| 查看状态 | `git status`、`git diff`、`git log` |
+| 暂存/提交 | `git add`、`git commit` |
+| 分支操作 | `git branch`、`git checkout`、`git switch` |
+| 拉取/推送 | `git pull`、`git push`、`git fetch` |
+| 查看历史 | `git log`、`git show`、`git blame` |
+
+#### 正确调用方式
+
+**必须先调用 `GetToolSpec` 加载工具 schema，再调用 `CallDeferredTool` 执行。**
+
+```
+首次使用 → GetToolSpec(Git) → 获取 schema → CallDeferredTool(Git, {operation: "status"}) → 后续直接使用 CallDeferredTool
+```
+
+**调用示例：**
+
+```json
+// 查看状态
+{"tool_name": "Git", "args": {"operation": "status"}}
+
+// 查看最近提交
+{"tool_name": "Git", "args": {"operation": "log", "args": "--oneline -5"}}
+
+// 暂存文件
+{"tool_name": "Git", "args": {"operation": "add", "args": "."}}
+
+// 提交
+{"tool_name": "Git", "args": {"operation": "commit", "args": "-m \"提交信息\""}}
+
+// 推送
+{"tool_name": "Git", "args": {"operation": "push"}}
+```
+
+#### 禁止事项
+
+- ❌ **严禁使用 ExecCommand 调用 `git` 命令**
+- ❌ **严禁直接拼接 shell 命令进行版本控制**
+- ✅ **所有版本控制操作必须通过 Git 工具调用**
+
 ### ⚠️ MCP 知识库使用（最高优先级）
 
 **！！！！！！必须主动使用！！！！！！每一条对话都要查！！！！！！所有问题都要查！！！！！！**
