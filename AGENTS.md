@@ -73,6 +73,20 @@ Image($r('app.media.ic_celiakeyboard_menu'))
 
 遇到 SDK 路径不匹配、版本找不到等编译环境问题，只能给出排查建议，由用户自己决定如何处理，绝不能直接操作 SDK 目录。
 
+### ⚠️ Windows 命令行编译限制
+
+**hvigor 在 Windows 下无法正确处理 junction（符号链接）目录，导致编译失败。**
+
+问题表现：
+- 错误码：`00303312`
+- 错误信息：`Cannot find the corresponding SDK version under the specified SDK path`
+- 原因：`readdirSync({ withFileTypes: true })` 对 junction 返回 `isDirectory: false`，hvigor 会跳过这些目录
+
+解决方案：
+1. **优先使用 DevEco Studio IDE 编译** — IDE 内部有独立的 SDK 路径解析逻辑
+2. 如需命令行编译，请使用 WSL/Linux 环境
+3. 不要尝试通过创建 junction 修复此问题
+
 ```powershell
 # 用户执行的构建命令（仅供参考）
 & "D:\DevEco Studio\tools\node\node.exe" "D:\DevEco Studio\tools\hvigor\bin\hvigorw.js" --mode module -p module=entry@default -p product=default -p requiredDeviceType=2in1 -p buildMode=debug assembleHap --analyze=normal --parallel --incremental --daemon
