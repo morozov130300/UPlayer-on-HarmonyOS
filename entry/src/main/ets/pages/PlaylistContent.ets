@@ -386,6 +386,10 @@ export struct PlaylistContent {
         .width('100%')
         .layoutWeight(1)
         .edgeEffect(EdgeEffect.Spring)
+        .nestedScroll({
+          scrollForward: NestedScrollMode.SELF_FIRST,
+          scrollBackward: NestedScrollMode.SELF_FIRST
+        })
         .onDidScroll(() => {
           const offset = this.scroller.currentOffset()
           const yOffset: number = offset.yOffset

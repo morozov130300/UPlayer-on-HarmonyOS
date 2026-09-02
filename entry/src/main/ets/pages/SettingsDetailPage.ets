@@ -1034,7 +1034,7 @@ struct SettingsDetailPage {
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
         .borderRadius(this.scaledSize(10))
 
-        // 玻璃饱和度 / 亮度 独立调节
+        // 玻璃饱和度 独立调节
         Column({ space: this.scaledSize(6) }) {
           Row() {
             this.subTitleRow('玻璃饱和度')
@@ -1084,7 +1084,19 @@ struct SettingsDetailPage {
           .width('100%')
           .alignItems(VerticalAlign.Center)
           .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
+        }
+        .width('100%')
+        .padding({
+          top: this.scaledSize(10),
+          left: this.scaledSize(14),
+          right: this.scaledSize(14),
+          bottom: this.scaledSize(5)
+        })
+        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+        .borderRadius(this.scaledSize(10))
 
+        // 玻璃亮度 独立调节
+        Column({ space: this.scaledSize(6) }) {
           Row() {
             this.subTitleRow('玻璃亮度')
             Blank()
@@ -1136,7 +1148,7 @@ struct SettingsDetailPage {
         }
         .width('100%')
         .padding({
-          top: this.scaledSize(10),
+          top: this.scaledSize(5),
           left: this.scaledSize(14),
           right: this.scaledSize(14),
           bottom: this.scaledSize(10)
@@ -1145,87 +1157,84 @@ struct SettingsDetailPage {
         .borderRadius(this.scaledSize(10))
 
         // 交互形变：按压/拖动时液态玻璃产生 Q 弹反馈
-        Column({ space: this.scaledSize(6) }) {
-          Column() {
-            Row() {
-              this.subTitleRow('交互形变')
-              Blank()
+        Column({ space: this.scaledSize(10) }) {
+          Row() {
+            Column({ space: this.scaledSize(6) }) {
+              Text('交互形变')
+                .fontSize(this.scaledFont(14))
+                .fontColor(this.settingTextColor())
+                .fontWeight(FontWeight.Medium)
+              Text('按压或拖动时，材质表面产生弹性形变反馈。')
+                .fontSize(this.scaledFont(12))
+                .fontColor(this.settingSubTextColor())
             }
-            .width('100%')
-            Text('按压或拖动时，材质表面产生弹性形变反馈。')
-              .fontSize(this.scaledFont(12))
-              .fontColor(this.settingSubTextColor())
-              .width('100%')
-            Row() {
-              Blank()
-              Toggle({ type: ToggleType.Switch, isOn: this.settings.interactive })
-                .selectedColor(this.primaryColor)
-                .onChange((isOn: boolean) => {
-                  this.settings.interactive = isOn
-                  this.interactive = isOn
-                  this.updateSetting()
-                })
-            }
-            .width('100%')
-            .alignItems(VerticalAlign.Center)
-            .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
+            .layoutWeight(1)
+            .justifyContent(FlexAlign.Center)
+            .alignItems(HorizontalAlign.Start)
+            Toggle({ type: ToggleType.Switch, isOn: this.settings.interactive })
+              .selectedColor(this.primaryColor)
+              .alignSelf(ItemAlign.Center)
+              .onChange((isOn: boolean) => {
+                this.settings.interactive = isOn
+                this.interactive = isOn
+                this.updateSetting()
+              })
           }
           .width('100%')
-          .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
+          .height(this.scaledSize(52))
+          .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
 
-          Column() {
-            Row() {
-              this.subTitleRow('自动反色')
-              Blank()
+          Row() {
+            Column({ space: this.scaledSize(6) }) {
+              Text('自动反色')
+                .fontSize(this.scaledFont(14))
+                .fontColor(this.settingTextColor())
+                .fontWeight(FontWeight.Medium)
+              Text('材质足够薄时，子元素文字/图标颜色自动适配背景，确保可读性。')
+                .fontSize(this.scaledFont(12))
+                .fontColor(this.settingSubTextColor())
             }
-            .width('100%')
-            Text('材质足够薄时，子元素文字/图标颜色自动适配背景，确保可读性。')
-              .fontSize(this.scaledFont(12))
-              .fontColor(this.settingSubTextColor())
-              .width('100%')
-            Row() {
-              Blank()
-              Toggle({ type: ToggleType.Switch, isOn: this.settings.colorInvert })
-                .selectedColor(this.primaryColor)
-                .onChange((isOn: boolean) => {
-                  this.settings.colorInvert = isOn
-                  this.colorInvert = isOn
-                  this.updateSetting()
-                })
-            }
-            .width('100%')
-            .alignItems(VerticalAlign.Center)
-            .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
+            .layoutWeight(1)
+            .justifyContent(FlexAlign.Center)
+            .alignItems(HorizontalAlign.Start)
+            Toggle({ type: ToggleType.Switch, isOn: this.settings.colorInvert })
+              .selectedColor(this.primaryColor)
+              .alignSelf(ItemAlign.Center)
+              .onChange((isOn: boolean) => {
+                this.settings.colorInvert = isOn
+                this.colorInvert = isOn
+                this.updateSetting()
+              })
           }
           .width('100%')
-          .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
+          .height(this.scaledSize(52))
+          .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
 
-          Column() {
-            Row() {
-              this.subTitleRow('材质阴影')
-              Blank()
+          Row() {
+            Column({ space: this.scaledSize(6) }) {
+              Text('材质阴影')
+                .fontSize(this.scaledFont(14))
+                .fontColor(this.settingTextColor())
+                .fontWeight(FontWeight.Medium)
+              Text('材质自带阴影效果，优先于手动设置的 shadow 属性。')
+                .fontSize(this.scaledFont(12))
+                .fontColor(this.settingSubTextColor())
             }
-            .width('100%')
-            Text('材质自带阴影效果，优先于手动设置的 shadow 属性。')
-              .fontSize(this.scaledFont(12))
-              .fontColor(this.settingSubTextColor())
-              .width('100%')
-            Row() {
-              Blank()
-              Toggle({ type: ToggleType.Switch, isOn: this.settings.applyShadow })
-                .selectedColor(this.primaryColor)
-                .onChange((isOn: boolean) => {
-                  this.settings.applyShadow = isOn
-                  this.applyShadow = isOn
-                  this.updateSetting()
-                })
-            }
-            .width('100%')
-            .alignItems(VerticalAlign.Center)
-            .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
+            .layoutWeight(1)
+            .justifyContent(FlexAlign.Center)
+            .alignItems(HorizontalAlign.Start)
+            Toggle({ type: ToggleType.Switch, isOn: this.settings.applyShadow })
+              .selectedColor(this.primaryColor)
+              .alignSelf(ItemAlign.Center)
+              .onChange((isOn: boolean) => {
+                this.settings.applyShadow = isOn
+                this.applyShadow = isOn
+                this.updateSetting()
+              })
           }
           .width('100%')
-          .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
+          .height(this.scaledSize(52))
+          .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
         }
         .width('100%')
         .padding({ top: this.scaledSize(10) })
@@ -1306,7 +1315,7 @@ struct SettingsDetailPage {
           top: this.scaledSize(10),
           left: this.scaledSize(14),
           right: this.scaledSize(14),
-          bottom: this.scaledSize(10)
+          bottom: this.scaledSize(5)
         })
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
         .borderRadius(this.scaledSize(10))
@@ -1365,10 +1374,10 @@ struct SettingsDetailPage {
         }
         .width('100%')
         .padding({
-          top: this.scaledSize(10),
+          top: this.scaledSize(5),
           left: this.scaledSize(14),
           right: this.scaledSize(14),
-          bottom: this.scaledSize(10)
+          bottom: this.scaledSize(5)
         })
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
         .borderRadius(this.scaledSize(10))
@@ -1427,7 +1436,7 @@ struct SettingsDetailPage {
         }
         .width('100%')
         .padding({
-          top: this.scaledSize(10),
+          top: this.scaledSize(5),
           left: this.scaledSize(14),
           right: this.scaledSize(14),
           bottom: this.scaledSize(10)

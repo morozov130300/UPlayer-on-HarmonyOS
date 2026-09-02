@@ -217,6 +217,7 @@ export struct ControlAreaComponent {
           Image($r('app.media.ic_public_play_last'))
             .controlImageBuilder()
             .width(32)
+            .fillColor(Color.White)
             .hoverEffect(HoverEffect.Scale)
             .onClick(() => {
               this.avPlayerService.playPreviousSong();
@@ -230,6 +231,7 @@ export struct ControlAreaComponent {
           Image(this.isPlay ? $r('app.media.ic_public_pause') : $r('app.media.ic_public_play'))
             .controlImageBuilder()
             .width(72)
+            .fillColor(Color.White)
             .scale({ x: this.playBtnScale, y: this.playBtnScale })
             .shadow({ radius: 10, color: ColorHelper.hexWithAlpha(this.primaryColor, '22') })
             .hoverEffect(HoverEffect.Scale)
@@ -257,6 +259,7 @@ export struct ControlAreaComponent {
           Image($r('app.media.ic_public_play_next'))
             .controlImageBuilder()
             .width(32)
+            .fillColor(Color.White)
             .hoverEffect(HoverEffect.Scale)
             .onClick(() => {
               this.avPlayerService.playNextSong();

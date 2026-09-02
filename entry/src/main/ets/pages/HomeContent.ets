@@ -13,8 +13,8 @@ import { AlbumCoverSize, AudioMetadataService, CoverPriority } from '../service/
 import { curves, uiMaterial } from '@kit.ArkUI'
 
 const TAG = 'HomeContent'
-const PREFETCH_COUNT: number = 16
-const PREFETCH_THROTTLE_MS: number = 200
+const PREFETCH_COUNT: number = 32
+const PREFETCH_THROTTLE_MS: number = 100
 const APPROX_ITEM_HEIGHT: number = 72
 // 手柄拖拽：拖拽位移超过该距离（约一行高）时与相邻项交换位置
 const DRAG_SWAP_DISTANCE: number = 60
@@ -572,6 +572,10 @@ export struct HomeContent {
           .scrollBar(BarState.Off)
           .edgeEffect(EdgeEffect.Spring)
           .cachedCount(8)
+          .nestedScroll({
+            scrollForward: NestedScrollMode.SELF_FIRST,
+            scrollBackward: NestedScrollMode.SELF_FIRST
+          })
           .onDidScroll(() => {
             const offset = this.scroller.currentOffset()
             const yOffset: number = offset.yOffset
@@ -875,7 +879,7 @@ export struct HomeContent {
       if (item.isAvailable) {
         Row() {
           SymbolGlyph($r('sys.symbol.list_bullet'))
-            .fontSize(Math.round(18 * this.fontSizeScale))
+            .fontSize(Math.round(22 * this.fontSizeScale))
             .renderingStrategy(SymbolRenderingStrategy.SINGLE)
             .fontColor([$r('app.color.text_sixty_color')])
             .hitTestBehavior(HitTestMode.Block)
