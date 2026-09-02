@@ -1150,6 +1150,14 @@ struct SettingsDetailPage {
             Row() {
               this.subTitleRow('交互形变')
               Blank()
+            }
+            .width('100%')
+            Text('按压或拖动时，材质表面产生弹性形变反馈。')
+              .fontSize(this.scaledFont(12))
+              .fontColor(this.settingSubTextColor())
+              .width('100%')
+            Row() {
+              Blank()
               Toggle({ type: ToggleType.Switch, isOn: this.settings.interactive })
                 .selectedColor(this.primaryColor)
                 .onChange((isOn: boolean) => {
@@ -1160,18 +1168,22 @@ struct SettingsDetailPage {
             }
             .width('100%')
             .alignItems(VerticalAlign.Center)
-            .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-            Text('按压或拖动时，材质表面产生弹性形变反馈。')
-              .fontSize(this.scaledFont(12))
-              .fontColor(this.settingSubTextColor())
-              .width('100%')
-              .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(2), bottom: this.scaledSize(10) })
+            .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
           }
           .width('100%')
+          .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
 
           Column() {
             Row() {
               this.subTitleRow('自动反色')
+              Blank()
+            }
+            .width('100%')
+            Text('材质足够薄时，子元素文字/图标颜色自动适配背景，确保可读性。')
+              .fontSize(this.scaledFont(12))
+              .fontColor(this.settingSubTextColor())
+              .width('100%')
+            Row() {
               Blank()
               Toggle({ type: ToggleType.Switch, isOn: this.settings.colorInvert })
                 .selectedColor(this.primaryColor)
@@ -1183,18 +1195,22 @@ struct SettingsDetailPage {
             }
             .width('100%')
             .alignItems(VerticalAlign.Center)
-            .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-            Text('材质足够薄时，子元素文字/图标颜色自动适配背景，确保可读性。')
-              .fontSize(this.scaledFont(12))
-              .fontColor(this.settingSubTextColor())
-              .width('100%')
-              .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(2), bottom: this.scaledSize(10) })
+            .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
           }
           .width('100%')
+          .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
 
           Column() {
             Row() {
               this.subTitleRow('材质阴影')
+              Blank()
+            }
+            .width('100%')
+            Text('材质自带阴影效果，优先于手动设置的 shadow 属性。')
+              .fontSize(this.scaledFont(12))
+              .fontColor(this.settingSubTextColor())
+              .width('100%')
+            Row() {
               Blank()
               Toggle({ type: ToggleType.Switch, isOn: this.settings.applyShadow })
                 .selectedColor(this.primaryColor)
@@ -1206,14 +1222,10 @@ struct SettingsDetailPage {
             }
             .width('100%')
             .alignItems(VerticalAlign.Center)
-            .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-            Text('材质自带阴影效果，优先于手动设置的 shadow 属性。')
-              .fontSize(this.scaledFont(12))
-              .fontColor(this.settingSubTextColor())
-              .width('100%')
-              .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(2), bottom: this.scaledSize(10) })
+            .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
           }
           .width('100%')
+          .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
         }
         .width('100%')
         .padding({ top: this.scaledSize(10) })
