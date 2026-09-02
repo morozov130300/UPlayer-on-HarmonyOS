@@ -1,6 +1,6 @@
 // ArkUI 26 Beta1: 接口定义变更（误报，本项目已是Stage模型）+ UX视觉布局变更（Text默认开启沉浸式材质，系统行为）
 import { curves, uiAppearance } from '@kit.ArkUI'
-import { common, ConfigurationConstant } from '@kit.AbilityKit'
+import { common } from '@kit.AbilityKit'
 import { DataService, AppSettingsData } from '../service/DataService'
 import { AVPlayerService } from '../service/AVPlayerService'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
@@ -23,9 +23,10 @@ class EqBandInfo {
   index: number = 0
 }
 
-class ThemeColorOption {
-  name: string = ''
-  value: string = ''
+
+interface ThemeColorOption {
+  name: string
+  value: string
 }
 
 interface ThemeOption {
@@ -171,7 +172,8 @@ struct SettingsDetailPage {
 
   aboutToDisappear(): void {
     if (this.showColorPicker) {
-      this.previewPrimaryColor(this.pickerOriginalColor)
+      this.settings.primaryColor = this.pickerOriginalColor
+      this.primaryColor = this.pickerOriginalColor
       this.showColorPicker = false
     }
     this.unregisterHoldingHandListener()
@@ -219,15 +221,6 @@ struct SettingsDetailPage {
     this.refreshHoldingHandListener()
   }
 
-  private glassBlurRadius(): number {
-    return this.glassBlurStrength * 0.5
-  }
-
-  private homeTopBlurRadius(): number {
-    return this.homeTopBlurStrength *
-      (1.6 - this.homeTopBlurStrength * 0.004)
-  }
-
   // 统一预览方块规范：64×40 圆角方块，红→黄→绿→蓝渐变底 + 文字标签 + 1px 边框，
   // 与设置页其他预览器（玻璃档位/饱和度/亮度/智感握姿）共用同尺寸同风格。
   // 不同的是内部叠层：
@@ -248,7 +241,8 @@ struct SettingsDetailPage {
         .width('100%')
         .height('100%')
         .backgroundColor(Color.Transparent)
-        .linearGradientBlur(this.homeTopBlurRadius(), {
+        .linearGradientBlur(this.homeTopBlurStrength *
+          (1.6 - this.homeTopBlurStrength * 0.004), {
           fractionStops: [[1, 0], [1, 0.5], [0, 1]],
           direction: GradientDirection.Bottom
         })
@@ -287,7 +281,7 @@ struct SettingsDetailPage {
         .borderRadius(this.scaledSize(18))
         .backgroundColor(Color.Transparent)
         .backgroundEffect({
-          radius: this.glassBlurRadius(),
+          radius: this.glassBlurStrength * 0.5,
           saturation: this.glassSaturation,
           brightness: this.glassBrightness
         })
@@ -401,11 +395,11 @@ struct SettingsDetailPage {
     const appCtx = this.context.getApplicationContext()
     try {
       if (mode === 'light') {
-        appCtx.setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT)
+        appCtx.setColorMode('light')
       } else if (mode === 'dark') {
-        appCtx.setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_DARK)
+        appCtx.setColorMode('dark')
       } else {
-        appCtx.setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET)
+        appCtx.setColorMode('not_set')
       }
     } catch (e) {
       Logger.error(TAG, 'setColorMode failed: ' + JSON.stringify(e))
@@ -416,11 +410,6 @@ struct SettingsDetailPage {
     this.settings.primaryColor = color
     this.updateSetting()
     AppStorage.setOrCreate(KEY_PRIMARY_COLOR, color)
-  }
-
-  private previewPrimaryColor(color: string): void {
-    this.settings.primaryColor = color
-    this.primaryColor = color
   }
 
   private currentPickerColor(): string {
@@ -441,11 +430,13 @@ struct SettingsDetailPage {
   }
 
   private updatePickerColor(): void {
-    this.previewPrimaryColor(this.currentPickerColor())
+    this.settings.primaryColor = this.currentPickerColor()
+    this.primaryColor = this.currentPickerColor()
   }
 
   private cancelColorPicker(): void {
-    this.previewPrimaryColor(this.pickerOriginalColor)
+    this.settings.primaryColor = this.pickerOriginalColor
+    this.primaryColor = this.pickerOriginalColor
     this.showColorPicker = false
   }
 
@@ -1032,8 +1023,7 @@ struct SettingsDetailPage {
           right: this.scaledSize(14),
           bottom: this.scaledSize(10)
         })
-        .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor,
-          0.04))
+        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
         .borderRadius(this.scaledSize(10))
 
         // 玻璃饱和度 / 亮度 独立调节
@@ -1139,51 +1129,62 @@ struct SettingsDetailPage {
           right: this.scaledSize(14),
           bottom: this.scaledSize(10)
         })
-        .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor,
-          0.04))
+        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
         .borderRadius(this.scaledSize(10))
 
         // 交互形变：按压/拖动时液态玻璃产生 Q 弹反馈
-        Column({ space: this.scaledSize(4) }) {
-          this.toggleRow('交互形变', this.settings.interactive, (val: boolean) => {
-            this.settings.interactive = val
-            this.interactive = val
-            this.updateSetting()
-          })
+        Column({ space: this.scaledSize(6) }) {
+          Column() {
+            this.toggleRow('交互形变', this.settings.interactive, (val: boolean) => {
+              this.settings.interactive = val
+              this.interactive = val
+              this.updateSetting()
+            })
+          }
+          .width('100%')
           Text('按压或拖动时，材质表面产生弹性形变反馈。')
             .fontSize(this.scaledFont(12))
             .fontColor(this.settingSubTextColor())
             .width('100%')
-        }
-        .width('100%')
+            .padding({ left: this.scaledSize(14) })
 
-        // 自动反色：子树文字/图标根据材质背景色自动适配，仅材质足够薄时生效
-        Column({ space: this.scaledSize(4) }) {
-          this.toggleRow('自动反色', this.settings.colorInvert, (val: boolean) => {
-            this.settings.colorInvert = val
-            this.colorInvert = val
-            this.updateSetting()
-          })
+          Column() {
+            this.toggleRow('自动反色', this.settings.colorInvert, (val: boolean) => {
+              this.settings.colorInvert = val
+              this.colorInvert = val
+              this.updateSetting()
+            })
+          }
+          .width('100%')
           Text('材质足够薄时，子元素文字/图标颜色自动适配背景，确保可读性。')
             .fontSize(this.scaledFont(12))
             .fontColor(this.settingSubTextColor())
             .width('100%')
-        }
-        .width('100%')
+            .padding({ left: this.scaledSize(14) })
 
-        // 材质阴影：启用时材质自带阴影效果，优先于 shadow 通用属性
-        Column({ space: this.scaledSize(4) }) {
-          this.toggleRow('材质阴影', this.settings.applyShadow, (val: boolean) => {
-            this.settings.applyShadow = val
-            this.applyShadow = val
-            this.updateSetting()
-          })
+          Column() {
+            this.toggleRow('材质阴影', this.settings.applyShadow, (val: boolean) => {
+              this.settings.applyShadow = val
+              this.applyShadow = val
+              this.updateSetting()
+            })
+          }
+          .width('100%')
           Text('材质自带阴影效果，优先于手动设置的 shadow 属性。')
             .fontSize(this.scaledFont(12))
             .fontColor(this.settingSubTextColor())
             .width('100%')
+            .padding({ left: this.scaledSize(14) })
         }
         .width('100%')
+        .padding({
+          top: this.scaledSize(10),
+          left: this.scaledSize(14),
+          right: this.scaledSize(14),
+          bottom: this.scaledSize(10)
+        })
+        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+        .borderRadius(this.scaledSize(10))
 
         // 玻璃效果生效范围：已通过一级标题右上角的小叹号引出弹窗说明
       }
@@ -1420,8 +1421,6 @@ struct SettingsDetailPage {
       .width('100%')
       .constraintSize({ minWidth: 0, maxWidth: '100%' })
       .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
-      .backgroundColor(this.isDark() ? ColorHelper.hexToRgba('#FFFFFF', 0.06) : ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(this.scaledSize(10))
 
       Column({ space: this.scaledSize(8) }) {
         Row() {
@@ -1442,7 +1441,6 @@ struct SettingsDetailPage {
                     width: this.settings.primaryColor === option.value ? 3 : 0,
                     color: '#FFFFFF'
                   })
-                  .margin({ left: this.scaledSize(8) })
                 Text(option.name)
                   .fontSize(this.scaledFont(11))
                   .fontColor(this.settingTextColor())
@@ -1451,6 +1449,7 @@ struct SettingsDetailPage {
               .width('100%')
               .height(this.scaledSize(42))
               .padding({ left: this.scaledSize(8), right: this.scaledSize(8), top: this.scaledSize(4), bottom: this.scaledSize(4) })
+              .margin({ bottom: this.scaledSize(4) })
               .borderRadius(this.scaledSize(10))
               .backgroundColor(this.settings.primaryColor === option.value ?
                 ColorHelper.hexToRgba(option.value, 0.18) : ColorHelper.hexToRgba(this.primaryColor, 0.04))
@@ -1463,7 +1462,6 @@ struct SettingsDetailPage {
         .columnsTemplate(this.isPC ? '1fr 1fr 1fr 1fr' : '1fr 1fr')
         .columnsGap(this.scaledSize(8))
         .rowsGap(this.scaledSize(8))
-        .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
         .width('100%')
 
         Row() {
