@@ -1146,10 +1146,10 @@ struct SettingsDetailPage {
               .fontSize(this.scaledFont(12))
               .fontColor(this.settingSubTextColor())
               .width('100%')
-              .margin({ top: this.scaledSize(6) })
+              .margin({ top: this.scaledSize(2) })
           }
           .width('100%')
-          .padding({ left: this.scaledSize(14), right: this.scaledSize(14), bottom: this.scaledSize(10) })
+          .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
 
           Column() {
             this.toggleRow('自动反色', this.settings.colorInvert, (val: boolean) => {
@@ -1161,10 +1161,10 @@ struct SettingsDetailPage {
               .fontSize(this.scaledFont(12))
               .fontColor(this.settingSubTextColor())
               .width('100%')
-              .margin({ top: this.scaledSize(6) })
+              .margin({ top: this.scaledSize(2) })
           }
           .width('100%')
-          .padding({ left: this.scaledSize(14), right: this.scaledSize(14), bottom: this.scaledSize(10) })
+          .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
 
           Column() {
             this.toggleRow('材质阴影', this.settings.applyShadow, (val: boolean) => {
@@ -1176,14 +1176,14 @@ struct SettingsDetailPage {
               .fontSize(this.scaledFont(12))
               .fontColor(this.settingSubTextColor())
               .width('100%')
-              .margin({ top: this.scaledSize(6) })
+              .margin({ top: this.scaledSize(2) })
           }
           .width('100%')
-          .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+          .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
         }
         .width('100%')
         .padding({
-          top: this.scaledSize(10),
+          top: this.scaledSize(4),
           bottom: this.scaledSize(10)
         })
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
