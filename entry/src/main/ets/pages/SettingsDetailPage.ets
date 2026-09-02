@@ -61,6 +61,7 @@ struct SettingsDetailPage {
   @StorageLink('uplayer_interactive') interactive: boolean = true
   @StorageLink('uplayer_color_invert') colorInvert: boolean = false
   @StorageLink('uplayer_apply_shadow') applyShadow: boolean = true
+  @StorageLink('uplayer_show_lyrics') showLyrics: boolean = true
   @State pageTitle: string = ''
   @State previewOnRight: boolean = false
   @State showColorPicker: boolean = false
@@ -499,8 +500,8 @@ struct SettingsDetailPage {
         .backgroundColor(Color.Transparent)
         .backgroundEffect({
           radius: this.glassBlurStrength * 0.5,
-          saturation: this.settings.glassSaturation,
-          brightness: this.settings.glassBrightness
+          saturation: this.glassSaturation,
+          brightness: this.glassBrightness
         })
         .systemMaterial(this.glassThickness > 0 && isLiquidGlassAvailable()
           ? createPageGlassMaterial(this.glassThickness) : undefined)
@@ -772,6 +773,7 @@ struct SettingsDetailPage {
         })
       }
       .width('100%')
+      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(this.scaledSize(10))
 
@@ -1140,13 +1142,14 @@ struct SettingsDetailPage {
               this.interactive = val
               this.updateSetting()
             })
+            Text('按压或拖动时，材质表面产生弹性形变反馈。')
+              .fontSize(this.scaledFont(12))
+              .fontColor(this.settingSubTextColor())
+              .width('100%')
+              .margin({ top: this.scaledSize(6) })
           }
           .width('100%')
-          Text('按压或拖动时，材质表面产生弹性形变反馈。')
-            .fontSize(this.scaledFont(12))
-            .fontColor(this.settingSubTextColor())
-            .width('100%')
-            .padding({ left: this.scaledSize(14) })
+          .padding({ left: this.scaledSize(14), right: this.scaledSize(14), bottom: this.scaledSize(10) })
 
           Column() {
             this.toggleRow('自动反色', this.settings.colorInvert, (val: boolean) => {
@@ -1154,13 +1157,14 @@ struct SettingsDetailPage {
               this.colorInvert = val
               this.updateSetting()
             })
+            Text('材质足够薄时，子元素文字/图标颜色自动适配背景，确保可读性。')
+              .fontSize(this.scaledFont(12))
+              .fontColor(this.settingSubTextColor())
+              .width('100%')
+              .margin({ top: this.scaledSize(6) })
           }
           .width('100%')
-          Text('材质足够薄时，子元素文字/图标颜色自动适配背景，确保可读性。')
-            .fontSize(this.scaledFont(12))
-            .fontColor(this.settingSubTextColor())
-            .width('100%')
-            .padding({ left: this.scaledSize(14) })
+          .padding({ left: this.scaledSize(14), right: this.scaledSize(14), bottom: this.scaledSize(10) })
 
           Column() {
             this.toggleRow('材质阴影', this.settings.applyShadow, (val: boolean) => {
@@ -1168,19 +1172,18 @@ struct SettingsDetailPage {
               this.applyShadow = val
               this.updateSetting()
             })
+            Text('材质自带阴影效果，优先于手动设置的 shadow 属性。')
+              .fontSize(this.scaledFont(12))
+              .fontColor(this.settingSubTextColor())
+              .width('100%')
+              .margin({ top: this.scaledSize(6) })
           }
           .width('100%')
-          Text('材质自带阴影效果，优先于手动设置的 shadow 属性。')
-            .fontSize(this.scaledFont(12))
-            .fontColor(this.settingSubTextColor())
-            .width('100%')
-            .padding({ left: this.scaledSize(14) })
+          .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
         }
         .width('100%')
         .padding({
           top: this.scaledSize(10),
-          left: this.scaledSize(14),
-          right: this.scaledSize(14),
           bottom: this.scaledSize(10)
         })
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
@@ -1431,7 +1434,7 @@ struct SettingsDetailPage {
         Grid() {
           ForEach(this.colorOptions, (option: ThemeColorOption) => {
             GridItem() {
-              Row() {
+              Row({ space: this.scaledSize(8) }) {
                 Column()
                   .width(this.scaledSize(24))
                   .height(this.scaledSize(24))
@@ -1464,14 +1467,14 @@ struct SettingsDetailPage {
         .rowsGap(this.scaledSize(8))
         .width('100%')
 
-        Row() {
+        Row({ space: this.scaledSize(8) }) {
           Column()
             .width(this.scaledSize(24))
             .height(this.scaledSize(24))
             .borderRadius(this.scaledSize(12))
-            .backgroundColor(this.primaryColor)
+            .backgroundColor(this.settings.primaryColor)
             .border({
-              width: this.settings.primaryColor === this.primaryColor ? 3 : 0,
+              width: !this.colorOptions.some((opt: ThemeColorOption) => opt.value === this.settings.primaryColor) ? 3 : 0,
               color: '#FFFFFF'
             })
           Text('自定义颜色')
@@ -1481,7 +1484,7 @@ struct SettingsDetailPage {
           Blank()
           SymbolGlyph($r('sys.symbol.paintpalette'))
             .fontSize(this.scaledFont(16))
-            .fontColor([this.primaryColor])
+            .fontColor([this.settings.primaryColor])
         }
         .width('100%')
         .height(this.scaledSize(42))
@@ -1759,10 +1762,9 @@ struct SettingsDetailPage {
   buildPlaybackSection(): void {
     Column({ space: 10 }) {
       Column() {
-        this.toggleRow('显示歌词', this.settings.showLyrics, (val: boolean) => {
-          this.settings.showLyrics = val
+        this.toggleRow('显示歌词', this.showLyrics, (val: boolean) => {
+          this.showLyrics = val
           this.updateSetting()
-          AppStorage.setOrCreate('uplayer_show_lyrics', val)
         })
         Divider()
           .color(ColorHelper.hexToRgba(this.primaryColor, 0.08))
@@ -1774,6 +1776,7 @@ struct SettingsDetailPage {
         })
       }
       .width('100%')
+      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(this.scaledSize(10))
 
@@ -1785,7 +1788,7 @@ struct SettingsDetailPage {
             .fontColor(this.settingTextColor())
         }
         .width('100%')
-        .padding({ left: 12, right: 12, top: 2 })
+        .padding({ left: this.scaledSize(12), right: this.scaledSize(12), top: this.scaledSize(2) })
         Stack() {
           Slider({
             value: (this.settings.playSpeed - 0.5) * 100,
@@ -1806,8 +1809,8 @@ struct SettingsDetailPage {
             })
         }
         .width('100%')
-        .height(40)
-        .padding({ left: 12, right: 12, bottom: 8 })
+        .height(this.scaledSize(40))
+        .padding({ left: this.scaledSize(12), right: this.scaledSize(12), bottom: this.scaledSize(8) })
       }
       .width('100%')
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
@@ -1828,6 +1831,7 @@ struct SettingsDetailPage {
         })
       }
       .width('100%')
+      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(this.scaledSize(10))
 
@@ -2032,7 +2036,6 @@ struct SettingsDetailPage {
     }
     .width('100%')
     .height(this.scaledSize(44))
-    .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
     .alignItems(VerticalAlign.Center)
   }
 }

@@ -59,6 +59,7 @@ struct MainPage {
   @StorageLink('uplayer_interactive') interactive: boolean = true
   @StorageLink('uplayer_color_invert') colorInvert: boolean = false
   @StorageLink('uplayer_apply_shadow') applyShadow: boolean = true
+  @StorageLink('uplayer_show_lyrics') showLyrics: boolean = true
   @State albumArtFailed: boolean = false
   @State isTitleMarqueeRunning: boolean = true
   @State isArtistMarqueeRunning: boolean = true
@@ -499,7 +500,7 @@ struct MainPage {
       .onClick(() => {
         this.openPlayer()
       })
-      if (this.isPC && this.currentSongTitle.length > 0 &&
+      if (this.showLyrics && this.isPC && this.currentSongTitle.length > 0 &&
         (this.currentLyricLine.length > 0 || this.nextLyricLine.length > 0)) {
         Column() {
           Text(this.currentLyricLine)
