@@ -1,6 +1,6 @@
 // ArkUI 26 Beta1: 接口定义变更（误报，本项目已是Stage模型）+ UX视觉布局变更（Text默认开启沉浸式材质，系统行为）
 import { curves, uiAppearance } from '@kit.ArkUI'
-import { common } from '@kit.AbilityKit'
+import { common, ConfigurationConstant } from '@kit.AbilityKit'
 import { DataService, AppSettingsData } from '../service/DataService'
 import { AVPlayerService } from '../service/AVPlayerService'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
@@ -395,11 +395,11 @@ struct SettingsDetailPage {
     const appCtx = this.context.getApplicationContext()
     try {
       if (mode === 'light') {
-        appCtx.setColorMode('light')
+        appCtx.setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT)
       } else if (mode === 'dark') {
-        appCtx.setColorMode('dark')
+        appCtx.setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_DARK)
       } else {
-        appCtx.setColorMode('not_set')
+        appCtx.setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET)
       }
     } catch (e) {
       Logger.error(TAG, 'setColorMode failed: ' + JSON.stringify(e))
