@@ -67,6 +67,12 @@ Image($r('app.media.ic_celiakeyboard_menu'))
 3. 用户将完整编译输出（包括错误/warning）粘贴回对话
 4. 智能体根据输出进行分析和修复
 
+### ⚠️ 禁止修改 DevEco Studio SDK 目录
+
+**智能体绝对禁止在 `D:\DevEco Studio\sdk\` 下创建、删除或修改任何文件/目录（包括 junction、symlink、缓存等）。**
+
+遇到 SDK 路径不匹配、版本找不到等编译环境问题，只能给出排查建议，由用户自己决定如何处理，绝不能直接操作 SDK 目录。
+
 ```powershell
 # 用户执行的构建命令（仅供参考）
 & "D:\DevEco Studio\tools\node\node.exe" "D:\DevEco Studio\tools\hvigor\bin\hvigorw.js" --mode module -p module=entry@default -p product=default -p requiredDeviceType=2in1 -p buildMode=debug assembleHap --analyze=normal --parallel --incremental --daemon
