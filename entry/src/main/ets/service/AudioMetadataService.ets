@@ -425,10 +425,20 @@ export class AudioMetadataService {
     maxEdge: number, priority: CoverPriority): Promise<image.PixelMap | undefined> {
     return new Promise<image.PixelMap | undefined>((resolve: (value: image.PixelMap | undefined) => void): void => {
       const run: () => void = (): void => {
+        const snapshotGen: number = this.coverLifecycleGeneration
         this.coverExtractionActive++
         this.fetchFallbackCover(song, sourcePath, maxEdge, priority).then((cover: image.PixelMap | undefined) => {
+          if (snapshotGen !== this.coverLifecycleGeneration) {
+            cover?.release()
+            resolve(undefined)
+            return
+          }
           resolve(cover)
         }).catch(() => {
+          if (snapshotGen !== this.coverLifecycleGeneration) {
+            resolve(undefined)
+            return
+          }
           resolve(undefined)
         }).finally(() => {
           this.coverExtractionActive--

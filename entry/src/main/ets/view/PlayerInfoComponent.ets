@@ -366,8 +366,9 @@ export struct PlayerInfoComponent {
     } finally {
       if (this.backgroundCoverLease === coverLease) {
         this.backgroundCoverLease = undefined;
+      } else {
+        coverLease?.release();
       }
-      coverLease?.release();
     }
   }
 
