@@ -173,7 +173,9 @@ export class AVPlayerService {
       this.finishPrepare(false)
     })
 
-    this.avPlayer.on('audioInterrupt', this.handleAudioInterrupt.bind(this))
+    this.avPlayer.on('audioInterrupt', (event: audio.InterruptEvent): void => {
+      this.handleAudioInterrupt(event)
+    })
   }
 
   @SuppressWarnings({rules: [SuppressWarningsType.SYSCAP]})
