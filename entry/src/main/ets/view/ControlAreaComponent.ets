@@ -488,7 +488,8 @@ export struct ControlAreaComponent {
     }
     .width(320)
     .height(500)
-    .backgroundColor('#1A1A2E')
+    .backgroundColor(this.primaryColor)
+    .opacity(0.95)
     .borderRadius(16)
   }
 
