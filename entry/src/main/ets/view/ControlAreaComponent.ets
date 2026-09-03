@@ -74,6 +74,11 @@ export struct ControlAreaComponent {
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_VOLUME, newVol);
   };
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF';
+  @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0;
+
+  private scaledFont(size: number): number {
+    return Math.round(size * this.fontSizeScale)
+  }
 
   aboutToAppear(): void {
     this.songDataSource.reloadData(this.songList);
@@ -488,13 +493,13 @@ export struct ControlAreaComponent {
   infoPanelTopBar() {
     Row() {
       Text('歌曲信息')
-        .fontSize(16)
+        .fontSize(this.scaledFont(16))
         .fontWeight(FontWeight.Bold)
         .fontColor(Color.White)
       Blank()
     }
     .width('100%')
-    .height(44)
+    .height(this.scaledFont(44))
     .alignItems(VerticalAlign.Center)
     .padding({ left: 16, right: 16 })
   }
@@ -506,19 +511,19 @@ export struct ControlAreaComponent {
         AlbumCover({ song: this.songList[this.selectIndex], coverWidth: 72, coverHeight: 72, coverRadius: 8 })
         Column() {
           Text(this.songList[this.selectIndex].title)
-            .fontSize(16)
+            .fontSize(this.scaledFont(16))
             .fontWeight(FontWeight.Bold)
             .fontColor(Color.White)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
           Text(this.songList[this.selectIndex].artist.length > 0 ? this.songList[this.selectIndex].artist : '未知歌手')
-            .fontSize(13)
+            .fontSize(this.scaledFont(13))
             .fontColor('rgba(255,255,255,0.7)')
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
           if (this.songList[this.selectIndex].album.length > 0) {
             Text(this.songList[this.selectIndex].album)
-              .fontSize(12)
+              .fontSize(this.scaledFont(12))
               .fontColor('rgba(255,255,255,0.5)')
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -529,7 +534,7 @@ export struct ControlAreaComponent {
         Blank()
       }
       .width('100%')
-      .height(90)
+      .height(this.scaledFont(90))
       .alignItems(VerticalAlign.Center)
       .padding({ left: 16, right: 16 })
     }
@@ -604,17 +609,17 @@ export struct ControlAreaComponent {
     Column() {
       Row() {
         Text(label)
-          .fontSize(12)
+          .fontSize(this.scaledFont(12))
           .fontColor('rgba(255,255,255,0.5)')
           .width(64)
         if (index === this.edittingFieldIndex && editable) {
           Column({ space: 4 }) {
             TextInput({ text: this.edittingValue })
-              .fontSize(13)
+              .fontSize(this.scaledFont(13))
               .fontColor(Color.White)
               .backgroundColor('rgba(255,255,255,0.08)')
               .borderRadius(4)
-              .height(32)
+              .height(this.scaledFont(32))
               .padding({ left: 8, right: 8 })
               .layoutWeight(1)
               .onChange((newValue: string) => {
@@ -622,16 +627,16 @@ export struct ControlAreaComponent {
               })
             Row() {
               Button('取消')
-                .height(26)
-                .fontSize(11)
+                .height(this.scaledFont(26))
+                .fontSize(this.scaledFont(11))
                 .fontColor('rgba(255,255,255,0.7)')
                 .backgroundColor('rgba(255,255,255,0.1)')
                 .borderRadius(4)
                 .padding({ left: 8, right: 8 })
                 .onClick(() => { this.cancelEditField() })
               Button('保存')
-                .height(26)
-                .fontSize(11)
+                .height(this.scaledFont(26))
+                .fontSize(this.scaledFont(11))
                 .fontColor(Color.White)
                 .backgroundColor(this.primaryColor)
                 .borderRadius(4)
@@ -644,7 +649,7 @@ export struct ControlAreaComponent {
           .layoutWeight(1)
         } else {
           Text(value && value.length > 0 ? value : '-')
-            .fontSize(13)
+            .fontSize(this.scaledFont(13))
             .fontColor('rgba(255,255,255,0.8)')
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -652,7 +657,7 @@ export struct ControlAreaComponent {
         }
       }
       .width('100%')
-      .height(38)
+      .height(this.scaledFont(38))
       .alignItems(VerticalAlign.Center)
     }
     .width('100%')
