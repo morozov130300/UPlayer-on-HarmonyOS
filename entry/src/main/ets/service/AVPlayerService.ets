@@ -43,6 +43,7 @@ export class AVPlayerService {
   private static FADE_INTERVAL: number = 50
   private static EQUALIZER_MIN_GAIN_DB: number = -10
   private static EQUALIZER_MAX_GAIN_DB: number = 10
+  private static SEEK_SETTLE_MS: number = 2000
   private interruptedWhilePlaying: boolean = false
   private sessionController: AVSessionController = AVSessionController.getInstance()
   private liveViewService: LiveViewService = LiveViewService.getInstance()
@@ -61,6 +62,8 @@ export class AVPlayerService {
   private pendingSeekMs: number | undefined = undefined
   private desiredVolume: number = 1
   private desiredSpeed: number = 1
+  private isSeeking: boolean = false
+  private seekingClearTimer: number = -1
 
   public static getInstance(): AVPlayerService {
     return AVPlayerService.instance
@@ -140,7 +143,9 @@ export class AVPlayerService {
       if (this.nativeMode) {
         return
       }
-      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PROGRESS, time)
+      if (!this.isSeeking) {
+        AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PROGRESS, time)
+      }
       const totalMs: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_TOTAL_MS_TIME) ?? 0
       if (totalMs > 0) {
         AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_TIME, this.formatTime(time))
@@ -680,6 +685,15 @@ export class AVPlayerService {
 
   async seek(timeMs: number): Promise<void> {
     this.sessionController.setProgressState(timeMs)
+    this.isSeeking = true
+    if (this.seekingClearTimer !== -1) {
+      clearTimeout(this.seekingClearTimer)
+      this.seekingClearTimer = -1
+    }
+    this.seekingClearTimer = setTimeout(() => {
+      this.seekingClearTimer = -1
+      this.isSeeking = false
+    }, AVPlayerService.SEEK_SETTLE_MS)
     if (this.backendState === BackendState.STARTING_NATIVE || this.backendState === BackendState.STARTING_AV) {
       this.pendingSeekMs = timeMs
       return
@@ -915,9 +929,18 @@ export class AVPlayerService {
         return
       }
       const position: number = nativeAudio.getPosition()
-      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PROGRESS, position)
+      if (!this.isSeeking) {
+        AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PROGRESS, position)
+      }
       AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_TIME, this.formatTime(position))
       this.sessionController.setProgressState(position)
+      if (this.isSeeking && position !== nativeAudio.getPosition()) {
+        this.isSeeking = false
+        if (this.seekingClearTimer !== -1) {
+          clearTimeout(this.seekingClearTimer)
+          this.seekingClearTimer = -1
+        }
+      }
       if (nativeAudio.hasFailed()) {
         const failedPosition: number = position
         this.requestNativeFallback(fileUri, requestId, failedPosition, 'native render failed')

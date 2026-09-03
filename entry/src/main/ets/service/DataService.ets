@@ -439,6 +439,22 @@ export class DataService {
     return newFav
   }
 
+  updateSongFields(songId: string, updatedList: SongInfo[]): void {
+    const songs: SongInfo[] = updatedList
+    let modified: boolean = false
+    for (let i = 0; i < songs.length; i++) {
+      if (songs[i].id === songId) {
+        modified = true
+        break
+      }
+    }
+    if (modified) {
+      this.songsCache = songs
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SONG_LIST, songs.slice())
+      this.scheduleSaveSongs(songs)
+    }
+  }
+
   // ═══════════ Folder CRUD ═══════════
 
   getFolders(): FolderInfo[] {

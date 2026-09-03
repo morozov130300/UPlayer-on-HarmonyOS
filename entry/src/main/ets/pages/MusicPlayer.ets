@@ -18,7 +18,6 @@ struct MusicPlayer {
   @State isLoading: boolean = true;
   @StorageLink(AppStorageKeyConstants.KEY_WINDOW_UTIL) windowUtil: WindowUtil | undefined = undefined;
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF';
-  @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0;
   @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) isPlaying: boolean = false;
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance();
 
@@ -86,15 +85,13 @@ struct MusicPlayer {
         .height('100%')
         .width('100%')
       } else {
-        PlayerInfoComponent({ isShowPlay: this.isShowPlay, mainWindowInfo: this.windowUtil?.mainWindowInfo, sizeScale: this.displaySizeScale })
+        PlayerInfoComponent({ isShowPlay: this.isShowPlay, mainWindowInfo: this.windowUtil?.mainWindowInfo })
       }
     }
     .height('100%')
     .width('100%')
     .expandSafeArea()
     .opacity(this.bgOpacity)
-    .focusable(true)
-    .defaultFocus(true)
     .onKeyEvent((event: KeyEvent): boolean => this.handleKeyEvent(event))
   }
 }

@@ -18,8 +18,10 @@ import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstan
 import { audio } from '@kit.AudioKit';
 import { AlbumCover } from '../component/AlbumCover';
 import { AVSessionController } from '../common/utils/mediautils/AVSessionController';
+import { DataService } from '../service/DataService';
 
 const TAG = 'ControlAreaComponent';
+const SEEK_SETTLE_MS: number = 2000;
 const SKIP_MS: number = 15000;
 
 @Component
@@ -47,6 +49,10 @@ export struct ControlAreaComponent {
   @State trackThickness: number = 6;
   @State playBtnScale: number = 1.0;
   @State sliderGlow: number = 0;
+  @State isShowInfoPanel: boolean = false;
+  @State infoTitle: string = '';
+  @State infoArtist: string = '';
+  @State infoAlbum: string = '';
   private scroller: Scroller = new Scroller();
   private context: common.UIAbilityContext | undefined = AppStorage.get(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT);
   uiContext: UIContext = this.getUIContext();
@@ -59,6 +65,7 @@ export struct ControlAreaComponent {
   private songDataSource: SongDataSource = new SongDataSource([]);
   private volumeManager: audio.AudioVolumeManager | undefined = undefined;
   private isVolumeListenerRegistered: boolean = false;
+  private isSeekingTimer: number = -1;
   private streamVolumeChangeCallback = (streamVolumeEvent: audio.StreamVolumeEvent): void => {
     const maxVol: number = 15;
     const newVol: number = streamVolumeEvent.volume / maxVol;
@@ -74,6 +81,10 @@ export struct ControlAreaComponent {
   }
 
   aboutToDisappear(): void {
+    if (this.isSeekingTimer !== -1) {
+      clearInterval(this.isSeekingTimer);
+      this.isSeekingTimer = -1;
+    }
     if (this.volumeManager !== undefined && this.isVolumeListenerRegistered) {
       this.volumeManager.off('streamVolumeChange', this.streamVolumeChangeCallback);
       this.isVolumeListenerRegistered = false;
@@ -148,6 +159,42 @@ export struct ControlAreaComponent {
     this.pageShowTime = 0;
   }
 
+  private openInfoPanel(): void {
+    if (this.selectIndex < 0 || !this.songList || this.selectIndex >= this.songList.length) {
+      return;
+    }
+    const song: SongInfo = this.songList[this.selectIndex];
+    this.infoTitle = song.title;
+    this.infoArtist = song.artist;
+    this.infoAlbum = song.album;
+    this.isShowInfoPanel = true;
+  }
+
+  private saveSongInfo(): void {
+    if (this.selectIndex < 0 || !this.songList || this.selectIndex >= this.songList.length) {
+      return;
+    }
+    const song: SongInfo = this.songList[this.selectIndex];
+    const originalTitle: string = song.title;
+    const originalArtist: string = song.artist;
+    const originalAlbum: string = song.album;
+    const updatedTitle: string = this.infoTitle;
+    const updatedArtist: string = this.infoArtist;
+    const updatedAlbum: string = this.infoAlbum;
+    if (originalTitle !== updatedTitle || originalArtist !== updatedArtist || originalAlbum !== updatedAlbum) {
+      song.title = updatedTitle;
+      song.artist = updatedArtist;
+      song.album = updatedAlbum;
+      const songs: SongInfo[] = this.songList.slice();
+      DataService.getInstance().updateSongFields(song.id, songs);
+    }
+    this.isShowInfoPanel = false;
+  }
+
+  private closeInfoPanel(): void {
+    this.isShowInfoPanel = false;
+  }
+
   build() {
     Column() {
       Column() {
@@ -160,7 +207,7 @@ export struct ControlAreaComponent {
           .enabled(this.max > 0)
           .shadow({ radius: this.sliderGlow, color: '#B3FFFFFF' })
           .onChange((value: number, mode: SliderChangeMode) => {
-            if (mode === SliderChangeMode.End) {
+            if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
               this.avPlayerService.seek(value);
               this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
                 this.trackThickness = 6;
@@ -182,7 +229,6 @@ export struct ControlAreaComponent {
           })
           .height($r('app.float.slider_height'))
           .width(StyleConstants.FULL_WIDTH)
-          .hitTestBehavior(HitTestMode.Block)
         Row() {
           Text(this.currentTime)
             .fontColor(this.songTimeFontColor)
@@ -216,7 +262,7 @@ export struct ControlAreaComponent {
         Column() {
           Image($r('app.media.ic_public_play_last'))
             .controlImageBuilder()
-            .width(32)
+            .width(28)
             .fillColor(Color.White)
             .hoverEffect(HoverEffect.Scale)
             .onClick(() => {
@@ -230,7 +276,7 @@ export struct ControlAreaComponent {
         Column() {
           Image(this.isPlay ? $r('app.media.ic_public_pause') : $r('app.media.ic_public_play'))
             .controlImageBuilder()
-            .width(72)
+            .width(60)
             .fillColor(Color.White)
             .scale({ x: this.playBtnScale, y: this.playBtnScale })
             .shadow({ radius: 10, color: ColorHelper.hexWithAlpha(this.primaryColor, '22') })
@@ -258,7 +304,7 @@ export struct ControlAreaComponent {
         Column() {
           Image($r('app.media.ic_public_play_next'))
             .controlImageBuilder()
-            .width(32)
+            .width(28)
             .fillColor(Color.White)
             .hoverEffect(HoverEffect.Scale)
             .onClick(() => {
@@ -291,6 +337,7 @@ export struct ControlAreaComponent {
           .fontColor([Color.White])
           .opacity(0.86)
           .scale({ x: this.playModeScale, y: this.playModeScale })
+          .hoverEffect(HoverEffect.Scale)
           .onClick(() => {
             this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_PRESS_DURATION_MEDIUM, curve: Curve.EaseInOut }, () => {
               this.playModeScale = 0.75;
@@ -309,6 +356,7 @@ export struct ControlAreaComponent {
           .fontColor([Color.White])
           .opacity(0.86)
           .scale({ x: this.playlistScale, y: this.playlistScale })
+          .hoverEffect(HoverEffect.Scale)
           .onClick(() => {
             this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_PRESS_DURATION_SHORT, curve: Curve.EaseInOut }, () => {
               this.playlistScale = 0.8;
@@ -338,6 +386,7 @@ export struct ControlAreaComponent {
           .fontColor([Color.White])
           .opacity(0.86)
           .scale({ x: this.speedScale, y: this.speedScale })
+          .hoverEffect(HoverEffect.Scale)
           .onClick(() => {
             this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_PRESS_DURATION_SHORT, curve: Curve.EaseInOut }, () => {
               this.speedScale = 0.8;
@@ -360,12 +409,13 @@ export struct ControlAreaComponent {
             }
           })
 
-        SymbolGlyph($r('sys.symbol.speaker_wave_2'))
+        SymbolGlyph($r('sys.symbol.info_circle'))
           .fontSize(26)
           .renderingStrategy(SymbolRenderingStrategy.SINGLE)
           .fontColor([Color.White])
           .opacity(0.86)
           .scale({ x: this.volumeScale, y: this.volumeScale })
+          .hoverEffect(HoverEffect.Scale)
           .onClick(() => {
             this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_PRESS_DURATION_SHORT, curve: Curve.EaseInOut }, () => {
               this.volumeScale = 0.8;
@@ -375,7 +425,13 @@ export struct ControlAreaComponent {
                 this.volumeScale = 1.0;
               });
             }, StyleConstants.ANIMATION_PRESS_DELAY_MEDIUM);
-            this.isShowVolumeBuild = !this.isShowVolumeBuild
+            this.openInfoPanel();
+          })
+          .bindSheet($$this.isShowInfoPanel, this.infoPanelBuilder(), {
+            detents: [SheetSize.MEDIUM],
+            dragBar: false,
+            showClose: true,
+            preferType: SheetType.CENTER
           })
       }
       .width(StyleConstants.FULL_WIDTH)
@@ -393,6 +449,129 @@ export struct ControlAreaComponent {
       })
         .height(1)
     }
+  }
+
+  @Builder
+  infoPanelTitle() {
+    Text('')
+      .width(0)
+      .height(0)
+  }
+
+  @Builder
+  infoPanelBuilder() {
+    Column() {
+      if (this.selectIndex >= 0 && this.songList && this.selectIndex < this.songList.length) {
+        this.infoPanelHeader()
+        Column() {
+          this.infoRow('标题', this.infoTitle, true)
+          this.infoRow('歌手', this.infoArtist, true)
+          this.infoRow('专辑', this.infoAlbum, true)
+          this.infoRow('时长', MediaTools.msToCountdownTime(this.songList[this.selectIndex].duration), false)
+          if (this.songList[this.selectIndex].bitrate > 0) {
+            this.infoRow('比特率', `${this.songList[this.selectIndex].bitrate / 1000} kbps`, false)
+          }
+          if (this.songList[this.selectIndex].sampleRate > 0) {
+            this.infoRow('采样率', `${this.songList[this.selectIndex].sampleRate} Hz`, false)
+          }
+        }
+        .width('100%')
+        .margin({ bottom: 16 })
+      }
+
+      Row() {
+        Button('取消')
+          .height(36)
+          .width('48%')
+          .fontSize(14)
+          .fontColor(Color.White)
+          .backgroundColor('rgba(255,255,255,0.12)')
+          .borderRadius(8)
+          .onClick(() => { this.closeInfoPanel() })
+        Button('保存')
+          .height(36)
+          .width('48%')
+          .fontSize(14)
+          .fontColor(Color.White)
+          .backgroundColor(this.primaryColor)
+          .borderRadius(8)
+          .onClick(() => { this.saveSongInfo() })
+      }
+      .width('100%')
+    }
+    .width(300)
+    .padding(20)
+    .backgroundColor('#1A1A2E')
+    .borderRadius(16)
+  }
+
+  @Builder
+  infoPanelHeader() {
+    Row() {
+      AlbumCover({ song: this.songList[this.selectIndex], coverWidth: 64, coverHeight: 64, coverRadius: 8 })
+      Column() {
+        Text(this.songList[this.selectIndex].title)
+          .fontSize(16)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(Color.White)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Text(this.songList[this.selectIndex].artist.length > 0 ? this.songList[this.selectIndex].artist : '未知歌手')
+          .fontSize(13)
+          .fontColor('rgba(255,255,255,0.7)')
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        if (this.songList[this.selectIndex].album.length > 0) {
+          Text(this.songList[this.selectIndex].album)
+            .fontSize(12)
+            .fontColor('rgba(255,255,255,0.5)')
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+      }
+      .margin({ left: 12 })
+      .alignItems(HorizontalAlign.Start)
+    }
+    .width('100%')
+    .margin({ bottom: 16 })
+  }
+
+  @Builder
+  infoRow(label: string, value: string, editable: boolean) {
+    Row() {
+      Text(label)
+        .fontSize(12)
+        .fontColor('rgba(255,255,255,0.5)')
+        .width(56)
+      if (editable) {
+        TextInput({ text: value })
+          .fontSize(13)
+          .fontColor(Color.White)
+          .backgroundColor('rgba(255,255,255,0.08)')
+          .borderRadius(4)
+          .height(32)
+          .padding({ left: 8, right: 8 })
+          .layoutWeight(1)
+          .onChange((newValue: string) => {
+            if (label === '标题') {
+              this.infoTitle = newValue;
+            } else if (label === '歌手') {
+              this.infoArtist = newValue;
+            } else if (label === '专辑') {
+              this.infoAlbum = newValue;
+            }
+          })
+      } else {
+        Text(value)
+          .fontSize(13)
+          .fontColor('rgba(255,255,255,0.8)')
+          .layoutWeight(1)
+      }
+    }
+    .width('100%')
+    .height(38)
+    .alignItems(VerticalAlign.Center)
+    .margin({ bottom: 6 })
   }
 
   @Builder
