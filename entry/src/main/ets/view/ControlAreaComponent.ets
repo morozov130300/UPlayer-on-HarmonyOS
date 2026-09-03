@@ -443,13 +443,6 @@ export struct ControlAreaComponent {
             }, StyleConstants.ANIMATION_PRESS_DELAY_MEDIUM);
             this.openInfoPanel();
           })
-          .bindSheet($$this.isShowInfoPanel, this.infoPanelBuilder(), {
-            detents: [SheetSize.MEDIUM],
-            dragBar: false,
-            showClose: true,
-            preferType: SheetType.CENTER,
-            showInSubWindow: false
-          })
       }
       .width(StyleConstants.FULL_WIDTH)
       .justifyContent(FlexAlign.SpaceEvenly)
@@ -465,6 +458,10 @@ export struct ControlAreaComponent {
         }
       })
         .height(1)
+
+      if (this.isShowInfoPanel) {
+        this.infoPanelBuilder()
+      }
     }
   }
 
@@ -477,13 +474,11 @@ export struct ControlAreaComponent {
           this.infoPanelCover()
           this.infoPanelContent()
         }
-        .width('100%')
       }
       .layoutWeight(1)
-      .width('100%')
     }
-    .width(320)
-    .height(500)
+    .width(StyleConstants.FULL_WIDTH)
+    .height(StyleConstants.FULL_HEIGHT)
     .backgroundColor(this.primaryColor)
     .opacity(0.95)
     .borderRadius(16)
