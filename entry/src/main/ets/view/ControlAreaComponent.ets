@@ -470,21 +470,17 @@ export struct ControlAreaComponent {
 
   @Builder
   infoPanelBuilder() {
-    Column() {
-      Column({ space: 0 }) {
-        this.infoPanelTopBar()
-        Scroll() {
-          Column({ space: 0 }) {
-            this.infoPanelCover()
-            this.infoPanelContent()
-          }
-          .width('100%')
+    Column({ space: 0 }) {
+      this.infoPanelTopBar()
+      Scroll() {
+        Column({ space: 0 }) {
+          this.infoPanelCover()
+          this.infoPanelContent()
         }
-        .layoutWeight(1)
         .width('100%')
       }
+      .layoutWeight(1)
       .width('100%')
-      .height('100%')
     }
     .width(320)
     .height(500)
@@ -501,12 +497,6 @@ export struct ControlAreaComponent {
         .fontWeight(FontWeight.Bold)
         .fontColor(Color.White)
       Blank()
-      SymbolGlyph($r('sys.symbol.xmark'))
-        .fontSize(20)
-        .renderingStrategy(SymbolRenderingStrategy.SINGLE)
-        .fontColor([Color.White])
-        .opacity(0.6)
-        .onClick(() => { this.closeInfoPanel() })
     }
     .width('100%')
     .height(44)
