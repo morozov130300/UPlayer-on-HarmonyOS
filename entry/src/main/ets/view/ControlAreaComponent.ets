@@ -447,7 +447,8 @@ export struct ControlAreaComponent {
             detents: [SheetSize.MEDIUM],
             dragBar: false,
             showClose: true,
-            preferType: SheetType.BOTTOM
+            preferType: SheetType.CENTER,
+            showInSubWindow: false
           })
       }
       .width(StyleConstants.FULL_WIDTH)
@@ -469,17 +470,21 @@ export struct ControlAreaComponent {
 
   @Builder
   infoPanelBuilder() {
-    Column({ space: 0 }) {
-      this.infoPanelTopBar()
-      Scroll() {
-        Column({ space: 0 }) {
-          this.infoPanelCover()
-          this.infoPanelContent()
+    Column() {
+      Column({ space: 0 }) {
+        this.infoPanelTopBar()
+        Scroll() {
+          Column({ space: 0 }) {
+            this.infoPanelCover()
+            this.infoPanelContent()
+          }
+          .width('100%')
         }
+        .layoutWeight(1)
         .width('100%')
       }
-      .layoutWeight(1)
       .width('100%')
+      .height('100%')
     }
     .width(320)
     .height(500)
@@ -494,6 +499,7 @@ export struct ControlAreaComponent {
         .fontSize(16)
         .fontWeight(FontWeight.Bold)
         .fontColor(Color.White)
+      Blank()
       SymbolGlyph($r('sys.symbol.xmark'))
         .fontSize(20)
         .renderingStrategy(SymbolRenderingStrategy.SINGLE)
