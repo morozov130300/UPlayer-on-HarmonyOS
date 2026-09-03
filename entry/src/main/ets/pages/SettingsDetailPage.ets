@@ -1,13 +1,12 @@
 // ArkUI 26 Beta1: 接口定义变更（误报，本项目已是Stage模型）+ UX视觉布局变更（Text默认开启沉浸式材质，系统行为）
 import { curves, uiAppearance } from '@kit.ArkUI'
 import { common, ConfigurationConstant } from '@kit.AbilityKit'
-import { SuppressWarnings, SuppressWarningsType } from '@ohos.annotation'
 import { DataService, AppSettingsData } from '../service/DataService'
 import { AVPlayerService } from '../service/AVPlayerService'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import Logger from '../common/utils/Logger'
-import { deviceInfo } from '@kit.BasicServicesKit'
+import { deviceInfo, SuppressWarnings, SuppressWarningsType } from '@kit.BasicServicesKit'
 import { motion } from '@kit.MultimodalAwarenessKit'
 import { ColorConversion } from '../common/utils/ColorConversion'
 import {
@@ -42,6 +41,7 @@ interface TabStyleOption {
 
 @Entry
 @Component
+@SuppressWarnings({rules: [SuppressWarningsType.SYSCAP]})
 struct SettingsDetailPage {
   private context: common.UIAbilityContext
     | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
@@ -181,7 +181,6 @@ struct SettingsDetailPage {
     this.unregisterHoldingHandListener()
   }
 
-  @SuppressWarnings({rules: [SuppressWarningsType.SYSCAP]})
   private registerHoldingHandListener(): void {
     this.previewOnRight = false
     this.holdLastStatus = undefined
@@ -197,7 +196,6 @@ struct SettingsDetailPage {
     }
   }
 
-  @SuppressWarnings({rules: [SuppressWarningsType.SYSCAP]})
   private unregisterHoldingHandListener(): void {
     if (this.isPC || !canIUse('SystemCapability.MultimodalAwareness.Motion')) {
       return

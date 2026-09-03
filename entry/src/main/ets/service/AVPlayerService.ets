@@ -1,6 +1,6 @@
 import { media } from '@kit.MediaKit'
 import { fileIo as fs } from '@kit.CoreFileKit'
-import { BusinessError } from '@kit.BasicServicesKit'
+import { BusinessError, SuppressWarnings, SuppressWarningsType } from '@kit.BasicServicesKit'
 import { common } from '@kit.AbilityKit'
 import { audio } from '@kit.AudioKit'
 import Logger from '../common/utils/Logger'
@@ -26,6 +26,7 @@ enum BackendState {
   RELEASING = 'releasing'
 }
 
+@SuppressWarnings({rules: [SuppressWarningsType.SYSCAP]})
 export class AVPlayerService {
   private static instance: AVPlayerService = new AVPlayerService()
   private avPlayer: media.AVPlayer | undefined = undefined
@@ -93,6 +94,7 @@ export class AVPlayerService {
     }
   }
 
+  @SuppressWarnings({rules: [SuppressWarningsType.SYSCAP]})
   private setupListeners(): void {
     if (this.avPlayer === undefined) {
       return

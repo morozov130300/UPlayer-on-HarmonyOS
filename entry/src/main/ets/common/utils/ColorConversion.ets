@@ -15,12 +15,14 @@
 import { window } from '@kit.ArkUI';
 import { AppStorageKeyConstants } from '../constants/AppStorageKeyConstants';
 import Logger from './Logger';
+import { SuppressWarnings, SuppressWarningsType } from '@kit.BasicServicesKit';
 
 const TAG = 'ColorConversion';
 
 /**
  * Color conversion processing class.
  */
+@SuppressWarnings({rules: [SuppressWarningsType.SYSCAP]})
 export class ColorConversion {
   /**
    * Generate an immersive background color for the image.
@@ -98,6 +100,7 @@ export class ColorConversion {
    * Set the status bar to dark color .
    * @param isDarkBackground
    */
+  @SuppressWarnings({rules: [SuppressWarningsType.SYSCAP]})
   public static async setSysBarLightBackground(isDarkBackground: boolean): Promise<void> {
     Logger.info(TAG, 'setSysBarLightBackground isDarkBackground is: ' + isDarkBackground);
     const mainWindow: window.Window | undefined = AppStorage.get(AppStorageKeyConstants.KEY_WINDOW);

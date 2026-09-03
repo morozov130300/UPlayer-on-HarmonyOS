@@ -1,5 +1,17 @@
 {
-  "addedSysCaps": [
-    "SystemCapability.MultimodalAwareness.Motion"
-  ]
+  "devices": {
+    "general": [
+      "default",
+      "tablet"
+    ]
+  },
+  "development": {
+    "addedSysCaps": [
+      "SystemCapability.MultimodalAwareness.Motion"
+    ]
+  },
+  "production": {
+    "addedSysCaps": [],
+    "removedSysCaps": []
+  }
 }

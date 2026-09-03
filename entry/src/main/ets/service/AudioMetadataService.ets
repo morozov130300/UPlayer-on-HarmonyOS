@@ -3,6 +3,7 @@ import { media } from '@kit.MediaKit'
 import { fileIo as fs } from '@kit.CoreFileKit'
 import { image } from '@kit.ImageKit'
 import { common } from '@kit.AbilityKit'
+import { SuppressWarnings, SuppressWarningsType } from '@kit.BasicServicesKit'
 import { SongInfo } from '../model/SongInfo'
 import Logger from '../common/utils/Logger'
 import uplayer from 'libuplayer.so'
@@ -84,6 +85,7 @@ class CoverLoadResult {
   status: 'ok' | 'none' | 'fileError' | 'systemic' = 'none'
 }
 
+@SuppressWarnings({rules: [SuppressWarningsType.SYSCAP]})
 export class AudioMetadataService {
   private static instance: AudioMetadataService = new AudioMetadataService()
   private coverExtractionActive: number = 0

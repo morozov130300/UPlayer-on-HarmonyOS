@@ -16,6 +16,7 @@ import { MediaTools } from '../common/utils/mediautils/MediaTools';
 import { WindowInfo } from '../common/utils/WindowUtil';
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
 import { audio } from '@kit.AudioKit';
+import { SuppressWarnings, SuppressWarningsType } from '@kit.BasicServicesKit';
 import { AlbumCover } from '../component/AlbumCover';
 import { AVSessionController } from '../common/utils/mediautils/AVSessionController';
 import { DataService } from '../service/DataService';
@@ -25,6 +26,7 @@ const SEEK_SETTLE_MS: number = 2000;
 const SKIP_MS: number = 15000;
 
 @Component
+@SuppressWarnings({rules: [SuppressWarningsType.SYSCAP, SuppressWarningsType.COMPATIBILITY]})
 export struct ControlAreaComponent {
   @Prop mainWindowInfo: WindowInfo;
   @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) isPlay: boolean = false;
