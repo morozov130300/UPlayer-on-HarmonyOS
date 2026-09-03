@@ -447,8 +447,7 @@ export struct ControlAreaComponent {
             detents: [SheetSize.MEDIUM],
             dragBar: false,
             showClose: true,
-            preferType: SheetType.CENTER,
-            showInSubWindow: false
+            preferType: SheetType.BOTTOM
           })
       }
       .width(StyleConstants.FULL_WIDTH)
