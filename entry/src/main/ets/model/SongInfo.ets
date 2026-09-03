@@ -1,34 +1,52 @@
 // 歌曲信息数据模型
 export class SongInfo {
   id: string = ''
-  name: string = ''           // 文件名（不含扩展名）
-  title: string = ''          // 歌曲标题（优先使用元数据，回退到文件名）
-  artist: string = ''         // 歌手
-  album: string = ''          // 专辑
-  filePath: string = ''       // 文件URI路径（解码后，用于显示和文件夹提取）
-  uri: string = ''            // 原始编码URI（用于fileShare权限操作和文件读取）
-  fileName: string = ''       // 完整文件名
-  folderPath: string = ''     // 所在文件夹路径
-  folderName: string = ''     // 所在文件夹名称
-  duration: number = 0        // 时长(ms)
-  bitrate: number = 0         // 比特率(bps)
-  sampleRate: number = 0      // 采样率(Hz)
-  addedTime: number = Date.now()  // 添加时间戳
-  sortOrder: number = 0           // 自定义排序序号
-  isFavorite: boolean = false // 是否收藏
-  isAvailable: boolean = true // 文件是否可用
-  lyricPath: string = ''      // 歌词文件路径（解码后）
-  lyricUri: string = ''       // 歌词文件URI（原始编码，用于权限操作和文件读取）
+  name: string = ''
+  title: string = ''
+  artist: string = ''
+  album: string = ''
+  filePath: string = ''
+  uri: string = ''
+  fileName: string = ''
+  folderPath: string = ''
+  folderName: string = ''
+  duration: number = 0
+  bitrate: number = 0
+  sampleRate: number = 0
+  addedTime: number = Date.now()
+  sortOrder: number = 0
+  isFavorite: boolean = false
+  isAvailable: boolean = true
+  lyricPath: string = ''
+  lyricUri: string = ''
 
-  // 生成唯一ID
+  // 扩展元数据字段（从 AVMetadata 读取）
+  genre: string = ''
+  year: string = ''
+  track: string = ''
+  disc: string = ''
+  comment: string = ''
+  composer: string = ''
+  conductor: string = ''
+  albumArtist: string = ''
+  author: string = ''
+  language: string = ''
+  mimeType: string = ''
+  dateTime: string = ''
+  encoder: string = ''
+  description: string = ''
+  hasAudio: string = ''
+  hasVideo: string = ''
+  videoWidth: string = ''
+  videoHeight: string = ''
+
   static createId(): string {
     return 'song_' + Date.now() + '_' + Math.floor(Math.random() * 1000000)
   }
 
-  // 从文件路径和文件名创建SongInfo，元数据需后续提取
   static fromFile(filePath: string, fileName: string): SongInfo {
-    const song: SongInfo = new SongInfo();
-    song.id = SongInfo.createId();
+    const song: SongInfo = new SongInfo()
+    song.id = SongInfo.createId()
     song.uri = filePath
     const decodedPath: string = decodeURIComponent(filePath)
     const decodedName: string = decodeURIComponent(fileName)
@@ -38,8 +56,6 @@ export class SongInfo {
     const baseName: string = dotIdx > 0 ? decodedName.substring(0, dotIdx) : decodedName
     song.name = baseName
     song.title = baseName
-    song.artist = ''
-    song.album = ''
     song.duration = 0
     song.bitrate = 0
     song.sampleRate = 0
@@ -57,10 +73,8 @@ export class SongInfo {
       song.folderName = folderSepIdx >= 0 ? song.folderPath.substring(folderSepIdx + 1) : song.folderPath
     }
     const pathDotIdx: number = decodedPath.lastIndexOf('.')
-    const lyricPath: string = pathDotIdx > 0 ? decodedPath.substring(0, pathDotIdx) + '.lrc' : ''
-    song.lyricPath = lyricPath
-    const uriDotIdx: number = filePath.lastIndexOf('.')
-    song.lyricUri = uriDotIdx > 0 ? filePath.substring(0, uriDotIdx) + '.lrc' : ''
+    song.lyricPath = pathDotIdx > 0 ? decodedPath.substring(0, pathDotIdx) + '.lrc' : ''
+    song.lyricUri = pathDotIdx > 0 ? filePath.substring(0, pathDotIdx) + '.lrc' : ''
     return song
   }
 }

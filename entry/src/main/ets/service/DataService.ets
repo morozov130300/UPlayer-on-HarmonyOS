@@ -173,6 +173,24 @@ export class DataService {
     r['isAvailable'] = song.isAvailable
     r['lyricPath'] = song.lyricPath
     r['lyricUri'] = song.lyricUri
+    r['genre'] = song.genre
+    r['year'] = song.year
+    r['track'] = song.track
+    r['disc'] = song.disc
+    r['comment'] = song.comment
+    r['composer'] = song.composer
+    r['conductor'] = song.conductor
+    r['albumArtist'] = song.albumArtist
+    r['author'] = song.author
+    r['language'] = song.language
+    r['mimeType'] = song.mimeType
+    r['dateTime'] = song.dateTime
+    r['encoder'] = song.encoder
+    r['description'] = song.description
+    r['hasAudio'] = song.hasAudio
+    r['hasVideo'] = song.hasVideo
+    r['videoWidth'] = song.videoWidth
+    r['videoHeight'] = song.videoHeight
     return r
   }
 
@@ -212,6 +230,24 @@ export class DataService {
     song.lyricPath = r['lyricPath'] as string
     let rawLyricUri: Object | undefined = r['lyricUri']
     song.lyricUri = rawLyricUri !== undefined ? rawLyricUri as string : ''
+    song.genre = r['genre'] as string
+    song.year = r['year'] as string
+    song.track = r['track'] as string
+    song.disc = r['disc'] as string
+    song.comment = r['comment'] as string
+    song.composer = r['composer'] as string
+    song.conductor = r['conductor'] as string
+    song.albumArtist = r['albumArtist'] as string
+    song.author = r['author'] as string
+    song.language = r['language'] as string
+    song.mimeType = r['mimeType'] as string
+    song.dateTime = r['dateTime'] as string
+    song.encoder = r['encoder'] as string
+    song.description = r['description'] as string
+    song.hasAudio = r['hasAudio'] as string
+    song.hasVideo = r['hasVideo'] as string
+    song.videoWidth = r['videoWidth'] as string
+    song.videoHeight = r['videoHeight'] as string
     return song
   }
 

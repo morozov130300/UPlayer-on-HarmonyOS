@@ -164,7 +164,7 @@ export class AudioMetadataService {
       const avFd: media.AVFileDescriptor = { fd: file.fd, offset: 0, length: fileSize }
       extractor.fdSrc = avFd
 
-      let metadata: media.AVMetadata = await extractor.fetchMetadata()
+      const metadata: media.AVMetadata = await extractor.fetchMetadata()
       if (metadata.title !== undefined) {
         let metaTitle: string = '' + metadata.title
         if (metaTitle.length > 0) song.title = metaTitle
@@ -180,6 +180,81 @@ export class AudioMetadataService {
       if (metadata.duration !== undefined) {
         let metaDuration: number = Number(metadata.duration)
         if (metaDuration > 0) song.duration = metaDuration
+      }
+      if (metadata.genre !== undefined) {
+        let metaGenre: string = '' + metadata.genre
+        if (metaGenre.length > 0) song.genre = metaGenre
+      }
+      if (metadata.trackCount !== undefined) {
+        let metaTrack: string = '' + metadata.trackCount
+        if (metaTrack.length > 0) song.track = metaTrack
+      }
+      if (metadata.sampleRate !== undefined) {
+        let metaRate: string = '' + metadata.sampleRate
+        if (metaRate.length > 0) {
+          const rateNum: number = parseInt(metaRate)
+          if (!isNaN(rateNum)) song.sampleRate = rateNum
+        }
+      }
+      if (metadata.composer !== undefined) {
+        let metaComposer: string = '' + metadata.composer
+        if (metaComposer.length > 0) song.composer = metaComposer
+      }
+      if (metadata.albumArtist !== undefined) {
+        let metaAlbumArtist: string = '' + metadata.albumArtist
+        if (metaAlbumArtist.length > 0) song.albumArtist = metaAlbumArtist
+      }
+      if (metadata.author !== undefined) {
+        let metaAuthor: string = '' + metadata.author
+        if (metaAuthor.length > 0) song.author = metaAuthor
+      }
+      if (metadata.dateTime !== undefined) {
+        let metaDateTime: string = '' + metadata.dateTime
+        if (metaDateTime.length > 0) song.dateTime = metaDateTime
+      }
+      if (metadata.dateTimeFormat !== undefined) {
+        let metaDateTimeFmt: string = '' + metadata.dateTimeFormat
+        if (metaDateTimeFmt.length > 0) song.dateTime = metaDateTimeFmt
+      }
+      if (metadata.description !== undefined) {
+        let metaDesc: string = '' + metadata.description
+        if (metaDesc.length > 0) song.description = metaDesc
+      }
+      if (metadata.encoder !== undefined) {
+        let metaEncoder: string = '' + metadata.encoder
+        if (metaEncoder.length > 0) song.encoder = metaEncoder
+      }
+      if (metadata.mimeType !== undefined) {
+        let metaMime: string = '' + metadata.mimeType
+        if (metaMime.length > 0) song.mimeType = metaMime
+      }
+      if (metadata.hasAudio !== undefined) {
+        let metaHasAudio: string = '' + metadata.hasAudio
+        if (metaHasAudio.length > 0) song.hasAudio = metaHasAudio
+      }
+      if (metadata.hasVideo !== undefined) {
+        let metaHasVideo: string = '' + metadata.hasVideo
+        if (metaHasVideo.length > 0) song.hasVideo = metaHasVideo
+      }
+      if (metadata.videoWidth !== undefined) {
+        let metaVideoW: string = '' + metadata.videoWidth
+        if (metaVideoW.length > 0) song.videoWidth = metaVideoW
+      }
+      if (metadata.videoHeight !== undefined) {
+        let metaVideoH: string = '' + metadata.videoHeight
+        if (metaVideoH.length > 0) song.videoHeight = metaVideoH
+      }
+      if (metadata.customInfo !== undefined) {
+        const custom: Record<string, string> = metadata.customInfo
+        // Map common ID3-style keys to SongInfo fields
+        const yearVal: string | undefined = custom['originaldate'] ?? custom['year'] ?? custom['TDRC']
+        if (yearVal !== undefined && yearVal.length > 0) song.year = yearVal
+        const discVal: string | undefined = custom['partofaset'] ?? custom['TDIS']
+        if (discVal !== undefined && discVal.length > 0) song.disc = discVal
+        const commentVal: string | undefined = custom['comment'] ?? custom['COMM']
+        if (commentVal !== undefined && commentVal.length > 0) song.comment = commentVal
+        const languageVal: string | undefined = custom['language'] ?? custom['TLAN']
+        if (languageVal !== undefined && languageVal.length > 0) song.language = languageVal
       }
     } catch (err) {
       Logger.warn(TAG, `Metadata extraction failed for ${song.fileName}: ${JSON.stringify(err)}`)

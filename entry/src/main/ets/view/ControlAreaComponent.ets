@@ -50,9 +50,8 @@ export struct ControlAreaComponent {
   @State playBtnScale: number = 1.0;
   @State sliderGlow: number = 0;
   @State isShowInfoPanel: boolean = false;
-  @State infoTitle: string = '';
-  @State infoArtist: string = '';
-  @State infoAlbum: string = '';
+  @State edittingFieldIndex: number = -1;
+  @State edittingValue: string = '';
   private scroller: Scroller = new Scroller();
   private context: common.UIAbilityContext | undefined = AppStorage.get(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT);
   uiContext: UIContext = this.getUIContext();
@@ -163,36 +162,53 @@ export struct ControlAreaComponent {
     if (this.selectIndex < 0 || !this.songList || this.selectIndex >= this.songList.length) {
       return;
     }
-    const song: SongInfo = this.songList[this.selectIndex];
-    this.infoTitle = song.title;
-    this.infoArtist = song.artist;
-    this.infoAlbum = song.album;
+    this.edittingFieldIndex = -1;
+    this.edittingValue = '';
     this.isShowInfoPanel = true;
   }
 
-  private saveSongInfo(): void {
-    if (this.selectIndex < 0 || !this.songList || this.selectIndex >= this.songList.length) {
-      return;
-    }
-    const song: SongInfo = this.songList[this.selectIndex];
-    const originalTitle: string = song.title;
-    const originalArtist: string = song.artist;
-    const originalAlbum: string = song.album;
-    const updatedTitle: string = this.infoTitle;
-    const updatedArtist: string = this.infoArtist;
-    const updatedAlbum: string = this.infoAlbum;
-    if (originalTitle !== updatedTitle || originalArtist !== updatedArtist || originalAlbum !== updatedAlbum) {
-      song.title = updatedTitle;
-      song.artist = updatedArtist;
-      song.album = updatedAlbum;
-      const songs: SongInfo[] = this.songList.slice();
-      DataService.getInstance().updateSongFields(song.id, songs);
-    }
+  private closeInfoPanel(): void {
+    this.edittingFieldIndex = -1;
+    this.edittingValue = '';
     this.isShowInfoPanel = false;
   }
 
-  private closeInfoPanel(): void {
-    this.isShowInfoPanel = false;
+  private startEditField(index: number, currentValue: string): void {
+    this.edittingFieldIndex = index;
+    this.edittingValue = currentValue;
+  }
+
+  private cancelEditField(): void {
+    this.edittingFieldIndex = -1;
+    this.edittingValue = '';
+  }
+
+  private saveEditField(): void {
+    if (this.selectIndex < 0 || !this.songList || this.selectIndex >= this.songList.length) {
+      this.cancelEditField();
+      return;
+    }
+    const song: SongInfo = this.songList[this.selectIndex];
+    if (this.edittingFieldIndex === 0) {
+      if (song.title !== this.edittingValue) {
+        song.title = this.edittingValue;
+        const songs: SongInfo[] = this.songList.slice();
+        DataService.getInstance().updateSongFields(song.id, songs);
+      }
+    } else if (this.edittingFieldIndex === 1) {
+      if (song.artist !== this.edittingValue) {
+        song.artist = this.edittingValue;
+        const songs: SongInfo[] = this.songList.slice();
+        DataService.getInstance().updateSongFields(song.id, songs);
+      }
+    } else if (this.edittingFieldIndex === 2) {
+      if (song.album !== this.edittingValue) {
+        song.album = this.edittingValue;
+        const songs: SongInfo[] = this.songList.slice();
+        DataService.getInstance().updateSongFields(song.id, songs);
+      }
+    }
+    this.cancelEditField();
   }
 
   build() {
@@ -452,126 +468,213 @@ export struct ControlAreaComponent {
   }
 
   @Builder
-  infoPanelTitle() {
-    Text('')
-      .width(0)
-      .height(0)
-  }
-
-  @Builder
   infoPanelBuilder() {
     Column() {
-      if (this.selectIndex >= 0 && this.songList && this.selectIndex < this.songList.length) {
-        this.infoPanelHeader()
-        Column() {
-          this.infoRow('标题', this.infoTitle, true)
-          this.infoRow('歌手', this.infoArtist, true)
-          this.infoRow('专辑', this.infoAlbum, true)
-          this.infoRow('时长', MediaTools.msToCountdownTime(this.songList[this.selectIndex].duration), false)
-          if (this.songList[this.selectIndex].bitrate > 0) {
-            this.infoRow('比特率', `${this.songList[this.selectIndex].bitrate / 1000} kbps`, false)
+      Column({ space: 0 }) {
+        this.infoPanelTopBar()
+        Scroll() {
+          Column({ space: 0 }) {
+            this.infoPanelCover()
+            this.infoPanelContent()
           }
-          if (this.songList[this.selectIndex].sampleRate > 0) {
-            this.infoRow('采样率', `${this.songList[this.selectIndex].sampleRate} Hz`, false)
-          }
+          .width('100%')
         }
+        .layoutWeight(1)
         .width('100%')
-        .margin({ bottom: 16 })
-      }
-
-      Row() {
-        Button('取消')
-          .height(36)
-          .width('48%')
-          .fontSize(14)
-          .fontColor(Color.White)
-          .backgroundColor('rgba(255,255,255,0.12)')
-          .borderRadius(8)
-          .onClick(() => { this.closeInfoPanel() })
-        Button('保存')
-          .height(36)
-          .width('48%')
-          .fontSize(14)
-          .fontColor(Color.White)
-          .backgroundColor(this.primaryColor)
-          .borderRadius(8)
-          .onClick(() => { this.saveSongInfo() })
       }
       .width('100%')
+      .height('100%')
     }
-    .width(300)
-    .padding(20)
+    .width(320)
+    .height(500)
     .backgroundColor('#1A1A2E')
     .borderRadius(16)
   }
 
   @Builder
-  infoPanelHeader() {
+  infoPanelTopBar() {
     Row() {
-      AlbumCover({ song: this.songList[this.selectIndex], coverWidth: 64, coverHeight: 64, coverRadius: 8 })
-      Column() {
-        Text(this.songList[this.selectIndex].title)
-          .fontSize(16)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(Color.White)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-        Text(this.songList[this.selectIndex].artist.length > 0 ? this.songList[this.selectIndex].artist : '未知歌手')
-          .fontSize(13)
-          .fontColor('rgba(255,255,255,0.7)')
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-        if (this.songList[this.selectIndex].album.length > 0) {
-          Text(this.songList[this.selectIndex].album)
-            .fontSize(12)
-            .fontColor('rgba(255,255,255,0.5)')
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-        }
-      }
-      .margin({ left: 12 })
-      .alignItems(HorizontalAlign.Start)
+      Text('歌曲信息')
+        .fontSize(16)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(Color.White)
+      Blank()
+      SymbolGlyph($r('sys.symbol.xmark'))
+        .fontSize(20)
+        .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+        .fontColor([Color.White])
+        .opacity(0.6)
+        .onClick(() => { this.closeInfoPanel() })
     }
     .width('100%')
-    .margin({ bottom: 16 })
+    .height(44)
+    .alignItems(VerticalAlign.Center)
+    .padding({ left: 16, right: 16 })
   }
 
   @Builder
-  infoRow(label: string, value: string, editable: boolean) {
-    Row() {
-      Text(label)
-        .fontSize(12)
-        .fontColor('rgba(255,255,255,0.5)')
-        .width(56)
-      if (editable) {
-        TextInput({ text: value })
-          .fontSize(13)
-          .fontColor(Color.White)
-          .backgroundColor('rgba(255,255,255,0.08)')
-          .borderRadius(4)
-          .height(32)
-          .padding({ left: 8, right: 8 })
-          .layoutWeight(1)
-          .onChange((newValue: string) => {
-            if (label === '标题') {
-              this.infoTitle = newValue;
-            } else if (label === '歌手') {
-              this.infoArtist = newValue;
-            } else if (label === '专辑') {
-              this.infoAlbum = newValue;
-            }
-          })
-      } else {
-        Text(value)
-          .fontSize(13)
-          .fontColor('rgba(255,255,255,0.8)')
-          .layoutWeight(1)
+  infoPanelCover() {
+    if (this.selectIndex >= 0 && this.songList && this.selectIndex < this.songList.length) {
+      Row() {
+        AlbumCover({ song: this.songList[this.selectIndex], coverWidth: 72, coverHeight: 72, coverRadius: 8 })
+        Column() {
+          Text(this.songList[this.selectIndex].title)
+            .fontSize(16)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(Color.White)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+          Text(this.songList[this.selectIndex].artist.length > 0 ? this.songList[this.selectIndex].artist : '未知歌手')
+            .fontSize(13)
+            .fontColor('rgba(255,255,255,0.7)')
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+          if (this.songList[this.selectIndex].album.length > 0) {
+            Text(this.songList[this.selectIndex].album)
+              .fontSize(12)
+              .fontColor('rgba(255,255,255,0.5)')
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+          }
+        }
+        .margin({ left: 12 })
+        .alignItems(HorizontalAlign.Start)
+        Blank()
       }
+      .width('100%')
+      .height(90)
+      .alignItems(VerticalAlign.Center)
+      .padding({ left: 16, right: 16 })
+    }
+  }
+
+  @Builder
+  infoPanelContent() {
+    Column({ space: 0 }) {
+      this.infoRow(0, '标题', this.infoValue(0), true)
+      this.infoRow(1, '歌手', this.infoValue(1), true)
+      this.infoRow(2, '专辑', this.infoValue(2), true)
+      this.infoRow(3, '流派', this.infoValue(3), false)
+      this.infoRow(4, '音轨号', this.infoValue(4), false)
+      this.infoRow(5, '碟片号', this.infoValue(5), false)
+      this.infoRow(6, '作曲者', this.infoValue(6), false)
+      this.infoRow(7, '专辑艺术家', this.infoValue(7), false)
+      this.infoRow(8, '作者', this.infoValue(8), false)
+      this.infoRow(9, '编码日期', this.infoValue(9), false)
+      this.infoRow(10, '编码器', this.infoValue(10), false)
+      this.infoRow(11, '描述', this.infoValue(11), false)
+      this.infoRow(12, '时长', this.infoValue(12), false)
+      this.infoRow(13, '采样率', this.infoValue(13), false)
+      this.infoRow(14, '比特率', this.infoValue(14), false)
+      this.infoRow(15, '文件类型', this.infoValue(15), false)
+      this.infoRow(16, '文件路径', this.infoValue(16), false)
+      this.infoRow(17, '文件夹', this.infoValue(17), false)
     }
     .width('100%')
-    .height(38)
-    .alignItems(VerticalAlign.Center)
-    .margin({ bottom: 6 })
+    .padding({ left: 16, right: 16, top: 8, bottom: 16 })
+    if (this.selectIndex < 0 || !this.songList || this.selectIndex >= this.songList.length) {
+      Column()
+        .width('100%')
+        .height(200)
+        .justifyContent(FlexAlign.Center)
+    }
+  }
+
+  private infoValue(index: number): string {
+    if (this.selectIndex < 0 || !this.songList || this.selectIndex >= this.songList.length) {
+      return ''
+    }
+    const song: SongInfo = this.songList[this.selectIndex]
+    switch (index) {
+      case 0: return song.title
+      case 1: return song.artist
+      case 2: return song.album
+      case 3: return song.genre
+      case 4: return song.track
+      case 5: return song.disc
+      case 6: return song.composer
+      case 7: return song.albumArtist
+      case 8: return song.author
+      case 9: return song.dateTime
+      case 10: return song.encoder
+      case 11: return song.description
+      case 12: return MediaTools.msToCountdownTime(song.duration)
+      case 13: return song.sampleRate > 0 ? `${song.sampleRate} Hz` : ''
+      case 14: return song.bitrate > 0 ? `${Math.round(song.bitrate / 1000)} kbps` : ''
+      case 15: return song.mimeType
+      case 16: return song.filePath
+      case 17: return song.folderName
+      default: return ''
+    }
+  }
+
+  private infoIsEditable(index: number): boolean {
+    return index >= 0 && index <= 2
+  }
+
+  @Builder
+  infoRow(index: number, label: string, value: string, editable: boolean) {
+    Column() {
+      Row() {
+        Text(label)
+          .fontSize(12)
+          .fontColor('rgba(255,255,255,0.5)')
+          .width(64)
+        if (index === this.edittingFieldIndex && editable) {
+          Column({ space: 4 }) {
+            TextInput({ text: this.edittingValue })
+              .fontSize(13)
+              .fontColor(Color.White)
+              .backgroundColor('rgba(255,255,255,0.08)')
+              .borderRadius(4)
+              .height(32)
+              .padding({ left: 8, right: 8 })
+              .layoutWeight(1)
+              .onChange((newValue: string) => {
+                this.edittingValue = newValue
+              })
+            Row() {
+              Button('取消')
+                .height(26)
+                .fontSize(11)
+                .fontColor('rgba(255,255,255,0.7)')
+                .backgroundColor('rgba(255,255,255,0.1)')
+                .borderRadius(4)
+                .padding({ left: 8, right: 8 })
+                .onClick(() => { this.cancelEditField() })
+              Button('保存')
+                .height(26)
+                .fontSize(11)
+                .fontColor(Color.White)
+                .backgroundColor(this.primaryColor)
+                .borderRadius(4)
+                .padding({ left: 8, right: 8 })
+                .onClick(() => { this.saveEditField() })
+            }
+            .width('100%')
+            .justifyContent(FlexAlign.End)
+          }
+          .layoutWeight(1)
+        } else {
+          Text(value && value.length > 0 ? value : '-')
+            .fontSize(13)
+            .fontColor('rgba(255,255,255,0.8)')
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .layoutWeight(1)
+        }
+      }
+      .width('100%')
+      .height(38)
+      .alignItems(VerticalAlign.Center)
+    }
+    .width('100%')
+    .border({ width: { bottom: 1 }, color: 'rgba(255,255,255,0.06)' })
+    .onClick(() => {
+      if (editable) {
+        this.startEditField(index, this.infoValue(index))
+      }
+    })
   }
 
   @Builder
