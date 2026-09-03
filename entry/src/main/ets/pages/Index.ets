@@ -1,4 +1,3 @@
-// ArkUI 26 Beta1: 接口定义变更（误报，本项目已是Stage模型）+ UX视觉布局变更（Text默认开启沉浸式材质，系统行为）
 import display from '@ohos.display'
 import { curves, window, uiMaterial } from '@kit.ArkUI'
 import { common, ConfigurationConstant } from '@kit.AbilityKit'
