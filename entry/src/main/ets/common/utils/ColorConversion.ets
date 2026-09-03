@@ -115,8 +115,10 @@ export class ColorConversion {
     };
 
     try {
-      await mainWindow.setWindowSystemBarProperties(systemBarProperties);
-      Logger.info(TAG, 'setWindowSystemBarProperties success');
+      if (canIUse('SystemCapability.Window.SessionManager')) {
+        await mainWindow.setWindowSystemBarProperties(systemBarProperties);
+        Logger.info(TAG, 'setWindowSystemBarProperties success');
+      }
     } catch (err) {
       Logger.error(TAG, `setWindowSystemBarProperties failed: ${JSON.stringify(err)}`);
     }

@@ -109,9 +109,7 @@ export struct ControlAreaComponent {
           this.streamVolumeChangeCallback);
         this.isVolumeListenerRegistered = true;
       }
-      const groupManager: audio.AudioVolumeGroupManager =
-        await this.volumeManager.getVolumeGroupManager(audio.DEFAULT_VOLUME_GROUP_ID);
-      const currentVol: number = groupManager.getVolumeSync(audio.AudioVolumeType.MEDIA);
+      const currentVol: number = this.volumeManager.getVolumeByStream(audio.StreamUsage.STREAM_USAGE_MUSIC);
       this.volume = currentVol / 15;
     } catch (err) {
       Logger.error(TAG, `syncSystemVolume failed: ${JSON.stringify(err)}`);

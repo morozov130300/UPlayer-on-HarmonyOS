@@ -173,25 +173,28 @@ export class AVPlayerService {
       this.finishPrepare(false)
     })
 
-    this.avPlayer.on('audioInterrupt', (interruptEvent: audio.InterruptEvent): void => {
-      Logger.error(TAG, `audioInterrupt: forceType=${interruptEvent.forceType}, hintType=${interruptEvent.hintType}`)
-      if (interruptEvent.forceType === audio.InterruptForceType.INTERRUPT_FORCE) {
-        if (interruptEvent.hintType === audio.InterruptHint.INTERRUPT_HINT_PAUSE) {
-          this.interruptedWhilePlaying = true
-          AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, false)
-          this.sessionController.setPlayState(false)
-        }
-      } else if (interruptEvent.forceType === audio.InterruptForceType.INTERRUPT_SHARE) {
-        if (interruptEvent.hintType === audio.InterruptHint.INTERRUPT_HINT_RESUME) {
-          if (this.interruptedWhilePlaying && this.avPlayer !== undefined) {
-            this.interruptedWhilePlaying = false
-            this.avPlayer.play()
-          }
-        } else if (interruptEvent.hintType === audio.InterruptHint.INTERRUPT_HINT_PAUSE) {
-          this.interruptedWhilePlaying = true
-        }
+    this.avPlayer.on('audioInterrupt', this.handleAudioInterrupt.bind(this))
+  }
+
+  @SuppressWarnings({rules: [SuppressWarningsType.SYSCAP]})
+  private handleAudioInterrupt(interruptEvent: audio.InterruptEvent): void {
+    Logger.error(TAG, `audioInterrupt: forceType=${interruptEvent.forceType}, hintType=${interruptEvent.hintType}`)
+    if (interruptEvent.forceType === audio.InterruptForceType.INTERRUPT_FORCE) {
+      if (interruptEvent.hintType === audio.InterruptHint.INTERRUPT_HINT_PAUSE) {
+        this.interruptedWhilePlaying = true
+        AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, false)
+        this.sessionController.setPlayState(false)
       }
-    })
+    } else if (interruptEvent.forceType === audio.InterruptForceType.INTERRUPT_SHARE) {
+      if (interruptEvent.hintType === audio.InterruptHint.INTERRUPT_HINT_RESUME) {
+        if (this.interruptedWhilePlaying && this.avPlayer !== undefined) {
+          this.interruptedWhilePlaying = false
+          this.avPlayer.play()
+        }
+      } else if (interruptEvent.hintType === audio.InterruptHint.INTERRUPT_HINT_PAUSE) {
+        this.interruptedWhilePlaying = true
+      }
+    }
   }
 
   async play(fileUri: string, startPositionMs: number = 0): Promise<void> {
