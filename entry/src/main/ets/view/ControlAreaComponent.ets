@@ -385,6 +385,7 @@ export struct ControlAreaComponent {
             this.isShowPlayList = true;
           })
           .bindSheet($$this.isShowPlayList, this.musicListBuilder(), {
+            detents: [SheetSize.MEDIUM],
             dragBar: false,
             title: this.playListTitle(),
             showClose: true,
@@ -443,6 +444,7 @@ export struct ControlAreaComponent {
             this.openInfoPanel();
           })
           .bindSheet($$this.isShowInfoPanel, this.infoPanelBuilder(), {
+            detents: [SheetSize.MEDIUM],
             dragBar: false,
             showClose: true,
             preferType: SheetType.BOTTOM
@@ -479,25 +481,30 @@ export struct ControlAreaComponent {
       .layoutWeight(1)
       .width('100%')
     }
-    .width('100%')
-    .height('100%')
-    .backgroundColor('rgba(0,0,0,0.95)')
+    .width(320)
+    .height(500)
+    .backgroundColor('#1A1A2E')
     .borderRadius(16)
   }
 
   @Builder
   infoPanelTopBar() {
     Row() {
-      Blank()
       Text('歌曲信息')
         .fontSize(16)
         .fontWeight(FontWeight.Bold)
         .fontColor(Color.White)
-      Blank()
+      SymbolGlyph($r('sys.symbol.xmark'))
+        .fontSize(20)
+        .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+        .fontColor([Color.White])
+        .opacity(0.6)
+        .onClick(() => { this.closeInfoPanel() })
     }
     .width('100%')
     .height(44)
     .alignItems(VerticalAlign.Center)
+    .padding({ left: 16, right: 16 })
   }
 
   @Builder
