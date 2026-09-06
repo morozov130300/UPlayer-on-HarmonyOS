@@ -125,7 +125,22 @@ export struct PlaylistContent {
       result.push(folder)
     }
     this.sortFolders(result)
-    this.folders = result
+    // 「我的收藏」虚拟卡片强制置顶，仅用于展示，不写入持久化文件夹列表
+    const favoriteCount: number = this.getFavoriteCount()
+    const display: FolderInfo[] = []
+    if (favoriteCount > 0) {
+      const favCard: FolderInfo = new FolderInfo()
+      favCard.id = FAVORITES_FOLDER_ID
+      favCard.name = '我的收藏'
+      favCard.path = '__favorites__'
+      favCard.songCount = favoriteCount
+      favCard.isAvailable = true
+      display.push(favCard)
+    }
+    for (let i = 0; i < result.length; i++) {
+      display.push(result[i])
+    }
+    this.folders = display
     // 同步持久化，保证新增文件夹的自定义序号被保存
     this.dataService.saveFolders(result)
   }
@@ -294,67 +309,6 @@ export struct PlaylistContent {
 
         Scroll(this.scroller) {
           Column() {
-            if (this.getFavoriteCount() > 0) {
-              Row() {
-                if (this.isEditMode) {
-                  Row() {
-                    if (this.isEditSelected(FAVORITES_FOLDER_ID)) {
-                      Text('✓')
-                        .fontSize(Math.round(12 * this.fontSizeScale))
-                        .fontColor('#FFFFFF')
-                        .fontWeight(FontWeight.Bold)
-                    }
-                  }
-                  .width(20).height(20)
-                  .borderRadius(10)
-                  .backgroundColor(this.isEditSelected(FAVORITES_FOLDER_ID) ? this.primaryColor : 'rgba(0,0,0,0.08)')
-                  .border({ width: 1, color: this.isEditSelected(FAVORITES_FOLDER_ID) ? this.primaryColor : $r('app.color.list_divider') })
-                  .justifyContent(FlexAlign.Center)
-                  .alignItems(VerticalAlign.Center)
-                  .margin({ right: 8 })
-                }
-                Image($r('app.media.ic_public_favor_filled'))
-                  .width(20).height(20)
-                  .fillColor(this.favoritesSelected ? Color.Red : this.primaryColor)
-                  .margin({ right: 8 })
-                Text('我喜欢的')
-                  .fontSize(Math.round(14 * this.fontSizeScale))
-                  .fontColor($r('app.color.text_primary'))
-                  .fontWeight(FontWeight.Medium)
-                Blank()
-                Text(this.getFavoriteCount() + ' 首')
-                  .fontSize(Math.round(11 * this.fontSizeScale))
-                  .fontColor($r('app.color.text_sixty_color'))
-              }
-              .width('100%')
-              .height(52)
-              .padding({ left: 16, right: 16 })
-              .backgroundColor(this.favoritesSelected ?
-                ColorHelper.hexWithAlpha(this.primaryColor, '22') : 'rgba(0,0,0,0.03)')
-              .borderRadius(12)
-              .margin({ left: 16, right: 16, bottom: 12 })
-              .gesture(
-                LongPressGesture()
-                  .onAction(() => {
-                    if (!this.isEditMode) {
-                      this.enterEditMode(FAVORITES_FOLDER_ID)
-                    }
-                  })
-              )
-              .onClick(() => {
-                if (this.isEditMode) {
-                  this.toggleEditSelect(FAVORITES_FOLDER_ID)
-                } else {
-                  const favFolder: FolderInfo = new FolderInfo()
-                  favFolder.id = FAVORITES_FOLDER_ID
-                  favFolder.name = '我喜欢的'
-                  favFolder.path = '__favorites__'
-                  favFolder.songCount = this.getFavoriteCount()
-                  this.onFolderToggle(favFolder)
-                }
-              })
-            }
-
             if (this.folders.length > 0) {
               Grid() {
                 ForEach(this.folders, (item: FolderInfo) => {
@@ -477,11 +431,18 @@ export struct PlaylistContent {
         .alignItems(VerticalAlign.Center)
         .position({ x: 6, y: 6 })
       }
-      SymbolGlyph($r('sys.symbol.music_note_list'))
-        .fontSize(28)
-        .renderingStrategy(SymbolRenderingStrategy.SINGLE)
-        .fontColor([$r('app.color.text_sixty_color')])
-        .margin({ bottom: 6 })
+      if (item.id === FAVORITES_FOLDER_ID) {
+        Image($r('app.media.ic_public_favor_filled'))
+          .width(28).height(28)
+          .fillColor(this.favoritesSelected ? Color.Red : this.primaryColor)
+          .margin({ bottom: 6 })
+      } else {
+        SymbolGlyph($r('sys.symbol.music_note_list'))
+          .fontSize(28)
+          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+          .fontColor([$r('app.color.text_sixty_color')])
+          .margin({ bottom: 6 })
+      }
       Text(item.name)
         .fontSize(Math.round(12 * this.fontSizeScale))
         .fontColor($r('app.color.text_primary'))

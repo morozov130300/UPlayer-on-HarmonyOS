@@ -202,7 +202,7 @@ export struct HomeContent {
 
   getFilterLabel(): string {
     if (this.dataService.isFavoritesSelected()) {
-      return '我喜欢的'
+      return '我的收藏'
     }
     const paths: string[] = this.dataService.getSelectedFolderPaths()
     if (paths.length === 1) {
