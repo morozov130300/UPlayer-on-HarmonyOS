@@ -11,6 +11,7 @@ import { HomeContent } from './HomeContent'
 import { PlaylistContent } from './PlaylistContent'
 import { SettingsContent } from './SettingsContent'
 import { DataService } from '../service/DataService'
+import { PoetryService } from '../service/PoetryService'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import { createPageGlassMaterial, DEFAULT_GLASS_STYLE, glassBlurStyleFromStrength, glassImmersiveStyleFromStrengthSmooth, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
 import Logger from '../common/utils/Logger'
@@ -32,6 +33,7 @@ struct MainPage {
   @State greetingTitle: string = '加载中……'
   @State greetingOpacity: number = 0
   @State greetingOffset: number = 20
+  @State poetryLine: string = ''
   @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) @Watch('onPlayStateChange') isPlaying: boolean = false
   @State rotationAngle: number = 0
   @State isGlowing: boolean = false
@@ -75,6 +77,7 @@ struct MainPage {
   private indicatorInset: number = 4
   private rotationTimer: number = -1
   private dataService: DataService = DataService.getInstance()
+  private poetryService: PoetryService = PoetryService.getInstance()
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
   private isPC: boolean = deviceInfo.deviceType === '2in1'
   private lyricLoadRequestId: number = 0
@@ -203,6 +206,7 @@ struct MainPage {
     this.dataService.initToAppStorage()
     ColorConversion.setSysBarLightBackground(this.isDarkTheme())
     this.updateGreeting()
+    this.loadPoetryLine()
     this.initBreakpoint()
     this.loadCurrentLyrics()
     this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_GREETING_DURATION, curve: Curve.EaseOut }, () => {
@@ -412,6 +416,17 @@ struct MainPage {
     } else {
       this.greetingTitle = '夜深了'
     }
+  }
+
+  loadPoetryLine(): void {
+    this.poetryService.fetchRandomLine().then((line: string) => {
+      if (line.length === 0) {
+        return
+      }
+      this.getUIContext()?.animateTo({ duration: 600, curve: Curve.EaseOut }, () => {
+        this.poetryLine = line
+      })
+    })
   }
 
   initBreakpoint() {
@@ -740,12 +755,26 @@ struct MainPage {
                 ]
               })
             Row() {
-              Text(this.greetingTitle)
-                .fontWeight(FontWeight.Bolder)
-                .fontSize(Math.round(28 * this.fontSizeScale))
-                .fontColor($r('app.color.text_primary'))
-                .opacity(this.greetingOpacity)
-                .translate({ y: this.greetingOffset + (this.isPC ? this.scaledSize(8) : 0) })
+              Column() {
+                Text(this.greetingTitle)
+                  .fontWeight(FontWeight.Bolder)
+                  .fontSize(Math.round(28 * this.fontSizeScale))
+                  .fontColor($r('app.color.text_primary'))
+                  .opacity(this.greetingOpacity)
+                  .translate({ y: this.greetingOffset + (this.isPC ? this.scaledSize(8) : 0) })
+                if (this.poetryLine.length > 0) {
+                  Text(this.poetryLine)
+                    .fontSize(Math.round(12 * this.fontSizeScale))
+                    .fontColor($r('app.color.text_sixty_color'))
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .margin({ top: 2 })
+                    .opacity(this.greetingOpacity)
+                    .transition({ type: TransitionType.Insert, opacity: 0, translate: { y: 6 } })
+                }
+              }
+              .alignItems(HorizontalAlign.Start)
+              .constraintSize({ maxWidth: '78%' })
               Blank()
             }
             .width('100%')
