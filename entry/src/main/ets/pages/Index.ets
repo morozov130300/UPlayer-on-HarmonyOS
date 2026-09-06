@@ -755,28 +755,25 @@ struct MainPage {
                 ]
               })
             Row() {
-              Row() {
-                Text(this.greetingTitle)
-                  .fontWeight(FontWeight.Bolder)
-                  .fontSize(Math.round(28 * this.fontSizeScale))
-                  .fontColor($r('app.color.text_primary'))
+              Text(this.greetingTitle)
+                .fontWeight(FontWeight.Bolder)
+                .fontSize(Math.round(28 * this.fontSizeScale))
+                .fontColor($r('app.color.text_primary'))
+                .opacity(this.greetingOpacity)
+                .translate({ y: this.greetingOffset + (this.isPC ? this.scaledSize(8) : 0) })
+              if (this.poetryLine.length > 0) {
+                Text(this.poetryLine)
+                  .fontSize(Math.round(12 * this.fontSizeScale))
+                  .fontColor($r('app.color.text_sixty_color'))
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  .margin({ left: 10 })
+                  .constraintSize({ maxWidth: '60%' })
                   .opacity(this.greetingOpacity)
-                  .translate({ y: this.greetingOffset + (this.isPC ? this.scaledSize(8) : 0) })
-                if (this.poetryLine.length > 0) {
-                  Text(this.poetryLine)
-                    .fontSize(Math.round(12 * this.fontSizeScale))
-                    .fontColor($r('app.color.text_sixty_color'))
-                    .maxLines(1)
-                    .textOverflow({ overflow: TextOverflow.Ellipsis })
-                    .margin({ left: 10 })
-                    .constraintSize({ maxWidth: '60%' })
-                    .opacity(this.greetingOpacity)
-                    .translate({ y: this.isPC ? this.scaledSize(8) : 0 })
-                    .transition({ type: TransitionType.Insert, opacity: 0, translate: { y: 6 } })
-                }
+                  .translate({ y: Math.round(8 * this.fontSizeScale) })
+                  .transition({ type: TransitionType.Insert, opacity: 0, translate: { y: 6 } })
               }
-              .alignItems(VerticalAlign.Bottom)
-              .layoutWeight(1)
+              Blank()
             }
             .width('100%')
             .height('100%')
