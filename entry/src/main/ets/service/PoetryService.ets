@@ -43,12 +43,9 @@ export class PoetryService {
       if (dataOuter === undefined) {
         return ''
       }
-      const poemWrapper: Record<string, Object> = dataOuter as Record<string, Object>
-      const poemRaw: Object | undefined = poemWrapper['data']
-      if (poemRaw === undefined) {
-        return ''
-      }
-      const poem: Record<string, Object> = poemRaw as Record<string, Object>
+      // 实际接口返回 {"data":{ id,title,content,author,dynasty,type,lang }}，
+      // 注意与官网示例展示的 data.data 双层嵌套不同
+      const poem: Record<string, Object> = dataOuter as Record<string, Object>
       const contentRaw: Object | undefined = poem['content']
       if (contentRaw === undefined) {
         return ''
