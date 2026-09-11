@@ -971,31 +971,32 @@ struct SettingsDetailPage {
       .borderRadius(this.scaledSize(10))
 
       // 智感握姿
-      Column({ space: this.scaledSize(6) }) {
-        Row({ space: this.scaledSize(10) }) {
-          this.subTitleRow('智感握姿')
-          Blank()
-          Toggle({ type: ToggleType.Switch, isOn: this.settings.holdingHandEnabled })
-            .selectedColor(this.primaryColor)
-            .onChange((isOn: boolean) => {
-              this.settings.holdingHandEnabled = isOn
-              this.holdingHandEnabled = isOn
-              this.updateSetting()
-              this.refreshHoldingHandListener()
-            })
-            .flexShrink(0)
+      Row() {
+        Column({ space: this.scaledSize(6) }) {
+          Text('智感握姿')
+            .fontSize(this.scaledFont(14))
+            .fontColor(this.settingTextColor())
+            .fontWeight(FontWeight.Medium)
+          Text('根据单手握持方向自动调整首页顶部预览与控件靠左/靠右。')
+            .fontSize(this.scaledFont(12))
+            .fontColor(this.settingSubTextColor())
         }
-        .width('100%')
-        .constraintSize({ minWidth: 0, maxWidth: '100%' })
-        .alignItems(VerticalAlign.Center)
-        Text('根据单手握持方向自动调整首页顶部预览与控件靠左/靠右。')
-          .fontSize(this.scaledFont(12))
-          .fontColor(this.settingSubTextColor())
-          .width('100%')
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Start)
+        Toggle({ type: ToggleType.Switch, isOn: this.settings.holdingHandEnabled })
+          .selectedColor(this.primaryColor)
+          .alignSelf(ItemAlign.Center)
+          .onChange((isOn: boolean) => {
+            this.settings.holdingHandEnabled = isOn
+            this.holdingHandEnabled = isOn
+            this.updateSetting()
+            this.refreshHoldingHandListener()
+          })
       }
       .width('100%')
-      .constraintSize({ minWidth: 0, maxWidth: '100%' })
-      .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
+      .height(this.scaledSize(52))
+      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
 
       // ─── 一级标题「高级样式」（玻璃模式下显示） + 右上角叹号角标 ───
       // 点击叹号弹窗说明玻璃效果所影响的所有位置
