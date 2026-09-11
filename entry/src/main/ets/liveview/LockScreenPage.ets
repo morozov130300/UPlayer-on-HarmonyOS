@@ -1,0 +1,111 @@
+// ArkUI 26 Beta1: 接口定义变更（误报，本项目已是Stage模型）+ UX视觉布局变更（Text默认开启沉浸式材质，系统行为）
+import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
+import { AVPlayerService } from '../service/AVPlayerService';
+
+@Entry
+@Component
+struct LockScreenPage {
+  @StorageLink('uplayer_current_title') title: string = '';
+  @StorageLink('uplayer_current_artist') artist: string = '';
+  @StorageLink('uplayer_current_song_id') songId: string = '';
+  @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) isPlay: boolean = false;
+
+  private playerService: AVPlayerService = AVPlayerService.getInstance();
+
+  build() {
+    Column() {
+      Column() {
+        Stack({ alignContent: Alignment.Center }) {
+          Image($r('app.media.ic_public_music'))
+            .width(52)
+            .height(52)
+            .objectFit(ImageFit.Contain)
+            .fillColor(Color.White)
+        }
+        .width(120)
+        .height(120)
+        .borderRadius(12)
+        .clip(true)
+        Text(this.title.length > 0 ? this.title : '未播放')
+          .fontSize(22)
+          .fontColor(Color.White)
+          .fontWeight(FontWeight.Bold)
+          .margin({ top: 16 })
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Text(this.artist.length > 0 ? this.artist : '未知歌手')
+          .fontSize(16)
+          .fontColor('#B3FFFFFF')
+          .margin({ top: 4 })
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Text(this.isPlay ? '正在播放' : '已暂停')
+          .fontSize(12)
+          .fontColor('#80FFFFFF')
+          .margin({ top: 8 })
+        Row() {
+          Button({ type: ButtonType.Circle }) {
+            Image($r('app.media.ic_public_play_last'))
+              .width(24).height(24)
+              .fillColor(Color.White)
+          }
+          .width(48).height(48)
+          .backgroundColor('#33FFFFFF')
+          .onClick(() => {
+            this.onPlayPrevious();
+          })
+
+          Button({ type: ButtonType.Circle }) {
+            if (this.isPlay) {
+              Image($r('app.media.ic_public_pause'))
+                .width(28).height(28)
+                .fillColor(Color.White)
+            } else {
+              Image($r('app.media.ic_public_play'))
+                .width(28).height(28)
+                .fillColor(Color.White)
+            }
+          }
+          .width(56).height(56)
+          .backgroundColor('#33FFFFFF')
+          .margin({ left: 24, right: 24 })
+          .onClick(() => {
+            if (this.isPlay) {
+              this.playerService.pause();
+            } else {
+              this.playerService.resume();
+            }
+          })
+
+          Button({ type: ButtonType.Circle }) {
+            Image($r('app.media.ic_public_play_next'))
+              .width(24).height(24)
+              .fillColor(Color.White)
+          }
+          .width(48).height(48)
+          .backgroundColor('#33FFFFFF')
+          .onClick(() => {
+            this.onPlayNext();
+          })
+        }
+        .margin({ top: 24 })
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+      }
+      .justifyContent(FlexAlign.Center)
+      .alignItems(HorizontalAlign.Center)
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor('#000000')
+    .justifyContent(FlexAlign.Center)
+  }
+
+  private onPlayPrevious(): void {
+    this.playerService.playPreviousSong();
+  }
+
+  private onPlayNext(): void {
+    this.playerService.playNextSong();
+  }
+}

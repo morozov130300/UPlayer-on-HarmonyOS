@@ -1,0 +1,116 @@
+{
+  "color": [
+    {
+      "name": "start_window_background",
+      "value": "#000000"
+    },
+    {
+      "name": "player_icon_color",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "player_bg_color",
+      "value": "#CC333333"
+    },
+    {
+      "name": "text_primary",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "shadow_color",
+      "value": "#33FFFFFF"
+    },
+    {
+      "name": "music_player_bg",
+      "value": "#000000"
+    },
+    {
+      "name": "album_background",
+      "value": "#2A2A2A"
+    },
+    {
+      "name": "album_name_introduction",
+      "value": "#99FFFFFF"
+    },
+    {
+      "name": "title_color",
+      "value": "#99FFFFFF"
+    },
+    {
+      "name": "singer",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "song_name",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "player_background",
+      "value": "#000000"
+    },
+    {
+      "name": "title_font",
+      "value": "#E5FFFFFF"
+    },
+    {
+      "name": "page_background_sm",
+      "value": "#000000"
+    },
+    {
+      "name": "page_background_other",
+      "value": "#000000"
+    },
+    {
+      "name": "list_divider",
+      "value": "#1AFFFFFF"
+    },
+    {
+      "name": "text_color",
+      "value": "#99FFFFFF"
+    },
+    {
+      "name": "text_sixty_color",
+      "value": "#99FFFFFF"
+    },
+    {
+      "name": "text_forty_color",
+      "value": "#66FFFFFF"
+    },
+    {
+      "name": "text_twenty_color",
+      "value": "#33FFFFFF"
+    },
+    {
+      "name": "slider_block",
+      "value": "#00FFFFFF"
+    },
+    {
+      "name": "slider_select",
+      "value": "#DBFFFFFF"
+    },
+    {
+      "name": "slider_track",
+      "value": "#33FFFFFF"
+    },
+    {
+      "name": "play_text_color",
+      "value": "#99FFFFFF"
+    },
+    {
+      "name": "singer_text",
+      "value": "#4DFFFFFF"
+    },
+    {
+      "name": "select_swiper",
+      "value": "#DBFFFFFF"
+    },
+    {
+      "name": "tab_content_primary",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "tab_content_secondary",
+      "value": "#73FFFFFF"
+    }
+  ]
+}
