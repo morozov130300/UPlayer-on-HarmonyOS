@@ -848,9 +848,9 @@ struct SettingsDetailPage {
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(this.scaledSize(10))
 
-      // ─── 一级标题「底部栏交互」（经典/玻璃两种样式下都生效，与底部栏样式相关）───
+      // ─── 一级标题「交互」（底部栏交互设置）───
       Column() {
-        this.groupTitle('底部栏交互', false)
+        this.groupTitle('交互', false)
       }
       .width('100%')
 
@@ -969,6 +969,33 @@ struct SettingsDetailPage {
       .width('100%')
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(this.scaledSize(10))
+
+      // 智感握姿
+      Column({ space: this.scaledSize(6) }) {
+        Row({ space: this.scaledSize(10) }) {
+          this.subTitleRow('智感握姿')
+          Blank()
+          Toggle({ type: ToggleType.Switch, isOn: this.settings.holdingHandEnabled })
+            .selectedColor(this.primaryColor)
+            .onChange((isOn: boolean) => {
+              this.settings.holdingHandEnabled = isOn
+              this.holdingHandEnabled = isOn
+              this.updateSetting()
+              this.refreshHoldingHandListener()
+            })
+            .flexShrink(0)
+        }
+        .width('100%')
+        .constraintSize({ minWidth: 0, maxWidth: '100%' })
+        .alignItems(VerticalAlign.Center)
+        Text('根据单手握持方向自动调整首页顶部预览与控件靠左/靠右。')
+          .fontSize(this.scaledFont(12))
+          .fontColor(this.settingSubTextColor())
+          .width('100%')
+      }
+      .width('100%')
+      .constraintSize({ minWidth: 0, maxWidth: '100%' })
+      .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
 
       // ─── 一级标题「高级样式」（玻璃模式下显示） + 右上角叹号角标 ───
       // 点击叹号弹窗说明玻璃效果所影响的所有位置
@@ -1449,34 +1476,6 @@ struct SettingsDetailPage {
       .opacity(this.classicGroupOpacity)
       .animation({ duration: 280, curve: Curve.EaseInOut })
       .visibility(this.settings.tabStyle === 'classic' ? Visibility.Visible : Visibility.None)
-
-      // 智感握姿：固定位置，不受经典/玻璃样式切换影响
-      Column({ space: this.scaledSize(6) }) {
-        // 智感握姿开关
-        Row({ space: this.scaledSize(10) }) {
-          this.subTitleRow('智感握姿')
-          Blank()
-          Toggle({ type: ToggleType.Switch, isOn: this.settings.holdingHandEnabled })
-            .selectedColor(this.primaryColor)
-            .onChange((isOn: boolean) => {
-              this.settings.holdingHandEnabled = isOn
-              this.holdingHandEnabled = isOn
-              this.updateSetting()
-              this.refreshHoldingHandListener()
-            })
-            .flexShrink(0)
-        }
-        .width('100%')
-        .constraintSize({ minWidth: 0, maxWidth: '100%' })
-        .alignItems(VerticalAlign.Center)
-        Text('根据单手握持方向自动调整首页顶部预览与控件靠左/靠右。')
-          .fontSize(this.scaledFont(12))
-          .fontColor(this.settingSubTextColor())
-          .width('100%')
-      }
-      .width('100%')
-      .constraintSize({ minWidth: 0, maxWidth: '100%' })
-      .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
 
       Column({ space: this.scaledSize(8) }) {
         Row() {
