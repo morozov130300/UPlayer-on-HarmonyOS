@@ -75,6 +75,11 @@ export class AVSessionController {
       this.setAVMetadata();
       this.getAndUpdateFavoriteState(this.musicIndex.toString());
       await this.AVSession.activate();
+      try {
+        await this.AVSession.setBackgroundPlayMode(avSession.BackgroundPlayMode.ENABLE_BACKGROUND_PLAY);
+      } catch (e) {
+        Logger.error(TAG, `setBackgroundPlayMode failed: ${JSON.stringify(e)}`);
+      }
       this.setAVQueueItems();
       Logger.info(TAG, `session create succeeded : sessionId : ${this.AVSession.sessionId}`);
     } catch (err) {
@@ -456,13 +461,13 @@ export class AVSessionController {
       return;
     }
     try {
-      this.AVSession.on('play', this.onPlay);
-      this.AVSession.on('pause', this.onPause);
-      this.AVSession.on('playNext', this.onPlayNext);
-      this.AVSession.on('playPrevious', this.onPlayPrevious);
-      this.AVSession.on('seek', this.onSeek);
-      this.AVSession.on('setLoopMode', this.onSetLoopMode);
-      this.AVSession.on('toggleFavorite', this.onToggleFavorite);
+      this.AVSession.on('play', this.onPlay.bind(this));
+      this.AVSession.on('pause', this.onPause.bind(this));
+      this.AVSession.on('playNext', this.onPlayNext.bind(this));
+      this.AVSession.on('playPrevious', this.onPlayPrevious.bind(this));
+      this.AVSession.on('seek', this.onSeek.bind(this));
+      this.AVSession.on('setLoopMode', this.onSetLoopMode.bind(this));
+      this.AVSession.on('toggleFavorite', this.onToggleFavorite.bind(this));
     } catch (err) {
       Logger.error(TAG, `setListenerForMesFromController failed: ${JSON.stringify(err)}`);
     }

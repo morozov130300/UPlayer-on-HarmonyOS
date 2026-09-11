@@ -192,6 +192,9 @@ export class AVPlayerService {
         if (this.interruptedWhilePlaying && this.avPlayer !== undefined) {
           this.interruptedWhilePlaying = false
           this.avPlayer.play()
+          AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, true)
+          this.sessionController.setPlayState(true)
+          this.startBackground()
         }
       } else if (interruptEvent.hintType === audio.InterruptHint.INTERRUPT_HINT_PAUSE) {
         this.interruptedWhilePlaying = true
@@ -587,6 +590,7 @@ export class AVPlayerService {
       return
     }
     try {
+      this.startBackground()
       const fadeInOut: boolean = AppStorage.get<boolean>('uplayer_fade_in_out') ?? false
       if (fadeInOut) {
         this.avPlayer.setVolume(0)
@@ -607,12 +611,14 @@ export class AVPlayerService {
         AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, false)
         this.sessionController.setPlayState(false)
       }
+      this.stopBackground()
       return
     }
     if (this.avPlayer === undefined) {
       return
     }
     try {
+      this.stopBackground()
       const fadeInOut: boolean = AppStorage.get<boolean>('uplayer_fade_in_out') ?? false
       if (fadeInOut) {
         this.fadeOut()

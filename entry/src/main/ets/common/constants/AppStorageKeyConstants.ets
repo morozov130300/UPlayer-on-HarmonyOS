@@ -41,4 +41,5 @@ export class AppStorageKeyConstants {
   public static readonly KEY_TITLE_BUTTON_HEIGHT: string = BaseConstants.KEY_PREFIX + 'TitleButtonHeight'
   public static readonly KEY_UI_ABILITY_CONTEXT: string = BaseConstants.KEY_PREFIX + 'UIAbilityContext'
   public static readonly KEY_WINDOW: string = BaseConstants.KEY_PREFIX + 'Window'
+  public static readonly KEY_TIMER_REMAINING: string = BaseConstants.KEY_PREFIX + 'TimerRemaining'
 }
