@@ -8,19 +8,16 @@ export default class InsightIntentExecutorImpl extends InsightIntentExecutor {
   async onExecuteInUIAbilityBackgroundMode(intentName: string, intentParam: Record<string, Object>):
     Promise<insightIntent.ExecuteResult> {
     Logger.info(TAG, `onExecuteInUIAbilityBackgroundMode intentName=${intentName}`);
-    if (intentName === 'PlayMusicList') {
-      const entityId: string = (typeof intentParam.entityId === 'string') ? intentParam.entityId : '';
-      return this.handlePlay(entityId);
-    }
-    return Promise.resolve({
-      code: -1,
-      result: { message: 'unknown intent' }
-    } as insightIntent.ExecuteResult);
+    return this.dispatchPlayIntent(intentName, intentParam);
   }
 
   async onExecuteInUIAbilityForegroundMode(intentName: string, intentParam: Record<string, Object>):
     Promise<insightIntent.ExecuteResult> {
     Logger.info(TAG, `onExecuteInUIAbilityForegroundMode intentName=${intentName}`);
+    return this.dispatchPlayIntent(intentName, intentParam);
+  }
+
+  private dispatchPlayIntent(intentName: string, intentParam: Record<string, Object>): Promise<insightIntent.ExecuteResult> {
     if (intentName === 'PlayMusicList') {
       const entityId: string = (typeof intentParam.entityId === 'string') ? intentParam.entityId : '';
       return this.handlePlay(entityId);
