@@ -335,6 +335,9 @@ export class DataService {
         songs[existingIndex].album = newSongs[i].album
         songs[existingIndex].duration = newSongs[i].duration
         songs[existingIndex].uri = newSongs[i].uri
+        // 重新导入时同步歌词路径（含用户选中的 .lrc/.krc 配对结果）
+        songs[existingIndex].lyricPath = newSongs[i].lyricPath
+        songs[existingIndex].lyricUri = newSongs[i].lyricUri
         songs[existingIndex].isAvailable = true
         result.dupCount++
       } else {
