@@ -62,11 +62,9 @@ export class AppSettingsData {
   glassBlurStrength: number = 25
   homeTopBlurStrength: number = 25
   tabIndicatorOpacity: number = 50
-  // 玻璃风格细节：厚度（0-100，独立控制 ImmersiveStyle 档位）+ 饱和度 + 亮度
+  // 玻璃风格细节：厚度（0-100，独立控制 ImmersiveStyle 档位）
   // 厚度与模糊强度完全独立：thickness 控系统材质档位，blurStrength 控 backgroundEffect 半径
   glassThickness: number = 50
-  glassSaturation: number = 1.4
-  glassBrightness: number = 1.02
   // 质感握姿：开启后系统根据单手握持方向自动让首页顶部模糊预览/控件靠左或靠右
   holdingHandEnabled: boolean = true
   // 底部栏跟手光效颜色：white=纯白光，theme=跟随主题色（暗黑默认白光，明亮默认主题色，由 SettingsDetailPage 按明暗模式初始化）
@@ -643,10 +641,6 @@ export class DataService {
           else s.glassThickness = 50
         }
       }
-      let rawGlassSaturation: Object | undefined = r['glassSaturation']
-      s.glassSaturation = rawGlassSaturation !== undefined ? rawGlassSaturation as number : 1.4
-      let rawGlassBrightness: Object | undefined = r['glassBrightness']
-      s.glassBrightness = rawGlassBrightness !== undefined ? rawGlassBrightness as number : 1.02
       let rawHoldingHandEnabled: Object | undefined = r['holdingHandEnabled']
       s.holdingHandEnabled = rawHoldingHandEnabled !== undefined ? rawHoldingHandEnabled as boolean : true
       let rawLightColorMode: Object | undefined = r['lightColorMode']
@@ -691,8 +685,7 @@ export class DataService {
     r['homeTopBlurStrength'] = settings.homeTopBlurStrength
     r['tabIndicatorOpacity'] = settings.tabIndicatorOpacity
     r['glassThickness'] = settings.glassThickness
-    r['glassSaturation'] = settings.glassSaturation
-    r['glassBrightness'] = settings.glassBrightness
+
     r['holdingHandEnabled'] = settings.holdingHandEnabled
     r['lightColorMode'] = settings.lightColorMode
     r['tabTouchIndicator'] = settings.tabTouchIndicator
@@ -918,8 +911,7 @@ export class DataService {
     AppStorage.setOrCreate('uplayer_home_top_blur_strength', settings.homeTopBlurStrength)
     AppStorage.setOrCreate('uplayer_tab_indicator_opacity', settings.tabIndicatorOpacity)
     AppStorage.setOrCreate('uplayer_glass_thickness', settings.glassThickness)
-    AppStorage.setOrCreate('uplayer_glass_saturation', settings.glassSaturation)
-    AppStorage.setOrCreate('uplayer_glass_brightness', settings.glassBrightness)
+
     AppStorage.setOrCreate('uplayer_holding_hand_enabled', settings.holdingHandEnabled)
     AppStorage.setOrCreate('uplayer_light_color_mode', settings.lightColorMode)
     AppStorage.setOrCreate('uplayer_tab_touch_indicator', settings.tabTouchIndicator)

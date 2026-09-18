@@ -54,8 +54,6 @@ struct MainPage {
   @StorageLink('uplayer_glass_blur_strength') glassBlurStrength: number = 25
   @StorageLink('uplayer_tab_indicator_opacity') tabIndicatorOpacity: number = 50
   @StorageLink('uplayer_glass_thickness') glassThickness: number = DEFAULT_GLASS_STYLE
-  @StorageLink('uplayer_glass_saturation') glassSaturation: number = 1.4
-  @StorageLink('uplayer_glass_brightness') glassBrightness: number = 1.02
   @StorageLink('uplayer_light_color_mode') lightColorMode: string = 'theme'
   @StorageLink('uplayer_tab_touch_indicator') tabTouchIndicator: string = 'light'
   @StorageLink('uplayer_interactive') interactive: boolean = true
@@ -241,9 +239,7 @@ struct MainPage {
         .borderRadius(this.scaledSize(20))
         .backgroundColor(Color.Transparent)
         .backgroundEffect({
-          radius: this.glassBlurRadius(),
-          saturation: this.glassSaturation,
-          brightness: this.glassBrightness
+          radius: this.glassBlurRadius()
         })
         .border({ width: 1, color: 'rgba(255,255,255,0.22)' })
         .shadow({ radius: 18, color: ColorHelper.hexWithAlpha(this.primaryColor, '44'), offsetY: 5 })
@@ -309,9 +305,7 @@ struct MainPage {
       // 液态玻璃启用时 systemMaterial 接管渲染；backgroundEffect 作为兜底模糊保留，
       // 确保 systemMaterial 低档位时 Tab 栏仍有半透明磨砂背景
       .backgroundEffect(this.isDarkTheme() ? undefined : {
-        radius: this.glassBlurRadius(),
-        saturation: this.glassSaturation,
-        brightness: this.glassBrightness
+        radius: this.glassBlurRadius()
       })
       // 液态玻璃：沉浸式系统材质 + 光效跟手 + 交互形变；能力不足时传 undefined 关闭
       .systemMaterial(this.liquidGlassTabMaterial())
@@ -559,9 +553,7 @@ struct MainPage {
     // 玻璃样式 + 暗黑模式 + 非 API 26 时不应用 backgroundEffect，保持纯黑底；
     // 真机 API 26+ 由 systemMaterial 接管；浅色模式保留原玻璃模糊回退
     .backgroundEffect(this.tabStyle === 'immersive' && !this.isDarkTheme() ? {
-      radius: this.glassBlurRadius(),
-      saturation: this.glassSaturation,
-      brightness: this.glassBrightness
+      radius: this.glassBlurRadius()
     } : undefined)
     .systemMaterial(this.tabStyle === 'immersive' ? this.liquidGlassTabMaterial() : undefined)
     .border({

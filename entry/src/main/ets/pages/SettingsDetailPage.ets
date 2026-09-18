@@ -56,8 +56,7 @@ struct SettingsDetailPage {
   @StorageLink('uplayer_glass_blur_strength') glassBlurStrength: number = 25
   @StorageLink('uplayer_home_top_blur_strength') homeTopBlurStrength: number = 25
   @StorageLink('uplayer_tab_indicator_opacity') tabIndicatorOpacity: number = 50
-  @StorageLink('uplayer_glass_saturation') glassSaturation: number = 1.4
-  @StorageLink('uplayer_glass_brightness') glassBrightness: number = 1.02
+  @StorageLink('uplayer_interactive') interactive: boolean = true
   @StorageLink('uplayer_glass_thickness') glassThickness: number = 50
   @StorageLink('uplayer_interactive') interactive: boolean = true
   @StorageLink('uplayer_color_invert') colorInvert: boolean = false
@@ -227,8 +226,6 @@ struct SettingsDetailPage {
   // 不同的是内部叠层：
   //   - homeTopBlurPreview：渐变模糊 (linearGradientBlur) 强度随首页上端模糊强度变化
   //   - glassStylePreview：模糊半径 + 液态玻璃材质叠加
-  //   - glassSaturationPreview：饱和度变化
-  //   - glassBrightnessPreview：亮度变化
   //   - holdingHandPreview：左右切手示意
   @Builder
   homeTopBlurPreview(): void {
@@ -282,9 +279,7 @@ struct SettingsDetailPage {
         .borderRadius(this.scaledSize(18))
         .backgroundColor(Color.Transparent)
         .backgroundEffect({
-          radius: this.glassBlurStrength * 0.5,
-          saturation: this.glassSaturation,
-          brightness: this.glassBrightness
+          radius: this.glassBlurStrength * 0.5
         })
         .border({ width: 1, color: 'rgba(255,255,255,0.28)' })
         .shadow({ radius: 12, color: ColorHelper.hexWithAlpha(this.primaryColor, '44') })
@@ -499,9 +494,7 @@ struct SettingsDetailPage {
         .borderRadius(this.scaledSize(18))
         .backgroundColor(Color.Transparent)
         .backgroundEffect({
-          radius: this.glassBlurStrength * 0.5,
-          saturation: this.glassSaturation,
-          brightness: this.glassBrightness
+          radius: this.glassBlurStrength * 0.5
         })
         .systemMaterial(this.glassThickness > 0 && isLiquidGlassAvailable()
           ? createPageGlassMaterial(this.glassThickness) : undefined)
@@ -1034,128 +1027,6 @@ struct SettingsDetailPage {
         .width('100%')
         .padding({
           top: this.scaledSize(10),
-          left: this.scaledSize(14),
-          right: this.scaledSize(14),
-          bottom: this.scaledSize(10)
-        })
-        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-        .borderRadius(this.scaledSize(10))
-
-        // 玻璃饱和度 独立调节
-        Column({ space: this.scaledSize(6) }) {
-          Row() {
-            this.subTitleRow('玻璃饱和度')
-            Blank()
-          }
-          .width('100%')
-          Text('控制玻璃背后透出的颜色鲜艳程度。值越高越鲜艳。')
-            .fontSize(this.scaledFont(12))
-            .fontColor(this.settingSubTextColor())
-            .width('100%')
-          Row({ space: this.scaledSize(12) }) {
-            if (!this.previewOnRight) {
-              this.glassAdvancedPreview('玻璃饱和')
-            }
-            Text('淡')
-              .fontSize(this.scaledFont(11))
-              .fontColor(this.settingTextColor())
-            Slider({
-              value: this.settings.glassSaturation * 100,
-              min: 100,
-              max: 200,
-              step: 1,
-              style: SliderStyle.OutSet
-            })
-              .layoutWeight(1)
-              .selectedColor(this.primaryColor)
-              .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-              .blockColor('#FFFFFF')
-              .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
-              .blockBorderColor(this.primaryColor)
-              .blockBorderWidth(3)
-              .onChange((value: number, mode: SliderChangeMode) => {
-                this.settings.glassSaturation = value / 100
-                this.glassSaturation = this.settings.glassSaturation
-                if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-                  this.updateSetting()
-                }
-              })
-            Text('浓')
-              .fontSize(this.scaledFont(11))
-              .fontColor(this.settingTextColor())
-            if (this.previewOnRight) {
-              Blank().width(this.scaledSize(14))
-              this.glassAdvancedPreview('玻璃饱和')
-            }
-          }
-          .width('100%')
-          .alignItems(VerticalAlign.Center)
-          .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
-        }
-        .width('100%')
-        .padding({
-          top: this.scaledSize(10),
-          left: this.scaledSize(14),
-          right: this.scaledSize(14),
-          bottom: this.scaledSize(5)
-        })
-        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-        .borderRadius(this.scaledSize(10))
-
-        // 玻璃亮度 独立调节
-        Column({ space: this.scaledSize(6) }) {
-          Row() {
-            this.subTitleRow('玻璃亮度')
-            Blank()
-          }
-          .width('100%')
-          Text('控制玻璃模糊层的明暗调整。值越高越亮。')
-            .fontSize(this.scaledFont(12))
-            .fontColor(this.settingSubTextColor())
-            .width('100%')
-          Row({ space: this.scaledSize(12) }) {
-            if (!this.previewOnRight) {
-              this.glassAdvancedPreview('玻璃亮度')
-            }
-            Text('暗')
-              .fontSize(this.scaledFont(11))
-              .fontColor(this.settingTextColor())
-            Slider({
-              value: this.settings.glassBrightness * 100,
-              min: 80,
-              max: 130,
-              step: 1,
-              style: SliderStyle.OutSet
-            })
-              .layoutWeight(1)
-              .selectedColor(this.primaryColor)
-              .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-              .blockColor('#FFFFFF')
-              .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
-              .blockBorderColor(this.primaryColor)
-              .blockBorderWidth(3)
-              .onChange((value: number, mode: SliderChangeMode) => {
-                this.settings.glassBrightness = value / 100
-                this.glassBrightness = this.settings.glassBrightness
-                if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-                  this.updateSetting()
-                }
-              })
-            Text('亮')
-              .fontSize(this.scaledFont(11))
-              .fontColor(this.settingTextColor())
-            if (this.previewOnRight) {
-              Blank().width(this.scaledSize(14))
-              this.glassAdvancedPreview('玻璃亮度')
-            }
-          }
-          .width('100%')
-          .alignItems(VerticalAlign.Center)
-          .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
-        }
-        .width('100%')
-        .padding({
-          top: this.scaledSize(5),
           left: this.scaledSize(14),
           right: this.scaledSize(14),
           bottom: this.scaledSize(10)
