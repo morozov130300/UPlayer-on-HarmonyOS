@@ -7,6 +7,9 @@ const POETRY_RANDOM_URL: string = 'https://poetry.palemoky.com/api/poems/random?
 const REQUEST_TIMEOUT_MS: number = 8000
 // 过长的词句不适合作为问候语小字展示，优先挑选短句
 const PREFERRED_LINE_MAX_LEN: number = 24
+// 只保留：唐诗、宋词、元曲，以及所有五言/七言诗，其余类型重新获取
+const MAX_FETCH_ATTEMPTS: number = 6
+const PUNCTUATION_REGEX: RegExp = /[，。、；：？！“”‘’《》（）…—·\s]/g
 
 export class PoetryService {
   private static instance: PoetryService = new PoetryService()
@@ -18,22 +21,60 @@ export class PoetryService {
   public async fetchRandomLine(): Promise<string> {
     const httpRequest: http.HttpRequest = http.createHttp()
     try {
-      const resp: http.HttpResponse = await httpRequest.request(POETRY_RANDOM_URL, {
-        method: http.RequestMethod.GET,
-        expectDataType: http.HttpDataType.STRING,
-        connectTimeout: REQUEST_TIMEOUT_MS,
-        readTimeout: REQUEST_TIMEOUT_MS
-      })
-      if (resp.responseCode !== 200 || typeof resp.result !== 'string') {
-        return ''
+      // 随机接口无法指定类型，取到不满足“唐诗/宋词/元曲/五言/七言”的篇目时重试
+      for (let attempt = 0; attempt < MAX_FETCH_ATTEMPTS; attempt++) {
+        const resp: http.HttpResponse = await httpRequest.request(POETRY_RANDOM_URL, {
+          method: http.RequestMethod.GET,
+          expectDataType: http.HttpDataType.STRING,
+          connectTimeout: REQUEST_TIMEOUT_MS,
+          readTimeout: REQUEST_TIMEOUT_MS
+        })
+        if (resp.responseCode !== 200 || typeof resp.result !== 'string') {
+          return ''
+        }
+        const line: string = this.pickLine(resp.result)
+        if (line !== '') {
+          return line
+        }
       }
-      return this.pickLine(resp.result)
+      return ''
     } catch (e) {
       Logger.error(TAG, `fetch random poem failed: ${JSON.stringify(e)}`)
       return ''
     } finally {
       httpRequest.destroy()
     }
+  }
+
+  // 判断篇目是否满足展示条件：唐诗、宋词、元曲，或全部诗句为五言/七言
+  private isWantedPoem(poem: Record<string, Object>, rawLines: string[]): boolean {
+    const dynastyRaw: Object | undefined = poem['dynasty']
+    const typeRaw: Object | undefined = poem['type']
+    const dynasty: string = dynastyRaw === undefined ? '' : String(dynastyRaw)
+    const kind: string = typeRaw === undefined ? '' : String(typeRaw)
+    if (dynasty === '唐' && kind === '诗') {
+      return true
+    }
+    if (dynasty === '宋' && kind === '词') {
+      return true
+    }
+    if (dynasty === '元' && kind === '曲') {
+      return true
+    }
+    // 其余篇目：仅当所有诗句都是五言或七言时保留
+    if (rawLines.length === 0) {
+      return false
+    }
+    for (let i = 0; i < rawLines.length; i++) {
+      const stripped: string = rawLines[i].trim().replace(PUNCTUATION_REGEX, '')
+      if (stripped.length === 0) {
+        continue
+      }
+      if (stripped.length !== 5 && stripped.length !== 7) {
+        return false
+      }
+    }
+    return true
   }
 
   private pickLine(body: string): string {
@@ -52,6 +93,9 @@ export class PoetryService {
       }
       const rawLines: string[] = contentRaw as string[]
       if (rawLines.length === 0) {
+        return ''
+      }
+      if (!this.isWantedPoem(poem, rawLines)) {
         return ''
       }
       const allLines: string[] = []
