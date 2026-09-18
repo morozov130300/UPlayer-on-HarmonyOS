@@ -8,6 +8,14 @@ import Logger from '../common/utils/Logger'
 
 const TAG = 'SongScanner'
 
+const LYRIC_EXTENSIONS: string[] = ['.lrc', '.krc']
+
+class LyricPick {
+  uri: string = ''
+  fileName: string = ''
+  baseName: string = ''
+}
+
 export class SongScanner {
   private static instance: SongScanner = new SongScanner()
 
@@ -25,6 +33,22 @@ export class SongScanner {
     return false
   }
 
+  public isLyricFile(fileName: string): boolean {
+    const lower: string = fileName.toLowerCase()
+    for (let i = 0; i < LYRIC_EXTENSIONS.length; i++) {
+      if (lower.endsWith(LYRIC_EXTENSIONS[i])) {
+        return true
+      }
+    }
+    return false
+  }
+
+  public getBaseName(fileName: string): string {
+    const decoded: string = decodeURIComponent(fileName).toLowerCase()
+    const dotIdx: number = decoded.lastIndexOf('.')
+    return dotIdx > 0 ? decoded.substring(0, dotIdx) : decoded
+  }
+
   public async pickAudioFiles(context: common.UIAbilityContext): Promise<SongInfo[]> {
     try {
       const options: picker.DocumentSelectOptions = new picker.DocumentSelectOptions()
@@ -34,16 +58,40 @@ export class SongScanner {
         return []
       }
       const songs: SongInfo[] = []
+      const lyricPicks: LyricPick[] = []
       const metadataService: AudioMetadataService = AudioMetadataService.getInstance()
       Logger.info(TAG, `picker returned ${uris.length} URIs`)
-      const allUrisToPersist: string[] = []
       for (let i = 0; i < uris.length; i++) {
         const uri: string = uris[i]
         const fileName: string = this.getFileNameFromUri(uri)
-        const isAudio: boolean = this.isAudioFile(fileName)
-        Logger.info(TAG, `uri=${uri} fileName=${fileName} isAudio=${isAudio}`)
-        if (isAudio) {
+        if (this.isAudioFile(fileName)) {
           const song: SongInfo = SongInfo.fromFile(uri, fileName)
+          songs.push(song)
+        } else if (this.isLyricFile(fileName)) {
+          const lyricPick: LyricPick = new LyricPick()
+          lyricPick.uri = uri
+          lyricPick.fileName = fileName
+          lyricPick.baseName = this.getBaseName(fileName)
+          lyricPicks.push(lyricPick)
+        }
+      }
+      const allUrisToPersist: string[] = []
+      for (let i = 0; i < songs.length; i++) {
+        const song: SongInfo = songs[i]
+        const songBaseName: string = this.getBaseName(song.fileName)
+        let matched: boolean = false
+        for (let j = 0; j < lyricPicks.length; j++) {
+          if (lyricPicks[j].baseName === songBaseName) {
+            song.lyricUri = lyricPicks[j].uri
+            song.lyricPath = decodeURIComponent(lyricPicks[j].uri)
+            allUrisToPersist.push(lyricPicks[j].uri)
+            matched = true
+            Logger.info(TAG, `lyric matched: song=${song.fileName} lyric=${lyricPicks[j].fileName}`)
+            break
+          }
+        }
+        if (!matched) {
+          Logger.info(TAG, `lyric not matched, fallback to guessed path: song=${song.fileName}`)
           if (song.lyricUri.length > 0) {
             try {
               fs.accessSync(song.lyricUri)
@@ -53,11 +101,10 @@ export class SongScanner {
               song.lyricUri = ''
             }
           }
-          songs.push(song)
-          allUrisToPersist.push(uri)
-          // 文本元数据由 AudioMetadataService 统一串行调度，扫描侧不再自行管理批次
-          await metadataService.extractAndSaveMetadata(song, context)
         }
+        allUrisToPersist.push(song.uri)
+        // 文本元数据由 AudioMetadataService 统一串行调度，扫描侧不再自行管理批次
+        await metadataService.extractAndSaveMetadata(song, context)
       }
       await this.persistUris(allUrisToPersist)
       AudioMetadataService.getInstance().prefetchAlbumCovers(songs)

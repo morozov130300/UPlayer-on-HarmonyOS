@@ -823,22 +823,27 @@ export class DataService {
     for (let i: number = 0; i < songs.length; i++) {
       const prevAvailable: boolean = songs[i].isAvailable
       const accessPath: string = songs[i].uri.length > 0 ? songs[i].uri : songs[i].filePath
+      // 与封面提取相同的打开校验：外置盘缺失时 accessSync 可能误判存在，openSync 才可靠抛 13900002
       try {
-        fs.accessSync(accessPath)
+        const file: fs.File = fs.openSync(accessPath, fs.OpenMode.READ_ONLY)
+        fs.closeSync(file)
         songs[i].isAvailable = true
       } catch (e) {
         songs[i].isAvailable = false
       }
       if (songs[i].lyricUri.length > 0) {
+        // accessSync 对 picker docs URI 不可靠，用 openSync 实际打开校验
         try {
-          fs.accessSync(songs[i].lyricUri)
+          const lyricFile: fs.File = fs.openSync(songs[i].lyricUri, fs.OpenMode.READ_ONLY)
+          fs.closeSync(lyricFile)
         } catch (e) {
           songs[i].lyricPath = ''
           songs[i].lyricUri = ''
         }
       } else if (songs[i].lyricPath.length > 0) {
         try {
-          fs.accessSync(songs[i].lyricPath)
+          const lyricFile: fs.File = fs.openSync(songs[i].lyricPath, fs.OpenMode.READ_ONLY)
+          fs.closeSync(lyricFile)
         } catch (e) {
           songs[i].lyricPath = ''
         }
@@ -846,6 +851,15 @@ export class DataService {
       if (songs[i].isAvailable !== prevAvailable) {
         changed = true
       }
+    }
+    let unavailableCount: number = 0
+    for (let j: number = 0; j < songs.length; j++) {
+      if (!songs[j].isAvailable) {
+        unavailableCount++
+      }
+    }
+    if (unavailableCount > 0) {
+      Logger.warn(TAG, `checkSongsAccessibility total=${songs.length} unavailable=${unavailableCount}`)
     }
     if (changed) {
       this.saveSongs(songs)
@@ -938,5 +952,9 @@ export class DataService {
         }
       }
     }
+    // 持久化授权激活完成后重新校验歌曲可访问性：
+    // initToAppStorage 首次 checkSongsAccessibility 时激活可能尚未完成，
+    // 会导致已持久化授权的歌曲被误判为不可用（首页灰色），此处纠正回来
+    this.checkSongsAccessibility()
   }
 }
