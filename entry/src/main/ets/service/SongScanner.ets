@@ -4,17 +4,14 @@ import { SongInfo } from '../model/SongInfo'
 import { FolderInfo } from '../model/FolderInfo'
 import { DataService, AUDIO_EXTENSIONS } from './DataService'
 import { AudioMetadataService } from './AudioMetadataService'
+import { applyMetadataToSong, extractSongMetadata } from './MetadataTask'
+import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import Logger from '../common/utils/Logger'
 
 const TAG = 'SongScanner'
 
-const LYRIC_EXTENSIONS: string[] = ['.lrc', '.krc']
-
-class LyricPick {
-  uri: string = ''
-  fileName: string = ''
-  baseName: string = ''
-}
+// TaskPool 并发提取的工人数：过多会挤占 fd 与 CPU，4 路已能充分并行
+const METADATA_CONCURRENCY: number = 4
 
 export class SongScanner {
   private static instance: SongScanner = new SongScanner()
@@ -33,22 +30,6 @@ export class SongScanner {
     return false
   }
 
-  public isLyricFile(fileName: string): boolean {
-    const lower: string = fileName.toLowerCase()
-    for (let i = 0; i < LYRIC_EXTENSIONS.length; i++) {
-      if (lower.endsWith(LYRIC_EXTENSIONS[i])) {
-        return true
-      }
-    }
-    return false
-  }
-
-  public getBaseName(fileName: string): string {
-    const decoded: string = decodeURIComponent(fileName).toLowerCase()
-    const dotIdx: number = decoded.lastIndexOf('.')
-    return dotIdx > 0 ? decoded.substring(0, dotIdx) : decoded
-  }
-
   public async pickAudioFiles(context: common.UIAbilityContext): Promise<SongInfo[]> {
     try {
       const options: picker.DocumentSelectOptions = new picker.DocumentSelectOptions()
@@ -58,61 +39,94 @@ export class SongScanner {
         return []
       }
       const songs: SongInfo[] = []
-      const lyricPicks: LyricPick[] = []
-      const metadataService: AudioMetadataService = AudioMetadataService.getInstance()
       Logger.info(TAG, `picker returned ${uris.length} URIs`)
+      const allUrisToPersist: string[] = []
       for (let i = 0; i < uris.length; i++) {
         const uri: string = uris[i]
         const fileName: string = this.getFileNameFromUri(uri)
-        if (this.isAudioFile(fileName)) {
+        const isAudio: boolean = this.isAudioFile(fileName)
+        if (isAudio) {
           const song: SongInfo = SongInfo.fromFile(uri, fileName)
           songs.push(song)
-        } else if (this.isLyricFile(fileName)) {
-          const lyricPick: LyricPick = new LyricPick()
-          lyricPick.uri = uri
-          lyricPick.fileName = fileName
-          lyricPick.baseName = this.getBaseName(fileName)
-          lyricPicks.push(lyricPick)
+          allUrisToPersist.push(uri)
         }
       }
-      const allUrisToPersist: string[] = []
+      // 歌词存在性检查：异步 access 并发执行，避免主线程串行阻塞
+      const lyricChecks: Promise<boolean>[] = []
       for (let i = 0; i < songs.length; i++) {
-        const song: SongInfo = songs[i]
-        const songBaseName: string = this.getBaseName(song.fileName)
-        let matched: boolean = false
-        for (let j = 0; j < lyricPicks.length; j++) {
-          if (lyricPicks[j].baseName === songBaseName) {
-            song.lyricUri = lyricPicks[j].uri
-            song.lyricPath = decodeURIComponent(lyricPicks[j].uri)
-            allUrisToPersist.push(lyricPicks[j].uri)
-            matched = true
-            Logger.info(TAG, `lyric matched: song=${song.fileName} lyric=${lyricPicks[j].fileName}`)
-            break
-          }
-        }
-        if (!matched) {
-          Logger.info(TAG, `lyric not matched, fallback to guessed path: song=${song.fileName}`)
-          if (song.lyricUri.length > 0) {
-            try {
-              fs.accessSync(song.lyricUri)
-              allUrisToPersist.push(song.lyricUri)
-            } catch (_) {
-              song.lyricPath = ''
-              song.lyricUri = ''
-            }
-          }
-        }
-        allUrisToPersist.push(song.uri)
-        // 文本元数据由 AudioMetadataService 统一串行调度，扫描侧不再自行管理批次
-        await metadataService.extractAndSaveMetadata(song, context)
+        lyricChecks.push(this.checkLyricExists(songs[i]))
       }
+      const lyricResults: boolean[] = await Promise.all(lyricChecks)
+      for (let i = 0; i < songs.length; i++) {
+        if (lyricResults[i]) {
+          allUrisToPersist.push(songs[i].lyricUri)
+        } else {
+          songs[i].lyricPath = ''
+          songs[i].lyricUri = ''
+        }
+      }
+      // 先持久化授权，再进行后台提取
       await this.persistUris(allUrisToPersist)
-      AudioMetadataService.getInstance().prefetchAlbumCovers(songs)
+
+      if (songs.length > 0) {
+        // 进度状态：导入中 / 总数 / 已完成
+        AppStorage.setOrCreate(AppStorageKeyConstants.KEY_IMPORT_RUNNING, true)
+        AppStorage.setOrCreate(AppStorageKeyConstants.KEY_IMPORT_TOTAL, songs.length)
+        AppStorage.setOrCreate(AppStorageKeyConstants.KEY_IMPORT_DONE, 0)
+        try {
+          await this.extractMetadataParallel(songs)
+        } finally {
+          AppStorage.setOrCreate(AppStorageKeyConstants.KEY_IMPORT_DONE, songs.length)
+          AppStorage.setOrCreate(AppStorageKeyConstants.KEY_IMPORT_RUNNING, false)
+        }
+        AudioMetadataService.getInstance().prefetchAlbumCovers(songs)
+      }
       Logger.info(TAG, `picked ${songs.length} audio files`)
       return songs
     } catch (err) {
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_IMPORT_RUNNING, false)
       Logger.error(TAG, `pickAudioFiles error: ${JSON.stringify(err)}`)
       return []
+    }
+  }
+
+  // TaskPool 并行提取元数据：固定工人数滚动消费队列，每完成一首更新进度
+  private async extractMetadataParallel(songs: SongInfo[]): Promise<void> {
+    let nextIndex: number = 0
+    let doneCount: number = 0
+    const worker = async (): Promise<void> => {
+      let index: number = nextIndex
+      nextIndex++
+      while (index < songs.length) {
+        const song: SongInfo = songs[index]
+        const sourceUri: string = song.uri.length > 0 ? song.uri : song.filePath
+        const record: Record<string, string> | undefined = await extractSongMetadata(sourceUri)
+        if (record !== undefined) {
+          applyMetadataToSong(song, record)
+        }
+        doneCount++
+        AppStorage.setOrCreate(AppStorageKeyConstants.KEY_IMPORT_DONE, doneCount)
+        index = nextIndex
+        nextIndex++
+      }
+    }
+    const workerCount: number = Math.min(METADATA_CONCURRENCY, songs.length)
+    const workers: Promise<void>[] = []
+    for (let i = 0; i < workerCount; i++) {
+      workers.push(worker())
+    }
+    await Promise.all(workers)
+  }
+
+  private async checkLyricExists(song: SongInfo): Promise<boolean> {
+    if (song.lyricUri.length === 0) {
+      return false
+    }
+    try {
+      await fs.access(song.lyricUri)
+      return true
+    } catch (err) {
+      return false
     }
   }
 

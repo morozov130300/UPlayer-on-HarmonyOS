@@ -2,14 +2,15 @@ import { SongInfo } from '../model/SongInfo'
 import { FolderInfo } from '../model/FolderInfo'
 import { PreferencesUtil } from '../common/utils/PreferencesUtil'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
+import { common } from '@kit.AbilityKit'
 import { fileIo as fs, fileShare } from '@kit.CoreFileKit'
+import { SongDatabase } from './SongDatabase'
 import Logger from '../common/utils/Logger'
 import { BusinessError } from '@kit.BasicServicesKit'
 import { MusicPlayMode } from '../common/constants/PlayerConstants'
 
 const TAG = 'DataService'
 
-const KEY_SONG_LIST: string = 'uplayer_song_list'
 const KEY_FOLDER_LIST: string = 'uplayer_folder_list'
 const KEY_SETTINGS: string = 'uplayer_settings'
 const KEY_SORT_MODE: string = 'uplayer_sort_mode'
@@ -88,12 +89,35 @@ export class DataService {
   private saveSongsTimer: number = -1
   private pendingSongs: SongInfo[] | undefined = undefined
   private readonly SAVE_SONGS_DEBOUNCE_MS: number = 300
+  // 数据库快照：记录已落库的行内容，flush 时做增量 diff（新增 INSERT / 变更 UPDATE / 删除 DELETE）
+  private dbSnapshot: Map<string, SongInfo> = new Map<string, SongInfo>()
+  private flushInFlight: boolean = false
+  private flushQueued: boolean = false
 
   public static getInstance(): DataService {
     return DataService.instance
   }
 
-  // 立即把暂存的歌曲列表写入磁盘（幂等，可安全多次调用）
+  // 初始化曲库数据库并加载全量歌曲到内存缓存；EntryAbility 在 UI 加载前调用
+  public async init(context: common.UIAbilityContext): Promise<void> {
+    try {
+      await SongDatabase.getInstance().init(context)
+      const songs: SongInfo[] = await SongDatabase.getInstance().queryAllSongs()
+      this.songsCache = songs
+      const snapshot: Map<string, SongInfo> = new Map<string, SongInfo>()
+      for (let i = 0; i < songs.length; i++) {
+        snapshot.set(songs[i].id, this.cloneSong(songs[i]))
+      }
+      this.dbSnapshot = snapshot
+      Logger.info(TAG, `init: loaded ${songs.length} songs from database`)
+    } catch (err) {
+      this.songsCache = []
+      this.dbSnapshot = new Map<string, SongInfo>()
+      Logger.error(TAG, `init failed: ${JSON.stringify(err)}`)
+    }
+  }
+
+  // 立即把暂存的歌曲列表增量写入数据库（幂等，可安全多次调用）
   flushPendingSongWrites(): void {
     if (this.saveSongsTimer !== -1) {
       clearTimeout(this.saveSongsTimer)
@@ -102,13 +126,116 @@ export class DataService {
     if (this.pendingSongs === undefined) {
       return
     }
-    const songs: SongInfo[] = this.pendingSongs
-    this.pendingSongs = undefined
-    const records: Record<string, Object>[] = []
-    for (let i = 0; i < songs.length; i++) {
-      records.push(this.songToRecord(songs[i]))
+    void this.doFlushSongWrites()
+  }
+
+  // 增量落库：与数据库快照 diff，只写有变化的行，禁止全表重写
+  private async doFlushSongWrites(): Promise<void> {
+    if (this.flushInFlight) {
+      this.flushQueued = true
+      return
     }
-    this.writeJsonArray(KEY_SONG_LIST, records as object[])
+    this.flushInFlight = true
+    const current: SongInfo[] | undefined = this.pendingSongs
+    this.pendingSongs = undefined
+    try {
+      if (current !== undefined) {
+        const inserts: SongInfo[] = []
+        const updates: SongInfo[] = []
+        const currentIds: Set<string> = new Set<string>()
+        for (let i = 0; i < current.length; i++) {
+          currentIds.add(current[i].id)
+          const snapshotRow: SongInfo | undefined = this.dbSnapshot.get(current[i].id)
+          if (snapshotRow === undefined) {
+            inserts.push(current[i])
+          } else if (!this.songEquals(snapshotRow, current[i])) {
+            updates.push(current[i])
+          }
+        }
+        const deletes: string[] = []
+        this.dbSnapshot.forEach((snapshotRow: SongInfo, id: string) => {
+          if (!currentIds.has(id)) {
+            deletes.push(id)
+          }
+        })
+        const db: SongDatabase = SongDatabase.getInstance()
+        await db.insertSongs(inserts)
+        await db.updateSongs(updates)
+        await db.deleteSongsByIds(deletes)
+        const snapshot: Map<string, SongInfo> = new Map<string, SongInfo>()
+        for (let i = 0; i < current.length; i++) {
+          snapshot.set(current[i].id, this.cloneSong(current[i]))
+        }
+        this.dbSnapshot = snapshot
+        if (inserts.length > 0 || updates.length > 0 || deletes.length > 0) {
+          Logger.info(TAG, `flush: +${inserts.length} ~${updates.length} -${deletes.length} rows`)
+        }
+      }
+    } catch (err) {
+      Logger.error(TAG, `flush song writes failed: ${JSON.stringify(err)}`)
+    } finally {
+      this.flushInFlight = false
+      if (this.flushQueued) {
+        this.flushQueued = false
+        void this.doFlushSongWrites()
+      }
+    }
+  }
+
+  private cloneSong(song: SongInfo): SongInfo {
+    const copy: SongInfo = new SongInfo()
+    copy.id = song.id
+    copy.name = song.name
+    copy.title = song.title
+    copy.artist = song.artist
+    copy.album = song.album
+    copy.filePath = song.filePath
+    copy.uri = song.uri
+    copy.fileName = song.fileName
+    copy.folderPath = song.folderPath
+    copy.folderName = song.folderName
+    copy.duration = song.duration
+    copy.bitrate = song.bitrate
+    copy.sampleRate = song.sampleRate
+    copy.addedTime = song.addedTime
+    copy.sortOrder = song.sortOrder
+    copy.isFavorite = song.isFavorite
+    copy.isAvailable = song.isAvailable
+    copy.lyricPath = song.lyricPath
+    copy.lyricUri = song.lyricUri
+    copy.genre = song.genre
+    copy.year = song.year
+    copy.track = song.track
+    copy.disc = song.disc
+    copy.comment = song.comment
+    copy.composer = song.composer
+    copy.conductor = song.conductor
+    copy.albumArtist = song.albumArtist
+    copy.author = song.author
+    copy.language = song.language
+    copy.mimeType = song.mimeType
+    copy.dateTime = song.dateTime
+    copy.encoder = song.encoder
+    copy.description = song.description
+    copy.hasAudio = song.hasAudio
+    copy.hasVideo = song.hasVideo
+    copy.videoWidth = song.videoWidth
+    copy.videoHeight = song.videoHeight
+    return copy
+  }
+
+  private songEquals(a: SongInfo, b: SongInfo): boolean {
+    return a.id === b.id && a.name === b.name && a.title === b.title && a.artist === b.artist &&
+      a.album === b.album && a.filePath === b.filePath && a.uri === b.uri && a.fileName === b.fileName &&
+      a.folderPath === b.folderPath && a.folderName === b.folderName && a.duration === b.duration &&
+      a.bitrate === b.bitrate && a.sampleRate === b.sampleRate && a.addedTime === b.addedTime &&
+      a.sortOrder === b.sortOrder && a.isFavorite === b.isFavorite && a.isAvailable === b.isAvailable &&
+      a.lyricPath === b.lyricPath && a.lyricUri === b.lyricUri && a.genre === b.genre && a.year === b.year &&
+      a.track === b.track && a.disc === b.disc && a.comment === b.comment && a.composer === b.composer &&
+      a.conductor === b.conductor && a.albumArtist === b.albumArtist && a.author === b.author &&
+      a.language === b.language && a.mimeType === b.mimeType && a.dateTime === b.dateTime &&
+      a.encoder === b.encoder && a.description === b.description && a.hasAudio === b.hasAudio &&
+      a.hasVideo === b.hasVideo && a.videoWidth === b.videoWidth && a.videoHeight === b.videoHeight
   }
 
   private scheduleSaveSongs(songs: SongInfo[]): void {
@@ -151,105 +278,7 @@ export class DataService {
   }
 
   // ═══════════ Song serialization ═══════════
-
-  private songToRecord(song: SongInfo): Record<string, Object> {
-    const r: Record<string, Object> = {}
-    r['id'] = song.id
-    r['name'] = song.name
-    r['title'] = song.title
-    r['artist'] = song.artist
-    r['album'] = song.album
-    r['filePath'] = song.filePath
-    r['uri'] = song.uri
-    r['fileName'] = song.fileName
-    r['folderPath'] = song.folderPath
-    r['folderName'] = song.folderName
-    r['duration'] = song.duration
-    r['bitrate'] = song.bitrate
-    r['sampleRate'] = song.sampleRate
-    r['addedTime'] = song.addedTime
-    r['sortOrder'] = song.sortOrder
-    r['isFavorite'] = song.isFavorite
-    r['isAvailable'] = song.isAvailable
-    r['lyricPath'] = song.lyricPath
-    r['lyricUri'] = song.lyricUri
-    r['genre'] = song.genre
-    r['year'] = song.year
-    r['track'] = song.track
-    r['disc'] = song.disc
-    r['comment'] = song.comment
-    r['composer'] = song.composer
-    r['conductor'] = song.conductor
-    r['albumArtist'] = song.albumArtist
-    r['author'] = song.author
-    r['language'] = song.language
-    r['mimeType'] = song.mimeType
-    r['dateTime'] = song.dateTime
-    r['encoder'] = song.encoder
-    r['description'] = song.description
-    r['hasAudio'] = song.hasAudio
-    r['hasVideo'] = song.hasVideo
-    r['videoWidth'] = song.videoWidth
-    r['videoHeight'] = song.videoHeight
-    return r
-  }
-
-  private recordToSong(r: Record<string, Object>): SongInfo {
-    const song: SongInfo = new SongInfo()
-    song.id = r['id'] as string
-    song.name = r['name'] as string
-    let rawTitle: Object | undefined = r['title']
-    if (rawTitle === undefined || (rawTitle as string).length === 0) {
-      song.title = song.name
-    } else {
-      song.title = rawTitle as string
-    }
-    song.artist = r['artist'] as string
-    song.album = r['album'] as string
-    song.filePath = r['filePath'] as string
-    let rawUri: Object | undefined = r['uri']
-    song.uri = rawUri !== undefined ? rawUri as string : song.filePath
-    song.fileName = r['fileName'] as string
-    song.folderPath = r['folderPath'] as string
-    song.folderName = r['folderName'] as string
-    song.duration = r['duration'] as number
-    let rawBitrate: Object | undefined = r['bitrate']
-    song.bitrate = rawBitrate !== undefined ? rawBitrate as number : 0
-    let rawSampleRate: Object | undefined = r['sampleRate']
-    song.sampleRate = rawSampleRate !== undefined ? rawSampleRate as number : 0
-    song.addedTime = r['addedTime'] as number
-    const rawSortOrder: Object | undefined = r['sortOrder']
-    if (rawSortOrder !== undefined) {
-      song.sortOrder = rawSortOrder as number
-    } else {
-      // 旧数据迁移：早期版本无 sortOrder，用添加时间保证自定义排序的合理初始顺序
-      song.sortOrder = song.addedTime
-    }
-    song.isFavorite = r['isFavorite'] as boolean
-    song.isAvailable = r['isAvailable'] as boolean
-    song.lyricPath = r['lyricPath'] as string
-    let rawLyricUri: Object | undefined = r['lyricUri']
-    song.lyricUri = rawLyricUri !== undefined ? rawLyricUri as string : ''
-    song.genre = r['genre'] as string
-    song.year = r['year'] as string
-    song.track = r['track'] as string
-    song.disc = r['disc'] as string
-    song.comment = r['comment'] as string
-    song.composer = r['composer'] as string
-    song.conductor = r['conductor'] as string
-    song.albumArtist = r['albumArtist'] as string
-    song.author = r['author'] as string
-    song.language = r['language'] as string
-    song.mimeType = r['mimeType'] as string
-    song.dateTime = r['dateTime'] as string
-    song.encoder = r['encoder'] as string
-    song.description = r['description'] as string
-    song.hasAudio = r['hasAudio'] as string
-    song.hasVideo = r['hasVideo'] as string
-    song.videoWidth = r['videoWidth'] as string
-    song.videoHeight = r['videoHeight'] as string
-    return song
-  }
+  // 歌曲 ↔ 数据库行 的转换由 SongDatabase 负责
 
   private folderToRecord(folder: FolderInfo): Record<string, Object> {
     const r: Record<string, Object> = {}
@@ -285,13 +314,8 @@ export class DataService {
     if (this.songsCache !== undefined) {
       return this.songsCache
     }
-    const arr: object[] = this.readJsonArray(KEY_SONG_LIST)
-    const result: SongInfo[] = []
-    for (let i = 0; i < arr.length; i++) {
-      result.push(this.recordToSong(arr[i] as Record<string, Object>))
-    }
-    this.songsCache = result
-    return result
+    // 数据库初始化完成前返回空列表；init() 完成后缓存始终可用
+    return []
   }
 
   saveSongs(songs: SongInfo[]): void {

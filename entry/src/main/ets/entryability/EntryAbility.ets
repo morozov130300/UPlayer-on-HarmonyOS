@@ -44,6 +44,10 @@ export default class EntryAbility extends UIAbility {
   onWindowStageCreate(windowStage: window.WindowStage): void {
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageCreate');
 
+    // 曲库数据库初始化完成后再加载 UI，保证页面首屏即可读到完整曲库
+    DataService.getInstance().init(this.context).catch((err: Error) => {
+      Logger.error(TAG, `DataService init failed: ${JSON.stringify(err)}`);
+    }).then((): void => {
     const settings: AppSettingsData = DataService.getInstance().initToAppStorage();
     AVSessionController.getInstance().initAVSession();
 
@@ -100,6 +104,7 @@ export default class EntryAbility extends UIAbility {
           Logger.error(TAG, `setWindowLayoutFullScreen failed: ${JSON.stringify(err)}`);
         });
       });
+    });
     });
   }
 

@@ -42,4 +42,7 @@ export class AppStorageKeyConstants {
   public static readonly KEY_UI_ABILITY_CONTEXT: string = BaseConstants.KEY_PREFIX + 'UIAbilityContext'
   public static readonly KEY_WINDOW: string = BaseConstants.KEY_PREFIX + 'Window'
   public static readonly KEY_TIMER_REMAINING: string = BaseConstants.KEY_PREFIX + 'TimerRemaining'
+  public static readonly KEY_IMPORT_RUNNING: string = BaseConstants.KEY_PREFIX + 'ImportRunning'
+  public static readonly KEY_IMPORT_TOTAL: string = BaseConstants.KEY_PREFIX + 'ImportTotal'
+  public static readonly KEY_IMPORT_DONE: string = BaseConstants.KEY_PREFIX + 'ImportDone'
 }

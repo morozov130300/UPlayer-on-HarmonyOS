@@ -22,6 +22,7 @@ import { PlayerConstants } from '../common/constants/PlayerConstants'
 import { AlbumCover } from '../component/AlbumCover'
 import { ColorConversion } from '../common/utils/ColorConversion'
 import { StyleConstants } from '../common/constants/StyleConstants'
+import { ImportProgressOverlay } from '../view/ImportProgressOverlay'
 
 const TAG = 'Index'
 
@@ -854,6 +855,9 @@ struct MainPage {
         .alignItems(VerticalAlign.Center)
         .zIndex(10)
       }
+
+      // 导入进度浮层：置顶显示，未导入时不拦截触摸
+      ImportProgressOverlay()
     }
     .alignContent(Alignment.Bottom)
     .width('100%')
