@@ -46,19 +46,25 @@ export class PoetryService {
     }
   }
 
+  // 读取嵌套对象 {"id":x,"name":"唐"} 中的 name 字段
+  private readNestedName(raw: Object | undefined): string {
+    if (raw === undefined) {
+      return ''
+    }
+    const record: Record<string, Object> = raw as Record<string, Object>
+    const nameRaw: Object | undefined = record['name']
+    return nameRaw === undefined ? '' : String(nameRaw)
+  }
+
   // 判断篇目是否满足展示条件：唐诗、宋词、元曲，或全部诗句为五言/七言
   private isWantedPoem(poem: Record<string, Object>, rawLines: string[]): boolean {
-    const dynastyRaw: Object | undefined = poem['dynasty']
-    const typeRaw: Object | undefined = poem['type']
-    const dynasty: string = dynastyRaw === undefined ? '' : String(dynastyRaw)
-    const kind: string = typeRaw === undefined ? '' : String(typeRaw)
-    if (dynasty === '唐' && kind === '诗') {
+    // 接口返回的 dynasty/type 为对象，如 {"id":8,"name":"宋"}、{"id":20,"name":"宋词"}
+    const dynasty: string = this.readNestedName(poem['dynasty'])
+    const kind: string = this.readNestedName(poem['type'])
+    if (dynasty === '唐') {
       return true
     }
-    if (dynasty === '宋' && kind === '词') {
-      return true
-    }
-    if (dynasty === '元' && kind === '曲') {
+    if (kind === '宋词' || kind === '元曲') {
       return true
     }
     // 其余篇目：仅当所有诗句都是五言或七言时保留
