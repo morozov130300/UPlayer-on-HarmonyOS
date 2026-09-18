@@ -62,7 +62,6 @@ struct SettingsDetailPage {
   @StorageLink('uplayer_interactive') interactive: boolean = true
   @StorageLink('uplayer_color_invert') colorInvert: boolean = false
   @StorageLink('uplayer_apply_shadow') applyShadow: boolean = true
-  @StorageLink('uplayer_show_lyrics') showLyrics: boolean = true
   @State pageTitle: string = ''
   @State previewOnRight: boolean = false
   @State showColorPicker: boolean = false
@@ -581,9 +580,6 @@ struct SettingsDetailPage {
           if (this.showColorPicker) {
             this.colorPickerOverlay()
           }
-          if (this.showGlassScope) {
-            this.glassScopeOverlay()
-          }
         }
         .width('100%')
         .layoutWeight(1)
@@ -595,6 +591,13 @@ struct SettingsDetailPage {
     .height('100%')
     // 背景使用预设纯色（明暗自适应），不应用任何玻璃/模糊/透明度效果
     .backgroundColor($r('app.color.page_background_sm'))
+    .bindSheet($$this.showGlassScope, this.glassScopeSheetBuilder(), {
+      height: SheetSize.FIT_CONTENT,
+      dragBar: false,
+      preferType: SheetType.CENTER,
+      showClose: true,
+      backgroundColor: $r('app.color.page_background_other')
+    })
   }
 
   @Builder
@@ -680,76 +683,51 @@ struct SettingsDetailPage {
       .padding({ right: this.scaledSize(4) })
   }
 
-  // 玻璃效果生效范围说明弹窗
+  // 玻璃效果生效范围说明弹窗（bindSheet 半模态内容）
   @Builder
-  glassScopeOverlay(): void {
-    Stack({ alignContent: Alignment.Center }) {
-      Column()
+  glassScopeSheetBuilder(): void {
+    Column({ space: this.scaledSize(10) }) {
+      Text('玻璃效果生效范围')
+        .fontSize(this.scaledFont(16))
+        .fontColor(this.settingTextColor())
+        .fontWeight(FontWeight.Bold)
         .width('100%')
-        .height('100%')
-        .backgroundColor('rgba(0,0,0,0.55)')
-        .onClick(() => {
-          this.showGlassScope = false
-        })
+        .textAlign(TextAlign.Start)
 
-      Column({ space: this.scaledSize(10) }) {
-        Row() {
-          Text('玻璃效果生效范围')
-            .fontSize(this.scaledFont(16))
-            .fontColor(this.settingTextColor())
-            .fontWeight(FontWeight.Bold)
-          Blank()
-          SymbolGlyph($r('sys.symbol.xmark'))
-            .fontSize(this.scaledFont(20))
-            .fontColor([this.settingTextColor()])
-            .onClick(() => {
-              this.showGlassScope = false
-            })
-        }
+      Text('以下位置会使用玻璃效果：')
+        .fontSize(this.scaledFont(12))
+        .fontColor(this.settingSubTextColor())
         .width('100%')
+        .padding({ top: this.scaledSize(2) })
+      this.scopeLine('• 底部 Tab 栏（沉浸式玻璃，带光效跟手 + 按压 Q 弹形变）')
+      this.scopeLine('• 右下角播控条')
+      this.scopeLine('• 顶部的模糊层（首页顶部标题区，覆盖首页第一屏）')
+      this.scopeLine('• 首页 / 歌单 / 设置 / 设置详情 四个一级页面的顶层背景（仅档位与材质在此生效）')
 
-        Text('以下位置会使用玻璃效果：')
-          .fontSize(this.scaledFont(12))
-          .fontColor(this.settingSubTextColor())
-          .width('100%')
-          .padding({ top: this.scaledSize(2) })
-        this.scopeLine('• 底部 Tab 栏（沉浸式玻璃，带光效跟手 + 按压 Q 弹形变）')
-        this.scopeLine('• 右下角播控条')
-        this.scopeLine('• 顶部的模糊层（首页顶部标题区，覆盖首页第一屏）')
-        this.scopeLine('• 首页 / 歌单 / 设置 / 设置详情 四个一级页面的顶层背景（仅档位与材质在此生效）')
-
-        Text('以下位置不使用玻璃效果：')
-          .fontSize(this.scaledFont(12))
-          .fontColor(this.settingSubTextColor())
-          .width('100%')
-          .padding({ top: this.scaledSize(6) })
-        this.scopeLine('• 音乐播放器页面')
-        this.scopeLine('• 系统API ≤ 26 （液态玻璃材质降级为背景模糊）')
-
-        Row() {
-          Button('知道了')
-            .layoutWeight(1)
-            .height(this.scaledSize(38))
-            .fontColor('#FFFFFF')
-            .backgroundColor(this.primaryColor)
-            .borderRadius(this.scaledSize(10))
-            .onClick(() => {
-              this.showGlassScope = false
-            })
-        }
+      Text('以下位置不使用玻璃效果：')
+        .fontSize(this.scaledFont(12))
+        .fontColor(this.settingSubTextColor())
         .width('100%')
-        .padding({ top: this.scaledSize(8) })
+        .padding({ top: this.scaledSize(6) })
+      this.scopeLine('• 音乐播放器页面')
+      this.scopeLine('• 系统API ≤ 26 （液态玻璃材质降级为背景模糊）')
+
+      Row() {
+        Button('知道了')
+          .layoutWeight(1)
+          .height(this.scaledSize(38))
+          .fontColor('#FFFFFF')
+          .backgroundColor(this.primaryColor)
+          .borderRadius(this.scaledSize(10))
+          .onClick(() => {
+            this.showGlassScope = false
+          })
       }
-      .width(this.scaledSize(304))
-      .padding(this.scaledSize(20))
-      .borderRadius(this.scaledSize(22))
-      .backgroundColor($r('app.color.page_background_other'))
-      .border({ width: 1, color: ColorHelper.hexToRgba(this.primaryColor, 0.2) })
-      .shadow({ radius: 28, color: '#66000000' })
+      .width('100%')
+      .padding({ top: this.scaledSize(8), bottom: this.scaledSize(10) })
     }
     .width('100%')
-    .height('100%')
-    .zIndex(60)
+    .padding({ left: this.scaledSize(20), right: this.scaledSize(20), top: this.scaledSize(14) })
   }
 
   @Builder
@@ -1815,13 +1793,6 @@ struct SettingsDetailPage {
   buildPlaybackSection(): void {
     Column({ space: 10 }) {
       Column() {
-        this.toggleRow('显示歌词', this.showLyrics, (val: boolean) => {
-          this.showLyrics = val
-          this.updateSetting()
-        })
-        Divider()
-          .color(ColorHelper.hexToRgba(this.primaryColor, 0.08))
-          .margin({ left: 14, right: 14 })
         this.toggleRow('淡入淡出', this.settings.fadeInOut, (val: boolean) => {
           this.settings.fadeInOut = val
           this.updateSetting()

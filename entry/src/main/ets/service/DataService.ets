@@ -51,7 +51,6 @@ export class AppSettingsData {
   plusButtonScrollHide: boolean = true
   themeMode: string = 'system'
   primaryColor: string = '#007DFF'
-  showLyrics: boolean = true
   eqEnabled: boolean = false
   eqBands: number[] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
   playSpeed: number = 1
@@ -598,7 +597,6 @@ export class DataService {
       s.plusButtonScrollHide = r['plusButtonScrollHide'] as boolean
       s.themeMode = r['themeMode'] as string
       s.primaryColor = r['primaryColor'] as string
-      s.showLyrics = r['showLyrics'] as boolean
       s.eqEnabled = r['eqEnabled'] as boolean
       let rawEqBands: Object | undefined = r['eqBands']
       let eqBandsMigrated: boolean = false
@@ -681,7 +679,6 @@ export class DataService {
     r['plusButtonScrollHide'] = settings.plusButtonScrollHide
     r['themeMode'] = settings.themeMode
     r['primaryColor'] = settings.primaryColor
-    r['showLyrics'] = settings.showLyrics
     r['eqEnabled'] = settings.eqEnabled
     r['eqBands'] = settings.eqBands
     r['playSpeed'] = settings.playSpeed
@@ -913,7 +910,6 @@ export class DataService {
     AppStorage.setOrCreate(KEY_PLAY_NEXT_QUEUE, this.getPlayNextQueue())
     AppStorage.setOrCreate('uplayer_primary_color', settings.primaryColor)
     AppStorage.setOrCreate('uplayer_theme_mode', settings.themeMode)
-    AppStorage.setOrCreate('uplayer_show_lyrics', settings.showLyrics)
     AppStorage.setOrCreate('uplayer_fade_in_out', settings.fadeInOut)
     AppStorage.setOrCreate('uplayer_font_size_scale', settings.fontSizeScale)
     AppStorage.setOrCreate('uplayer_display_size_scale', settings.displaySizeScale)

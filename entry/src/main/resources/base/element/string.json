@@ -281,10 +281,6 @@
       "value": "播放设置"
     },
     {
-      "name": "show_lyrics",
-      "value": "显示歌词"
-    },
-    {
       "name": "background_playback",
       "value": "后台播放"
     },
