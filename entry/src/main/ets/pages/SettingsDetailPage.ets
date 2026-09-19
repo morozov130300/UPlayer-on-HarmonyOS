@@ -14,7 +14,7 @@ import {
   createTabGlassMaterial
 } from '../common/utils/GlassUtil'
 import { StyleConstants } from '../common/constants/StyleConstants'
-import { KEY_HAS_POINTER_DEVICE } from '../common/utils/InputDeviceUtil'
+import { KEY_HAS_POINTER_DEVICE, refreshPointerDeviceState } from '../common/utils/InputDeviceUtil'
 
 const TAG = 'SettingsDetailPage'
 const KEY_PRIMARY_COLOR = 'uplayer_primary_color'
@@ -154,6 +154,8 @@ struct SettingsDetailPage {
 
   aboutToAppear(): void {
     this.settings = this.dataService.getSettings()
+    // 「自动检测」模式预览需要最新的鼠标/触控板状态
+    refreshPointerDeviceState()
     const params = this.getUIContext()?.getRouter()
       .getParams() as Record<string, string>
     const route: string = params?.category ?? 'customize'

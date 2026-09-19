@@ -212,6 +212,9 @@ struct MainPage {
     this.loadPoetryLine()
     this.initBreakpoint()
     this.loadCurrentLyrics()
+    // 底部栏触摸指示「自动检测」：刷新鼠标/触控板状态并监听热插拔
+    refreshPointerDeviceState()
+    startPointerDeviceListener()
     this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_GREETING_DURATION, curve: Curve.EaseOut }, () => {
       this.greetingOpacity = 1
       this.greetingOffset = 0
@@ -343,7 +346,7 @@ struct MainPage {
     .width(this.scaledSize(this.tabWidth))
     .height(this.scaledSize(40))
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(this.hoverTabIndex === index && this.tabTouchIndicator === 'mask' ? 'rgba(255,255,255,0.16)' : Color.Transparent)
+    .backgroundColor(this.hoverTabIndex === index && this.effectiveTouchIndicator() === 'mask' ? 'rgba(255,255,255,0.16)' : Color.Transparent)
     .borderRadius(this.scaledSize(18))
     .shadow({
       radius: this.hoverTabIndex === index ? 14 : 0,
@@ -378,7 +381,7 @@ struct MainPage {
     .width(this.scaledSize(this.tabWidth))
     .height(this.scaledSize(40))
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(this.hoverTabIndex === index && this.tabTouchIndicator === 'mask' ? 'rgba(255,255,255,0.18)' : Color.Transparent)
+    .backgroundColor(this.hoverTabIndex === index && this.effectiveTouchIndicator() === 'mask' ? 'rgba(255,255,255,0.18)' : Color.Transparent)
     .borderRadius(this.scaledSize(18))
     .shadow({
       radius: this.hoverTabIndex === index ? 16 : 0,
