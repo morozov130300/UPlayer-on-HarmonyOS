@@ -339,10 +339,11 @@ struct SettingsDetailPage {
         .margin({ bottom: this.scaledSize(10) })
         .borderRadius(this.scaledSize(20))
         .backgroundColor(Color.Transparent)
-        // 液态玻璃启用时 systemMaterial 接管渲染；否则回退 backgroundEffect 磨砂（与 Index 一致）
-        .backgroundEffect(this.previewClassicBarMaterial() !== undefined ? undefined : {
+        // 磨砂层只由「模糊强度」控制（0 关闭），暗黑模式不挂；
+        // 液态玻璃启用时磨砂层作为材质底层兜底保留（与 Index 经典 Tab 栏一致）
+        .backgroundEffect(!this.isDark() && this.glassBlurStrength > 0 ? {
           radius: this.previewGlassBlurRadius()
-        })
+        } : undefined)
         .systemMaterial(this.previewClassicBarMaterial())
         .border({ width: 1, color: 'rgba(255,255,255,0.22)' })
         .shadow({ radius: 18, color: ColorHelper.hexWithAlpha(this.primaryColor, '44'), offsetY: 5 })
@@ -396,7 +397,9 @@ struct SettingsDetailPage {
         .borderRadius(this.scaledSize(18))
         .alignItems(VerticalAlign.Center)
         .margin({ left: this.previewIndicatorOffset, bottom: this.scaledSize(12) })
-        .backgroundColor(ColorHelper.hexWithAlpha(this.primaryColor, '33'))
+        // 指示器深浅接入：alpha 基准 0.4，深浅 50 时等效原 '33'（与 Index 玻璃样式一致）
+        .backgroundColor(ColorHelper.hexWithAlpha(this.primaryColor,
+          this.indicatorAlpha(0.4).toString(16).padStart(2, '0')))
 
       Row({ space: this.scaledSize(this.previewTabGap) }) {
         this.previewImmersiveTabItem(0, '首页', $r('app.media.ic_public_home'))
@@ -407,8 +410,9 @@ struct SettingsDetailPage {
       .height(this.scaledSize(40))
       .borderRadius(this.scaledSize(20))
       .backgroundColor(Color.Transparent)
-      // 液态玻璃启用时 systemMaterial 接管渲染；backgroundEffect 作为兜底模糊保留（与 Index 一致）
-      .backgroundEffect(this.isDark() || this.glassThickness <= 0 ? undefined : {
+      // 磨砂层只由「模糊强度」控制（0 关闭），暗黑模式不挂；液态玻璃启用时作为材质底层兜底保留
+      // （与 Index 玻璃样式 Tab 栏一致）
+      .backgroundEffect(this.isDark() || this.glassBlurStrength <= 0 ? undefined : {
         radius: this.previewGlassBlurRadius()
       })
       .systemMaterial(this.previewImmersiveBarMaterial())

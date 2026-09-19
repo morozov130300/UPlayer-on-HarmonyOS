@@ -246,10 +246,11 @@ struct MainPage {
         .margin({ bottom: this.scaledSize(10) })
         .borderRadius(this.scaledSize(20))
         .backgroundColor(Color.Transparent)
-        // 液态玻璃启用时 systemMaterial 接管渲染；否则回退 backgroundEffect 磨砂
-        .backgroundEffect(this.classicTabBarMaterial() !== undefined ? undefined : {
+        // 磨砂层只由「模糊强度」控制（0 关闭），暗黑模式不挂；
+        // 液态玻璃启用时磨砂层作为材质底层兜底保留（低档位材质下仍提供磨砂），与玻璃样式/播控条一致
+        .backgroundEffect(!this.isDarkTheme() && this.glassBlurStrength > 0 ? {
           radius: this.glassBlurRadius()
-        })
+        } : undefined)
         .systemMaterial(this.classicTabBarMaterial())
         .border({ width: 1, color: 'rgba(255,255,255,0.22)' })
         .shadow({ radius: 18, color: ColorHelper.hexWithAlpha(this.primaryColor, '44'), offsetY: 5 })
@@ -301,7 +302,9 @@ struct MainPage {
         .borderRadius(this.scaledSize(18))
         .alignItems(VerticalAlign.Center)
         .margin({ left: this.indicatorOffset, bottom: this.scaledSize(12) })
-        .backgroundColor(ColorHelper.hexWithAlpha(this.primaryColor, '33'))
+        // 指示器深浅接入：alpha 基准 0.4，深浅 50 时等效原 '33'（默认观感不变），0 时完全隐藏
+        .backgroundColor(ColorHelper.hexWithAlpha(this.primaryColor,
+          this.indicatorAlpha(0.4).toString(16).padStart(2, '0')))
 
       Row({ space: this.scaledSize(this.tabGap) }) {
         this.immersiveTabItem(0, '首页', $r('app.media.ic_public_home'))
@@ -561,8 +564,8 @@ struct MainPage {
     })
     .backgroundColor(Color.Transparent)
     // 磨砂层与玻璃厚度、Tab 风格解耦：仅由「模糊强度」控制（0 关闭），两种风格统一挂载；
-    // 暗黑模式不挂；液态玻璃接管时关闭此层避免双重模糊，作为能力不足时的兜底
-    .backgroundEffect(!this.isDarkTheme() && this.glassBlurStrength > 0 && this.bottomBarGlassMaterial() === undefined ? {
+    // 暗黑模式不挂；液态玻璃启用时磨砂层保留作为材质底层兜底
+    .backgroundEffect(!this.isDarkTheme() && this.glassBlurStrength > 0 ? {
       radius: this.glassBlurRadius()
     } : undefined)
     // 液态玻璃：与磨砂层一致不区分 Tab 风格；能力不足时传 undefined 关闭

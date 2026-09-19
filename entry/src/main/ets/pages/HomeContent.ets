@@ -664,8 +664,8 @@ export struct HomeContent {
           .height(56)
           .padding({ left: 16, right: 16 })
           .backgroundColor(Color.Transparent)
-          // 液态玻璃启用时 systemMaterial 接管并关闭磨砂避免双重模糊；否则回退 backgroundEffect
-          .backgroundEffect(this.multiSelectBarMaterial() !== undefined ? undefined : {
+          // 磨砂层常挂（液态玻璃启用时作为材质底层兜底，与 Tab 栏策略一致）
+          .backgroundEffect({
             radius: 20,
             saturation: 1.0,
             brightness: 1.0
