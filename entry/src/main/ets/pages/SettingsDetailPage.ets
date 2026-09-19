@@ -908,7 +908,7 @@ struct SettingsDetailPage {
       Row() {
         Button('知道了')
           .layoutWeight(1)
-          .height(this.scaledSize(38))
+          .height(this.scaledSize(30))
           .fontColor('#FFFFFF')
           .backgroundColor(this.primaryColor)
           .borderRadius(this.scaledSize(10))
@@ -1196,16 +1196,21 @@ struct SettingsDetailPage {
             .width('100%')
             .alignItems(VerticalAlign.Center)
             .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
-            // 滑轨下方 6 档位刻度标注：当前档主题色高亮，其余次级文字色
-            // OutSet 滑块中心在两端内缩约半个滑块宽，刻度行加同样内边距使文字对准档位
+            // 滑轨下方 6 档位刻度标注：按档位点定位（0/20/40/60/80/100 → 轨道 0%~100%），
+            // 与 OutSet 滑块中心两端内缩半个滑块宽（scaledSize(10)）对齐；当前档主题色高亮
             Row() {
-              ForEach(GLASS_THICKNESS_STEPS, (step: number) => {
-                Text(glassThicknessLabel(step))
-                  .fontSize(this.scaledFont(10))
-                  .fontColor(this.settings.glassThickness === step ? this.primaryColor : this.settingSubTextColor())
-                  .layoutWeight(1)
-                  .textAlign(TextAlign.Center)
-              }, (step: number) => step.toString())
+              Stack() {
+                ForEach(GLASS_THICKNESS_STEPS, (step: number, idx: number) => {
+                  Text(glassThicknessLabel(step))
+                    .fontSize(this.scaledFont(10))
+                    .fontColor(this.settings.glassThickness === step ? this.primaryColor : this.settingSubTextColor())
+                    .position({ x: `${idx * 20}%`, y: 0 })
+                    .markAnchor({ x: '50%', y: 0 })
+                }, (step: number, idx: number) => `${idx}_${step}`)
+              }
+              .layoutWeight(1)
+              .height(this.scaledSize(14))
+              .alignContent(Alignment.TopStart)
             }
             .width('100%')
             .padding({ left: this.scaledSize(10), right: this.scaledSize(10) })
