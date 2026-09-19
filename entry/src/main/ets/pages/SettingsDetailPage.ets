@@ -13,7 +13,8 @@ import {
   createBarGlassMaterial,
   createTabGlassMaterial,
   GLASS_THICKNESS_STEPS,
-  glassThicknessLabel
+  glassThicknessLabel,
+  isLiquidGlassAvailable
 } from '../common/utils/GlassUtil'
 import { StyleConstants } from '../common/constants/StyleConstants'
 import { KEY_HAS_POINTER_DEVICE, refreshPointerDeviceState } from '../common/utils/InputDeviceUtil'
@@ -1210,50 +1211,53 @@ struct SettingsDetailPage {
           }
           .width('100%')
 
-          Column({ space: this.scaledSize(6) }) {
-            Row() {
-              this.subTitleRow('Tab栏与播控条模糊强度')
-              Blank()
-            }
-            .width('100%')
-            Text('控制底部 Tab 栏与迷你播控条的磨砂模糊半径。玻璃厚度 > 0 时液态玻璃接管背景渲染，本项作为兜底磨砂（把玻璃厚度调 0 或在不支持液态玻璃的设备上可见效果）；暗黑模式下磨砂层不启用。')
-              .fontSize(this.scaledFont(12))
-              .fontColor(this.settingSubTextColor())
+          // 磨砂兜底模糊强度：仅在不支持液态玻璃的老设备上显示（新设备材质接管背景，该项无可见效果）
+          if (!isLiquidGlassAvailable()) {
+            Column({ space: this.scaledSize(6) }) {
+              Row() {
+                this.subTitleRow('Tab栏与播控条模糊强度')
+                Blank()
+              }
               .width('100%')
-            Row({ space: this.scaledSize(12) }) {
-              Text('弱')
-                .fontSize(this.scaledFont(11))
-                .fontColor(this.settingTextColor())
-              Slider({
-                value: this.settings.glassBlurStrength,
-                min: 0,
-                max: 100,
-                step: 1,
-                style: SliderStyle.OutSet
-              })
-                .layoutWeight(1)
-                .selectedColor(this.primaryColor)
-                .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-                .blockColor('#FFFFFF')
-                .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
-                .blockBorderColor(this.primaryColor)
-                .blockBorderWidth(3)
-                .onChange((value: number, mode: SliderChangeMode) => {
-                  this.settings.glassBlurStrength = value
-                  this.glassBlurStrength = value
-                  if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-                    this.updateSetting()
-                  }
+              Text('控制底部 Tab 栏与迷你播控条的磨砂模糊半径；暗黑模式下磨砂层不启用。')
+                .fontSize(this.scaledFont(12))
+                .fontColor(this.settingSubTextColor())
+                .width('100%')
+              Row({ space: this.scaledSize(12) }) {
+                Text('弱')
+                  .fontSize(this.scaledFont(11))
+                  .fontColor(this.settingTextColor())
+                Slider({
+                  value: this.settings.glassBlurStrength,
+                  min: 0,
+                  max: 100,
+                  step: 1,
+                  style: SliderStyle.OutSet
                 })
-              Text('强')
-                .fontSize(this.scaledFont(11))
-                .fontColor(this.settingTextColor())
+                  .layoutWeight(1)
+                  .selectedColor(this.primaryColor)
+                  .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+                  .blockColor('#FFFFFF')
+                  .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
+                  .blockBorderColor(this.primaryColor)
+                  .blockBorderWidth(3)
+                  .onChange((value: number, mode: SliderChangeMode) => {
+                    this.settings.glassBlurStrength = value
+                    this.glassBlurStrength = value
+                    if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+                      this.updateSetting()
+                    }
+                  })
+                Text('强')
+                  .fontSize(this.scaledFont(11))
+                  .fontColor(this.settingTextColor())
+              }
+              .width('100%')
+              .alignItems(VerticalAlign.Center)
+              .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
             }
             .width('100%')
-            .alignItems(VerticalAlign.Center)
-            .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
           }
-          .width('100%')
 
           Column({ space: this.scaledSize(6) }) {
             Row() {
