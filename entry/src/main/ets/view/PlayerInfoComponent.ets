@@ -25,6 +25,7 @@ export struct PlayerInfoComponent {
   @StorageLink(AppStorageKeyConstants.KEY_TOP_HEIGHT) topHeight: number = 0;
   @StorageLink(AppStorageKeyConstants.KEY_BOTTOM_HEIGHT) @Watch('bottomHeightChange') bottomHeight: number = 0;
   @State imageLabel: PixelMap | Resource = $r('app.media.ic_public_music');
+  @State imageLabelIsFallback: boolean = true;
   @State isShowControl: boolean = true;
   @State isShowControlLg: boolean = false;
   @State isTablet: boolean = true;
@@ -87,6 +88,7 @@ export struct PlayerInfoComponent {
           { width: PlayerConstants.BACK_IMAGE, height: '100%' } :
           { width: '100%', height: PlayerConstants.BACK_IMAGE })
         .objectFit(ImageFit.Cover)
+        .fillColor(this.imageLabelIsFallback ? $r('app.color.player_icon_color') : Color.Black)
         .opacity(0.5)
 
       Column()
@@ -150,12 +152,15 @@ export struct PlayerInfoComponent {
             }
             .padding(this.mainWindowInfo.widthBp === WidthBreakpoint.WIDTH_MD ? 24 : 80)
             .width('50%')
+            .height('100%')
             Column() {
               LyricsComponent({ isShowControl: this.isShowControlLg, mainWindowInfo: this.mainWindowInfo })
             }
             .width('50%')
+            .height('100%')
             .padding(this.mainWindowInfo.widthBp === WidthBreakpoint.WIDTH_MD ? 24 : 80)
           }
+          .alignItems(VerticalAlign.Top)
           .layoutWeight(1)
           .width('100%')
         } else {
@@ -342,7 +347,8 @@ export struct PlayerInfoComponent {
       }, () => {
         this.prevImageOpacity = 0.5;
       });
-      this.imageLabel = value;
+        this.imageLabel = value;
+        this.imageLabelIsFallback = false;
       setTimeout(() => {
         if (requestId !== this.imageLoadRequestId) {
           return;

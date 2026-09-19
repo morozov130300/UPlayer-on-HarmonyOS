@@ -226,7 +226,7 @@ private:
         return true;
     }
 
-    static constexpr size_t MAX_ENTRIES = 32;
+    static constexpr size_t MAX_ENTRIES = 256;
     static constexpr size_t MAX_COVER_BYTES = 16 * 1024 * 1024;
     static constexpr size_t MAX_CACHE_BYTES = 64 * 1024 * 1024;
     static constexpr uint32_t MAX_TAG_BYTES = 32 * 1024 * 1024;

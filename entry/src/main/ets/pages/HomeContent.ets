@@ -13,8 +13,8 @@ import { AlbumCoverSize, AudioMetadataService, CoverPriority } from '../service/
 import { curves, uiMaterial } from '@kit.ArkUI'
 
 const TAG = 'HomeContent'
-const PREFETCH_COUNT: number = 32
-const PREFETCH_THROTTLE_MS: number = 100
+const PREFETCH_COUNT: number = 64
+const PREFETCH_THROTTLE_MS: number = 50
 const APPROX_ITEM_HEIGHT: number = 72
 // 手柄拖拽：拖拽位移超过该距离（约一行高）时与相邻项交换位置
 const DRAG_SWAP_DISTANCE: number = 60
@@ -517,7 +517,7 @@ export struct HomeContent {
     }
     if (songs.length > 0) {
       AudioMetadataService.getInstance().prefetchAlbumCovers(
-        songs, AlbumCoverSize.SMALL, CoverPriority.HIGH)
+        songs, AlbumCoverSize.SMALL, CoverPriority.MEDIUM)
     }
   }
 
@@ -539,6 +539,7 @@ export struct HomeContent {
             // 1) 内置手势触发区域是整行，无法限定在手柄上，且名称/时间排序下会误触；
             // 2) 条件注册 onMove 会在进入多选时整树重挂，长按后立刻拖拽会失效回弹。
             // 排序改为仅在拖拽手柄上通过 PanGesture 手动驱动（见 songItemRow）。
+            //TODO 手柄部分不需要长按就可以排序，歌曲项部分要长按才能拖动
             LazyForEach(this.displayDataSource, (item: DisplayItem, index: number) => {
               ListItem() {
                 if (item.isHeader) {
@@ -845,33 +846,25 @@ export struct HomeContent {
       AlbumCover({ song: item, coverWidth: this.scaledSize(36), coverHeight: this.scaledSize(36),
         coverRadius: this.scaledSize(6), decodeSize: AlbumCoverSize.SMALL })
         .margin({ right: this.scaledSize(10) })
-        .opacity(item.isAvailable ? 1 : 0.35)
 
       Column() {
         Text(item.title.length > 0 ? item.title : item.name)
           .fontSize(Math.round(15 * this.fontSizeScale))
-          .fontColor(item.isAvailable ? $r('app.color.text_primary') : $r('app.color.text_twenty_color'))
+          .fontColor(item.isAvailable ? $r('app.color.text_primary') : $r('app.color.text_sixty_color'))
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .width('100%')
-        if (!item.isAvailable) {
-          Text('文件不可访问，点击重新导入')
-            .fontSize(Math.round(11 * this.fontSizeScale))
-            .fontColor('#FF3B30')
-            .width('100%')
-        } else {
-          Row() {
-            Text(item.artist.length > 0 ? item.artist : '未知歌手')
+        Row() {
+          Text(item.artist.length > 0 ? item.artist : '未知歌手')
+            .fontSize(Math.round(12 * this.fontSizeScale))
+            .fontColor($r('app.color.text_sixty_color'))
+          if (item.folderName.length > 0 && item.isAvailable) {
+            Text(' · ' + item.folderName)
               .fontSize(Math.round(12 * this.fontSizeScale))
-              .fontColor($r('app.color.text_sixty_color'))
-            if (item.folderName.length > 0) {
-              Text(' · ' + item.folderName)
-                .fontSize(Math.round(12 * this.fontSizeScale))
-                .fontColor($r('app.color.text_twenty_color'))
-            }
+              .fontColor($r('app.color.text_twenty_color'))
           }
-          .width('100%')
         }
+        .width('100%')
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -920,7 +913,13 @@ export struct HomeContent {
     )
     .onClick(() => {
       if (!item.isAvailable) {
-        this.onPlusClick()
+        try {
+          this.getUIContext()?.getPromptAction().showToast({
+            message: '歌曲可能已被删除或移动'
+          })
+        } catch (e) {
+          Logger.error(TAG, 'unavailable toast failed')
+        }
         return
       }
       this.onSongTap(item)

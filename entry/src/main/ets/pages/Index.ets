@@ -13,7 +13,7 @@ import { SettingsContent } from './SettingsContent'
 import { DataService } from '../service/DataService'
 import { PoetryService } from '../service/PoetryService'
 import { ColorHelper } from '../common/utils/ColorHelper'
-import { createPageGlassMaterial, DEFAULT_GLASS_STYLE, glassImmersiveStyleFromStrength, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
+import { createPageGlassMaterial, createTabGlassMaterial, DEFAULT_GLASS_STYLE, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
 import Logger from '../common/utils/Logger'
 import { LrcEntry } from '../viewmodel/LrcEntry'
 import { parseKrcLyric, parseLrcLyric } from '../common/utils/LrcUtils'
@@ -137,30 +137,17 @@ struct MainPage {
     return this.glassBlurStrength * 0.5
   }
 
-  // 当前 GlassThickness 对应的 ImmersiveStyle 枚举（用于 uiMaterial 沉浸材质）
-  // 0=关闭（由 liquidGlassEnabled 判断不挂材质），1-100 映射官方五档
-  private liquidGlassImmersiveStyle(): uiMaterial.ImmersiveStyle {
-    return glassImmersiveStyleFromStrength(this.glassThickness)
-  }
-
   // ── 液态玻璃（沉浸式系统材质，HarmonyOS API 26+）──
-  // THICK：官方推荐用于底部悬浮组件的材质档位；用户在设置里可切换薄/常规/厚。
-  // interactive: true 开启交互形变（按压/拖动时 Q 弹反馈），
-  // lightEffect 开启光效反馈（明亮光芒跟手流动），color 传 undefined 跟随系统默认光色。
+  // 材质构造统一走 GlassUtil.createTabGlassMaterial 工厂，与设置页预览器共用同一份逻辑，
+  // 保证预览效果与真实渲染一致。
   // 颜色由 lightColorMode 控制（白/主题），仅在 tabTouchIndicator='light' 时开启，
   // 否则传 undefined 让 lightEffect 完全关闭，便于外层使用系统自带的按压白色蒙版。
-  private liquidGlassMaterial(): uiMaterial.Material {
+  private liquidGlassMaterial(): uiMaterial.Material | undefined {
     const useLight: boolean = this.tabTouchIndicator === 'light'
     const lightColor: string | undefined = useLight
       ? (this.lightColorMode === 'white' ? '#FFFFFF' : this.primaryColor)
       : undefined
-    return new uiMaterial.ImmersiveMaterial({
-      style: this.liquidGlassImmersiveStyle(),
-      interactive: this.interactive,
-      lightEffect: lightColor !== undefined ? { color: lightColor } : undefined,
-      colorInvert: this.colorInvert,
-      applyShadow: this.applyShadow
-    })
+    return createTabGlassMaterial(this.glassThickness, this.interactive, lightColor, this.colorInvert, this.applyShadow)
   }
 
   // 开启白色蒙版（按下雾蒙蒙的发白指示器）时返回 HoverEffect.Highlight，否则返回 None
@@ -178,7 +165,6 @@ struct MainPage {
   private liquidGlassTabMaterial(): uiMaterial.Material | undefined {
     return this.liquidGlassEnabled() ? this.liquidGlassMaterial() : undefined
   }
-
   private isSongInfoShort(): boolean {
     const artistLength: number = this.currentSongArtist.length > 0 ? this.currentSongArtist.length : 4
     return this.currentSongTitle.length + artistLength <= 16

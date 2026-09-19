@@ -4,7 +4,7 @@ import { SongInfo } from '../model/SongInfo'
 import { AlbumCoverLease, AlbumCoverSize, AudioMetadataService } from '../service/AudioMetadataService'
 
 const COVER_RETRY_MAX: number = 2
-const COVER_RETRY_BASE_MS: number = 800
+const COVER_RETRY_BASE_MS: number = 200
 
 @Component
 export struct AlbumCover {
@@ -109,6 +109,7 @@ export struct AlbumCover {
           .width('42%')
           .height('42%')
           .objectFit(ImageFit.Contain)
+          .fillColor(this.song.isAvailable ? $r('app.color.player_icon_color') : $r('app.color.text_sixty_color'))
       }
     }
     .width(this.coverWidth)

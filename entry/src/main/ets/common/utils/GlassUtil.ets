@@ -60,3 +60,20 @@ export function createPageGlassMaterial(strength: number): uiMaterial.Material |
     style: glassImmersiveStyleFromStrength(strength)
   })
 }
+
+// Tab 栏液态玻璃材质的统一构造工厂：Index 真实 Tab 栏与设置页预览器必须共用此函数，
+// 保证预览效果与真实渲染一致（style/interactive/lightEffect/colorInvert/applyShadow 全参数）。
+// lightColor 为 undefined 时关闭 lightEffect；能力不足或玻璃关闭返回 undefined。
+export function createTabGlassMaterial(strength: number, interactive: boolean,
+  lightColor: string | undefined, colorInvert: boolean, applyShadow: boolean): uiMaterial.Material | undefined {
+  if (!isLiquidGlassAvailable() || isGlassOff(strength)) {
+    return undefined
+  }
+  return new uiMaterial.ImmersiveMaterial({
+    style: glassImmersiveStyleFromStrength(strength),
+    interactive: interactive,
+    lightEffect: lightColor !== undefined ? { color: lightColor } : undefined,
+    colorInvert: colorInvert,
+    applyShadow: applyShadow
+  })
+}

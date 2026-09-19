@@ -56,11 +56,13 @@ export struct ControlAreaComponent {
   @State isShowMorePanel: boolean = false;
   @State isShowTimerPanel: boolean = false;
   @State isShowSongInfoPanel: boolean = false;
-  @State timerRemainingMinutes: number = 0;
+  @State timerRemainingSeconds: number = 0;
   @State timerIntervalID: number = -1;
   @State customHours: number = 0;
   @State customMinutes: number = 0;
   @State customSeconds: number = 0;
+  @State selectedPresetMinutes: number = -1;
+  @State isShowCustomPicker: boolean = false;
   @State edittingFieldIndex: number = -1;
   @State edittingValue: string = '';
   private scroller: Scroller = new Scroller();
@@ -90,6 +92,19 @@ export struct ControlAreaComponent {
       }
     }
     return ColorHelper.darken(this.primaryColor, 0.35)
+  }
+  private getPresetSelectedValue(): number {
+    return this.selectedPresetMinutes > 0 ? this.selectedPresetMinutes : Math.round(this.timerRemainingSeconds / 60)
+  }
+  private isEffectiveDarkMode(): boolean {
+    const themeMode: string = AppStorage.get<string>('uplayer_theme_mode') ?? 'system'
+    if (themeMode === 'dark') { return true }
+    if (themeMode === 'light') { return false }
+    try {
+      return uiAppearance.getDarkMode() === uiAppearance.DarkMode.ALWAYS_DARK
+    } catch (e) {
+      return false
+    }
   }
   private streamVolumeChangeCallback = (streamVolumeEvent: audio.StreamVolumeEvent): void => {
     const maxVol: number = 15;
@@ -214,22 +229,23 @@ export struct ControlAreaComponent {
   // ═══════════ 定时关闭 ═══════════
 
   private restoreTimerState(): void {
-    const remaining: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_TIMER_REMAINING) ?? 0
-    if (remaining > 0) {
-      this.timerRemainingMinutes = remaining
+    const stored: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_TIMER_REMAINING) ?? 0
+    if (stored > 0) {
+      const remaining: number = stored <= 90 ? stored * 60 : stored
+      this.timerRemainingSeconds = remaining
       this.startTimer()
     }
   }
 
   private startTimer(): void {
     this.stopTimer()
-    if (this.timerRemainingMinutes <= 0) {
+    if (this.timerRemainingSeconds <= 0) {
       return
     }
     this.timerIntervalID = setInterval(() => {
-      if (this.timerRemainingMinutes <= 1) {
+      if (this.timerRemainingSeconds <= 1) {
         this.stopTimer()
-        this.timerRemainingMinutes = 0
+        this.timerRemainingSeconds = 0
         AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_REMAINING, 0)
         try {
           this.avPlayerService.stop()
@@ -238,9 +254,9 @@ export struct ControlAreaComponent {
         }
         return
       }
-      this.timerRemainingMinutes--
-      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_REMAINING, this.timerRemainingMinutes)
-    }, 60000)
+      this.timerRemainingSeconds--
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_REMAINING, this.timerRemainingSeconds)
+    }, 1000)
   }
 
   private stopTimer(): void {
@@ -250,24 +266,33 @@ export struct ControlAreaComponent {
     }
   }
 
-  private setTimerMinutes(minutes: number): void {
-    if (minutes === this.timerRemainingMinutes) {
-      // 取消已选的相同时间
-      this.stopTimer()
-      this.timerRemainingMinutes = 0
-      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_REMAINING, 0)
-    } else {
-      this.timerRemainingMinutes = minutes
-      this.startTimer()
-      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_REMAINING, minutes)
-    }
-  }
-
-  private setCustomTimer(totalSeconds: number): void {
+  private setTimerSeconds(totalSeconds: number): void {
     if (totalSeconds <= 0) {
       return
     }
-    this.setTimerMinutes(Math.ceil(totalSeconds / 60))
+    this.timerRemainingSeconds = totalSeconds
+    this.startTimer()
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_REMAINING, totalSeconds)
+  }
+
+  private setTimerMinutes(minutes: number): void {
+    this.setTimerSeconds(minutes * 60)
+  }
+
+  private setCustomTimer(totalSeconds: number): void {
+    this.setTimerSeconds(totalSeconds)
+  }
+
+  private formatTimerCountdown(totalSeconds: number): string {
+    const h: number = Math.floor(totalSeconds / 3600)
+    const m: number = Math.floor((totalSeconds % 3600) / 60)
+    const s: number = totalSeconds % 60
+    const mm: string = m < 10 ? '0' + m : '' + m
+    const ss: string = s < 10 ? '0' + s : '' + s
+    if (h > 0) {
+      return `${h}:${mm}:${ss}`
+    }
+    return `${mm}:${ss}`
   }
 
   private startEditField(index: number, currentValue: string): void {
@@ -621,8 +646,8 @@ export struct ControlAreaComponent {
             .fontSize(this.scaledFont(14))
             .fontWeight(FontWeight.Medium)
             .fontColor(this.settingTextColor())
-          if (this.timerRemainingMinutes > 0) {
-            Text(`剩余 ${this.timerRemainingMinutes} 分钟`)
+          if (this.timerRemainingSeconds > 0) {
+            Text(`剩余 ${this.formatTimerCountdown(this.timerRemainingSeconds)}`)
               .fontSize(this.scaledFont(12))
               .fontColor(this.primaryColor)
           }
@@ -778,75 +803,143 @@ export struct ControlAreaComponent {
   @Builder
   timerPanelBuilder() {
     Column({ space: this.scaledSize(12) }) {
-      // 预置时间按钮
-      Row({ space: this.scaledSize(8) }) {
-        ForEach([15, 30, 60, 90], (min: number) => {
-          Column() {
-            Text(`${min}分钟`)
-              .fontSize(this.scaledFont(12))
-              .fontColor(this.timerRemainingMinutes === min ? '#FFFFFF' : this.settingTextColor())
+      if (this.isShowCustomPicker) {
+        DatePickerComponent({
+          options: {
+            displayMode: DisplayMode.TIME,
+            timeOptions: {
+              format: TimeFormat.HOUR_MINUTE_SECOND,
+              useMilitaryTime: true,
+              start: new Date(1970, 0, 1, 0, 0, 0),
+              end: new Date(1970, 0, 1, 24, 59, 59),
+              selected: new Date(1970, 0, 1, this.customHours, this.customMinutes, this.customSeconds),
+              onChange: (result: DatePickerComponentResult) => {
+                this.selectedPresetMinutes = -1
+                this.customHours = result.hour ?? 0
+                this.customMinutes = result.minute ?? 0
+                this.customSeconds = result.second ?? 0
+              }
+            }
           }
+        })
+        .width('100%')
+
+        Row({ space: this.scaledSize(8) }) {
+          Button('返回')
+            .layoutWeight(1)
+            .height(this.scaledSize(40))
+            .fontSize(this.scaledFont(14))
+            .fontColor(this.settingTextColor())
+            .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.08))
+            .borderRadius(this.scaledSize(10))
+            .onClick(() => {
+              this.isShowCustomPicker = false
+            })
+          Button('确认')
+            .layoutWeight(1)
+            .height(this.scaledSize(40))
+            .fontSize(this.scaledFont(14))
+            .fontColor(this.customHours * 3600 + this.customMinutes * 60 + this.customSeconds > 0 ? Color.White : 'rgba(255,255,255,0.4)')
+            .backgroundColor(this.customHours * 3600 + this.customMinutes * 60 + this.customSeconds > 0 ? this.primaryColor : '#555555')
+            .borderRadius(this.scaledSize(10))
+            .enabled(this.customHours * 3600 + this.customMinutes * 60 + this.customSeconds > 0)
+            .onClick(() => {
+              this.setTimerSeconds(this.customHours * 3600 + this.customMinutes * 60 + this.customSeconds)
+              this.customHours = 0
+              this.customMinutes = 0
+              this.customSeconds = 0
+              this.isShowCustomPicker = false
+            })
+        }
+        .width('100%')
+      } else {
+        Column({ space: this.scaledSize(6) }) {
+          ForEach([5, 10, 15, 20, 30, 45, 60], (min: number) => {
+            Row() {
+              Text(`${min}分钟`)
+                .fontSize(this.scaledFont(13))
+                .fontColor(this.getPresetSelectedValue() === min ? '#FFFFFF' : this.settingTextColor())
+
+              Blank()
+
+              if (this.timerRemainingSeconds > 0 && this.getPresetSelectedValue() === min) {
+                Text(this.formatTimerCountdown(this.timerRemainingSeconds))
+                  .fontSize(this.scaledFont(14))
+                  .fontWeight(FontWeight.Bold)
+                  .fontColor('#FFFFFF')
+              }
+            }
+            .width('100%')
+            .padding({
+              left: this.scaledSize(12),
+              right: this.scaledSize(12),
+              top: this.scaledSize(8),
+              bottom: this.scaledSize(8)
+            })
+            .backgroundColor(this.getPresetSelectedValue() === min ? this.primaryColor : (this.isEffectiveDarkMode() ? '#333333' : ColorHelper.hexToRgba(this.primaryColor, 0.08)))
+            .borderRadius(this.scaledSize(8))
+            .alignItems(VerticalAlign.Center)
+            .onClick(() => {
+              this.selectedPresetMinutes = this.selectedPresetMinutes === min ? -1 : min
+            })
+          }, (min: number) => min.toString())
+
+          Row() {
+            Text('自定义')
+              .fontSize(this.scaledFont(13))
+              .fontColor(this.settingTextColor())
+
+            Blank()
+
+            if (this.timerRemainingSeconds > 0 && this.getPresetSelectedValue() !== 5 && this.getPresetSelectedValue() !== 10 && this.getPresetSelectedValue() !== 15 && this.getPresetSelectedValue() !== 20 && this.getPresetSelectedValue() !== 30 && this.getPresetSelectedValue() !== 45 && this.getPresetSelectedValue() !== 60) {
+              Text(this.formatTimerCountdown(this.timerRemainingSeconds))
+                .fontSize(this.scaledFont(14))
+                .fontWeight(FontWeight.Bold)
+                .fontColor(this.isEffectiveDarkMode() ? '#FFFFFF' : this.primaryColor)
+            }
+          }
+          .width('100%')
           .padding({
             left: this.scaledSize(12),
             right: this.scaledSize(12),
-            top: this.scaledSize(6),
-            bottom: this.scaledSize(6)
+            top: this.scaledSize(8),
+            bottom: this.scaledSize(8)
           })
-          .backgroundColor(this.timerRemainingMinutes === min ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
-          .borderRadius(this.scaledSize(14))
+          .backgroundColor(Color.Transparent)
+          .border({ width: 1, color: this.isEffectiveDarkMode() ? 'rgba(255,255,255,0.15)' : ColorHelper.hexToRgba(this.primaryColor, 0.2), radius: this.scaledSize(8) })
+          .alignItems(VerticalAlign.Center)
           .onClick(() => {
-            this.setTimerMinutes(min)
+            this.isShowCustomPicker = true
           })
-        }, (min: number) => min.toString())
-      }
-      .width('100%')
-
-      // 自定义闹钟 — 官方 DatePickerComponent（时间滚轮，精确到秒）
-      DatePickerComponent({
-        options: {
-          displayMode: DisplayMode.TIME,
-          timeOptions: {
-            format: TimeFormat.HOUR_MINUTE_SECOND,
-            useMilitaryTime: true,
-            start: new Date(1970, 0, 1, 0, 0, 1),
-            end: new Date(1970, 0, 1, 24, 59, 59),
-            selected: new Date(1970, 0, 1, this.customHours, this.customMinutes, this.customSeconds),
-            onChange: (result: DatePickerComponentResult) => {
-              this.customHours = result.hour ?? 0
-              this.customMinutes = result.minute ?? 0
-              this.customSeconds = result.second ?? 0
-            }
-          }
         }
-      })
-      .width('100%')
 
-      // 确认按钮
-      Button('确认')
-        .width('100%')
-        .height(this.scaledSize(40))
-        .fontSize(this.scaledFont(14))
-        .fontColor(Color.White)
-        .backgroundColor(this.primaryColor)
-        .borderRadius(this.scaledSize(10))
-        .onClick(() => {
-          this.setCustomTimer(this.customHours * 3600 + this.customMinutes * 60 + this.customSeconds)
-        })
-
-      // 取消定时（有定时器时显示）
-      if (this.timerRemainingMinutes > 0) {
-        Button('取消定时')
+        Button('确认')
           .width('100%')
           .height(this.scaledSize(40))
           .fontSize(this.scaledFont(14))
-          .fontColor('#FF3B30')
-          .backgroundColor(Color.Transparent)
-          .border({ width: 1, color: '#FF3B30', radius: this.scaledSize(10) })
+          .fontColor(this.selectedPresetMinutes > 0 ? Color.White : 'rgba(255,255,255,0.4)')
+          .backgroundColor(this.selectedPresetMinutes > 0 ? this.primaryColor : '#555555')
+          .borderRadius(this.scaledSize(10))
+          .enabled(this.selectedPresetMinutes > 0)
           .onClick(() => {
-            this.stopTimer()
-            this.timerRemainingMinutes = 0
-            AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_REMAINING, 0)
+            this.setTimerSeconds(this.selectedPresetMinutes * 60)
+            this.selectedPresetMinutes = -1
           })
+
+        if (this.timerRemainingSeconds > 0) {
+          Button('取消定时')
+            .width('100%')
+            .height(this.scaledSize(40))
+            .fontSize(this.scaledFont(14))
+            .fontColor('#FF3B30')
+            .backgroundColor(Color.Transparent)
+            .border({ width: 1, color: '#FF3B30', radius: this.scaledSize(10) })
+            .onClick(() => {
+              this.stopTimer()
+              this.timerRemainingSeconds = 0
+              AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_REMAINING, 0)
+            })
+        }
       }
     }
     .width(StyleConstants.FULL_WIDTH)
@@ -1169,7 +1262,8 @@ struct MusicListContainer {
       Row() {
         Column() {
           Text(this.item.title)
-            .fontColor(this.selectIndex === this.index && this.isPlay ? Color.Red : $r('app.color.text_primary'))
+            .fontColor(!this.item.isAvailable ? $r('app.color.text_sixty_color') :
+              (this.selectIndex === this.index && this.isPlay ? Color.Red : $r('app.color.text_primary')))
             .fontSize(16)
             .margin({ bottom: $r('app.float.list_item_title_margin') })
             .maxLines(1)
@@ -1180,7 +1274,8 @@ struct MusicListContainer {
               .margin({ right: $r('app.float.list_item_image_margin') })
             Text(this.item.artist)
               .opacity($r('app.float.singer_opacity'))
-              .fontColor(this.selectIndex === this.index && this.isPlay ? Color.Red : $r('app.color.text_primary'))
+              .fontColor(!this.item.isAvailable ? $r('app.color.text_sixty_color') :
+                (this.selectIndex === this.index && this.isPlay ? Color.Red : $r('app.color.text_primary')))
               .fontSize(12)
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
