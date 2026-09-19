@@ -69,7 +69,8 @@ export class AppSettingsData {
   holdingHandEnabled: boolean = true
   // 底部栏跟手光效颜色：white=纯白光，theme=跟随主题色（暗黑默认白光，明亮默认主题色，由 SettingsDetailPage 按明暗模式初始化）
   lightColorMode: string = 'white'
-  // 底部栏点击/拖动指示器风格：light=跟手光效，mask=白色蒙版（与 light 互斥）
+  // 底部栏点击/拖动指示器风格：light=跟手光效，mask=白色蒙版，off=关闭，auto=自动检测
+  // auto：有鼠标/触控板的设备（鸿蒙 PC、外接鼠标）→ 白色蒙版，否则 → 关闭
   tabTouchIndicator: string = 'light'
   // 液态玻璃交互形变：按压/拖动时产生 Q 弹反馈
   interactive: boolean = true

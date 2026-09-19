@@ -23,6 +23,7 @@ import { AlbumCover } from '../component/AlbumCover'
 import { ColorConversion } from '../common/utils/ColorConversion'
 import { StyleConstants } from '../common/constants/StyleConstants'
 import { ImportProgressOverlay } from '../view/ImportProgressOverlay'
+import { KEY_HAS_POINTER_DEVICE, refreshPointerDeviceState, startPointerDeviceListener } from '../common/utils/InputDeviceUtil'
 
 const TAG = 'Index'
 
@@ -56,6 +57,8 @@ struct MainPage {
   @StorageLink('uplayer_glass_thickness') glassThickness: number = DEFAULT_GLASS_STYLE
   @StorageLink('uplayer_light_color_mode') lightColorMode: string = 'theme'
   @StorageLink('uplayer_tab_touch_indicator') tabTouchIndicator: string = 'light'
+  // 是否存在鼠标/触控板设备（「自动检测」模式：有→白色蒙版，无→关闭）
+  @StorageLink(KEY_HAS_POINTER_DEVICE) hasPointerDevice: boolean = false
   @StorageLink('uplayer_interactive') interactive: boolean = true
   @StorageLink('uplayer_color_invert') colorInvert: boolean = false
   @StorageLink('uplayer_apply_shadow') applyShadow: boolean = true
@@ -140,10 +143,19 @@ struct MainPage {
   // ── 液态玻璃（沉浸式系统材质，HarmonyOS API 26+）──
   // 材质构造统一走 GlassUtil.createTabGlassMaterial 工厂，与设置页预览器共用同一份逻辑，
   // 保证预览效果与真实渲染一致。
+  // 解析「底部栏触摸指示」实际生效值：
+  // off=关闭；auto=有鼠标/触控板设备（鸿蒙 PC、外接鼠标）→mask（白色蒙版），否则→off
+  private effectiveTouchIndicator(): string {
+    if (this.tabTouchIndicator === 'auto') {
+      return this.hasPointerDevice ? 'mask' : 'off'
+    }
+    return this.tabTouchIndicator
+  }
+
   // 颜色由 lightColorMode 控制（白/主题），仅在 tabTouchIndicator='light' 时开启，
   // 否则传 undefined 让 lightEffect 完全关闭，便于外层使用系统自带的按压白色蒙版。
   private liquidGlassMaterial(): uiMaterial.Material | undefined {
-    const useLight: boolean = this.tabTouchIndicator === 'light'
+    const useLight: boolean = this.effectiveTouchIndicator() === 'light'
     const lightColor: string | undefined = useLight
       ? (this.lightColorMode === 'white' ? '#FFFFFF' : this.primaryColor)
       : undefined
@@ -153,7 +165,7 @@ struct MainPage {
   // 开启白色蒙版（按下雾蒙蒙的发白指示器）时返回 HoverEffect.Highlight，否则返回 None
   // mask 模式下仅 Tab item 显示白色蒙版；light 模式下不做任何 hover 效果（避免白色蒙版）
   private bottomHoverEffect(): HoverEffect {
-    return this.tabTouchIndicator === 'mask' ? HoverEffect.Highlight : HoverEffect.None
+    return this.effectiveTouchIndicator() === 'mask' ? HoverEffect.Highlight : HoverEffect.None
   }
 
   // 仅当「玻璃样式 + 设备系统达到 API 26 + 厚度未关断」时启用真·液态玻璃；

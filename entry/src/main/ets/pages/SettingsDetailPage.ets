@@ -11,10 +11,10 @@ import { motion } from '@kit.MultimodalAwarenessKit'
 import { ColorConversion } from '../common/utils/ColorConversion'
 import {
   createBarGlassMaterial,
-  createTabGlassMaterial,
-  isLiquidGlassAvailable
+  createTabGlassMaterial
 } from '../common/utils/GlassUtil'
 import { StyleConstants } from '../common/constants/StyleConstants'
+import { KEY_HAS_POINTER_DEVICE } from '../common/utils/InputDeviceUtil'
 
 const TAG = 'SettingsDetailPage'
 const KEY_PRIMARY_COLOR = 'uplayer_primary_color'
@@ -36,6 +36,11 @@ interface ThemeOption {
 }
 
 interface TabStyleOption {
+  label: string
+  value: string
+}
+
+interface TouchIndicatorOption {
   label: string
   value: string
 }
@@ -62,8 +67,17 @@ struct SettingsDetailPage {
   @StorageLink('uplayer_color_invert') colorInvert: boolean = false
   @StorageLink('uplayer_apply_shadow') applyShadow: boolean = true
   @StorageLink('uplayer_system_component_glass') systemComponentGlass: boolean = true
+  // 是否存在鼠标/触控板设备（用于「自动检测」模式预览）
+  @StorageLink(KEY_HAS_POINTER_DEVICE) hasPointerDevice: boolean = false
   @State pageTitle: string = ''
   @State previewOnRight: boolean = false
+  // Tab 栏实时预览态：复刻 Index 真实 Tab 栏（可点击切换、悬停高亮、指示器弹簧动画）
+  @State previewTabIndex: number = 0
+  @State previewIndicatorOffset: number = 4
+  @State previewHoverTabIndex: number = -1
+  private previewTabWidth: number = 72
+  private previewTabGap: number = 6
+  private previewIndicatorInset: number = 4
   @State showColorPicker: boolean = false
   @State showGlassScope: boolean = false
   @State pickerHue: number = 210
@@ -108,6 +122,13 @@ struct SettingsDetailPage {
   private tabStyleOptions: TabStyleOption[] = [
     { label: '经典', value: 'classic' },
     { label: '玻璃', value: 'immersive' }
+  ]
+  // 底部栏触摸指示选项：关 / 白色蒙版 / 跟手光效 / 自动检测
+  private touchIndicatorOptions: TouchIndicatorOption[] = [
+    { label: '关', value: 'off' },
+    { label: '白色蒙版', value: 'mask' },
+    { label: '跟手光效', value: 'light' },
+    { label: '自动检测', value: 'auto' }
   ]
   private colorOptions: ThemeColorOption[] = [
     { name: '鸿蒙蓝', value: '#007DFF' },
@@ -203,12 +224,9 @@ struct SettingsDetailPage {
     this.refreshHoldingHandListener()
   }
 
-  // 统一预览方块规范：64×40 圆角方块，红→黄→绿→蓝渐变底 + 文字标签 + 1px 边框，
-  // 与设置页其他预览器（玻璃档位/饱和度/亮度/智感握姿）共用同尺寸同风格。
-  // 不同的是内部叠层：
-  //   - homeTopBlurPreview：渐变模糊 (linearGradientBlur) 强度随首页上端模糊强度变化
-  //   - glassStylePreview：模糊半径 + 液态玻璃材质叠加
-  //   - holdingHandPreview：左右切手示意
+  // 预览器说明：
+  //   - homeTopBlurPreview：渐变模糊 (linearGradientBlur) 方块，随「首页上端模糊强度」变化
+  //   - tabBarLivePreview：真实 Tab 栏实时预览（复刻 Index），随玻璃厚度/模糊强度/指示器深浅变化
   @Builder
   homeTopBlurPreview(): void {
     Stack({ alignContent: Alignment.Center }) {
@@ -247,52 +265,265 @@ struct SettingsDetailPage {
     .clip(true)
   }
 
-  @Builder
-  glassBlurPreview(): void {
-    Stack({ alignContent: Alignment.Center }) {
-      Text('沉浸光感')
-        .fontSize(this.scaledFont(12))
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryColor)
-        .letterSpacing(this.scaledSize(1))
-      Row()
-        .width('100%')
-        .height('100%')
-        .borderRadius(this.scaledSize(18))
-        .backgroundColor(Color.Transparent)
-        .backgroundEffect({
-          radius: this.glassBlurStrength * 0.5
-        })
-        .border({ width: 1, color: 'rgba(255,255,255,0.28)' })
-        .shadow({ radius: 12, color: ColorHelper.hexWithAlpha(this.primaryColor, '44') })
+  // ═══ 底部 Tab 栏实时预览：原封不动复刻 Index 真实 Tab 栏 ═══
+  // 结构/尺寸/材质/指示器/悬停/点击行为与 Index.customTabBar、Index.immersiveTabBar 完全一致，
+  // 仅把页面级状态（currentIndex/indicatorOffset/hoverTabIndex）替换为预览态，
+  // 玻璃厚度、模糊强度、指示器深浅三个滑块调节时可实时看到真实透视与磨砂效果。
+
+  // 预览用 Tab 材质：经典样式走 createBarGlassMaterial（与 Index.classicTabBarMaterial 同参），
+  // 玻璃样式走 createTabGlassMaterial 全参工厂（与 Index.liquidGlassMaterial 同参）
+  private previewClassicBarMaterial(): uiMaterial.Material | undefined {
+    return createBarGlassMaterial(this.glassThickness, this.interactive)
+  }
+
+  // 解析「底部栏触摸指示」实际生效值：auto=有鼠标/触控板→mask，否则→off
+  private effectiveTouchIndicator(): string {
+    if (this.settings.tabTouchIndicator === 'auto') {
+      return this.hasPointerDevice ? 'mask' : 'off'
     }
-    .width(this.scaledSize(82))
-    .height(this.scaledSize(36))
-    .borderRadius(this.scaledSize(18))
-    .clip(true)
+    return this.settings.tabTouchIndicator
+  }
+
+  private previewImmersiveBarMaterial(): uiMaterial.Material | undefined {
+    const useLight: boolean = this.effectiveTouchIndicator() === 'light'
+    const lightColor: string | undefined = useLight
+      ? (this.settings.lightColorMode === 'white' ? '#FFFFFF' : this.primaryColor)
+      : undefined
+    return createTabGlassMaterial(this.glassThickness, this.interactive, lightColor, this.colorInvert, this.applyShadow)
+  }
+
+  // 与 Index.glassBlurRadius 同公式：模糊强度 × 0.5
+  private previewGlassBlurRadius(): number {
+    return this.glassBlurStrength * 0.5
+  }
+
+  // 与 Index.selectedTabContentColor 同逻辑
+  private previewTabContentColor(): ResourceColor {
+    return this.isDark() ? '#FFFFFF' : ColorHelper.darken(this.primaryColor, 0.35)
+  }
+
+  // 与 Index.bottomHoverEffect 同逻辑：白色蒙版模式下才有按压高亮
+  private previewBottomHoverEffect(): HoverEffect {
+    return this.effectiveTouchIndicator() === 'mask' ? HoverEffect.Highlight : HoverEffect.None
+  }
+
+  // 预览内点击 Tab：与 Index.switchPage/updateIndicatorOffset 一致的弹簧动画
+  private switchPreviewTab(index: number): void {
+    if (index === this.previewTabIndex) {
+      return
+    }
+    this.getUIContext()?.animateTo({ curve: curves.springMotion(0.4, 0.8) }, () => {
+      this.previewTabIndex = index
+      this.previewIndicatorOffset =
+        this.scaledSize(this.previewIndicatorInset + index * (this.previewTabWidth + this.previewTabGap))
+    })
   }
 
   @Builder
-  tabIndicatorPreview(): void {
-    Row()
-      .width(this.scaledSize(82))
-      .height(this.scaledSize(36))
-      .borderRadius(this.scaledSize(18))
-      .shadow({
-        radius: 14,
-        color: ColorHelper.hexWithAlpha(this.primaryColor, this.indicatorAlpha(0.8)
-          .toString(16)
-          .padStart(2, '0'))
+  previewClassicTabBar(): void {
+    Stack({ alignContent: Alignment.BottomStart }) {
+      Row()
+        .width(this.scaledSize(this.previewTabWidth * 3 + this.previewTabGap * 2))
+        .height(this.scaledSize(40))
+        .margin({ bottom: this.scaledSize(10) })
+        .borderRadius(this.scaledSize(20))
+        .backgroundColor(Color.Transparent)
+        // 液态玻璃启用时 systemMaterial 接管渲染；否则回退 backgroundEffect 磨砂（与 Index 一致）
+        .backgroundEffect(this.previewClassicBarMaterial() !== undefined ? undefined : {
+          radius: this.previewGlassBlurRadius()
+        })
+        .systemMaterial(this.previewClassicBarMaterial())
+        .border({ width: 1, color: 'rgba(255,255,255,0.22)' })
+        .shadow({ radius: 18, color: ColorHelper.hexWithAlpha(this.primaryColor, '44'), offsetY: 5 })
+        .zIndex(0)
+
+      Row()
+        .width(this.scaledSize(this.previewTabWidth - 2 * this.previewIndicatorInset))
+        .height(this.scaledSize(36))
+        .borderRadius(this.scaledSize(18))
+        .alignItems(VerticalAlign.Center)
+        .margin({ left: this.previewIndicatorOffset, bottom: this.scaledSize(12) })
+        .shadow({
+          radius: 14,
+          color: ColorHelper.hexWithAlpha(this.primaryColor, this.indicatorAlpha(0.8)
+            .toString(16)
+            .padStart(2, '0')),
+          offsetX: 0,
+          offsetY: 0
+        })
+        .radialGradient({
+          center: ['50%', '50%'],
+          radius: '75%',
+          colors: [
+            [this.indicatorGradientColor(0.95), 0.0],
+            [this.indicatorGradientColor(0.75), 0.58],
+            [this.indicatorGradientColor(0.55), 1.0],
+          ]
+        })
+        .zIndex(1)
+
+      Row({ space: this.scaledSize(this.previewTabGap) }) {
+        this.previewTabItem(0, '首页', $r('app.media.ic_public_home'))
+        this.previewTabItem(1, '歌单', $r('app.media.ic_public_view_list'))
+        this.previewTabItem(2, '设置', $r('app.media.ic_public_settings'))
+      }
+      .margin({ bottom: this.scaledSize(10) })
+      .height(this.scaledSize(40))
+      .borderRadius(this.scaledSize(20))
+      .zIndex(2)
+    }
+    .alignSelf(ItemAlign.Center)
+    .height(this.scaledSize(60))
+  }
+
+  @Builder
+  previewImmersiveTabBar(): void {
+    Stack({ alignContent: Alignment.BottomStart }) {
+      Row()
+        .width(this.scaledSize(this.previewTabWidth - 2 * this.previewIndicatorInset))
+        .height(this.scaledSize(36))
+        .borderRadius(this.scaledSize(18))
+        .alignItems(VerticalAlign.Center)
+        .margin({ left: this.previewIndicatorOffset, bottom: this.scaledSize(12) })
+        .backgroundColor(ColorHelper.hexWithAlpha(this.primaryColor, '33'))
+
+      Row({ space: this.scaledSize(this.previewTabGap) }) {
+        this.previewImmersiveTabItem(0, '首页', $r('app.media.ic_public_home'))
+        this.previewImmersiveTabItem(1, '歌单', $r('app.media.ic_public_view_list'))
+        this.previewImmersiveTabItem(2, '设置', $r('app.media.ic_public_settings'))
+      }
+      .margin({ bottom: this.scaledSize(10) })
+      .height(this.scaledSize(40))
+      .borderRadius(this.scaledSize(20))
+      .backgroundColor(Color.Transparent)
+      // 液态玻璃启用时 systemMaterial 接管渲染；backgroundEffect 作为兜底模糊保留（与 Index 一致）
+      .backgroundEffect(this.isDark() || this.glassThickness <= 0 ? undefined : {
+        radius: this.previewGlassBlurRadius()
       })
-      .radialGradient({
-        center: ['50%', '50%'],
-        radius: '75%',
-        colors: [
-          [this.indicatorGradientColor(0.95), 0.0],
-          [this.indicatorGradientColor(0.75), 0.58],
-          [this.indicatorGradientColor(0.55), 1.0],
-        ]
-      })
+      .systemMaterial(this.previewImmersiveBarMaterial())
+      .border({ width: 1, color: 'rgba(255,255,255,0.22)' })
+      .shadow({ radius: 18, color: ColorHelper.hexWithAlpha(this.primaryColor, '44'), offsetY: 5 })
+    }
+    .alignSelf(ItemAlign.Center)
+    .height(this.scaledSize(60))
+  }
+
+  @Builder
+  previewTabItem(index: number, name: string, icon: Resource) {
+    Column() {
+      Image(icon)
+        .height(this.scaledSize(18))
+        .fillColor(this.previewTabIndex === index ? this.previewTabContentColor() :
+          $r('app.color.tab_content_secondary'))
+        .scale({
+          x: this.previewTabIndex === index ? 1.15 : 1.0,
+          y: this.previewTabIndex === index ? 1.15 : 1.0
+        })
+      Text(name)
+        .fontSize(9)
+        .fontColor(this.previewTabIndex === index ? this.previewTabContentColor() :
+          $r('app.color.tab_content_secondary'))
+        .margin({ top: this.scaledSize(2) })
+    }
+    .width(this.scaledSize(this.previewTabWidth))
+    .height(this.scaledSize(40))
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor(this.previewHoverTabIndex === index && this.effectiveTouchIndicator() === 'mask'
+      ? 'rgba(255,255,255,0.16)' : Color.Transparent)
+    .borderRadius(this.scaledSize(18))
+    .shadow({
+      radius: this.previewHoverTabIndex === index ? 14 : 0,
+      color: this.previewHoverTabIndex === index
+        ? ColorHelper.hexWithAlpha(this.primaryColor, '66') : Color.Transparent
+    })
+    .scale({
+      x: this.previewHoverTabIndex === index ? 1.06 : 1,
+      y: this.previewHoverTabIndex === index ? 1.06 : 1
+    })
+    .animation({ duration: StyleConstants.ANIMATION_HOVER_DURATION, curve: Curve.EaseOut })
+    .hoverEffect(this.previewBottomHoverEffect())
+    .onHover((isHover: boolean) => { this.previewHoverTabIndex = isHover ? index : -1 })
+    .onClick(() => {
+      this.switchPreviewTab(index)
+    })
+  }
+
+  @Builder
+  previewImmersiveTabItem(index: number, name: string, icon: Resource) {
+    Column() {
+      Image(icon)
+        .height(this.scaledSize(18))
+        .fillColor(this.previewTabIndex === index ? this.previewTabContentColor() :
+          $r('app.color.tab_content_secondary'))
+        .scale({
+          x: this.previewTabIndex === index ? 1.15 : 1.0,
+          y: this.previewTabIndex === index ? 1.15 : 1.0
+        })
+      Text(name)
+        .fontSize(9)
+        .fontColor(this.previewTabIndex === index ? this.previewTabContentColor() :
+          $r('app.color.tab_content_secondary'))
+        .margin({ top: this.scaledSize(2) })
+    }
+    .width(this.scaledSize(this.previewTabWidth))
+    .height(this.scaledSize(40))
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor(this.previewHoverTabIndex === index && this.effectiveTouchIndicator() === 'mask'
+      ? 'rgba(255,255,255,0.18)' : Color.Transparent)
+    .borderRadius(this.scaledSize(18))
+    .shadow({
+      radius: this.previewHoverTabIndex === index ? 16 : 0,
+      color: this.previewHoverTabIndex === index
+        ? ColorHelper.hexWithAlpha(this.primaryColor, '77') : Color.Transparent
+    })
+    .scale({
+      x: this.previewHoverTabIndex === index ? 1.06 : 1,
+      y: this.previewHoverTabIndex === index ? 1.06 : 1
+    })
+    .animation({ duration: StyleConstants.ANIMATION_HOVER_DURATION, curve: Curve.EaseOut })
+    .hoverEffect(this.previewBottomHoverEffect())
+    .onHover((isHover: boolean) => { this.previewHoverTabIndex = isHover ? index : -1 })
+    .onClick(() => {
+      this.switchPreviewTab(index)
+    })
+  }
+
+  // 预览容器：彩色渐变底衬 + 示例文字（模拟页面内容，让磨砂/液态玻璃的透视效果可见），
+  // Tab 栏居中悬浮其上；随底部栏样式设置切换经典/玻璃两种真实形态
+  @Builder
+  tabBarLivePreview(): void {
+    Stack({ alignContent: Alignment.Center }) {
+      Column({ space: this.scaledSize(4) }) {
+        Text('UPlayer')
+          .fontSize(this.scaledFont(16))
+          .fontWeight(FontWeight.Bold)
+          .fontColor('rgba(255,255,255,0.95)')
+          .letterSpacing(this.scaledSize(1))
+        Text('音乐 · 歌单 · 均衡器 · Aa 你好')
+          .fontSize(this.scaledFont(11))
+          .fontColor('rgba(255,255,255,0.75)')
+      }
+      .alignItems(HorizontalAlign.Center)
+
+      if (this.settings.tabStyle === 'immersive') {
+        this.previewImmersiveTabBar()
+      } else {
+        this.previewClassicTabBar()
+      }
+    }
+    .width('100%')
+    .height(this.scaledSize(104))
+    .borderRadius(this.scaledSize(12))
+    .linearGradient({
+      angle: 135,
+      colors: [
+        ['#FF5A5F', 0.0],
+        ['#FF9500', 0.35],
+        ['#34C759', 0.65],
+        ['#5AC8FA', 1.0]
+      ]
+    })
+    .clip(true)
   }
 
   private indicatorAlpha(base: number): number {
@@ -455,45 +686,6 @@ struct SettingsDetailPage {
     PageTransitionExit({ duration: StyleConstants.ANIMATION_SETTINGS_EXIT_DURATION, curve: Curve.EaseIn })
       .slide(SlideEffect.Right)
       .opacity(0)
-  }
-
-  // "玻璃厚度"滑块专用预览方块：只反映 systemMaterial（ImmersiveMaterial 五档），
-  // 不混入 backgroundEffect 磨砂（那由「模糊强度」滑块独立控制，见 glassBlurPreview）。
-  // 与 Index 真实 Tab 栏一致：经典样式走 createBarGlassMaterial（无光效/无材质阴影），
-  // 玻璃样式走 createTabGlassMaterial（含光效/反色/材质阴影）；厚度=0 / 能力不足时预览为纯透明方块。
-  private previewTabGlassMaterial(): uiMaterial.Material | undefined {
-    if (this.settings.tabStyle === 'classic') {
-      return createBarGlassMaterial(this.glassThickness, this.interactive)
-    }
-    const useLight: boolean = this.settings.tabTouchIndicator === 'light'
-    const lightColor: string | undefined = useLight
-      ? (this.settings.lightColorMode === 'white' ? '#FFFFFF' : this.primaryColor)
-      : undefined
-    return createTabGlassMaterial(this.glassThickness, this.interactive, lightColor, this.colorInvert, this.applyShadow)
-  }
-
-  @Builder
-  glassAdvancedPreview(focusLabel: string): void {
-    Stack({ alignContent: Alignment.Center }) {
-      Text(focusLabel)
-        .fontSize(this.scaledFont(12))
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryColor)
-        .letterSpacing(this.scaledSize(1))
-      Row()
-        .width('100%')
-        .height('100%')
-        .borderRadius(this.scaledSize(18))
-        .backgroundColor(Color.Transparent)
-        .systemMaterial(this.glassThickness > 0 && isLiquidGlassAvailable()
-          ? this.previewTabGlassMaterial() : undefined)
-        .border({ width: 1, color: 'rgba(255,255,255,0.28)' })
-        .shadow({ radius: 12, color: ColorHelper.hexWithAlpha(this.primaryColor, '44') })
-    }
-    .width(this.scaledSize(82))
-    .height(this.scaledSize(36))
-    .borderRadius(this.scaledSize(18))
-    .clip(true)
   }
 
     build() {
@@ -873,53 +1065,34 @@ struct SettingsDetailPage {
         .borderRadius(this.scaledSize(10))
       }
 
-      // 底部栏触摸指示：跟手光效 / 白色蒙版 二选一，互斥
+      // 底部栏触摸指示：关 / 白色蒙版 / 跟手光效 / 自动检测（auto=有鼠标设备→白色蒙版，否则关闭）
       Column() {
         Row() {
           this.subTitleRow('底部栏触摸指示')
           Blank()
-          Column() {
-            Text('跟手光效')
-              .fontSize(this.scaledFont(11))
-              .fontColor(this.settings.tabTouchIndicator === 'light'
-                ? '#FFFFFF' : this.settingInactiveTextColor())
-          }
-          .padding({
-            left: this.scaledSize(10),
-            right: this.scaledSize(10),
-            top: this.scaledSize(5),
-            bottom: this.scaledSize(5)
-          })
-          .backgroundColor(this.settings.tabTouchIndicator === 'light'
-            ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
-          .borderRadius(this.scaledSize(14))
-          .animation({ duration: 200, curve: Curve.EaseInOut })
-          .onClick(() => {
-            this.settings.tabTouchIndicator = 'light'
-            this.updateSetting()
-            AppStorage.setOrCreate('uplayer_tab_touch_indicator', 'light')
-          })
-          Column() {
-            Text('白色蒙版')
-              .fontSize(this.scaledFont(11))
-              .fontColor(this.settings.tabTouchIndicator === 'mask'
-                ? '#FFFFFF' : this.settingInactiveTextColor())
-          }
-          .padding({
-            left: this.scaledSize(10),
-            right: this.scaledSize(10),
-            top: this.scaledSize(5),
-            bottom: this.scaledSize(5)
-          })
-          .backgroundColor(this.settings.tabTouchIndicator === 'mask'
-            ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
-          .borderRadius(this.scaledSize(14))
-          .animation({ duration: 200, curve: Curve.EaseInOut })
-          .onClick(() => {
-            this.settings.tabTouchIndicator = 'mask'
-            this.updateSetting()
-            AppStorage.setOrCreate('uplayer_tab_touch_indicator', 'mask')
-          })
+          ForEach(this.touchIndicatorOptions, (opt: TouchIndicatorOption) => {
+            Column() {
+              Text(opt.label)
+                .fontSize(this.scaledFont(11))
+                .fontColor(this.settings.tabTouchIndicator === opt.value
+                  ? '#FFFFFF' : this.settingInactiveTextColor())
+            }
+            .padding({
+              left: this.scaledSize(10),
+              right: this.scaledSize(10),
+              top: this.scaledSize(5),
+              bottom: this.scaledSize(5)
+            })
+            .backgroundColor(this.settings.tabTouchIndicator === opt.value
+              ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+            .borderRadius(this.scaledSize(14))
+            .animation({ duration: 200, curve: Curve.EaseInOut })
+            .onClick(() => {
+              this.settings.tabTouchIndicator = opt.value
+              this.updateSetting()
+              AppStorage.setOrCreate('uplayer_tab_touch_indicator', opt.value)
+            })
+          }, (opt: TouchIndicatorOption) => opt.value)
         }
         .width('100%')
         .constraintSize({ minWidth: 0, maxWidth: '100%' })
@@ -962,56 +1135,141 @@ struct SettingsDetailPage {
       // 点击叹号弹窗说明玻璃效果所影响的所有位置
       Column() {
         this.groupTitle('高级样式', true, 'glass')
-        // 三个滑块共享同一预览器（焦点标签由当前激活滑轨决定）
-        Column({ space: this.scaledSize(6) }) {
-          Row() {
-            this.subTitleRow('玻璃厚度')
-            Blank()
-          }
-          .width('100%')
-          Text('控制玻璃材质的模糊强度：值越大越模糊，0 为关闭玻璃。调节时预览方块会实时反映效果。')
-            .fontSize(this.scaledFont(12))
-            .fontColor(this.settingSubTextColor())
+        // 玻璃厚度 / 模糊强度 / 指示器深浅三合一卡片：
+        // 顶部为真实 Tab 栏实时预览（复刻 Index，可点击/悬停），三个滑块调节时实时反映透视与磨砂效果
+        Column({ space: this.scaledSize(10) }) {
+          this.tabBarLivePreview()
+
+          Column({ space: this.scaledSize(6) }) {
+            Row() {
+              this.subTitleRow('玻璃厚度')
+              Blank()
+            }
             .width('100%')
-          Row({ space: this.scaledSize(12) }) {
-            if (!this.previewOnRight) {
-              this.glassAdvancedPreview('玻璃厚度')
-            }
-            Text('弱')
-              .fontSize(this.scaledFont(11))
-              .fontColor(this.settingTextColor())
-            Slider({
-              value: this.settings.glassThickness,
-              min: 0,
-              max: 100,
-              step: 1,
-              style: SliderStyle.OutSet
-            })
-              .layoutWeight(1)
-              .selectedColor(this.primaryColor)
-              .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-              .blockColor('#FFFFFF')
-              .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
-              .blockBorderColor(this.primaryColor)
-              .blockBorderWidth(3)
-              .onChange((value: number, mode: SliderChangeMode) => {
-                this.settings.glassThickness = value
-                this.glassThickness = value
-                if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-                  this.updateSetting()
-                }
+            Text('控制玻璃材质的模糊强度：值越大越模糊，0 为关闭玻璃。')
+              .fontSize(this.scaledFont(12))
+              .fontColor(this.settingSubTextColor())
+              .width('100%')
+            Row({ space: this.scaledSize(12) }) {
+              Text('弱')
+                .fontSize(this.scaledFont(11))
+                .fontColor(this.settingTextColor())
+              Slider({
+                value: this.settings.glassThickness,
+                min: 0,
+                max: 100,
+                step: 1,
+                style: SliderStyle.OutSet
               })
-            Text('强')
-              .fontSize(this.scaledFont(11))
-              .fontColor(this.settingTextColor())
-            if (this.previewOnRight) {
-              Blank().width(this.scaledSize(14))
-              this.glassAdvancedPreview('玻璃厚度')
+                .layoutWeight(1)
+                .selectedColor(this.primaryColor)
+                .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+                .blockColor('#FFFFFF')
+                .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
+                .blockBorderColor(this.primaryColor)
+                .blockBorderWidth(3)
+                .onChange((value: number, mode: SliderChangeMode) => {
+                  this.settings.glassThickness = value
+                  this.glassThickness = value
+                  if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+                    this.updateSetting()
+                  }
+                })
+              Text('强')
+                .fontSize(this.scaledFont(11))
+                .fontColor(this.settingTextColor())
             }
+            .width('100%')
+            .alignItems(VerticalAlign.Center)
+            .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
           }
           .width('100%')
-          .alignItems(VerticalAlign.Center)
-          .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
+
+          Column({ space: this.scaledSize(6) }) {
+            Row() {
+              this.subTitleRow('Tab栏与播控条模糊强度')
+              Blank()
+            }
+            .width('100%')
+            Text('控制底部 Tab 栏与迷你播控条的磨砂模糊半径，两种 Tab 风格下均生效；玻璃模式下作为液态玻璃的兜底磨砂层，与玻璃厚度互不影响。')
+              .fontSize(this.scaledFont(12))
+              .fontColor(this.settingSubTextColor())
+              .width('100%')
+            Row({ space: this.scaledSize(12) }) {
+              Text('弱')
+                .fontSize(this.scaledFont(11))
+                .fontColor(this.settingTextColor())
+              Slider({
+                value: this.settings.glassBlurStrength,
+                min: 0,
+                max: 100,
+                step: 1,
+                style: SliderStyle.OutSet
+              })
+                .layoutWeight(1)
+                .selectedColor(this.primaryColor)
+                .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+                .blockColor('#FFFFFF')
+                .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
+                .blockBorderColor(this.primaryColor)
+                .blockBorderWidth(3)
+                .onChange((value: number, mode: SliderChangeMode) => {
+                  this.settings.glassBlurStrength = value
+                  this.glassBlurStrength = value
+                  if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+                    this.updateSetting()
+                  }
+                })
+              Text('强')
+                .fontSize(this.scaledFont(11))
+                .fontColor(this.settingTextColor())
+            }
+            .width('100%')
+            .alignItems(VerticalAlign.Center)
+            .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
+          }
+          .width('100%')
+
+          Column({ space: this.scaledSize(6) }) {
+            Row() {
+              this.subTitleRow('经典 Tab 指示器')
+              Blank()
+            }
+            .width('100%')
+            Row({ space: this.scaledSize(12) }) {
+              Text('浅')
+                .fontSize(this.scaledFont(11))
+                .fontColor(this.settingTextColor())
+              Slider({
+                value: this.settings.tabIndicatorOpacity,
+                min: 0,
+                max: 100,
+                step: 1,
+                style: SliderStyle.OutSet
+              })
+                .layoutWeight(1)
+                .selectedColor(this.primaryColor)
+                .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+                .blockColor('#FFFFFF')
+                .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
+                .blockBorderColor(this.primaryColor)
+                .blockBorderWidth(3)
+                .onChange((value: number, mode: SliderChangeMode) => {
+                  this.settings.tabIndicatorOpacity = value
+                  this.tabIndicatorOpacity = value
+                  if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+                    this.updateSetting()
+                  }
+                })
+              Text('深')
+                .fontSize(this.scaledFont(11))
+                .fontColor(this.settingTextColor())
+            }
+            .width('100%')
+            .alignItems(VerticalAlign.Center)
+            .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
+          }
+          .width('100%')
         }
         .width('100%')
         .padding({
@@ -1206,138 +1464,11 @@ struct SettingsDetailPage {
           top: this.scaledSize(10),
           left: this.scaledSize(14),
           right: this.scaledSize(14),
-          bottom: this.scaledSize(5)
-        })
-        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-        .borderRadius(this.scaledSize(10))
-
-        Column({ space: this.scaledSize(6) }) {
-          Row() {
-            this.subTitleRow('Tab栏与播控条模糊强度')
-            Blank()
-          }
-          .width('100%')
-          Text('控制底部 Tab 栏与迷你播控条的磨砂模糊半径，两种 Tab 风格下均生效；玻璃模式下作为液态玻璃的兜底磨砂层，与玻璃厚度互不影响。')
-            .fontSize(this.scaledFont(12))
-            .fontColor(this.settingSubTextColor())
-            .width('100%')
-          Row({ space: this.scaledSize(12) }) {
-            if (!this.previewOnRight) {
-              this.glassBlurPreview()
-            }
-            Text('弱')
-              .fontSize(this.scaledFont(11))
-              .fontColor(this.settingTextColor())
-              .margin({
-                left: this.previewOnRight ? 0 : this.scaledSize(14),
-                right: this.scaledSize(8)
-              })
-            Slider({
-              value: this.settings.glassBlurStrength,
-              min: 0,
-              max: 100,
-              step: 1,
-              style: SliderStyle.OutSet
-            })
-              .layoutWeight(1)
-              .selectedColor(this.primaryColor)
-              .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-              .blockColor('#FFFFFF')
-              .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
-              .blockBorderColor(this.primaryColor)
-              .blockBorderWidth(3)
-              .onChange((value: number, mode: SliderChangeMode) => {
-                this.settings.glassBlurStrength = value
-                this.glassBlurStrength = value
-                if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-                  this.updateSetting()
-                }
-              })
-            Text('强')
-              .fontSize(this.scaledFont(11))
-              .fontColor(this.settingTextColor())
-              .margin({ left: this.scaledSize(8) })
-            if (this.previewOnRight) {
-              Blank()
-                .width(this.scaledSize(14))
-              this.glassBlurPreview()
-            }
-          }
-          .width('100%')
-          .alignItems(VerticalAlign.Center)
-          .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
-        }
-        .width('100%')
-        .padding({
-          top: this.scaledSize(5),
-          left: this.scaledSize(14),
-          right: this.scaledSize(14),
-          bottom: this.scaledSize(5)
-        })
-        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-        .borderRadius(this.scaledSize(10))
-
-        Column({ space: this.scaledSize(6) }) {
-          Row() {
-            this.subTitleRow('经典 Tab 指示器')
-            Blank()
-          }
-          .width('100%')
-          Row({ space: this.scaledSize(12) }) {
-            if (!this.previewOnRight) {
-              this.tabIndicatorPreview()
-            }
-            Text('浅')
-              .fontSize(this.scaledFont(11))
-              .fontColor(this.settingTextColor())
-              .margin({
-                left: this.previewOnRight ? 0 : this.scaledSize(14),
-                right: this.scaledSize(8)
-              })
-            Slider({
-              value: this.settings.tabIndicatorOpacity,
-              min: 0,
-              max: 100,
-              step: 1,
-              style: SliderStyle.OutSet
-            })
-              .layoutWeight(1)
-              .selectedColor(this.primaryColor)
-              .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-              .blockColor('#FFFFFF')
-              .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
-              .blockBorderColor(this.primaryColor)
-              .blockBorderWidth(3)
-              .onChange((value: number, mode: SliderChangeMode) => {
-                this.settings.tabIndicatorOpacity = value
-                this.tabIndicatorOpacity = value
-                if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-                  this.updateSetting()
-                }
-              })
-            Text('深')
-              .fontSize(this.scaledFont(11))
-              .fontColor(this.settingTextColor())
-              .margin({ left: this.scaledSize(8) })
-            if (this.previewOnRight) {
-              Blank()
-                .width(this.scaledSize(14))
-              this.tabIndicatorPreview()
-            }
-          }
-          .width('100%')
-          .alignItems(VerticalAlign.Center)
-          .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
-        }
-        .width('100%')
-        .padding({
-          top: this.scaledSize(5),
-          left: this.scaledSize(14),
-          right: this.scaledSize(14),
           bottom: this.scaledSize(10)
         })
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
         .borderRadius(this.scaledSize(10))
+        // 「Tab栏与播控条模糊强度」「经典 Tab 指示器」已并入上方「高级样式」组的 Tab 实时预览卡片
       }
       .width('100%')
 
