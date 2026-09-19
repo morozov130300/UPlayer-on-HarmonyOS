@@ -74,7 +74,10 @@ export class SongInfo {
     }
     const pathDotIdx: number = decodedPath.lastIndexOf('.')
     song.lyricPath = pathDotIdx > 0 ? decodedPath.substring(0, pathDotIdx) + '.lrc' : ''
-    song.lyricUri = pathDotIdx > 0 ? filePath.substring(0, pathDotIdx) + '.lrc' : ''
+    // lyricUri 基于未解码 URI 单独计算索引：解码/未编码路径长度可能不同（中文、空格等会被 percent-encode），
+    // 混用两边的索引会拼出错误路径导致歌词文件永远找不到（ENOENT）
+    const uriDotIdx: number = filePath.lastIndexOf('.')
+    song.lyricUri = uriDotIdx > 0 ? filePath.substring(0, uriDotIdx) + '.lrc' : ''
     return song
   }
 }
