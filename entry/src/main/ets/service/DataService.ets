@@ -625,7 +625,7 @@ export class DataService {
       let rawTabIndicatorOpacity: Object | undefined = r['tabIndicatorOpacity']
       s.tabIndicatorOpacity = rawTabIndicatorOpacity !== undefined ? rawTabIndicatorOpacity as number : 50
       // 玻璃风格细节（带迁移默认值，老数据走默认值不会破坏既有体验）
-      // glassThickness：新字段，0-100 连续值直接映射 ImmersiveStyle 档位
+      // glassThickness：0=关闭玻璃，1-100 均匀映射官方 ImmersiveStyle 五档
       // glassStyle：旧字段（已废弃），兼容老数据时迁移到 glassThickness
       let rawGlassThickness: Object | undefined = r['glassThickness']
       s.glassThickness = rawGlassThickness !== undefined ? Math.max(0, Math.min(100, rawGlassThickness as number)) : 50

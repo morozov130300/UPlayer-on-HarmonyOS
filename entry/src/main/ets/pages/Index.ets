@@ -13,7 +13,7 @@ import { SettingsContent } from './SettingsContent'
 import { DataService } from '../service/DataService'
 import { PoetryService } from '../service/PoetryService'
 import { ColorHelper } from '../common/utils/ColorHelper'
-import { createPageGlassMaterial, DEFAULT_GLASS_STYLE, glassBlurStyleFromStrength, glassImmersiveStyleFromStrengthSmooth, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
+import { createPageGlassMaterial, DEFAULT_GLASS_STYLE, glassImmersiveStyleFromStrength, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
 import Logger from '../common/utils/Logger'
 import { LrcEntry } from '../viewmodel/LrcEntry'
 import { parseKrcLyric, parseLrcLyric } from '../common/utils/LrcUtils'
@@ -137,14 +137,10 @@ struct MainPage {
     return this.glassBlurStrength * 0.5
   }
 
-  // 当前 GlassStyle 字符串对应的 BlurStyle 枚举（用于 backgroundBlurStyle 通用属性）
-  private glassBlurStyle(): BlurStyle {
-    return glassBlurStyleFromStrength(this.glassThickness)
-  }
-
   // 当前 GlassThickness 对应的 ImmersiveStyle 枚举（用于 uiMaterial 沉浸材质）
+  // 0=关闭（由 liquidGlassEnabled 判断不挂材质），1-100 映射官方五档
   private liquidGlassImmersiveStyle(): uiMaterial.ImmersiveStyle {
-    return glassImmersiveStyleFromStrengthSmooth(this.glassThickness)
+    return glassImmersiveStyleFromStrength(this.glassThickness)
   }
 
   // ── 液态玻璃（沉浸式系统材质，HarmonyOS API 26+）──
@@ -173,10 +169,10 @@ struct MainPage {
     return this.tabTouchIndicator === 'mask' ? HoverEffect.Highlight : HoverEffect.None
   }
 
-  // 仅当「玻璃样式 + 设备系统达到 API 26」时启用真·液态玻璃；
-  // 其余情况（经典样式、老系统）回退到原有 backgroundEffect 玻璃模糊。
+  // 仅当「玻璃样式 + 设备系统达到 API 26 + 厚度未关断」时启用真·液态玻璃；
+  // 其余情况（经典样式、老系统、厚度为 0）回退到原有 backgroundEffect 玻璃模糊。
   private liquidGlassEnabled(): boolean {
-    return this.tabStyle === 'immersive' && isLiquidGlassAvailable()
+    return this.tabStyle === 'immersive' && isLiquidGlassAvailable() && this.glassThickness > 0
   }
 
   private liquidGlassTabMaterial(): uiMaterial.Material | undefined {
@@ -303,8 +299,8 @@ struct MainPage {
       .borderRadius(this.scaledSize(20))
       .backgroundColor(Color.Transparent)
       // 液态玻璃启用时 systemMaterial 接管渲染；backgroundEffect 作为兜底模糊保留，
-      // 确保 systemMaterial 低档位时 Tab 栏仍有半透明磨砂背景
-      .backgroundEffect(this.isDarkTheme() ? undefined : {
+      // 确保 systemMaterial 低档位时 Tab 栏仍有半透明磨砂背景；厚度关断(0)时一并关闭
+      .backgroundEffect(this.isDarkTheme() || this.glassThickness <= 0 ? undefined : {
         radius: this.glassBlurRadius()
       })
       // 液态玻璃：沉浸式系统材质 + 光效跟手 + 交互形变；能力不足时传 undefined 关闭
@@ -552,7 +548,7 @@ struct MainPage {
     .backgroundColor(Color.Transparent)
     // 玻璃样式 + 暗黑模式 + 非 API 26 时不应用 backgroundEffect，保持纯黑底；
     // 真机 API 26+ 由 systemMaterial 接管；浅色模式保留原玻璃模糊回退
-    .backgroundEffect(this.tabStyle === 'immersive' && !this.isDarkTheme() ? {
+    .backgroundEffect(this.tabStyle === 'immersive' && !this.isDarkTheme() && this.glassThickness > 0 ? {
       radius: this.glassBlurRadius()
     } : undefined)
     .systemMaterial(this.tabStyle === 'immersive' ? this.liquidGlassTabMaterial() : undefined)

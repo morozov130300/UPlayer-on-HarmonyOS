@@ -58,7 +58,6 @@ struct SettingsDetailPage {
   @StorageLink('uplayer_tab_indicator_opacity') tabIndicatorOpacity: number = 50
   @StorageLink('uplayer_interactive') interactive: boolean = true
   @StorageLink('uplayer_glass_thickness') glassThickness: number = 50
-  @StorageLink('uplayer_interactive') interactive: boolean = true
   @StorageLink('uplayer_color_invert') colorInvert: boolean = false
   @StorageLink('uplayer_apply_shadow') applyShadow: boolean = true
   @State pageTitle: string = ''
@@ -980,7 +979,7 @@ struct SettingsDetailPage {
             Blank()
           }
           .width('100%')
-          Text('控制玻璃材质的模糊强度：值越大越模糊。调节时预览方块会实时反映效果。')
+          Text('控制玻璃材质的模糊强度：值越大越模糊，0 为关闭玻璃。调节时预览方块会实时反映效果。')
             .fontSize(this.scaledFont(12))
             .fontColor(this.settingSubTextColor())
             .width('100%')
