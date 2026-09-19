@@ -5,7 +5,7 @@ import Logger from './Logger'
 const TAG: string = 'InputDeviceUtil'
 
 // AppStorage 键：是否存在指针设备（鼠标/触控板）。
-// 「底部栏触摸指示=自动检测」依赖此值：有指针设备（鸿蒙 PC、外接触控板）→ 白色蒙版；否则 → 关。
+// 「底部栏触摸指示」的「白色蒙版」开关依赖此值显隐：有指针设备才显示，否则隐藏。
 export const KEY_HAS_POINTER_DEVICE: string = 'uplayer_has_pointer_device'
 
 // 判断某个输入设备是否属于指针设备（鼠标/触控板）
