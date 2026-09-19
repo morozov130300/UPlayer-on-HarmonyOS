@@ -911,7 +911,7 @@ struct SettingsDetailPage {
           .height(this.scaledSize(30))
           .fontColor('#FFFFFF')
           .backgroundColor(this.primaryColor)
-          .borderRadius(this.scaledSize(10))
+          .borderRadius(this.scaledSize(15))
           .onClick(() => {
             this.showGlassScope = false
           })
