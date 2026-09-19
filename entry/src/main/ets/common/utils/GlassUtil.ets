@@ -43,9 +43,36 @@ export function glassImmersiveStyleFromStrength(value: number): uiMaterial.Immer
   return uiMaterial.ImmersiveStyle.ULTRA_THICK
 }
 
-// API 26+ 才能用 systemMaterial / uiMaterial.ImmersiveMaterial；老设备自动降级
+// API 26+ 才能用 systemMaterial / uiMaterial.ImmersiveMaterial；老设备自动降级。
+// 双保险：除 API 版本外还要求设备声明支持 ImmersiveMaterial（isImmersiveMaterialSupported
+// 为 false 时挂材质不生效，如部分模拟器/2in1 设备）。该 API 26 才存在，必须先过版本判断再调用。
 export function isLiquidGlassAvailable(): boolean {
-  return deviceInfo.apiAvailable('26.0.0')
+  if (!deviceInfo.apiAvailable('26.0.0')) {
+    return false
+  }
+  try {
+    return uiMaterial.isImmersiveMaterialSupported()
+  } catch (e) {
+    return false
+  }
+}
+
+// 设备算力材质档位（EXQUISITE 高 / GENTLE 中 / SMOOTH 低）；API 26 以下或查询失败返回 undefined
+export function getDeviceMaterialLevel(): uiMaterial.MaterialLevel | undefined {
+  if (!deviceInfo.apiAvailable('26.0.0')) {
+    return undefined
+  }
+  try {
+    return uiMaterial.getGlobalMaterialLevel()
+  } catch (e) {
+    return undefined
+  }
+}
+
+// 低算力设备（SMOOTH）：ImmersiveStyle 档位不生效，材质面退化为纯色/边框/阴影，
+// 此时组件侧必须保留 backgroundEffect 兜底模糊维持可读性
+export function isLowPowerGlassDevice(): boolean {
+  return getDeviceMaterialLevel() === uiMaterial.MaterialLevel.SMOOTH
 }
 
 // 页面级背景只用档位，不开启 interactive 与 lightEffect：
@@ -75,5 +102,32 @@ export function createTabGlassMaterial(strength: number, interactive: boolean,
     lightEffect: lightColor !== undefined ? { color: lightColor } : undefined,
     colorInvert: colorInvert,
     applyShadow: applyShadow
+  })
+}
+
+// 底部栏/多选操作栏等横向条状组件的液态玻璃材质工厂（API 26+）：
+// - interactive 复用全局「交互形变」开关控制 Q 弹形变
+// - applyShadow 固定关闭：这些组件均有手写 shadow 投影设计，避免材质阴影覆盖
+// - 不开 lightEffect / colorInvert（与页面级 createPageGlassMaterial 策略一致）
+// 低算力设备（SMOOTH）返回 undefined，让组件保留 backgroundEffect 兜底
+export function createBarGlassMaterial(strength: number, interactive: boolean): uiMaterial.Material | undefined {
+  if (!isLiquidGlassAvailable() || isGlassOff(strength) || isLowPowerGlassDevice()) {
+    return undefined
+  }
+  return new uiMaterial.ImmersiveMaterial({
+    style: glassImmersiveStyleFromStrength(strength),
+    interactive: interactive,
+    applyShadow: false
+  })
+}
+
+// Toast 等系统组件调用级 systemMaterial 专用（API 26+）：
+// 仅档位，无交互形变（Toast 是瞬时提示，形变无意义）；材质默认阴影由系统接管
+export function createToastGlassMaterial(strength: number): uiMaterial.Material | undefined {
+  if (!isLiquidGlassAvailable() || isGlassOff(strength) || isLowPowerGlassDevice()) {
+    return undefined
+  }
+  return new uiMaterial.ImmersiveMaterial({
+    style: glassImmersiveStyleFromStrength(strength)
   })
 }

@@ -77,6 +77,8 @@ export class AppSettingsData {
   colorInvert: boolean = false
   // 材质阴影：启用时材质自带阴影效果，优先于 shadow 通用属性
   applyShadow: boolean = true
+  // 系统组件液态玻璃：Toast 等调用级 systemMaterial 的总开关（API 26+ 且设备支持才实际生效）
+  systemComponentGlass: boolean = true
   }
 
 export class DataService {
@@ -653,6 +655,8 @@ export class DataService {
       s.colorInvert = rawColorInvert !== undefined ? rawColorInvert as boolean : false
       let rawApplyShadow: Object | undefined = r['applyShadow']
       s.applyShadow = rawApplyShadow !== undefined ? rawApplyShadow as boolean : true
+      let rawSystemComponentGlass: Object | undefined = r['systemComponentGlass']
+      s.systemComponentGlass = rawSystemComponentGlass !== undefined ? rawSystemComponentGlass as boolean : true
       if (eqBandsMigrated) {
         this.saveSettings(s)
       }
@@ -692,6 +696,7 @@ export class DataService {
     r['interactive'] = settings.interactive
     r['colorInvert'] = settings.colorInvert
     r['applyShadow'] = settings.applyShadow
+    r['systemComponentGlass'] = settings.systemComponentGlass
     this.getPref().preferencesPut(KEY_SETTINGS, JSON.stringify(r))
     AppStorage.setOrCreate(KEY_SETTINGS, settings)
     AppStorage.setOrCreate('uplayer_fade_in_out', settings.fadeInOut)
@@ -918,6 +923,7 @@ export class DataService {
     AppStorage.setOrCreate('uplayer_interactive', settings.interactive)
     AppStorage.setOrCreate('uplayer_color_invert', settings.colorInvert)
     AppStorage.setOrCreate('uplayer_apply_shadow', settings.applyShadow)
+    AppStorage.setOrCreate('uplayer_system_component_glass', settings.systemComponentGlass)
     this.activatePersistedUris()
     return settings
   }

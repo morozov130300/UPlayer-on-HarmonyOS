@@ -13,7 +13,7 @@ import { SettingsContent } from './SettingsContent'
 import { DataService } from '../service/DataService'
 import { PoetryService } from '../service/PoetryService'
 import { ColorHelper } from '../common/utils/ColorHelper'
-import { createPageGlassMaterial, createTabGlassMaterial, DEFAULT_GLASS_STYLE, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
+import { createBarGlassMaterial, createTabGlassMaterial, DEFAULT_GLASS_STYLE, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
 import Logger from '../common/utils/Logger'
 import { LrcEntry } from '../viewmodel/LrcEntry'
 import { parseKrcLyric, parseLrcLyric } from '../common/utils/LrcUtils'
@@ -165,6 +165,17 @@ struct MainPage {
   private liquidGlassTabMaterial(): uiMaterial.Material | undefined {
     return this.liquidGlassEnabled() ? this.liquidGlassMaterial() : undefined
   }
+
+  // 经典样式 Tab 栏的液态玻璃材质（API 26+ 全设备能力，与 tabStyle 解耦）：
+  // 能力不足/玻璃关断/低算力设备返回 undefined，由调用处保留 backgroundEffect 兜底
+  private classicTabBarMaterial(): uiMaterial.Material | undefined {
+    return this.tabStyle === 'classic' ? createBarGlassMaterial(this.glassThickness, this.interactive) : undefined
+  }
+
+  // 底部播放信息栏的液态玻璃材质：与磨砂层一致，不区分 Tab 风格，两种样式统一挂载
+  private bottomBarGlassMaterial(): uiMaterial.Material | undefined {
+    return createBarGlassMaterial(this.glassThickness, this.interactive)
+  }
   private isSongInfoShort(): boolean {
     const artistLength: number = this.currentSongArtist.length > 0 ? this.currentSongArtist.length : 4
     return this.currentSongTitle.length + artistLength <= 16
@@ -220,9 +231,11 @@ struct MainPage {
         .margin({ bottom: this.scaledSize(10) })
         .borderRadius(this.scaledSize(20))
         .backgroundColor(Color.Transparent)
-        .backgroundEffect({
+        // 液态玻璃启用时 systemMaterial 接管渲染；否则回退 backgroundEffect 磨砂
+        .backgroundEffect(this.classicTabBarMaterial() !== undefined ? undefined : {
           radius: this.glassBlurRadius()
         })
+        .systemMaterial(this.classicTabBarMaterial())
         .border({ width: 1, color: 'rgba(255,255,255,0.22)' })
         .shadow({ radius: 18, color: ColorHelper.hexWithAlpha(this.primaryColor, '44'), offsetY: 5 })
         .zIndex(0)
@@ -284,9 +297,9 @@ struct MainPage {
       .height(this.scaledSize(40))
       .borderRadius(this.scaledSize(20))
       .backgroundColor(Color.Transparent)
-      // 液态玻璃启用时 systemMaterial 接管渲染；backgroundEffect 作为兜底模糊保留，
-      // 确保 systemMaterial 低档位时 Tab 栏仍有半透明磨砂背景；厚度关断(0)时一并关闭
-      .backgroundEffect(this.isDarkTheme() || this.glassThickness <= 0 ? undefined : {
+      // 液态玻璃启用时 systemMaterial 接管渲染；backgroundEffect 作为兜底磨砂层保留。
+      // 磨砂层只由「模糊强度」控制（与玻璃厚度解耦）：强度为 0 才关闭，暗黑模式不挂
+      .backgroundEffect(this.isDarkTheme() || this.glassBlurStrength <= 0 ? undefined : {
         radius: this.glassBlurRadius()
       })
       // 液态玻璃：沉浸式系统材质 + 光效跟手 + 交互形变；能力不足时传 undefined 关闭
@@ -532,12 +545,13 @@ struct MainPage {
       top: this.scaledSize(4), bottom: this.scaledSize(4)
     })
     .backgroundColor(Color.Transparent)
-    // 玻璃样式 + 暗黑模式 + 非 API 26 时不应用 backgroundEffect，保持纯黑底；
-    // 真机 API 26+ 由 systemMaterial 接管；浅色模式保留原玻璃模糊回退
-    .backgroundEffect(this.tabStyle === 'immersive' && !this.isDarkTheme() && this.glassThickness > 0 ? {
+    // 磨砂层与玻璃厚度、Tab 风格解耦：仅由「模糊强度」控制（0 关闭），两种风格统一挂载；
+    // 暗黑模式不挂；液态玻璃接管时关闭此层避免双重模糊，作为能力不足时的兜底
+    .backgroundEffect(!this.isDarkTheme() && this.glassBlurStrength > 0 && this.bottomBarGlassMaterial() === undefined ? {
       radius: this.glassBlurRadius()
     } : undefined)
-    .systemMaterial(this.tabStyle === 'immersive' ? this.liquidGlassTabMaterial() : undefined)
+    // 液态玻璃：与磨砂层一致不区分 Tab 风格；能力不足时传 undefined 关闭
+    .systemMaterial(this.bottomBarGlassMaterial())
     .border({
       width: 1,
       color: 'rgba(255,255,255,0.22)'

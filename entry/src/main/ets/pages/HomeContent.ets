@@ -11,6 +11,7 @@ import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstan
 import { AlbumCover } from '../component/AlbumCover'
 import { AlbumCoverSize, AudioMetadataService, CoverPriority } from '../service/AudioMetadataService'
 import { curves, uiMaterial } from '@kit.ArkUI'
+import { createBarGlassMaterial } from '../common/utils/GlassUtil'
 
 const TAG = 'HomeContent'
 const PREFETCH_COUNT: number = 64
@@ -54,6 +55,8 @@ export struct HomeContent {
   private longPressAtMs: number = 0
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
   @StorageLink('uplayer_home_top_blur_strength') homeTopBlurStrength: number = 25
+  @StorageLink('uplayer_glass_thickness') glassThickness: number = 50
+  @StorageLink('uplayer_interactive') interactive: boolean = true
   private dataService: DataService = DataService.getInstance()
   private songScanner: SongScanner = SongScanner.getInstance()
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
@@ -66,6 +69,12 @@ export struct HomeContent {
   private glassBlurRadius(): number {
     return this.homeTopBlurStrength *
       (1.6 - this.homeTopBlurStrength * 0.004)
+  }
+
+  // 多选底栏液态玻璃材质（API 26+）：能力不足/玻璃关断/低算力返回 undefined，
+  // 调用处保留 backgroundEffect 兜底，保证老设备仍有磨砂
+  private multiSelectBarMaterial(): uiMaterial.Material | undefined {
+    return createBarGlassMaterial(this.glassThickness, this.interactive)
   }
 
   private headerOverlayHeight(): number {
@@ -655,11 +664,13 @@ export struct HomeContent {
           .height(56)
           .padding({ left: 16, right: 16 })
           .backgroundColor(Color.Transparent)
-          .backgroundEffect({
+          // 液态玻璃启用时 systemMaterial 接管并关闭磨砂避免双重模糊；否则回退 backgroundEffect
+          .backgroundEffect(this.multiSelectBarMaterial() !== undefined ? undefined : {
             radius: 20,
             saturation: 1.0,
             brightness: 1.0
           })
+          .systemMaterial(this.multiSelectBarMaterial())
           .border({
             width: { top: 1 },
             color: { top: $r('app.color.list_divider') }

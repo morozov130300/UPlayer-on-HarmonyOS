@@ -10,7 +10,8 @@ import { deviceInfo, SuppressWarnings, SuppressWarningsType } from '@kit.BasicSe
 import { motion } from '@kit.MultimodalAwarenessKit'
 import { ColorConversion } from '../common/utils/ColorConversion'
 import {
-  createPageGlassMaterial,
+  createBarGlassMaterial,
+  createTabGlassMaterial,
   isLiquidGlassAvailable
 } from '../common/utils/GlassUtil'
 import { StyleConstants } from '../common/constants/StyleConstants'
@@ -60,13 +61,11 @@ struct SettingsDetailPage {
   @StorageLink('uplayer_glass_thickness') glassThickness: number = 50
   @StorageLink('uplayer_color_invert') colorInvert: boolean = false
   @StorageLink('uplayer_apply_shadow') applyShadow: boolean = true
+  @StorageLink('uplayer_system_component_glass') systemComponentGlass: boolean = true
   @State pageTitle: string = ''
   @State previewOnRight: boolean = false
   @State showColorPicker: boolean = false
   @State showGlassScope: boolean = false
-  // 经典 / 玻璃切换的淡入淡出：0=完全隐藏，1=完全显示
-  @State classicGroupOpacity: number = 1
-  @State glassGroupOpacity: number = 0
   @State pickerHue: number = 210
   @State pickerSaturation: number = 1
   @State pickerValue: number = 1
@@ -139,8 +138,6 @@ struct SettingsDetailPage {
     const route: string = params?.category ?? 'customize'
     this.pageTitle = this.titleMap[route] ?? '设置'
     ColorConversion.setSysBarLightBackground(this.isDark())
-    // 切到"定制"页时按当前底部栏样式设置组可见度的初值（避免首次进入看到两边都/都不显示）
-    this.syncTabStyleGroups(this.settings.tabStyle, false)
     this.registerHoldingHandListener()
     // 按明暗模式初始化 lightColorMode：未手动设置过时，暗黑默认白光，明亮默认主题色
     const existingLightMode: string = this.settings.lightColorMode
@@ -153,20 +150,6 @@ struct SettingsDetailPage {
       }
       this.updateSetting()
     }
-  }
-
-  private syncTabStyleGroups(style: string, animate: boolean): void {
-    if (!animate) {
-      this.classicGroupOpacity = style === 'classic' ? 1 : 0
-      this.glassGroupOpacity = style === 'immersive' ? 1 : 0
-      return
-    }
-    const targetClassic: number = style === 'classic' ? 1 : 0
-    const targetGlass: number = style === 'immersive' ? 1 : 0
-    this.getUIContext()?.animateTo({ duration: 280, curve: Curve.EaseInOut }, () => {
-      this.classicGroupOpacity = targetClassic
-      this.glassGroupOpacity = targetGlass
-    })
   }
 
   aboutToDisappear(): void {
@@ -379,8 +362,6 @@ struct SettingsDetailPage {
     })
     this.updateSetting()
     AppStorage.setOrCreate('uplayer_tab_style', style)
-    // 触发经典/玻璃卡片组的淡入淡出
-    this.syncTabStyleGroups(style, true)
   }
 
   applyThemeMode(mode: string): void {
@@ -476,9 +457,21 @@ struct SettingsDetailPage {
       .opacity(0)
   }
 
-  // "高级样式"三档（厚度/饱和度/亮度）共用一个预览方块，根据当前聚焦项在内部切换标签
-  // 修复了原先 0-15 无反应 / 16 突变的阈值问题：backgroundEffect 始终启用，radius 线性映射，
-  // 使滑轨从 0 到 100 的每一档都有渐变；预览与系统实际渲染比例一致。
+  // "玻璃厚度"滑块专用预览方块：只反映 systemMaterial（ImmersiveMaterial 五档），
+  // 不混入 backgroundEffect 磨砂（那由「模糊强度」滑块独立控制，见 glassBlurPreview）。
+  // 与 Index 真实 Tab 栏一致：经典样式走 createBarGlassMaterial（无光效/无材质阴影），
+  // 玻璃样式走 createTabGlassMaterial（含光效/反色/材质阴影）；厚度=0 / 能力不足时预览为纯透明方块。
+  private previewTabGlassMaterial(): uiMaterial.Material | undefined {
+    if (this.settings.tabStyle === 'classic') {
+      return createBarGlassMaterial(this.glassThickness, this.interactive)
+    }
+    const useLight: boolean = this.settings.tabTouchIndicator === 'light'
+    const lightColor: string | undefined = useLight
+      ? (this.settings.lightColorMode === 'white' ? '#FFFFFF' : this.primaryColor)
+      : undefined
+    return createTabGlassMaterial(this.glassThickness, this.interactive, lightColor, this.colorInvert, this.applyShadow)
+  }
+
   @Builder
   glassAdvancedPreview(focusLabel: string): void {
     Stack({ alignContent: Alignment.Center }) {
@@ -492,11 +485,8 @@ struct SettingsDetailPage {
         .height('100%')
         .borderRadius(this.scaledSize(18))
         .backgroundColor(Color.Transparent)
-        .backgroundEffect({
-          radius: this.glassBlurStrength * 0.5
-        })
         .systemMaterial(this.glassThickness > 0 && isLiquidGlassAvailable()
-          ? createPageGlassMaterial(this.glassThickness) : undefined)
+          ? this.previewTabGlassMaterial() : undefined)
         .border({ width: 1, color: 'rgba(255,255,255,0.28)' })
         .shadow({ radius: 12, color: ColorHelper.hexWithAlpha(this.primaryColor, '44') })
     }
@@ -1112,6 +1102,32 @@ struct SettingsDetailPage {
           .width('100%')
           .height(this.scaledSize(52))
           .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+
+          Row() {
+            Column({ space: this.scaledSize(6) }) {
+              Text('系统组件液态玻璃')
+                .fontSize(this.scaledFont(14))
+                .fontColor(this.settingTextColor())
+                .fontWeight(FontWeight.Medium)
+              Text('Toast 提示等系统组件使用液态玻璃材质，需设备支持（API 26+）。')
+                .fontSize(this.scaledFont(12))
+                .fontColor(this.settingSubTextColor())
+            }
+            .layoutWeight(1)
+            .justifyContent(FlexAlign.Center)
+            .alignItems(HorizontalAlign.Start)
+            Toggle({ type: ToggleType.Switch, isOn: this.settings.systemComponentGlass })
+              .selectedColor(this.primaryColor)
+              .alignSelf(ItemAlign.Center)
+              .onChange((isOn: boolean) => {
+                this.settings.systemComponentGlass = isOn
+                this.systemComponentGlass = isOn
+                this.updateSetting()
+              })
+          }
+          .width('100%')
+          .height(this.scaledSize(52))
+          .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
         }
         .width('100%')
         .padding({ top: this.scaledSize(10) })
@@ -1121,15 +1137,13 @@ struct SettingsDetailPage {
         // 玻璃效果生效范围：已通过一级标题右上角的小叹号引出弹窗说明
       }
       .width('100%')
-      .opacity(this.glassGroupOpacity)
-      .animation({ duration: 280, curve: Curve.EaseInOut })
-      .visibility(this.settings.tabStyle === 'immersive' ? Visibility.Visible : Visibility.None)
+      // 经典/玻璃两种 Tab 样式均使用液态玻璃材质，高级样式组常显
       // 去掉玻璃卡片之间默认的 10vp 间隔间距，由内部 padding 自己控制
       // ——已通过 groupTitle 与 .padding 处理
 
-      // ─── 一级标题「经典模糊」（经典模式下显示）───
+      // ─── 一级标题「背景模糊」（两种 Tab 风格下均显示）───
       Column() {
-        this.groupTitle('经典模糊', false)
+        this.groupTitle('背景模糊', false)
 
         // 首页上端模糊强度
         Column({ space: this.scaledSize(6) }) {
@@ -1203,6 +1217,10 @@ struct SettingsDetailPage {
             Blank()
           }
           .width('100%')
+          Text('控制底部 Tab 栏与迷你播控条的磨砂模糊半径，两种 Tab 风格下均生效；玻璃模式下作为液态玻璃的兜底磨砂层，与玻璃厚度互不影响。')
+            .fontSize(this.scaledFont(12))
+            .fontColor(this.settingSubTextColor())
+            .width('100%')
           Row({ space: this.scaledSize(12) }) {
             if (!this.previewOnRight) {
               this.glassBlurPreview()
@@ -1322,9 +1340,6 @@ struct SettingsDetailPage {
         .borderRadius(this.scaledSize(10))
       }
       .width('100%')
-      .opacity(this.classicGroupOpacity)
-      .animation({ duration: 280, curve: Curve.EaseInOut })
-      .visibility(this.settings.tabStyle === 'classic' ? Visibility.Visible : Visibility.None)
 
       Column({ space: this.scaledSize(8) }) {
         Row() {
