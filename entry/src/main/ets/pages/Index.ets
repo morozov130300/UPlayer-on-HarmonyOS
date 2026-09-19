@@ -57,7 +57,7 @@ struct MainPage {
   @StorageLink('uplayer_glass_thickness') glassThickness: number = DEFAULT_GLASS_STYLE
   @StorageLink('uplayer_light_color_mode') lightColorMode: string = 'theme'
   @StorageLink('uplayer_tab_touch_indicator') tabTouchIndicator: string = 'light'
-  // 是否存在鼠标/触控板设备（「自动检测」模式：有→白色蒙版，无→关闭）
+  // 是否存在鼠标/触控板设备（决定「白色蒙版」功能是否存在：无鼠标时 mask 降级为 off）
   @StorageLink(KEY_HAS_POINTER_DEVICE) hasPointerDevice: boolean = false
   @StorageLink('uplayer_interactive') interactive: boolean = true
   @StorageLink('uplayer_color_invert') colorInvert: boolean = false
@@ -144,10 +144,10 @@ struct MainPage {
   // 材质构造统一走 GlassUtil.createTabGlassMaterial 工厂，与设置页预览器共用同一份逻辑，
   // 保证预览效果与真实渲染一致。
   // 解析「底部栏触摸指示」实际生效值：
-  // off=关闭；auto=有鼠标/触控板设备（鸿蒙 PC、外接鼠标）→mask（白色蒙版），否则→off
+  // 设备无鼠标/触控板时「白色蒙版」功能不存在，mask 值降级为 off
   private effectiveTouchIndicator(): string {
-    if (this.tabTouchIndicator === 'auto') {
-      return this.hasPointerDevice ? 'mask' : 'off'
+    if (this.tabTouchIndicator === 'mask' && !this.hasPointerDevice) {
+      return 'off'
     }
     return this.tabTouchIndicator
   }
@@ -212,7 +212,7 @@ struct MainPage {
     this.loadPoetryLine()
     this.initBreakpoint()
     this.loadCurrentLyrics()
-    // 底部栏触摸指示「自动检测」：刷新鼠标/触控板状态并监听热插拔
+    // 白色蒙版开关按鼠标/触控板检测结果显隐：刷新状态并监听热插拔
     refreshPointerDeviceState()
     startPointerDeviceListener()
     this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_GREETING_DURATION, curve: Curve.EaseOut }, () => {

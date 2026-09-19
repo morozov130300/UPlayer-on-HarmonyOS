@@ -67,7 +67,7 @@ struct SettingsDetailPage {
   @StorageLink('uplayer_color_invert') colorInvert: boolean = false
   @StorageLink('uplayer_apply_shadow') applyShadow: boolean = true
   @StorageLink('uplayer_system_component_glass') systemComponentGlass: boolean = true
-  // 是否存在鼠标/触控板设备（用于「自动检测」模式预览）
+  // 是否存在鼠标/触控板设备（决定「白色蒙版」开关是否显示）
   @StorageLink(KEY_HAS_POINTER_DEVICE) hasPointerDevice: boolean = false
   @State pageTitle: string = ''
   @State previewOnRight: boolean = false
@@ -123,13 +123,21 @@ struct SettingsDetailPage {
     { label: '经典', value: 'classic' },
     { label: '玻璃', value: 'immersive' }
   ]
-  // 底部栏触摸指示选项：关 / 白色蒙版 / 跟手光效 / 自动检测
+  // 底部栏触摸指示选项：关 / 白色蒙版 / 跟手光效
+  // 「白色蒙版」仅在检测到鼠标/触控板设备（鸿蒙 PC、外接鼠标）时才显示
   private touchIndicatorOptions: TouchIndicatorOption[] = [
     { label: '关', value: 'off' },
     { label: '白色蒙版', value: 'mask' },
-    { label: '跟手光效', value: 'light' },
-    { label: '自动检测', value: 'auto' }
+    { label: '跟手光效', value: 'light' }
   ]
+
+  // 根据鼠标检测结果过滤选项：无鼠标/触控板设备时隐藏「白色蒙版」
+  private visibleTouchIndicatorOptions(): TouchIndicatorOption[] {
+    if (this.hasPointerDevice) {
+      return this.touchIndicatorOptions
+    }
+    return [this.touchIndicatorOptions[0], this.touchIndicatorOptions[2]]
+  }
   private colorOptions: ThemeColorOption[] = [
     { name: '鸿蒙蓝', value: '#007DFF' },
     { name: '绯霞红', value: '#FF3B30' },
@@ -154,7 +162,7 @@ struct SettingsDetailPage {
 
   aboutToAppear(): void {
     this.settings = this.dataService.getSettings()
-    // 「自动检测」模式预览需要最新的鼠标/触控板状态
+    // 进入设置页时刷新鼠标/触控板状态，决定「白色蒙版」开关是否显示
     refreshPointerDeviceState()
     const params = this.getUIContext()?.getRouter()
       .getParams() as Record<string, string>
@@ -278,10 +286,11 @@ struct SettingsDetailPage {
     return createBarGlassMaterial(this.glassThickness, this.interactive)
   }
 
-  // 解析「底部栏触摸指示」实际生效值：auto=有鼠标/触控板→mask，否则→off
+  // 解析「底部栏触摸指示」实际生效值：
+  // 设备无鼠标/触控板时「白色蒙版」功能不存在，mask 值降级为 off（开关本身已隐藏）
   private effectiveTouchIndicator(): string {
-    if (this.settings.tabTouchIndicator === 'auto') {
-      return this.hasPointerDevice ? 'mask' : 'off'
+    if (this.settings.tabTouchIndicator === 'mask' && !this.hasPointerDevice) {
+      return 'off'
     }
     return this.settings.tabTouchIndicator
   }
@@ -1067,12 +1076,13 @@ struct SettingsDetailPage {
         .borderRadius(this.scaledSize(10))
       }
 
-      // 底部栏触摸指示：关 / 白色蒙版 / 跟手光效 / 自动检测（auto=有鼠标设备→白色蒙版，否则关闭）
+      // 底部栏触摸指示：关 / 白色蒙版 / 跟手光效
+      // 白色蒙版开关按鼠标检测结果动态显示/隐藏（见 visibleTouchIndicatorOptions）
       Column() {
         Row() {
           this.subTitleRow('底部栏触摸指示')
           Blank()
-          ForEach(this.touchIndicatorOptions, (opt: TouchIndicatorOption) => {
+          ForEach(this.visibleTouchIndicatorOptions(), (opt: TouchIndicatorOption) => {
             Column() {
               Text(opt.label)
                 .fontSize(this.scaledFont(11))
