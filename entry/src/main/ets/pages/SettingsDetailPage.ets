@@ -895,6 +895,7 @@ struct SettingsDetailPage {
       this.scopeLine('• 右下角播控条')
       this.scopeLine('• 顶部的模糊层（首页顶部标题区，覆盖首页第一屏）')
       this.scopeLine('• 首页 / 歌单 / 设置 / 设置详情 四个一级页面的顶层背景（仅档位与材质在此生效）')
+      this.scopeLine('• 操作时屏幕底部短暂弹出的文字提示浮层（如切换播放模式时的"随机播放"）——单独由「系统组件液态玻璃」开关控制')
 
       Text('以下位置不使用玻璃效果：')
         .fontSize(this.scaledFont(12))
@@ -1396,7 +1397,7 @@ struct SettingsDetailPage {
                 .fontSize(this.scaledFont(14))
                 .fontColor(this.settingTextColor())
                 .fontWeight(FontWeight.Medium)
-              Text('Toast 提示等系统组件使用液态玻璃材质，需设备支持（API 26+）。')
+              Text('切换播放模式等操作时，屏幕底部短暂弹出的文字提示浮层（如"随机播放"）使用液态玻璃材质；需设备支持（API 26+）。')
                 .fontSize(this.scaledFont(12))
                 .fontColor(this.settingSubTextColor())
             }
