@@ -8,6 +8,7 @@ import { SongDatabase } from './SongDatabase'
 import Logger from '../common/utils/Logger'
 import { BusinessError } from '@kit.BasicServicesKit'
 import { MusicPlayMode } from '../common/constants/PlayerConstants'
+import { normalizeGlassThickness } from '../common/utils/GlassUtil'
 
 const TAG = 'DataService'
 
@@ -628,20 +629,21 @@ export class DataService {
       let rawTabIndicatorOpacity: Object | undefined = r['tabIndicatorOpacity']
       s.tabIndicatorOpacity = rawTabIndicatorOpacity !== undefined ? rawTabIndicatorOpacity as number : 50
       // 玻璃风格细节（带迁移默认值，老数据走默认值不会破坏既有体验）
-      // glassThickness：0=关闭玻璃，1-100 均匀映射官方 ImmersiveStyle 五档
+      // glassThickness：固定 6 档（0=关闭 + 官方五档 20/40/60/80/100），非档位旧值归一到最近档
       // glassStyle：旧字段（已废弃），兼容老数据时迁移到 glassThickness
       let rawGlassThickness: Object | undefined = r['glassThickness']
-      s.glassThickness = rawGlassThickness !== undefined ? Math.max(0, Math.min(100, rawGlassThickness as number)) : 50
-      if (s.glassThickness === 50 && r['glassStyle'] !== undefined) {
+      s.glassThickness = rawGlassThickness !== undefined
+        ? normalizeGlassThickness(rawGlassThickness as number) : 60
+      if (rawGlassThickness === undefined && r['glassStyle'] !== undefined) {
         // 老数据无 glassThickness，从旧 glassStyle 迁移
         const raw: Object = r['glassStyle']
         if (typeof raw === 'number') {
-          s.glassThickness = Math.max(0, Math.min(100, raw as number))
+          s.glassThickness = normalizeGlassThickness(raw as number)
         } else if (typeof raw === 'string') {
           const legacy: string = raw as string
           if (legacy === 'thin') s.glassThickness = 20
           else if (legacy === 'thick') s.glassThickness = 80
-          else s.glassThickness = 50
+          else s.glassThickness = 60
         }
       }
       let rawHoldingHandEnabled: Object | undefined = r['holdingHandEnabled']

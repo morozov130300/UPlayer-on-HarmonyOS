@@ -11,7 +11,9 @@ import { motion } from '@kit.MultimodalAwarenessKit'
 import { ColorConversion } from '../common/utils/ColorConversion'
 import {
   createBarGlassMaterial,
-  createTabGlassMaterial
+  createTabGlassMaterial,
+  GLASS_THICKNESS_STEPS,
+  glassThicknessLabel
 } from '../common/utils/GlassUtil'
 import { StyleConstants } from '../common/constants/StyleConstants'
 import { KEY_HAS_POINTER_DEVICE, refreshPointerDeviceState } from '../common/utils/InputDeviceUtil'
@@ -1162,19 +1164,16 @@ struct SettingsDetailPage {
               Blank()
             }
             .width('100%')
-            Text('控制玻璃材质的模糊强度：值越大越模糊，0 为关闭玻璃。')
+            Text('控制玻璃材质的模糊强度，共五档（极薄/薄/常规/厚/极厚），0 为关闭玻璃。')
               .fontSize(this.scaledFont(12))
               .fontColor(this.settingSubTextColor())
               .width('100%')
-            Row({ space: this.scaledSize(12) }) {
-              Text('弱')
-                .fontSize(this.scaledFont(11))
-                .fontColor(this.settingTextColor())
+            Row() {
               Slider({
                 value: this.settings.glassThickness,
                 min: 0,
                 max: 100,
-                step: 1,
+                step: 20,
                 style: SliderStyle.OutSet
               })
                 .layoutWeight(1)
@@ -1191,13 +1190,21 @@ struct SettingsDetailPage {
                     this.updateSetting()
                   }
                 })
-              Text('强')
-                .fontSize(this.scaledFont(11))
-                .fontColor(this.settingTextColor())
             }
             .width('100%')
             .alignItems(VerticalAlign.Center)
             .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
+            // 滑轨下方 6 档位刻度标注：当前档主题色高亮，其余次级文字色
+            Row() {
+              ForEach(GLASS_THICKNESS_STEPS, (step: number) => {
+                Text(glassThicknessLabel(step))
+                  .fontSize(this.scaledFont(10))
+                  .fontColor(this.settings.glassThickness === step ? this.primaryColor : this.settingSubTextColor())
+                  .layoutWeight(1)
+                  .textAlign(TextAlign.Center)
+              }, (step: number) => step.toString())
+            }
+            .width('100%')
           }
           .width('100%')
 

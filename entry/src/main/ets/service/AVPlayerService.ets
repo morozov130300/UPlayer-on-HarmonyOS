@@ -40,8 +40,8 @@ export class AVPlayerService {
   private currentAvFile: fs.File | undefined = undefined
   private fadeTimer: number = -1
   private fadeStep: number = 0
-  private static FADE_STEPS: number = 6
-  private static FADE_INTERVAL: number = 50
+  private static FADE_STEPS: number = 30
+  private static FADE_INTERVAL: number = 10
   private static EQUALIZER_MIN_GAIN_DB: number = -10
   private static EQUALIZER_MAX_GAIN_DB: number = 10
   private static SEEK_SETTLE_MS: number = 2000
@@ -579,11 +579,19 @@ export class AVPlayerService {
 
   resume(): void {
     if (this.nativeMode) {
-      if (nativeAudio.resume()) {
-        AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, true)
-        this.sessionController.setPlayState(true)
-        this.startBackground()
+      const fadeInOut: boolean = AppStorage.get<boolean>('uplayer_fade_in_out') ?? false
+      if (fadeInOut) {
+        nativeAudio.setVolume(0)
+        if (nativeAudio.resume()) {
+          this.fadeIn()
+        }
+      } else {
+        nativeAudio.setVolume(this.desiredVolume)
+        nativeAudio.resume()
       }
+      AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, nativeAudio.isPlaying())
+      this.sessionController.setPlayState(true)
+      this.startBackground()
       return
     }
     if (this.avPlayer === undefined) {
@@ -607,11 +615,15 @@ export class AVPlayerService {
 
   pause(): void {
     if (this.nativeMode) {
-      if (nativeAudio.pause()) {
-        AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, false)
-        this.sessionController.setPlayState(false)
-      }
+      AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, false)
+      this.sessionController.setPlayState(false)
       this.stopBackground()
+      const fadeInOut: boolean = AppStorage.get<boolean>('uplayer_fade_in_out') ?? false
+      if (fadeInOut) {
+        this.fadeOut()
+      } else {
+        nativeAudio.pause()
+      }
       return
     }
     if (this.avPlayer === undefined) {
@@ -631,6 +643,34 @@ export class AVPlayerService {
     }
   }
 
+  private applyFadeVolume(vol: number): void {
+    if (this.nativeMode) {
+      nativeAudio.setVolume(vol)
+      return
+    }
+    if (this.avPlayer !== undefined) {
+      try {
+        this.avPlayer.setVolume(vol)
+      } catch (err) {
+        Logger.error(TAG, `fade setVolume failed: ${JSON.stringify(err)}`)
+      }
+    }
+  }
+
+  private finishFadePause(): void {
+    if (this.nativeMode) {
+      nativeAudio.pause()
+      return
+    }
+    if (this.avPlayer !== undefined) {
+      try {
+        this.avPlayer.pause()
+      } catch (err) {
+        Logger.error(TAG, `fade pause failed: ${JSON.stringify(err)}`)
+      }
+    }
+  }
+
   private fadeIn(): void {
     this.stopFade()
     this.fadeStep = 0
@@ -640,12 +680,12 @@ export class AVPlayerService {
     }
     this.fadeTimer = setInterval(() => {
       this.fadeStep++
-      const vol: number = Math.min((this.fadeStep / AVPlayerService.FADE_STEPS) * targetVol, targetVol)
-      if (this.avPlayer !== undefined) {
-        this.avPlayer.setVolume(vol)
-      }
+      const ratio: number = Math.min(this.fadeStep / AVPlayerService.FADE_STEPS, 1)
+      const vol: number = Math.min(targetVol * ratio * ratio, targetVol)
+      this.applyFadeVolume(vol)
       if (this.fadeStep >= AVPlayerService.FADE_STEPS) {
         this.stopFade()
+        this.applyFadeVolume(targetVol)
       }
     }, AVPlayerService.FADE_INTERVAL)
   }
@@ -656,15 +696,13 @@ export class AVPlayerService {
     this.fadeStep = 0
     this.fadeTimer = setInterval(() => {
       this.fadeStep++
-      const vol: number = Math.max(startVol - (this.fadeStep / AVPlayerService.FADE_STEPS) * startVol, 0)
-      if (this.avPlayer !== undefined) {
-        this.avPlayer.setVolume(vol)
-      }
+      const ratio: number = Math.min(this.fadeStep / AVPlayerService.FADE_STEPS, 1)
+      const vol: number = Math.max(startVol * (1 - ratio) * (1 - ratio), 0)
+      this.applyFadeVolume(vol)
       if (this.fadeStep >= AVPlayerService.FADE_STEPS) {
         this.stopFade()
-        if (this.avPlayer !== undefined) {
-          this.avPlayer.pause()
-        }
+        this.applyFadeVolume(0)
+        this.finishFadePause()
       }
     }, AVPlayerService.FADE_INTERVAL)
   }
