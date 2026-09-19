@@ -1195,6 +1195,7 @@ struct SettingsDetailPage {
             .alignItems(VerticalAlign.Center)
             .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
             // 滑轨下方 6 档位刻度标注：当前档主题色高亮，其余次级文字色
+            // OutSet 滑块中心在两端内缩约半个滑块宽，刻度行加同样内边距使文字对准档位
             Row() {
               ForEach(GLASS_THICKNESS_STEPS, (step: number) => {
                 Text(glassThicknessLabel(step))
@@ -1205,6 +1206,7 @@ struct SettingsDetailPage {
               }, (step: number) => step.toString())
             }
             .width('100%')
+            .padding({ left: this.scaledSize(10), right: this.scaledSize(10) })
           }
           .width('100%')
 
@@ -1214,7 +1216,7 @@ struct SettingsDetailPage {
               Blank()
             }
             .width('100%')
-            Text('控制底部 Tab 栏与迷你播控条的磨砂模糊半径，两种 Tab 风格下均生效；玻璃模式下作为液态玻璃的兜底磨砂层，与玻璃厚度互不影响。')
+            Text('控制底部 Tab 栏与迷你播控条的磨砂模糊半径。玻璃厚度 > 0 时液态玻璃接管背景渲染，本项作为兜底磨砂（把玻璃厚度调 0 或在不支持液态玻璃的设备上可见效果）；暗黑模式下磨砂层不启用。')
               .fontSize(this.scaledFont(12))
               .fontColor(this.settingSubTextColor())
               .width('100%')
