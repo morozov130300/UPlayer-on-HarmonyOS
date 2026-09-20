@@ -219,8 +219,6 @@ struct MainPage {
     // 白色蒙版开关按鼠标/触控板检测结果显隐：刷新状态并监听热插拔
     refreshPointerDeviceState()
     startPointerDeviceListener()
-    // 设备材质能力（跟手光效走系统还是自绘兜底）落地到日志，便于真机定位
-    Logger.info(TAG, `material capability: ${materialCapabilityInfo()}`)
     this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_GREETING_DURATION, curve: Curve.EaseOut }, () => {
       this.greetingOpacity = 1
       this.greetingOffset = 0
@@ -329,11 +327,6 @@ struct MainPage {
         })
         .zIndex(1)
 
-      // 跟手光效兜底（仅系统光效不可用时显示）
-      if (this.selfDrawnLightEnabled()) {
-        this.tabLightGlow()
-      }
-
       Row({ space: this.scaledSize(this.tabGap) }) {
         this.tabItem(0, '首页', $r('app.media.ic_public_home'))
         this.tabItem(1, '歌单', $r('app.media.ic_public_view_list'))
@@ -346,7 +339,6 @@ struct MainPage {
     }
     .alignSelf(ItemAlign.Center)
     .height(this.scaledSize(60))
-    .onTouch((event: TouchEvent) => { this.updateTabLightGlow(event) })
   }
 
   @Builder
@@ -361,11 +353,6 @@ struct MainPage {
         // 指示器深浅接入：alpha 基准 0.4，深浅 50 时等效原 '33'（默认观感不变），0 时完全隐藏
         .backgroundColor(ColorHelper.hexWithAlpha(this.primaryColor,
           this.indicatorAlpha(0.4).toString(16).padStart(2, '0')))
-
-      // 跟手光效兜底（仅系统光效不可用时显示）
-      if (this.selfDrawnLightEnabled()) {
-        this.tabLightGlow()
-      }
 
       Row({ space: this.scaledSize(this.tabGap) }) {
         this.immersiveTabItem(0, '首页', $r('app.media.ic_public_home'))
@@ -385,11 +372,9 @@ struct MainPage {
       .systemMaterial(this.liquidGlassTabMaterial())
       .border({ width: 1, color: 'rgba(255,255,255,0.22)' })
       .shadow({ radius: 18, color: ColorHelper.hexWithAlpha(this.primaryColor, '44'), offsetY: 5 })
-      .zIndex(2)
     }
     .alignSelf(ItemAlign.Center)
     .height(this.scaledSize(60))
-    .onTouch((event: TouchEvent) => { this.updateTabLightGlow(event) })
   }
 
   @Builder

@@ -243,9 +243,12 @@ struct SettingsDetailPage {
     return this.settings.tabTouchIndicator
   }
 
-  // 与 Index.liquidGlassMaterial 同源：只配玻璃本体，跟手光效由组件侧自绘
   private previewImmersiveBarMaterial(): uiMaterial.Material | undefined {
-    return createTabGlassMaterial(this.glassThickness, this.interactive, this.colorInvert, this.applyShadow)
+    const useLight: boolean = this.effectiveTouchIndicator() === 'light'
+    const lightColor: string | undefined = useLight
+      ? (this.settings.lightColorMode === 'white' ? '#FFFFFF' : this.primaryColor)
+      : undefined
+    return createTabGlassMaterial(this.glassThickness, this.interactive, lightColor, this.colorInvert, this.applyShadow)
   }
 
   // 与 Index.glassBlurRadius 同公式：模糊强度 × 0.5
