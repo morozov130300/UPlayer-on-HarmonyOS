@@ -12,7 +12,6 @@ import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { display } from '@kit.ArkUI'
 import { deviceInfo } from '@kit.BasicServicesKit'
-import { curves, uiMaterial } from '@kit.ArkUI'
 
 const TAG = 'PlaylistContent'
 const FAVORITES_FOLDER_ID: string = '__favorites__'

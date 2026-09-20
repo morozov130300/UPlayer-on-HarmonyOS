@@ -19,3 +19,6 @@
 /HarmonyOS_Icons.zip
 .openbitfun/
 /.openbitfun/search/flashgrep-index/
+# 参考样例/嵌入式仓库，不纳入主仓库
+/src/
+/audio-renderer-play-pcm/

@@ -13,7 +13,6 @@
  * limitations under the License.
  */
 
-import { util } from '@kit.ArkTS';
 import { LrcEntry, Word } from '../../viewmodel/LrcEntry';
 import Logger from './Logger';
 

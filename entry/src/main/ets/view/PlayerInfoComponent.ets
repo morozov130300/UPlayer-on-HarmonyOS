@@ -24,32 +24,24 @@ export struct PlayerInfoComponent {
   @StorageProp(AppStorageKeyConstants.KEY_SELECT_INDEX) @Watch('getImageColor') selectIndex: number = 0;
   @StorageLink(AppStorageKeyConstants.KEY_IMAGE_COLOR) @Watch('onImageColorChange') imageColor: string = 'rgba(0, 0, 2, 1.00)';
   @StorageLink(AppStorageKeyConstants.KEY_TOP_HEIGHT) topHeight: number = 0;
-  @StorageLink(AppStorageKeyConstants.KEY_BOTTOM_HEIGHT) @Watch('bottomHeightChange') bottomHeight: number = 0;
+  @StorageLink(AppStorageKeyConstants.KEY_BOTTOM_HEIGHT) bottomHeight: number = 0;
   @State imageLabel: PixelMap | Resource = $r('app.media.ic_public_music');
   @State imageLabelIsFallback: boolean = true;
   @State isBackgroundReady: boolean = false;
   @State isShowControl: boolean = true;
   @State isShowControlLg: boolean = false;
-  @State isTablet: boolean = true;
-  @State isTabletFalse: boolean = false;
   @StorageLink(AppStorageKeyConstants.KEY_PAGE_SHOW_TIME) pageShowTime: number = 0;
   @StorageLink('uplayer_theme_mode') themeMode: string = 'system';
   @State intervalID: number = 0;
   @Link isShowPlay: boolean;
-  @State message: Resource = $r('app.string.no_operate');
   @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) isPlay: boolean = false;
-  @State particleOpacity: number = 0;
   @State prevImageLabel: PixelMap | Resource = this.imageLabel;
   @State prevImageOpacity: number = 0;
-  @State currentSwiperIndex: number = 0;
   private context: common.UIAbilityContext | undefined = AppStorage.get(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT);
   private imageLoadRequestId: number = 0;
   private backgroundCoverLease: AlbumCoverLease | undefined = undefined;
   private currentBackgroundMap: image.PixelMap | undefined = undefined;
   private previousBackgroundMap: image.PixelMap | undefined = undefined;
-
-  bottomHeightChange() {
-  }
 
   onImageColorChange(): void {
     ColorConversion.setSysBarLightBackground(this.isBackgroundDark(this.imageColor));
@@ -211,7 +203,6 @@ export struct PlayerInfoComponent {
               .selectedItemHeight(6)
           )
           .onChange((index: number) => {
-            this.currentSwiperIndex = index;
             if (index === 1) {
               this.getUIContext()?.animateTo({ curve: curves.springMotion(0.5, 0.8) }, () => {
                 this.isShowControl = true;

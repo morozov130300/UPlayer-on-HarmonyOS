@@ -39,5 +39,3 @@ export enum MusicPlayMode {
 
 export const PlayModeSwitchList = [MusicPlayMode.ORDER, MusicPlayMode.RANDOM, MusicPlayMode.SINGLE_CYCLE];
 
-export const DEFAULT_VOLUME = 1;
-

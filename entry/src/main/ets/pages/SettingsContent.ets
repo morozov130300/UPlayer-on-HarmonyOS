@@ -1,4 +1,4 @@
-import { curves, uiAppearance } from '@kit.ArkUI'
+import { uiAppearance } from '@kit.ArkUI'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import Logger from '../common/utils/Logger'
@@ -24,7 +24,8 @@ export struct SettingsContent {
   private categories: SettingCategory[] = [
     { title: '定制', description: '界面布局、主题配色等个性化选项', route: 'customize' },
     { title: '播放', description: '播放速度、歌词显示、淡入淡出', route: 'playback' },
-    { title: '音效', description: '均衡器开关与频段调节', route: 'audio' }
+    { title: '音效', description: '均衡器开关与频段调节', route: 'audio' },
+    { title: '关于', description: '软件信息、仓库地址与联系方式', route: 'about' }
   ]
 
   private scaledSize(size: number): number {

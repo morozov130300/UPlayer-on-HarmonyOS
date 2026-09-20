@@ -59,19 +59,7 @@ export function topBlurRadiusFromStrength(strength: number): number {
   return TOP_BLUR_SLOPE * TOP_BLUR_CAP_STRENGTH
 }
 
-// backgroundBlurStyle 用的 BlurStyle 枚举（API 7+，所有设备可用）
-export function glassBlurStyleFromStrength(value: number): BlurStyle {
-  if (value < 15) {
-    return BlurStyle.NONE
-  }
-  if (value < 35) {
-    return BlurStyle.Thin
-  }
-  if (value < 65) {
-    return BlurStyle.Regular
-  }
-  return BlurStyle.Thick
-}
+
 
 // uiMaterial 沉浸式系统材质对应的档位（API 26+）：
 // 1-100 五等分映射官方 ImmersiveStyle 全部五档；0 由 isGlassOff 单独处理
@@ -121,19 +109,6 @@ export function getDeviceMaterialLevel(): uiMaterial.MaterialLevel | undefined {
 // 此时组件侧必须保留 backgroundEffect 兜底模糊维持可读性
 export function isLowPowerGlassDevice(): boolean {
   return getDeviceMaterialLevel() === uiMaterial.MaterialLevel.SMOOTH
-}
-
-// 页面级背景只用档位，不开启 interactive 与 lightEffect：
-// - interactive 会让所有页面在按下/拖动时产生 Q 弹形变（页面级不需要）
-// - lightEffect 会让普通滚动也出现跟手光效（用户未同意，仅 Tab 栏保留）
-// 能力不足或用户关闭玻璃时返回 undefined，配合 .systemMaterial(undefined) 关闭该效果。
-export function createPageGlassMaterial(strength: number): uiMaterial.Material | undefined {
-  if (!isLiquidGlassAvailable() || isGlassOff(strength)) {
-    return undefined
-  }
-  return new uiMaterial.ImmersiveMaterial({
-    style: glassImmersiveStyleFromStrength(strength)
-  })
 }
 
 // Tab 栏液态玻璃材质的统一构造工厂：Index 真实 Tab 栏与设置页预览器必须共用此函数，

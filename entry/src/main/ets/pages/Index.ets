@@ -1,5 +1,5 @@
 import display from '@ohos.display'
-import { curves, window, uiMaterial } from '@kit.ArkUI'
+import { curves, uiMaterial } from '@kit.ArkUI'
 import { common, ConfigurationConstant } from '@kit.AbilityKit'
 import { deviceInfo } from '@kit.BasicServicesKit'
 import { KeyCode } from '@kit.InputKit'

@@ -36,10 +36,7 @@
       "name": "no_lyric",
       "value": "无歌词"
     },
-    {
-      "name": "no_operate",
-      "value": "Please go back to the inner screen to experience this sample!"
-    },
+    
     {
       "name": "reason_file_access_persist",
       "value": "持久化访问导入的音乐文件，重启后无需再次选择"

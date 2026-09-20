@@ -3,7 +3,7 @@ import { PlayerInfoComponent } from '../view/PlayerInfoComponent';
 import { WindowUtil } from '../common/utils/WindowUtil';
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
 import { curves } from '@kit.ArkUI';
-import { ColorHelper } from '../common/utils/ColorHelper';
+
 import { AVPlayerService } from '../service/AVPlayerService';
 import { KeyCode } from '@kit.InputKit';
 import { StyleConstants } from '../common/constants/StyleConstants';

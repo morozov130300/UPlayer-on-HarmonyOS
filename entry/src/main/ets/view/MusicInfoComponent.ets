@@ -7,7 +7,7 @@ import { WindowInfo } from '../common/utils/WindowUtil';
 import { SongInfo } from '../model/SongInfo';
 import { DataService } from '../service/DataService';
 import { ControlAreaComponent } from './ControlAreaComponent';
-import { ColorHelper } from '../common/utils/ColorHelper';
+
 import { AlbumCover } from '../component/AlbumCover';
 
 @Component

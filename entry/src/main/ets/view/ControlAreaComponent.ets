@@ -296,14 +296,6 @@ export struct ControlAreaComponent {
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_PRESET_MINUTES, this.activePresetMinutes)
   }
 
-  private setTimerMinutes(minutes: number): void {
-    this.setTimerSeconds(minutes * 60)
-  }
-
-  private setCustomTimer(totalSeconds: number): void {
-    this.setTimerSeconds(totalSeconds)
-  }
-
   private formatTimerCountdown(totalSeconds: number): string {
     const h: number = Math.floor(totalSeconds / 3600)
     const m: number = Math.floor((totalSeconds % 3600) / 60)
@@ -1112,7 +1104,6 @@ struct MusicListContainer {
   @StorageLink(AppStorageKeyConstants.KEY_SELECT_INDEX) selectIndex: number = 0;
   item: SongInfo = new SongInfo();
   index: number = 0;
-  @State listItemArtFailed: boolean = false;
 
   build() {
     Column() {

@@ -487,21 +487,6 @@ return result
     return result
   }
 
-  removeSongsByFolder(folderPath: string): void {
-    this.removeSongsByFolders([folderPath])
-  }
-
-  getFavoriteSongs(): SongInfo[] {
-    const songs: SongInfo[] = this.getSongs()
-    const favs: SongInfo[] = []
-    for (let i = 0; i < songs.length; i++) {
-      if (songs[i].isFavorite) {
-        favs.push(songs[i])
-      }
-    }
-    return favs
-  }
-
   toggleFavorite(songId: string): boolean {
     const songs: SongInfo[] = this.getSongs()
     let newFav: boolean = false
@@ -555,48 +540,6 @@ return result
       records.push(this.folderToRecord(folders[i]))
     }
     this.writeJsonArray(KEY_FOLDER_LIST, records as object[])
-  }
-
-  addFolder(folder: FolderInfo): void {
-    const folders: FolderInfo[] = this.getFolders()
-    folders.push(folder)
-    this.saveFolders(folders)
-  }
-
-  removeFolder(folderId: string): void {
-    const folders: FolderInfo[] = this.getFolders()
-    const filtered: FolderInfo[] = []
-    for (let i = 0; i < folders.length; i++) {
-      if (folders[i].id !== folderId) {
-        filtered.push(folders[i])
-      }
-    }
-    this.saveFolders(filtered)
-  }
-
-  toggleFolderFavorite(folderId: string): boolean {
-    const folders: FolderInfo[] = this.getFolders()
-    let newFav: boolean = false
-    for (let i = 0; i < folders.length; i++) {
-      if (folders[i].id === folderId) {
-        folders[i].isFavorite = !folders[i].isFavorite
-        newFav = folders[i].isFavorite
-        break
-      }
-    }
-    this.saveFolders(folders)
-    return newFav
-  }
-
-  updateFolderSortOrder(folderId: string, newOrder: number): void {
-    const folders: FolderInfo[] = this.getFolders()
-    for (let i = 0; i < folders.length; i++) {
-      if (folders[i].id === folderId) {
-        folders[i].sortOrder = newOrder
-        break
-      }
-    }
-    this.saveFolders(folders)
   }
 
   // ═══════════ Settings ═══════════
@@ -815,10 +758,6 @@ return result
 
   isFavoritesSelected(): boolean {
     return this.readFilterState().favoritesSelected
-  }
-
-  setFavoritesSelected(selected: boolean): void {
-    this.setFilterState(this.getSelectedFolderPaths(), selected)
   }
 
   // ═══════════ Play Next Queue ═══════════

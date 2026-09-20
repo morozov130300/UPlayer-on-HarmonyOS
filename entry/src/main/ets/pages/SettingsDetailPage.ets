@@ -6,7 +6,7 @@ import { AVPlayerService } from '../service/AVPlayerService'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import Logger from '../common/utils/Logger'
-import { deviceInfo, SuppressWarnings, SuppressWarningsType } from '@kit.BasicServicesKit'
+import { deviceInfo, SuppressWarnings, SuppressWarningsType, pasteboard } from '@kit.BasicServicesKit'
 import {
   HoldingHandService,
   KEY_HOLDING_HAND_ENABLED,
@@ -147,7 +147,8 @@ struct SettingsDetailPage {
   private titleMap: Record<string, string> = {
     'customize': '定制',
     'playback': '播放',
-    'audio': '音效'
+    'audio': '音效',
+    'about': '关于'
   }
 
   aboutToAppear(): void {
@@ -677,6 +678,8 @@ struct SettingsDetailPage {
                   this.buildPlaybackSection()
                 } else if (this.pageTitle === '音效') {
                   this.buildAudioSection()
+                } else if (this.pageTitle === '关于') {
+                  this.buildAboutSection()
                 }
               }
               .width('100%')
@@ -842,18 +845,6 @@ struct SettingsDetailPage {
     .width('100%')
     .padding({ left: this.scaledSize(8), top: this.scaledSize(1), bottom: this.scaledSize(4) })
     .alignItems(VerticalAlign.Center)
-  }
-
-  // 二级标题（卡片组的子标题，紧贴在卡片上方）
-  @Builder
-  subTitle(title: string): void {
-    Text(title)
-      .fontSize(this.scaledFont(14))
-      .fontColor(this.settingTextColor())
-      .fontWeight(FontWeight.Medium)
-      .width('100%')
-      .textAlign(TextAlign.Start)
-      .padding({ left: this.scaledSize(4), bottom: this.scaledSize(4) })
   }
 
   // 行内二级标题（用于 Row 内，不带 width 约束，避免溢出）
@@ -2078,6 +2069,96 @@ struct SettingsDetailPage {
     ctx.closePath()
     ctx.fillStyle = ColorHelper.hexToRgba(color, 0.1)
     ctx.fill()
+  }
+
+  // ═══ 关于页面：居中的软件图标 + 软件名/版本 + 仓库地址 + 联系方式，点击复制 ═══
+  // 仓库地址由 SSH 地址 git@github.com:morozov130300/UPlayer-on-HarmonyOS.git 转出的 HTTPS 网址
+  private aboutRepoUrl: string = 'https://github.com/morozov130300/UPlayer-on-HarmonyOS'
+  private aboutEmail: string = 'jhy130300@126.com'
+  private aboutQq: string = '3500873394'
+  private aboutVersionName: string = '0.0.1'
+
+  private copyToClipboard(label: string, content: string): void {
+    try {
+      const pasteData: pasteboard.PasteData = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, content)
+      const systemPasteboard: pasteboard.SystemPasteboard = pasteboard.getSystemPasteboard()
+      systemPasteboard.setDataSync(pasteData)
+      this.getUIContext()?.getPromptAction().showToast({ message: label + '已复制' })
+    } catch (e) {
+      Logger.error(TAG, 'copyToClipboard failed: ' + JSON.stringify(e))
+    }
+  }
+
+  @Builder
+  aboutInfoRow(label: string, value: string): void {
+    Row() {
+      Text(label)
+        .fontSize(this.scaledFont(13))
+        .fontColor(this.settingSubTextColor())
+        .width(this.scaledSize(56))
+        .textAlign(TextAlign.Start)
+      Text(value)
+        .fontSize(this.scaledFont(13))
+        .fontColor(this.settingTextColor())
+        .layoutWeight(1)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+    }
+    .width('100%')
+    .constraintSize({ minWidth: 0, maxWidth: '100%' })
+    .height(this.scaledSize(40))
+    .alignItems(VerticalAlign.Center)
+    .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+    .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+    .borderRadius(this.scaledSize(10))
+    .onClick(() => {
+      this.copyToClipboard(label, value)
+    })
+  }
+
+  @Builder
+  buildAboutSection(): void {
+    Column({ space: this.scaledSize(10) }) {
+      // 居中的软件图标 + 软件名 + 版本号
+      Column({ space: this.scaledSize(8) }) {
+        Image($r('app.media.foreground'))
+          .width(this.scaledSize(72))
+          .height(this.scaledSize(72))
+          .borderRadius(this.scaledSize(20))
+        Text('UPlayer')
+          .fontSize(this.scaledFont(18))
+          .fontColor(this.settingTextColor())
+          .fontWeight(FontWeight.Bold)
+        Text('v' + this.aboutVersionName)
+          .fontSize(this.scaledFont(12))
+          .fontColor(this.settingSubTextColor())
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Center)
+      .padding({ top: this.scaledSize(24), bottom: this.scaledSize(8) })
+
+      Column({ space: this.scaledSize(6) }) {
+        this.groupTitle('仓库地址', false)
+        this.aboutInfoRow('仓库', this.aboutRepoUrl)
+      }
+      .width('100%')
+
+      Column({ space: this.scaledSize(6) }) {
+        this.groupTitle('联系方式', false)
+        this.aboutInfoRow('邮箱', this.aboutEmail)
+        this.aboutInfoRow('QQ', this.aboutQq)
+      }
+      .width('100%')
+
+      Text('本地音乐播放器 · 为鸿蒙打造')
+        .fontSize(this.scaledFont(11))
+        .fontColor(this.settingSubTextColor())
+        .width('100%')
+        .textAlign(TextAlign.Center)
+        .margin({ top: this.scaledSize(8) })
+    }
+    .width('100%')
+    .constraintSize({ minWidth: 0, maxWidth: '100%' })
   }
 
   @Builder

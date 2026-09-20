@@ -36,14 +36,6 @@ export class ColorHelper {
     return '#' + alphaHex + clean
   }
 
-  static lighten(hex: string, factor: number): string {
-    const rgb: RgbColor = ColorHelper.hexToRgb(hex)
-    const r: number = Math.min(255, Math.floor(rgb.r + (255 - rgb.r) * factor))
-    const g: number = Math.min(255, Math.floor(rgb.g + (255 - rgb.g) * factor))
-    const b: number = Math.min(255, Math.floor(rgb.b + (255 - rgb.b) * factor))
-    return '#' + ColorHelper.toHex(r) + ColorHelper.toHex(g) + ColorHelper.toHex(b)
-  }
-
   static darken(hex: string, factor: number): string {
     const rgb: RgbColor = ColorHelper.hexToRgb(hex)
     const r: number = Math.max(0, Math.floor(rgb.r * (1 - factor)))
