@@ -7,7 +7,11 @@ import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstan
 import { ColorHelper } from '../common/utils/ColorHelper'
 import Logger from '../common/utils/Logger'
 import { deviceInfo, SuppressWarnings, SuppressWarningsType } from '@kit.BasicServicesKit'
-import { motion } from '@kit.MultimodalAwarenessKit'
+import {
+  HoldingHandService,
+  KEY_HOLDING_HAND_ENABLED,
+  KEY_HOLDING_HAND_LEFT
+} from '../service/HoldingHandService'
 import { ColorConversion } from '../common/utils/ColorConversion'
 import {
   createBarGlassMaterial,
@@ -75,7 +79,8 @@ struct SettingsDetailPage {
   // 是否存在鼠标/触控板设备（决定「白色蒙版」开关是否显示）
   @StorageLink(KEY_HAS_POINTER_DEVICE) hasPointerDevice: boolean = false
   @State pageTitle: string = ''
-  @State previewOnRight: boolean = false
+  // 顶部模糊预览的靠边方向：左手握持 → 靠右（沿用原有映射，由 HoldingHandService 统一滤波后广播）
+  @StorageLink(KEY_HOLDING_HAND_LEFT) previewOnRight: boolean = false
   // Tab 栏实时预览态：复刻 Index 真实 Tab 栏（可点击切换、悬停高亮、指示器弹簧动画）
   @State previewTabIndex: number = 0
   @State previewIndicatorOffset: number = 4
@@ -96,29 +101,9 @@ struct SettingsDetailPage {
   private dataService: DataService = DataService.getInstance()
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
   private isPC: boolean = deviceInfo.deviceType === '2in1'
-  // 智感握姿：开关 + 置信度滤波（连续 N 帧同向才翻转，避免短暂切换造成的"跳变"）
-  @StorageLink('uplayer_holding_hand_enabled') @Watch('onHoldingHandEnabledChange') holdingHandEnabled: boolean = true
-  private holdLastStatus: motion.HoldingHandStatus | undefined = undefined
-  private holdStreakCount: number = 0
-  // 要求连续 HOLD_STREAK_REQUIRED 次同向事件才允许翻转（经验值：原值 1 太敏感，3 较稳）
-  private static readonly HOLD_STREAK_REQUIRED: number = 3
-  private holdingHandCallback: (status: motion.HoldingHandStatus) => void =
-    (status: motion.HoldingHandStatus): void => {
-      // 置信度滤波：连续 N 次同向才允许翻转，避免传感器抖动引起频繁切边
-      if (status === this.holdLastStatus) {
-        this.holdStreakCount = this.holdStreakCount + 1
-      } else {
-        this.holdLastStatus = status
-        this.holdStreakCount = 1
-      }
-      if (this.holdStreakCount < SettingsDetailPage.HOLD_STREAK_REQUIRED) {
-        return
-      }
-      const targetOnRight: boolean = status === motion.HoldingHandStatus.LEFT_HAND_HELD
-      if (this.previewOnRight !== targetOnRight) {
-        this.previewOnRight = targetOnRight
-      }
-    }
+  // 智感握姿开关：写穿到 AppStorage（HoldingHandService 在页面外也要读开关），
+  // 滤波与订阅统一交给 HoldingHandService，本页不再自行订阅 holdingHandChanged
+  @StorageLink(KEY_HOLDING_HAND_ENABLED) holdingHandEnabled: boolean = true
   private themeOptions: ThemeOption[] = [
     { label: '跟随系统', value: 'system' },
     { label: '深色模式', value: 'dark' },
@@ -174,7 +159,8 @@ struct SettingsDetailPage {
     const route: string = params?.category ?? 'customize'
     this.pageTitle = this.titleMap[route] ?? '设置'
     ColorConversion.setSysBarLightBackground(this.isDark())
-    this.registerHoldingHandListener()
+    // 智感握姿监听由 HoldingHandService 统一持有（首页加号与本页预览共用同一份滤波结果）
+    HoldingHandService.getInstance().syncWithSetting()
     // 按明暗模式初始化 lightColorMode：未手动设置过时，暗黑默认白光，明亮默认主题色
     const existingLightMode: string = this.settings.lightColorMode
     if (existingLightMode === undefined || existingLightMode === '') {
@@ -194,49 +180,7 @@ struct SettingsDetailPage {
       this.primaryColor = this.pickerOriginalColor
       this.showColorPicker = false
     }
-    this.unregisterHoldingHandListener()
-  }
-
-  private registerHoldingHandListener(): void {
-    this.previewOnRight = false
-    this.holdLastStatus = undefined
-    this.holdStreakCount = 0
-    // 开关关闭、PC、能力不足时一律不订阅
-    if (!this.holdingHandEnabled || this.isPC || !canIUse('SystemCapability.MultimodalAwareness.Motion')) {
-      return
-    }
-    try {
-      motion.on('holdingHandChanged', this.holdingHandCallback)
-    } catch (err) {
-      Logger.warn(TAG, `holdingHandChanged register failed: ${JSON.stringify(err)}`)
-    }
-  }
-
-  private unregisterHoldingHandListener(): void {
-    if (this.isPC || !canIUse('SystemCapability.MultimodalAwareness.Motion')) {
-      return
-    }
-    try {
-      motion.off('holdingHandChanged', this.holdingHandCallback)
-    } catch (err) {
-      Logger.warn(TAG, `holdingHandChanged unregister failed: ${JSON.stringify(err)}`)
-    }
-    this.holdLastStatus = undefined
-    this.holdStreakCount = 0
-  }
-
-  // 用户在设置页切换开关时调用：开→注册监听并重置 streak；关→注销并复位 previewOnRight
-  private refreshHoldingHandListener(): void {
-    this.unregisterHoldingHandListener()
-    this.registerHoldingHandListener()
-  }
-
-  // @Watch 回调：握姿开关被用户切换时重新绑定监听；只有当前在 customize 页时回调才生效（避免页面间冲突）
-  onHoldingHandEnabledChange(): void {
-    if (this.pageTitle !== '定制') {
-      return
-    }
-    this.refreshHoldingHandListener()
+    // 监听不随本页销毁而退订：首页加号仍在用同一份握姿结果（由 EntryAbility 按前后台与开关同步订阅）
   }
 
   // 预览器说明：
@@ -1187,9 +1131,10 @@ struct SettingsDetailPage {
           .alignSelf(ItemAlign.Center)
           .onChange((isOn: boolean) => {
             this.settings.holdingHandEnabled = isOn
+            // 写穿到 AppStorage 后由共享服务按新开关重新订阅/退订
             this.holdingHandEnabled = isOn
             this.updateSetting()
-            this.refreshHoldingHandListener()
+            HoldingHandService.getInstance().syncWithSetting()
           })
       }
       .width('100%')

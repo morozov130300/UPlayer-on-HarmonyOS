@@ -417,6 +417,7 @@ export class AVPlayerService {
     const nextIndex: number = index >= songs.length - 1 ? 0 : index + 1
     const covers: AudioMetadataService = AudioMetadataService.getInstance()
     covers.prefetchAlbumCover(songs[index], AlbumCoverSize.MEDIUM, CoverPriority.HIGH)
+    covers.prefetchAlbumCover(songs[index], AlbumCoverSize.LARGE, CoverPriority.HIGH)
     if (previousIndex !== index) {
       covers.prefetchAlbumCover(songs[previousIndex], AlbumCoverSize.SMALL, CoverPriority.LOW)
     }

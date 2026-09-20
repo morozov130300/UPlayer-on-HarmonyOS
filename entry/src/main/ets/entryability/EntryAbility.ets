@@ -11,6 +11,7 @@ import { BackgroundUtil } from '../common/utils/BackgroundUtil';
 import { LiveViewService } from '../service/LiveViewService';
 import Logger from '../common/utils/Logger';
 import { AudioMetadataService } from '../service/AudioMetadataService';
+import { HoldingHandService } from '../service/HoldingHandService';
 import { ShareService } from '../service/ShareService';
 import { ColorConversion } from '../common/utils/ColorConversion';
 import { PreferencesUtil } from '../common/utils/PreferencesUtil';
@@ -49,6 +50,8 @@ export default class EntryAbility extends UIAbility {
       Logger.error(TAG, `DataService init failed: ${JSON.stringify(err)}`);
     }).then((): void => {
     const settings: AppSettingsData = DataService.getInstance().initToAppStorage();
+    // 智感握姿：按落库设置决定是否订阅 holdingHandChanged（首页加号与设置页预览共用同一份结果）
+    HoldingHandService.getInstance().syncWithSetting();
     AVSessionController.getInstance().initAVSession();
 
     AVPlayerService.getInstance().applyEqualizer(settings.eqEnabled, settings.eqBands);
@@ -116,11 +119,14 @@ export default class EntryAbility extends UIAbility {
   onForeground(): void {
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onForeground');
     AVPlayerService.getInstance().onForegroundRestore();
+    HoldingHandService.getInstance().syncWithSetting();
   }
 
   onBackground(): void {
     DataService.getInstance().flushPendingSongWrites();
     PreferencesUtil.getInstance().flushNow();
+    // 退到后台即退订握姿监听，避免后台持续占用传感器；回到前台由 onForeground 重新订阅
+    HoldingHandService.getInstance().stop();
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onBackground');
   }
 }

@@ -26,6 +26,7 @@ import { createToastGlassMaterial } from '../common/utils/GlassUtil';
 const TAG = 'ControlAreaComponent';
 const SEEK_SETTLE_MS: number = 2000;
 const SKIP_MS: number = 15000;
+const TIMER_PRESET_MINUTES: number[] = [5, 10, 15, 20, 30, 45, 60];
 
 @Component
 @SuppressWarnings({rules: [SuppressWarningsType.SYSCAP, SuppressWarningsType.COMPATIBILITY]})
@@ -59,6 +60,7 @@ export struct ControlAreaComponent {
   @State isShowSongInfoPanel: boolean = false;
   @State timerRemainingSeconds: number = 0;
   @State timerIntervalID: number = -1;
+  @State activePresetMinutes: number = -1;
   @State customHours: number = 0;
   @State customMinutes: number = 0;
   @State customSeconds: number = 0;
@@ -94,8 +96,20 @@ export struct ControlAreaComponent {
     }
     return ColorHelper.darken(this.primaryColor, 0.35)
   }
-  private getPresetSelectedValue(): number {
-    return this.selectedPresetMinutes > 0 ? this.selectedPresetMinutes : Math.round(this.timerRemainingSeconds / 60)
+  private matchPresetMinutes(totalSeconds: number): number {
+    if (totalSeconds <= 0 || totalSeconds % 60 !== 0) {
+      return -1
+    }
+    const minutes: number = totalSeconds / 60
+    return TIMER_PRESET_MINUTES.indexOf(minutes) >= 0 ? minutes : -1
+  }
+  // 正在倒计时的预设项：倒计时只跟随它，不受面板里「待确认选择」影响
+  private isTimerPresetActive(min: number): boolean {
+    return this.timerRemainingSeconds > 0 && this.activePresetMinutes === min
+  }
+  // 用户刚点选、尚未点确认的预设项
+  private isTimerPresetPending(min: number): boolean {
+    return this.selectedPresetMinutes === min && this.activePresetMinutes !== min
   }
   private isEffectiveDarkMode(): boolean {
     const themeMode: string = AppStorage.get<string>('uplayer_theme_mode') ?? 'system'
@@ -246,6 +260,8 @@ export struct ControlAreaComponent {
     if (stored > 0) {
       const remaining: number = stored <= 90 ? stored * 60 : stored
       this.timerRemainingSeconds = remaining
+      const storedPreset: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_TIMER_PRESET_MINUTES) ?? -1
+      this.activePresetMinutes = TIMER_PRESET_MINUTES.indexOf(storedPreset) >= 0 ? storedPreset : -1
       this.startTimer()
     }
   }
@@ -257,9 +273,7 @@ export struct ControlAreaComponent {
     }
     this.timerIntervalID = setInterval(() => {
       if (this.timerRemainingSeconds <= 1) {
-        this.stopTimer()
-        this.timerRemainingSeconds = 0
-        AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_REMAINING, 0)
+        this.clearTimer()
         try {
           this.avPlayerService.stop()
         } catch (e) {
@@ -270,6 +284,14 @@ export struct ControlAreaComponent {
       this.timerRemainingSeconds--
       AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_REMAINING, this.timerRemainingSeconds)
     }, 1000)
+  }
+
+  private clearTimer(): void {
+    this.stopTimer()
+    this.timerRemainingSeconds = 0
+    this.activePresetMinutes = -1
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_REMAINING, 0)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_PRESET_MINUTES, -1)
   }
 
   private stopTimer(): void {
@@ -284,8 +306,10 @@ export struct ControlAreaComponent {
       return
     }
     this.timerRemainingSeconds = totalSeconds
+    this.activePresetMinutes = this.matchPresetMinutes(totalSeconds)
     this.startTimer()
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_REMAINING, totalSeconds)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_PRESET_MINUTES, this.activePresetMinutes)
   }
 
   private setTimerMinutes(minutes: number): void {
@@ -356,6 +380,7 @@ export struct ControlAreaComponent {
           .selectedColor('#FFFFFF')
           .trackColor('#B3FFFFFF')
           .enabled(this.max > 0)
+          .focusable(false)
           .shadow({ radius: this.sliderGlow, color: '#B3FFFFFF' })
           .onChange((value: number, mode: SliderChangeMode) => {
             if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
@@ -688,6 +713,8 @@ export struct ControlAreaComponent {
         preferType: SheetType.CENTER,
         onWillDisappear: () => {
           this.isShowTimerPanel = false
+          this.selectedPresetMinutes = -1
+          this.isShowCustomPicker = false
         }
       })
     }
@@ -867,15 +894,16 @@ export struct ControlAreaComponent {
         .width('100%')
       } else {
         Column({ space: this.scaledSize(6) }) {
-          ForEach([5, 10, 15, 20, 30, 45, 60], (min: number) => {
+          ForEach(TIMER_PRESET_MINUTES, (min: number) => {
             Row() {
               Text(`${min}分钟`)
                 .fontSize(this.scaledFont(13))
-                .fontColor(this.getPresetSelectedValue() === min ? '#FFFFFF' : this.settingTextColor())
+                .fontColor(this.isTimerPresetActive(min) ? '#FFFFFF'
+                  : (this.isTimerPresetPending(min) ? this.primaryColor : this.settingTextColor()))
 
               Blank()
 
-              if (this.timerRemainingSeconds > 0 && this.getPresetSelectedValue() === min) {
+              if (this.isTimerPresetActive(min)) {
                 Text(this.formatTimerCountdown(this.timerRemainingSeconds))
                   .fontSize(this.scaledFont(14))
                   .fontWeight(FontWeight.Bold)
@@ -889,7 +917,10 @@ export struct ControlAreaComponent {
               top: this.scaledSize(8),
               bottom: this.scaledSize(8)
             })
-            .backgroundColor(this.getPresetSelectedValue() === min ? this.primaryColor : (this.isEffectiveDarkMode() ? '#333333' : ColorHelper.hexToRgba(this.primaryColor, 0.08)))
+            .backgroundColor(this.isTimerPresetActive(min) ? this.primaryColor
+              : (this.isTimerPresetPending(min)
+                ? ColorHelper.hexToRgba(this.primaryColor, this.isEffectiveDarkMode() ? 0.32 : 0.16)
+                : (this.isEffectiveDarkMode() ? '#333333' : ColorHelper.hexToRgba(this.primaryColor, 0.08))))
             .borderRadius(this.scaledSize(8))
             .alignItems(VerticalAlign.Center)
             .onClick(() => {
@@ -904,7 +935,7 @@ export struct ControlAreaComponent {
 
             Blank()
 
-            if (this.timerRemainingSeconds > 0 && this.getPresetSelectedValue() !== 5 && this.getPresetSelectedValue() !== 10 && this.getPresetSelectedValue() !== 15 && this.getPresetSelectedValue() !== 20 && this.getPresetSelectedValue() !== 30 && this.getPresetSelectedValue() !== 45 && this.getPresetSelectedValue() !== 60) {
+            if (this.timerRemainingSeconds > 0 && this.activePresetMinutes < 0) {
               Text(this.formatTimerCountdown(this.timerRemainingSeconds))
                 .fontSize(this.scaledFont(14))
                 .fontWeight(FontWeight.Bold)
@@ -948,9 +979,7 @@ export struct ControlAreaComponent {
             .backgroundColor(Color.Transparent)
             .border({ width: 1, color: '#FF3B30', radius: this.scaledSize(10) })
             .onClick(() => {
-              this.stopTimer()
-              this.timerRemainingSeconds = 0
-              AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_REMAINING, 0)
+              this.clearTimer()
             })
         }
       }

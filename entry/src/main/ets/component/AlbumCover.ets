@@ -15,6 +15,7 @@ export struct AlbumCover {
   @Prop fit: ImageFit = ImageFit.Cover
   @Prop decodeSize: number = AlbumCoverSize.SMALL
   @State cover: image.PixelMap | undefined = undefined
+  @State isCoverSettled: boolean = false
   private coverLease: AlbumCoverLease | undefined = undefined
   private requestId: number = 0
   private retryTimer: number = -1
@@ -36,6 +37,7 @@ export struct AlbumCover {
   private invalidate(): void {
     this.requestId++
     this.retryCount = 0
+    this.isCoverSettled = false
     this.clearRetryTimer()
     this.releaseCover()
   }
@@ -64,6 +66,8 @@ export struct AlbumCover {
         if (!AudioMetadataService.getInstance().isCoverConfirmedAbsent(this.song) &&
           this.retryCount < COVER_RETRY_MAX) {
           this.scheduleRetry(requestId)
+        } else {
+          this.isCoverSettled = true
         }
         return
       }
@@ -71,10 +75,15 @@ export struct AlbumCover {
       const previousLease: AlbumCoverLease | undefined = this.coverLease
       this.coverLease = loaded
       this.cover = loaded.pixelMap
+      this.isCoverSettled = true
       previousLease?.release()
     } catch (_) {
-      if (requestId === this.requestId && this.retryCount < COVER_RETRY_MAX) {
-        this.scheduleRetry(requestId)
+      if (requestId === this.requestId) {
+        if (this.retryCount < COVER_RETRY_MAX) {
+          this.scheduleRetry(requestId)
+        } else {
+          this.isCoverSettled = true
+        }
       }
     }
   }
@@ -104,7 +113,7 @@ export struct AlbumCover {
           .width(this.coverWidth)
           .height(this.coverHeight)
           .objectFit(this.fit)
-      } else {
+      } else if (this.isCoverSettled) {
         Image($r('app.media.ic_public_music'))
           .width('42%')
           .height('42%')

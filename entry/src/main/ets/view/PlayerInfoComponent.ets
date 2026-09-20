@@ -27,6 +27,7 @@ export struct PlayerInfoComponent {
   @StorageLink(AppStorageKeyConstants.KEY_BOTTOM_HEIGHT) @Watch('bottomHeightChange') bottomHeight: number = 0;
   @State imageLabel: PixelMap | Resource = $r('app.media.ic_public_music');
   @State imageLabelIsFallback: boolean = true;
+  @State isBackgroundReady: boolean = false;
   @State isShowControl: boolean = true;
   @State isShowControlLg: boolean = false;
   @State isTablet: boolean = true;
@@ -77,20 +78,22 @@ export struct PlayerInfoComponent {
 
   build() {
     Stack() {
-      Image(this.prevImageLabel)
-        .size(this.mainWindowInfo.heightBp !== HeightBreakpoint.HEIGHT_LG ?
-          { width: PlayerConstants.BACK_IMAGE, height: '100%' } :
-          { width: '100%', height: PlayerConstants.BACK_IMAGE })
-        .objectFit(ImageFit.Cover)
-        .opacity(this.prevImageOpacity)
+      if (this.isBackgroundImageVisible()) {
+        Image(this.prevImageLabel)
+          .size(this.mainWindowInfo.heightBp !== HeightBreakpoint.HEIGHT_LG ?
+            { width: PlayerConstants.BACK_IMAGE, height: '100%' } :
+            { width: '100%', height: PlayerConstants.BACK_IMAGE })
+          .objectFit(ImageFit.Cover)
+          .opacity(this.prevImageOpacity)
 
-      Image(this.imageLabel)
-        .size(this.mainWindowInfo.heightBp !== HeightBreakpoint.HEIGHT_LG ?
-          { width: PlayerConstants.BACK_IMAGE, height: '100%' } :
-          { width: '100%', height: PlayerConstants.BACK_IMAGE })
-        .objectFit(ImageFit.Cover)
-        .fillColor(this.imageLabelIsFallback ? $r('app.color.player_icon_color') : Color.Black)
-        .opacity(0.5)
+        Image(this.imageLabel)
+          .size(this.mainWindowInfo.heightBp !== HeightBreakpoint.HEIGHT_LG ?
+            { width: PlayerConstants.BACK_IMAGE, height: '100%' } :
+            { width: '100%', height: PlayerConstants.BACK_IMAGE })
+          .objectFit(ImageFit.Cover)
+          .fillColor(this.imageLabelIsFallback ? $r('app.color.player_icon_color') : Color.Black)
+          .opacity(0.5)
+      }
 
       Column()
         .width('100%')
@@ -255,6 +258,10 @@ export struct PlayerInfoComponent {
     .animation({ duration: StyleConstants.ANIMATION_PLAYER_BACKGROUND_DURATION, curve: Curve.EaseInOut })
   }
 
+  private isBackgroundImageVisible(): boolean {
+    return !this.imageLabelIsFallback || this.isBackgroundReady;
+  }
+
   private isBackgroundDark(colorStr: string): boolean {
     return !this.isBackgroundLight(colorStr);
   }
@@ -304,6 +311,7 @@ export struct PlayerInfoComponent {
     } else {
       this.imageColor = 'rgba(228, 236, 247, 1.00)';
     }
+    this.isBackgroundReady = true;
   }
 
   private async loadAlbumArt(song: SongInfo): Promise<void> {
@@ -334,36 +342,42 @@ export struct PlayerInfoComponent {
         value.release();
         return;
       }
-      this.previousBackgroundMap?.release();
+this.previousBackgroundMap?.release();
       this.previousBackgroundMap = this.currentBackgroundMap;
       this.currentBackgroundMap = value;
-      this.prevImageLabel = this.imageLabel;
-      this.getUIContext()?.animateTo({
-        duration: StyleConstants.ANIMATION_BACKGROUND_FADE_DURATION,
-        curve: Curve.EaseOut
-      }, () => {
-        this.prevImageOpacity = 0.5;
-      });
-        this.imageLabel = value;
-        this.imageLabelIsFallback = false;
-      setTimeout(() => {
-        if (requestId !== this.imageLoadRequestId) {
-          return;
-        }
+      const hasPreviousBackground: boolean = !this.imageLabelIsFallback;
+      if (hasPreviousBackground) {
+        this.prevImageLabel = this.imageLabel;
+      }
+      this.imageLabel = value;
+      this.imageLabelIsFallback = false;
+      this.isBackgroundReady = true;
+      if (hasPreviousBackground) {
         this.getUIContext()?.animateTo({
-          duration: StyleConstants.ANIMATION_PLAYER_BACKGROUND_DURATION,
+          duration: StyleConstants.ANIMATION_BACKGROUND_FADE_DURATION,
           curve: Curve.EaseOut
         }, () => {
-          this.prevImageOpacity = 0;
+          this.prevImageOpacity = 0.5;
         });
         setTimeout(() => {
-          if (requestId === this.imageLoadRequestId) {
-            this.prevImageLabel = $r('app.media.ic_public_music');
-            this.previousBackgroundMap?.release();
-            this.previousBackgroundMap = undefined;
+          if (requestId !== this.imageLoadRequestId) {
+            return;
           }
-        }, StyleConstants.ANIMATION_PLAYER_BACKGROUND_DURATION);
-      }, StyleConstants.ANIMATION_PRESS_DELAY_SHORT);
+          this.getUIContext()?.animateTo({
+            duration: StyleConstants.ANIMATION_PLAYER_BACKGROUND_DURATION,
+            curve: Curve.EaseOut
+          }, () => {
+            this.prevImageOpacity = 0;
+          });
+          setTimeout(() => {
+            if (requestId === this.imageLoadRequestId) {
+              this.prevImageLabel = $r('app.media.ic_public_music');
+              this.previousBackgroundMap?.release();
+              this.previousBackgroundMap = undefined;
+            }
+          }, StyleConstants.ANIMATION_PLAYER_BACKGROUND_DURATION);
+        }, StyleConstants.ANIMATION_PRESS_DELAY_SHORT);
+      }
     } catch (err) {
       Logger.error(`loadAlbumArt failed: ${JSON.stringify(err)}`);
     } finally {

@@ -13,6 +13,7 @@ import { AlbumCover } from '../component/AlbumCover'
 import { AlbumCoverSize, AudioMetadataService, CoverPriority } from '../service/AudioMetadataService'
 import { curves, uiMaterial } from '@kit.ArkUI'
 import { createBarGlassMaterial, topBlurRadiusFromStrength } from '../common/utils/GlassUtil'
+import { KEY_HOLDING_HAND_LEFT } from '../service/HoldingHandService'
 import { GlassBackButton } from '../view/GlassBackButton'
 import { StyleConstants } from '../common/constants/StyleConstants'
 
@@ -71,6 +72,9 @@ export struct HomeContent {
   @StorageLink('uplayer_home_top_blur_strength') homeTopBlurStrength: number = 25
   @StorageLink('uplayer_glass_thickness') glassThickness: number = 50
   @StorageLink('uplayer_interactive') interactive: boolean = true
+  // 智感握姿：左手握持 → 加号靠左；其余（右手/双手/无握持/未知即默认）→ 靠右。
+  // 滤波与订阅由 HoldingHandService 统一持有，本组件只订阅它的广播结果
+  @StorageLink(KEY_HOLDING_HAND_LEFT) holdingHandLeft: boolean = false
   private dataService: DataService = DataService.getInstance()
   private songScanner: SongScanner = SongScanner.getInstance()
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
@@ -843,7 +847,12 @@ export struct HomeContent {
         .borderRadius(this.scaledSize(20))
         .backgroundColor(this.primaryColor)
         .shadow({ radius: 10, color: ColorHelper.hexWithAlpha(this.primaryColor, '44'), offsetY: 4 })
-        .position({ bottom: this.bottomContentPadding + this.scaledSize(12), right: this.scaledSize(20) })
+        // 智感握姿：只切换贴边方向，不改变与底部的间距，避免握姿切换时按钮上下跳动
+        .position({
+          bottom: this.bottomContentPadding + this.scaledSize(12),
+          left: this.holdingHandLeft ? this.scaledSize(20) : undefined,
+          right: this.holdingHandLeft ? undefined : this.scaledSize(20)
+        })
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
         .transition({ type: TransitionType.Insert, opacity: 0, scale: { x: 0.5, y: 0.5 } })

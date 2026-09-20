@@ -45,6 +45,9 @@ export class AppStorageKeyConstants {
   public static readonly KEY_UI_ABILITY_CONTEXT: string = BaseConstants.KEY_PREFIX + 'UIAbilityContext'
   public static readonly KEY_WINDOW: string = BaseConstants.KEY_PREFIX + 'Window'
   public static readonly KEY_TIMER_REMAINING: string = BaseConstants.KEY_PREFIX + 'TimerRemaining'
+  // 当前运行中的定时所对应的预设分钟数（-1 表示自定义或无定时），
+  // 用于把倒计时固定显示在原设定项上，避免被面板里的待确认选择抢走
+  public static readonly KEY_TIMER_PRESET_MINUTES: string = BaseConstants.KEY_PREFIX + 'TimerPresetMinutes'
   public static readonly KEY_IMPORT_RUNNING: string = BaseConstants.KEY_PREFIX + 'ImportRunning'
   public static readonly KEY_IMPORT_TOTAL: string = BaseConstants.KEY_PREFIX + 'ImportTotal'
   public static readonly KEY_IMPORT_DONE: string = BaseConstants.KEY_PREFIX + 'ImportDone'
