@@ -123,6 +123,29 @@ export function isLowPowerGlassDevice(): boolean {
   return getDeviceMaterialLevel() === uiMaterial.MaterialLevel.SMOOTH
 }
 
+// 系统沉浸光效（ImmersiveMaterial.lightEffect，即底部栏「跟手光效」）是否真的会渲染：
+// 官方明确该参数仅对「高算力/中算力」设备生效，低算力（SMOOTH）设备上会被系统直接忽略，
+// 表现为：玻璃材质本身还在（低档位用背景色/边框/阴影实现），但按压/跟手的光效完全没有。
+// 这类设备必须由组件侧自绘跟手光效兜底（见 Index.tabLightGlow）。
+export function isSystemLightEffectAvailable(): boolean {
+  return isLiquidGlassAvailable() && !isLowPowerGlassDevice()
+}
+
+// 设备材质能力诊断串：跟手光效不生效时用于真机 hilog 定位（TAG = Index/GlassUtil）
+export function materialCapabilityInfo(): string {
+  const level: uiMaterial.MaterialLevel | undefined = getDeviceMaterialLevel()
+  let levelName: string = 'unknown'
+  if (level === uiMaterial.MaterialLevel.EXQUISITE) {
+    levelName = 'EXQUISITE'
+  } else if (level === uiMaterial.MaterialLevel.GENTLE) {
+    levelName = 'GENTLE'
+  } else if (level === uiMaterial.MaterialLevel.SMOOTH) {
+    levelName = 'SMOOTH'
+  }
+  return `api26=${deviceInfo.apiAvailable('26.0.0')}, liquidGlassAvailable=${isLiquidGlassAvailable()}, ` +
+    `materialLevel=${levelName}, systemLightEffectAvailable=${isSystemLightEffectAvailable()}`
+}
+
 // 页面级背景只用档位，不开启 interactive 与 lightEffect：
 // - interactive 会让所有页面在按下/拖动时产生 Q 弹形变（页面级不需要）
 // - lightEffect 会让普通滚动也出现跟手光效（用户未同意，仅 Tab 栏保留）
