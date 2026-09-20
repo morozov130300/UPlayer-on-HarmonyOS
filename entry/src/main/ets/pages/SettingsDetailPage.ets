@@ -450,11 +450,6 @@ struct SettingsDetailPage {
     .backgroundColor(this.previewHoverTabIndex === index && this.effectiveTouchIndicator() === 'mask'
       ? 'rgba(255,255,255,0.16)' : Color.Transparent)
     .borderRadius(this.scaledSize(18))
-    .shadow({
-      radius: this.previewHoverTabIndex === index ? 14 : 0,
-      color: this.previewHoverTabIndex === index
-        ? ColorHelper.hexWithAlpha(this.primaryColor, '66') : Color.Transparent
-    })
     .scale({
       x: this.previewHoverTabIndex === index ? 1.06 : 1,
       y: this.previewHoverTabIndex === index ? 1.06 : 1
@@ -490,11 +485,6 @@ struct SettingsDetailPage {
     .backgroundColor(this.previewHoverTabIndex === index && this.effectiveTouchIndicator() === 'mask'
       ? 'rgba(255,255,255,0.18)' : Color.Transparent)
     .borderRadius(this.scaledSize(18))
-    .shadow({
-      radius: this.previewHoverTabIndex === index ? 16 : 0,
-      color: this.previewHoverTabIndex === index
-        ? ColorHelper.hexWithAlpha(this.primaryColor, '77') : Color.Transparent
-    })
     .scale({
       x: this.previewHoverTabIndex === index ? 1.06 : 1,
       y: this.previewHoverTabIndex === index ? 1.06 : 1
@@ -713,7 +703,7 @@ struct SettingsDetailPage {
         Row() {
           GlassBackButton({
             clickSize: this.scaledSize(48),
-            iconSize: 15,
+            iconSize: this.scaledSize(15),
             iconColor: this.settingTextColor(),
             iconOpacity: 0.9,
             onBack: () => {

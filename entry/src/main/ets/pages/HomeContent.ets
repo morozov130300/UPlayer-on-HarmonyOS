@@ -65,8 +65,6 @@ export struct HomeContent {
   @State dragSongId: string = ''
   @State dragOffsetY: number = 0
   private dragLastY: number = 0
-  // 最近一次长按触发的时间戳，用于丢弃长按结束后的那次 click
-  private longPressAtMs: number = 0
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
   // 底部栏样式：经典样式下多选菜单栏不挂任何背景效果（磨砂/液态玻璃）
   @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
@@ -102,8 +100,17 @@ export struct HomeContent {
     return this.tabStyle !== 'classic'
   }
 
+  @State headerRowHeight: number = 0
+
   private headerOverlayHeight(): number {
-    return this.scaledSize(40)
+    return this.headerRowHeight > 0 ? this.headerRowHeight : this.scaledSize(40)
+  }
+
+  private onHeaderRowAreaChange(area: Area): void {
+    const h: Length = area.height
+    if (typeof h === 'number' && h > 0 && Math.abs(h - this.headerRowHeight) > 0.5) {
+      this.headerRowHeight = h
+    }
   }
 
   // 多选菜单栏几何：高度保持原样，垂直居中于问候语内容带
@@ -458,10 +465,6 @@ export struct HomeContent {
   }
 
   onSongTap(item: SongInfo): void {
-    // 丢弃长按后松手派发的那次点击，防止把刚长按选中的项又取消掉
-    if (new Date().getTime() - this.longPressAtMs < 500) {
-      return
-    }
     if (this.isMultiSelectMode) {
       this.toggleSelectItem(item.id)
       return
@@ -480,9 +483,6 @@ export struct HomeContent {
       this.isMultiSelectMode = true
       this.selectedIds = []
     }
-    // 记录长按时间：长按结束后松手仍会派发一次 onClick，
-    // onSongTap 里据此丢弃这次点击，避免刚选中的项被取消、多选模式被退出
-    this.longPressAtMs = new Date().getTime()
     this.toggleSelectItem(item.id)
   }
 
@@ -520,12 +520,13 @@ export struct HomeContent {
     return true
   }
 
-  toggleSelectAll(): void {
+  toggleSelectAll(): boolean {
     if (this.isAllSelected()) {
       this.selectedIds = []
-      return
+      return false
     }
     this.selectedIds = this.getVisibleSongIds()
+    return true
   }
 
   exitMultiSelect(): void {
@@ -744,8 +745,11 @@ export struct HomeContent {
           .onClick(() => { this.toggleViewMode() })
         }
         .width('100%')
-        .padding({ left: 16, right: 16, top: 6, bottom: 6 })
+        .padding({ left: 16, right: 16, top: 6 })
         .position({ top: this.topContentPadding })
+        .onAreaChange((oldValue: Area, newValue: Area) => {
+          this.onHeaderRowAreaChange(newValue)
+        })
       }
       .width('100%')
       .height(this.listTopPadding())
@@ -761,7 +765,7 @@ export struct HomeContent {
           // 返回按钮：与设置页/播放页共用同一组件，圆形玻璃材质与底部 Tab 栏同源
           GlassBackButton({
             clickSize: this.scaledSize(48),
-            iconSize: 15,
+            iconSize: this.scaledSize(15),
             iconColor: $r('app.color.text_primary'),
             iconOpacity: 0.9,
             onBack: () => { this.exitMultiSelect() }
@@ -981,23 +985,29 @@ export struct HomeContent {
     .constraintSize({ minHeight: this.scaledSize(52), maxHeight: this.scaledSize(96) })
     .alignItems(VerticalAlign.Center)
     .parallelGesture(
-      LongPressGesture()
-        .onAction(() => {
-          this.onSongLongPress(item)
-        })
-    )
-    .onClick(() => {
-      if (!item.isAvailable) {
-        try {
-          this.getUIContext()?.getPromptAction().showToast({
-            message: '歌曲可能已被删除或移动'
+      // 单击与长按必须先组成互斥手势组，再整体作为并行手势挂到行上。
+      // 若直接给行挂 .onClick 再并行挂 LongPressGesture，二者会被合成并行组：
+      // 长按成功后松手仍会补发一次单击，把刚长按选中的项又取消掉。
+      GestureGroup(GestureMode.Exclusive,
+        TapGesture({ count: 1, fingers: 1 })
+          .onAction(() => {
+            if (!item.isAvailable) {
+              try {
+                this.getUIContext()?.getPromptAction().showToast({
+                  message: '歌曲可能已被删除或移动'
+                })
+              } catch (e) {
+                Logger.error(TAG, 'unavailable toast failed')
+              }
+              return
+            }
+            this.onSongTap(item)
+          }),
+        LongPressGesture({ repeat: false })
+          .onAction(() => {
+            this.onSongLongPress(item)
           })
-        } catch (e) {
-          Logger.error(TAG, 'unavailable toast failed')
-        }
-        return
-      }
-      this.onSongTap(item)
-    })
+      )
+    )
   }
 }

@@ -5,13 +5,14 @@ import { ColorHelper } from '../common/utils/ColorHelper'
 import { createBarGlassMaterial, createTabGlassMaterial, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
 import { KEY_HAS_POINTER_DEVICE } from '../common/utils/InputDeviceUtil'
 
-// 返回按钮统一组件：可点击区域维持原尺寸，内部套一层「可点击区域 - 8vp」的内切圆形，
+// 返回按钮统一组件：可点击区域维持原尺寸，内部套一层「可点击区域 × 0.7」的内切圆形，
 // 圆形的液态玻璃/磨砂/描边/阴影完全与底部 Tab 栏同源同参（同一批 AppStorage 配置驱动），
 // 保证风格切换时返回按钮与 Tab 栏同步变化。
 @Component
 export struct GlassBackButton {
   // 可点击区域直径（由调用方按各页原有缩放规则算好）
   clickSize: number = 48
+  // 图标直径（按与圆形相同的比例缩放后显示）
   iconSize: number = 15
   iconColor: ResourceColor = $r('app.color.text_primary')
   iconOpacity: number = 0.9
@@ -29,9 +30,17 @@ export struct GlassBackButton {
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
   @StorageLink('uplayer_theme_mode') themeMode: string = 'system'
 
-  // 内切圆直径：点击区域四周各留 4vp
+  // 圆形相对可点击区的直径比例：可点击区不变，视觉圆更小
+  private static readonly CIRCLE_RATIO: number = 0.7
+
+  // 内切圆直径 = 可点击区 × 0.7，随调用方传入的 clickSize（含显示大小缩放）同步变化
   private circleSize(): number {
-    return this.clickSize - 8
+    return Math.round(this.clickSize * GlassBackButton.CIRCLE_RATIO)
+  }
+
+  // 图标与圆形同比例缩小
+  private visualIconSize(): number {
+    return Math.round(this.iconSize * GlassBackButton.CIRCLE_RATIO)
   }
 
   private isDarkTheme(): boolean {
@@ -78,8 +87,8 @@ export struct GlassBackButton {
     Row() {
       Row() {
         Image($r('app.media.ic_public_arrow_left'))
-          .width(this.iconSize)
-          .height(this.iconSize)
+          .width(this.visualIconSize())
+          .height(this.visualIconSize())
           .fillColor(this.iconColor)
           .opacity(this.iconOpacity)
       }

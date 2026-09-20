@@ -399,10 +399,6 @@ struct MainPage {
     .justifyContent(FlexAlign.Center)
     .backgroundColor(this.hoverTabIndex === index && this.effectiveTouchIndicator() === 'mask' ? 'rgba(255,255,255,0.16)' : Color.Transparent)
     .borderRadius(this.scaledSize(18))
-    .shadow({
-      radius: this.hoverTabIndex === index ? 14 : 0,
-      color: this.hoverTabIndex === index ? ColorHelper.hexWithAlpha(this.primaryColor, '66') : Color.Transparent
-    })
     .scale({ x: this.hoverTabIndex === index ? 1.06 : 1, y: this.hoverTabIndex === index ? 1.06 : 1 })
     .animation({ duration: StyleConstants.ANIMATION_HOVER_DURATION, curve: Curve.EaseOut })
     .hoverEffect(this.bottomHoverEffect())
@@ -434,10 +430,6 @@ struct MainPage {
     .justifyContent(FlexAlign.Center)
     .backgroundColor(this.hoverTabIndex === index && this.effectiveTouchIndicator() === 'mask' ? 'rgba(255,255,255,0.18)' : Color.Transparent)
     .borderRadius(this.scaledSize(18))
-    .shadow({
-      radius: this.hoverTabIndex === index ? 16 : 0,
-      color: this.hoverTabIndex === index ? ColorHelper.hexWithAlpha(this.primaryColor, '77') : Color.Transparent
-    })
     .scale({ x: this.hoverTabIndex === index ? 1.06 : 1, y: this.hoverTabIndex === index ? 1.06 : 1 })
     .animation({ duration: StyleConstants.ANIMATION_HOVER_DURATION, curve: Curve.EaseOut })
     .hoverEffect(this.bottomHoverEffect())
