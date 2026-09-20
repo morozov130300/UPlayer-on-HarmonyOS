@@ -13,7 +13,7 @@ import { DataService } from '../service/DataService'
 import { PoetryService } from '../service/PoetryService'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import { createBarGlassMaterial, createTabGlassMaterial, DEFAULT_GLASS_STYLE, isLiquidGlassAvailable,
-  isSystemLightEffectAvailable, materialCapabilityInfo } from '../common/utils/GlassUtil'
+  materialCapabilityInfo } from '../common/utils/GlassUtil'
 import Logger from '../common/utils/Logger'
 import { LrcEntry } from '../viewmodel/LrcEntry'
 import { loadLyricEntries } from '../service/LyricLoader'
@@ -85,8 +85,6 @@ struct MainPage {
   private indicatorInset: number = 4
   // 自绘跟手光效的宽度（高度与 Tab 项等高）
   private tabGlowWidth: number = 84
-  // 本机系统沉浸光效是否会渲染（设备能力固定，构造时取一次即可）
-  private systemLightEffectAvailable: boolean = isSystemLightEffectAvailable()
   private rotationTimer: number = -1
   private dataService: DataService = DataService.getInstance()
   private poetryService: PoetryService = PoetryService.getInstance()
@@ -163,14 +161,11 @@ struct MainPage {
     return this.tabTouchIndicator
   }
 
-  // 颜色由 lightColorMode 控制（白/主题），仅在 tabTouchIndicator='light' 时开启，
-  // 否则传 undefined 让 lightEffect 完全关闭，便于外层使用系统自带的按压白色蒙版。
+  // 材质只负责玻璃本体（档位/交互形变/自动反色/阴影）；「跟手光效」不再交给系统 lightEffect
+  // （系统沉浸式材质只在 Navigation 标题栏/Tabs 底部栏等区域渲染，本项目自绘底部栏不在范围内），
+  // 统一由组件侧自绘（见 tabLightGlow），手机上同样可见。
   private liquidGlassMaterial(): uiMaterial.Material | undefined {
-    const useLight: boolean = this.effectiveTouchIndicator() === 'light'
-    const lightColor: string | undefined = useLight
-      ? (this.lightColorMode === 'white' ? '#FFFFFF' : this.primaryColor)
-      : undefined
-    return createTabGlassMaterial(this.glassThickness, this.interactive, lightColor, this.colorInvert, this.applyShadow)
+    return createTabGlassMaterial(this.glassThickness, this.interactive, this.colorInvert, this.applyShadow)
   }
 
   // 开启白色蒙版（按下雾蒙蒙的发白指示器）时返回 HoverEffect.Highlight，否则返回 None
@@ -179,12 +174,13 @@ struct MainPage {
     return this.effectiveTouchIndicator() === 'mask' ? HoverEffect.Highlight : HoverEffect.None
   }
 
-  // ── 自绘跟手光效（系统光效不可用时的兜底）──
-  // 系统 ImmersiveMaterial.lightEffect 只在「高算力/中算力」设备上渲染，低算力设备上
-  // 系统会直接忽略它（玻璃还在，光效全无）。此时由本组件自绘一束跟随触点的光晕，
-  // 保证「跟手光效」在手机上同样可见，且三端表现可预期。
+// ── 自绘跟手光效 ──
+  // 系统 ImmersiveMaterial.lightEffect 受官方「生效范围」限制（只在 Navigation 标题栏 /
+  // Tabs 底部 TabBar / 弹窗类等区域内渲染），本项目的自绘底部栏拿不到这束光——真机实测
+  // 手机 materialLevel=EXQUISITE 时依旧无光。因此「跟手光效」统一由本组件自绘：
+  // 按下/滑动时光晕跟随触点，抬起淡出，颜色走「跟手光效颜色」设置，三端表现一致。
   private selfDrawnLightEnabled(): boolean {
-    return this.effectiveTouchIndicator() === 'light' && !this.systemLightEffectAvailable
+    return this.effectiveTouchIndicator() === 'light'
   }
 
   // 光晕颜色与「跟手光效颜色」设置一致：white=纯白光，theme=主题色

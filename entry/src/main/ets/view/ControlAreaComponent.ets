@@ -644,7 +644,7 @@ export struct ControlAreaComponent {
       .width('100%')
       .height(52)
       .padding({ left: 16, right: 16 })
-      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .backgroundColor($r('app.color.player_bg_color'))
       .borderRadius(this.scaledSize(10))
       .onClick(() => {
         this.isShowSongInfoPanel = true
@@ -684,7 +684,7 @@ export struct ControlAreaComponent {
       .width('100%')
       .height(52)
       .padding({ left: 16, right: 16 })
-      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .backgroundColor($r('app.color.player_bg_color'))
       .borderRadius(this.scaledSize(10))
       .onClick(() => {
         this.isShowTimerPanel = true

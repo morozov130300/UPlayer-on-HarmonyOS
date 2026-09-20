@@ -64,18 +64,14 @@ export struct GlassBackButton {
   }
 
   // 与底部 Tab 栏完全同源的材质选择：
-  // 玻璃风格(immersive) → createTabGlassMaterial 全参工厂（含 lightEffect/colorInvert/applyShadow）；
+  // 玻璃风格(immersive) → createTabGlassMaterial 工厂（colorInvert/applyShadow，跟手光效由组件自绘）；
   // 经典风格(classic) → createBarGlassMaterial。能力不足/玻璃关断返回 undefined，由磨砂兜底。
   private backMaterial(): uiMaterial.Material | undefined {
     if (this.tabStyle === 'immersive') {
       if (!isLiquidGlassAvailable() || this.glassThickness <= 0) {
         return undefined
       }
-      const useLight: boolean = this.effectiveTouchIndicator() === 'light'
-      const lightColor: string | undefined = useLight
-        ? (this.lightColorMode === 'white' ? '#FFFFFF' : this.primaryColor)
-        : undefined
-      return createTabGlassMaterial(this.glassThickness, this.interactive, lightColor, this.colorInvert, this.applyShadow)
+      return createTabGlassMaterial(this.glassThickness, this.interactive, this.colorInvert, this.applyShadow)
     }
     if (this.tabStyle === 'classic') {
       return createBarGlassMaterial(this.glassThickness, this.interactive)
