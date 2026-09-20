@@ -13,6 +13,7 @@ import { ColorConversion } from '../common/utils/ColorConversion';
 import { WindowInfo } from '../common/utils/WindowUtil';
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
 import { AlbumCoverLease, AlbumCoverSize, AudioMetadataService } from '../service/AudioMetadataService';
+import { GlassBackButton } from './GlassBackButton';
 
 const TAG = 'PlayerInfoComponent'
 
@@ -234,20 +235,16 @@ export struct PlayerInfoComponent {
       })
 
       Row() {
-        Image($r('app.media.ic_public_arrow_left'))
-          .width(18)
-          .height(18)
-          .fillColor(Color.White)
-          .opacity(0.8)
+        GlassBackButton({
+          clickSize: 56,
+          iconSize: 18,
+          iconColor: Color.White,
+          iconOpacity: 0.8,
+          onBack: () => {
+            this.getUIContext()?.getRouter().back()
+          }
+        })
       }
-      .width(56)
-      .height(56)
-      .justifyContent(FlexAlign.Center)
-      .borderRadius(28)
-      .hoverEffect(HoverEffect.Scale)
-      .onClick(() => {
-        this.getUIContext()?.getRouter().back()
-      })
       .position({ x: 8, y: this.topHeight })
       .zIndex(2)
     }

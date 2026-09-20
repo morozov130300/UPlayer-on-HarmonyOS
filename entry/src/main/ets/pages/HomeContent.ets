@@ -13,6 +13,7 @@ import { AlbumCover } from '../component/AlbumCover'
 import { AlbumCoverSize, AudioMetadataService, CoverPriority } from '../service/AudioMetadataService'
 import { curves, uiMaterial } from '@kit.ArkUI'
 import { createBarGlassMaterial } from '../common/utils/GlassUtil'
+import { GlassBackButton } from '../view/GlassBackButton'
 import { StyleConstants } from '../common/constants/StyleConstants'
 
 const TAG = 'HomeContent'
@@ -746,20 +747,14 @@ export struct HomeContent {
       // 入场/退场由 transition 驱动，入场延迟让问候语先上滑隐藏
       if (this.isMultiSelectMode) {
         Row() {
-          // 返回按钮：与设置页/播放页的返回按钮统一样式，用于退出多选
-          Row() {
-            Image($r('app.media.ic_public_arrow_left'))
-              .width(15)
-              .height(15)
-              .fillColor($r('app.color.text_primary'))
-              .opacity(0.9)
-          }
-          .width(this.scaledSize(48))
-          .height(this.scaledSize(48))
-          .justifyContent(FlexAlign.Center)
-          .borderRadius(this.scaledSize(24))
-          .hoverEffect(HoverEffect.Scale)
-          .onClick(() => { this.exitMultiSelect() })
+          // 返回按钮：与设置页/播放页共用同一组件，圆形玻璃材质与底部 Tab 栏同源
+          GlassBackButton({
+            clickSize: this.scaledSize(48),
+            iconSize: 15,
+            iconColor: $r('app.color.text_primary'),
+            iconOpacity: 0.9,
+            onBack: () => { this.exitMultiSelect() }
+          })
 
           Text('已选 ' + this.selectedIds.length + ' 首')
             .fontSize(Math.round(14 * this.fontSizeScale))

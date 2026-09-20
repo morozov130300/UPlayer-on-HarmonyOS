@@ -18,6 +18,7 @@ import {
 } from '../common/utils/GlassUtil'
 import { StyleConstants } from '../common/constants/StyleConstants'
 import { KEY_HAS_POINTER_DEVICE, refreshPointerDeviceState } from '../common/utils/InputDeviceUtil'
+import { GlassBackButton } from '../view/GlassBackButton'
 
 const TAG = 'SettingsDetailPage'
 const KEY_PRIMARY_COLOR = 'uplayer_primary_color'
@@ -710,21 +711,15 @@ struct SettingsDetailPage {
     Stack() {
       Column() {
         Row() {
-          Row() {
-            Image($r('app.media.ic_public_arrow_left'))
-              .width(15)
-              .height(15)
-              .fillColor(this.settingTextColor())
-              .opacity(0.9)
-          }
-          .width(this.scaledSize(48))
-          .height(this.scaledSize(48))
-          .justifyContent(FlexAlign.Center)
-          .borderRadius(this.scaledSize(24))
-          .hoverEffect(HoverEffect.Scale)
-          .onClick(() => {
-            this.getUIContext()?.getRouter()
-              .back()
+          GlassBackButton({
+            clickSize: this.scaledSize(48),
+            iconSize: 15,
+            iconColor: this.settingTextColor(),
+            iconOpacity: 0.9,
+            onBack: () => {
+              this.getUIContext()?.getRouter()
+                .back()
+            }
           })
 
           Text(this.pageTitle)
