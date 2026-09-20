@@ -42,6 +42,10 @@ struct MusicPlayer {
     if (event.type !== KeyType.Down) {
       return false;
     }
+    if (event.keyCode === KeyCode.KEYCODE_ESCAPE) {
+      this.getUIContext()?.getRouter().back();
+      return true;
+    }
     if (event.keyCode === KeyCode.KEYCODE_SPACE) {
       if (this.isPlaying) {
         this.avPlayerService.pause();

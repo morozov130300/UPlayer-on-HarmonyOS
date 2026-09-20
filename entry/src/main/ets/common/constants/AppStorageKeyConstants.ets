@@ -30,6 +30,9 @@ export class AppStorageKeyConstants {
   public static readonly KEY_SONG_LIST: string = BaseConstants.KEY_PREFIX + 'SongList'
   public static readonly KEY_LIBRARY_REVISION: string = BaseConstants.KEY_PREFIX + 'LibraryRevision'
   public static readonly KEY_FILTER_REVISION: string = BaseConstants.KEY_PREFIX + 'FilterRevision'
+  // 仅在歌词引用发生集合级变化（自愈回填 / 导入覆盖）时 +1，
+  // 不能复用 KEY_LIBRARY_REVISION：后者会被收藏切换等高频操作触发，导致歌词文件被反复重读
+  public static readonly KEY_LYRIC_REVISION: string = BaseConstants.KEY_PREFIX + 'LyricRevision'
   public static readonly KEY_PLAY_MODE: string = BaseConstants.KEY_PREFIX + 'PlayMode'
   public static readonly KEY_SELECT_INDEX: string = BaseConstants.KEY_PREFIX + 'SelectIndex'
   public static readonly KEY_CURRENT_SPEED: string = BaseConstants.KEY_PREFIX + 'CurrentSpeed'
@@ -45,4 +48,8 @@ export class AppStorageKeyConstants {
   public static readonly KEY_IMPORT_RUNNING: string = BaseConstants.KEY_PREFIX + 'ImportRunning'
   public static readonly KEY_IMPORT_TOTAL: string = BaseConstants.KEY_PREFIX + 'ImportTotal'
   public static readonly KEY_IMPORT_DONE: string = BaseConstants.KEY_PREFIX + 'ImportDone'
+  public static readonly KEY_HOME_MULTI_SELECT: string = BaseConstants.KEY_PREFIX + 'HomeMultiSelect'
+  // Ctrl+A 全选请求（计数器）：页面级键盘事件无法直接改 HomeContent 的 @State，
+  // 每次按下 +1 触发 HomeContent 的 @Watch，由它在多选态下把可见歌曲全部选中
+  public static readonly KEY_HOME_SELECT_ALL_REQUEST: string = BaseConstants.KEY_PREFIX + 'HomeSelectAllRequest'
 }

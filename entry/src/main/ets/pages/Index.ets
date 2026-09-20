@@ -1,9 +1,8 @@
 import display from '@ohos.display'
 import { curves, window, uiMaterial } from '@kit.ArkUI'
 import { common, ConfigurationConstant } from '@kit.AbilityKit'
-import { fileIo as fs } from '@kit.CoreFileKit'
-import { util } from '@kit.ArkTS'
 import { deviceInfo } from '@kit.BasicServicesKit'
+import { KeyCode } from '@kit.InputKit'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { SongInfo } from '../model/SongInfo'
 import { AVPlayerService } from '../service/AVPlayerService'
@@ -16,9 +15,7 @@ import { ColorHelper } from '../common/utils/ColorHelper'
 import { createBarGlassMaterial, createTabGlassMaterial, DEFAULT_GLASS_STYLE, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
 import Logger from '../common/utils/Logger'
 import { LrcEntry } from '../viewmodel/LrcEntry'
-import { parseKrcLyric, parseLrcLyric } from '../common/utils/LrcUtils'
-import { LyricFile } from '../common/constants/LyricConst'
-import { PlayerConstants } from '../common/constants/PlayerConstants'
+import { loadLyricEntries } from '../service/LyricLoader'
 import { AlbumCover } from '../component/AlbumCover'
 import { ColorConversion } from '../common/utils/ColorConversion'
 import { StyleConstants } from '../common/constants/StyleConstants'
@@ -35,6 +32,10 @@ struct MainPage {
   @State greetingTitle: string = '加载中……'
   @State greetingOpacity: number = 0
   @State greetingOffset: number = 20
+  // 主页多选状态（由 HomeContent 写入）：进入多选时问候语整体上滑淡出，退出时回落淡入
+  @StorageLink(AppStorageKeyConstants.KEY_HOME_MULTI_SELECT) @Watch('onHomeMultiSelectChange') homeMultiSelect: boolean = false
+  @State greetingShiftY: number = 0
+  @State greetingVisible: number = 1
   @State poetryLine: string = ''
   @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) @Watch('onPlayStateChange') isPlaying: boolean = false
   @State rotationAngle: number = 0
@@ -71,6 +72,8 @@ struct MainPage {
   @State lyricEntries: LrcEntry[] = []
   @StorageLink(AppStorageKeyConstants.KEY_PROGRESS) @Watch('onProgressChange') playProgress: number = 0
   @StorageLink(AppStorageKeyConstants.KEY_SELECT_INDEX) @Watch('onCurrentSongChange') selectedSongIndex: number = 0
+  // 曲库歌词引用发生集合级变化（自愈回填 / 重新导入）时重新加载迷你歌词
+  @StorageProp(AppStorageKeyConstants.KEY_LYRIC_REVISION) @Watch('loadCurrentLyrics') lyricRevision: number = 0
 
   private swiperController: SwiperController = new SwiperController()
   private tabWidth: number = 72
@@ -206,7 +209,8 @@ struct MainPage {
   }
 
   aboutToAppear(): void {
-    this.dataService.initToAppStorage()
+    // AppStorage 已由 EntryAbility 在 loadContent 之前完成初始化（initToAppStorage 幂等），
+    // 此处不再重复调用，避免重复执行可访问性检查与授权激活竞态
     ColorConversion.setSysBarLightBackground(this.isDarkTheme())
     this.updateGreeting()
     this.loadPoetryLine()
@@ -231,6 +235,50 @@ struct MainPage {
   private onPageChange(index: number): void {
     this.currentIndex = index
     this.updateIndicatorOffset(index)
+  }
+
+  // ── 返回键 / ESC 退出多选 ──
+  // 多选态只存在于首页（tab 0），所以只在「当前在首页且处于多选」时拦截；
+  // 其余情况必须返回 false，让系统执行默认返回逻辑（Index 是根页面，默认即退出应用）。
+  // KeyCode 与 KeyEvent/KeyType 的用法与 MusicPlayer.handleKeyEvent 保持一致。
+  private tryExitMultiSelect(): boolean {
+    if (this.currentIndex !== 0 || !this.homeMultiSelect) {
+      return false
+    }
+    // isMultiSelectMode 已是 @StorageLink，写入 AppStorage 即可让 HomeContent 退出多选，
+    // 并由它的 @Watch 顺带清空选中集合
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_HOME_MULTI_SELECT, false)
+    return true
+  }
+
+  // 手机/平板的返回键与侧滑返回：仅 @Entry 组件可监听
+  onBackPress(): boolean {
+    return this.tryExitMultiSelect()
+  }
+
+  // Ctrl 是否按下：getModifierKeyState 为 API 12+ 的可选方法，低版本设备上不存在则视为未按下
+  private isCtrlPressed(event: KeyEvent): boolean {
+    if (event.getModifierKeyState === undefined) {
+      return false
+    }
+    return event.getModifierKeyState(['Ctrl'])
+  }
+
+  // 2in1/PC：MusicPlayer 里已证实 ESC 不会走 onBackPress，需要单独监听键盘
+  private handleKeyEvent(event: KeyEvent): boolean {
+    if (event.type !== KeyType.Down) {
+      return false
+    }
+    if (event.keyCode === KeyCode.KEYCODE_ESCAPE) {
+      return this.tryExitMultiSelect()
+    }
+    if (event.keyCode === KeyCode.KEYCODE_A && this.currentIndex === 0 && this.homeMultiSelect
+      && this.isCtrlPressed(event)) {
+      const current: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_HOME_SELECT_ALL_REQUEST) ?? 0
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_HOME_SELECT_ALL_REQUEST, current + 1)
+      return true
+    }
+    return false
   }
 
   onFolderClick(): void {
@@ -404,6 +452,19 @@ struct MainPage {
       curve: curves.springMotion(0.4, 0.8)
     }, () => {
       this.indicatorOffset = this.scaledSize(this.indicatorInset + index * (this.tabWidth + this.tabGap))
+    })
+  }
+
+  // 主页进入/退出多选：问候语向上位移并淡出（退出时反向回落淡入），
+  // 让位给随后切换到该位置的 HomeContent 多选菜单栏
+  onHomeMultiSelectChange(): void {
+    const hidden: boolean = this.homeMultiSelect
+    this.getUIContext()?.animateTo({
+      duration: hidden ? StyleConstants.ANIMATION_GREETING_HIDE_DURATION : StyleConstants.ANIMATION_GREETING_SHOW_DURATION,
+      curve: hidden ? Curve.EaseInOut : Curve.EaseOut
+    }, () => {
+      this.greetingShiftY = hidden ? -24 : 0
+      this.greetingVisible = hidden ? 0 : 1
     })
   }
 
@@ -628,44 +689,20 @@ struct MainPage {
     this.lyricEntries = []
     this.currentLyricLine = ''
     this.nextLyricLine = ''
-    if (this.currentSongTitle.length === 0) {
-      return
-    }
     const songs: SongInfo[] = this.dataService.getSongs()
+    // 准入条件应是「当前选中项有效」，与歌曲标题无关：
+    // 旧的 currentSongTitle.length === 0 判断会在标题缺失时误拦截歌词加载
     if (this.selectedSongIndex < 0 || this.selectedSongIndex >= songs.length) {
       return
     }
     const song: SongInfo = songs[this.selectedSongIndex]
-    const lyricPath: string = song.lyricUri.length > 0 ? song.lyricUri : song.lyricPath
-    if (lyricPath.length === 0) {
+    const entries: LrcEntry[] = await loadLyricEntries(song)
+    if (requestId !== this.lyricLoadRequestId || this.selectedSongIndex < 0 ||
+      this.selectedSongIndex >= songs.length || songs[this.selectedSongIndex].id !== song.id) {
       return
     }
-    let lyricFile: fs.File | undefined = undefined
-    try {
-      lyricFile = await fs.open(lyricPath, fs.OpenMode.READ_ONLY)
-      const fileSize: number = (await fs.stat(lyricFile.fd)).size
-      const lyricBuffer: ArrayBuffer = new ArrayBuffer(fileSize)
-      await fs.read(lyricFile.fd, lyricBuffer)
-      const decoder = util.TextDecoder.create(PlayerConstants.ENCODING, { ignoreBOM: true })
-      const lyricText: string = decoder.decodeToString(new Uint8Array(lyricBuffer), { stream: false })
-      const entries: LrcEntry[] = lyricPath.endsWith(LyricFile.KRC) ? parseKrcLyric(lyricText) : parseLrcLyric(lyricText)
-      if (requestId !== this.lyricLoadRequestId || this.selectedSongIndex < 0 ||
-        this.selectedSongIndex >= songs.length || songs[this.selectedSongIndex].id !== song.id) {
-        return
-      }
-      this.lyricEntries = entries
-      this.onProgressChange()
-    } catch (err) {
-      Logger.warn(TAG, `loadCurrentLyrics failed: ${JSON.stringify(err)}`)
-    } finally {
-      if (lyricFile !== undefined) {
-        try {
-          await fs.close(lyricFile)
-        } catch (e) {
-          Logger.warn(TAG, 'close lyric file failed')
-        }
-      }
-    }
+    this.lyricEntries = entries
+    this.onProgressChange()
   }
 
   onPlayStateChange(): void {
@@ -740,7 +777,9 @@ struct MainPage {
         Stack({ alignContent: Alignment.Top }) {
           HomeContent({
             topContentPadding: this.homeHeaderHeight(),
-            bottomContentPadding: this.bottomOverlayInset()
+            bottomContentPadding: this.bottomOverlayInset(),
+            greetingBandTop: this.topContentInset(),
+            greetingBandHeight: this.homeHeaderHeight() - this.topContentInset()
           })
             .width('100%')
             .height('100%')
@@ -784,6 +823,8 @@ struct MainPage {
               }
               .alignItems(VerticalAlign.Bottom)
               .layoutWeight(1)
+              .translate({ y: this.greetingShiftY })
+              .opacity(this.greetingVisible)
             }
             .width('100%')
             .height('100%')
@@ -867,5 +908,6 @@ struct MainPage {
     .alignContent(Alignment.Bottom)
     .width('100%')
     .height('100%')
+    .onKeyEvent((event: KeyEvent): boolean => this.handleKeyEvent(event))
   }
 }

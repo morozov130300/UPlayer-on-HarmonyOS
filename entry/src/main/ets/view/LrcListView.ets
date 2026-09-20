@@ -43,7 +43,8 @@ export default struct LrcListView {
     let line = this.findShowLine(this.lyricMilliSecondsTime);
     if (line !== this.mCurrentLine) {
       this.mCurrentLine = line;
-      if (!this.isUserScrolling) {
+      // line 可能为 NONE_LINE（进度早于首行），此时不能滚动，否则 scrollToIndex(-1) 属于非法入参
+      if (!this.isUserScrolling && line >= 0 && line < this.mLrcEntryList.length) {
         this.smoothScrollTo(line);
       }
     }
@@ -70,7 +71,7 @@ export default struct LrcListView {
 
   findShowLine(milliSeconds: number): number {
     if (!this.mLrcEntryList || this.mLrcEntryList.length === 0) {
-      return this.mCurrentLine;
+      return NONE_LINE;
     }
     let low: number = 0;
     let high: number = this.mLrcEntryList.length - 1;
@@ -84,11 +85,10 @@ export default struct LrcListView {
         high = middle - 1;
       }
     }
-    if (candidate !== NONE_LINE &&
-      this.mLrcEntryList[candidate].lineStartTime + this.mLrcEntryList[candidate].lineDuration >= milliSeconds) {
-      return candidate;
-    }
-    return this.mCurrentLine;
+    // candidate === NONE_LINE 表示进度早于首行（如回退到开头），此时必须清除高亮；
+    // 旧实现返回残留的 this.mCurrentLine，会让高亮一直黏在上一次的行号上。
+    // 落在行与行的空隙时保留最后一句已开始的歌词，而不是清空高亮。
+    return candidate;
   }
 
   hasLrc(): boolean {

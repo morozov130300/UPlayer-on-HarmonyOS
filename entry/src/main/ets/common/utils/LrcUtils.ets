@@ -20,16 +20,58 @@ import Logger from './Logger';
 /**
  * LRC format lyrics.
  */
-const lrcLineRegex: RegExp = new RegExp('\\[\\d{2,}:\\d{2}((\\.|:)\\d{2,})\\]', 'g');
-const lrcTimeRegex1: RegExp = new RegExp('\\[\\d{2,}', 'i');
-const lrcTimeRegex2: RegExp = new RegExp('\\d{2}\\.\\d{2,}', 'i');
+// 行内时间标签：[m:ss] / [mm:ss] / [mm:ss.x|xx|xxx] / [mm:ss:xx]
+// 旧实现要求分钟至少 2 位且小数位必填，会把 [0:12.34]、[00:12] 这类规范写法整行丢弃
+const lrcLineRegex: RegExp = new RegExp('\\[\\d{1,3}:\\d{1,2}(?:[.:]\\d{1,3})?\\]', 'g');
+// 单个标签的捕获：带小数位与不带小数位分开匹配。
+// 不能只用「可选的第三个捕获组」，因为未参与匹配的组在 match 结果里是 undefined，
+// 且也不该用 [.:](\\d{1,3})\\]$ 之类的尾部匹配——它会把 [00:12] 里的 :12] 误当成小数位，
+// 从而把 12 秒算成 12.12 秒。
+const lrcTagWithFractionRegex: RegExp = new RegExp('^\\[(\\d{1,3}):(\\d{1,2})[.:](\\d{1,3})\\]$');
+const lrcTagPlainRegex: RegExp = new RegExp('^\\[(\\d{1,3}):(\\d{1,2})\\]$');
+// 增强型 LRC 的逐字标签 <mm:ss.xx>，必须从正文剔除，否则会被原样渲染到界面
+const lrcEnhancedWordRegex: RegExp = new RegExp('<\\d{1,3}:\\d{1,2}(?:[.:]\\d{1,3})?>', 'g');
 
 /**
  * KRC format lyrics.
  */
 const krcLineRegex = new RegExp('\\[(\\d+),(\\d+)\\](.*)');
-const krcWordRegex1 = new RegExp('< (\\d+),(\\d+),(\\d+)>([^<]*)', 'g');
-const krcWordRegex2 = new RegExp('< (\\d+),(\\d+),(\\d+)>(.*)');
+// 真实 KRC 的逐字标签是 <0,38,0>text（< 后无空格），旧实现强制了一个空格，导致逐字数据永远解析不出来
+const krcWordRegex1 = new RegExp('<\\s*(\\d+),(\\d+),(\\d+)>([^<]*)', 'g');
+const krcWordRegex2 = new RegExp('<\\s*(\\d+),(\\d+),(\\d+)>(.*)');
+
+/**
+ * 把单个 LRC 时间标签换算成毫秒。无法解析时返回 NaN，由调用方跳过该标签。
+ * 旧实现用两个独立正则取分钟与秒，无小数位的标签会让第二个正则返回 null，
+ * String(null) -> parseFloat("null") -> NaN，从而静默产出 NaN 时间戳。
+ */
+function parseLrcTagToMs(tag: string): number {
+  let min: number = 0;
+  let sec: number = 0;
+  let fractionMs: number = 0;
+  const withFraction: RegExpMatchArray | null = tag.match(lrcTagWithFractionRegex);
+  if (withFraction !== null) {
+    min = Number.parseInt(withFraction[1]);
+    sec = Number.parseInt(withFraction[2]);
+    const fracText: string = withFraction[3];
+    const fracValue: number = Number.parseInt(fracText);
+    // 按实际位数归一化：".9" = 900ms，".98" = 980ms，".980" = 980ms
+    if (Number.isFinite(fracValue) && fracText.length > 0) {
+      fractionMs = fracValue / Math.pow(10, fracText.length) * 1000;
+    }
+  } else {
+    const plain: RegExpMatchArray | null = tag.match(lrcTagPlainRegex);
+    if (plain === null) {
+      return Number.NaN;
+    }
+    min = Number.parseInt(plain[1]);
+    sec = Number.parseInt(plain[2]);
+  }
+  if (!Number.isFinite(min) || !Number.isFinite(sec)) {
+    return Number.NaN;
+  }
+  return (min * 60 + sec) * 1000 + fractionMs;
+}
 
 
 /**
@@ -48,19 +90,26 @@ export function parseLrcLyric(text: string): Array<LrcEntry> {
   let lrc: LrcEntry[] = [];
   for (let i = 0; i < lyric.length; i++) {
     let lineTime = lyric[i].match(lrcLineRegex);
-    let lineText = lyric[i].replace(lrcLineRegex, '');
-    if (lineTime && lineText) {
-      for (let j = 0; j < lineTime.length; j++) {
-        let min = Number(String(lineTime[j].match(lrcTimeRegex1)).slice(1));
-        let sec = Number.parseFloat(String(lineTime[j].match(lrcTimeRegex2)));
-        let timeInSeconds = (min * 60 + sec) * 1000;
-        lrc.push({
-          lineStartTime: timeInSeconds,
-          lineDuration: 0,
-          lineWords: lineText,
-          words: []
-        });
+    if (!lineTime || lineTime.length === 0) {
+      continue;
+    }
+    // 剔除时间标签与逐字标签后再裁剪，顺带去掉 CRLF 行尾残留的 \r
+    let lineText = lyric[i].replace(lrcLineRegex, '').replace(lrcEnhancedWordRegex, '').trim();
+    // 纯时间标签的间隔行没有正文，不产出条目
+    if (lineText.length === 0) {
+      continue;
+    }
+    for (let j = 0; j < lineTime.length; j++) {
+      let timeInMs = parseLrcTagToMs(lineTime[j]);
+      if (!Number.isFinite(timeInMs)) {
+        continue;
       }
+      lrc.push({
+        lineStartTime: timeInMs,
+        lineDuration: 0,
+        lineWords: lineText,
+        words: []
+      });
     }
   }
   if (lrc && lrc.length > 0) {
@@ -113,6 +162,11 @@ export function parseKrcLyric(lyricText: string): LrcEntry[] {
             });
           }
         }
+      }
+      // 纯间奏行没有逐字内容，不产出条目，避免歌词列表出现空行；
+      // KRC 每行自带 duration，跳过不影响时间轴
+      if (lineWords.trim().length === 0) {
+        continue;
       }
       lyricLines.push({
         lineStartTime: lineStartTime,

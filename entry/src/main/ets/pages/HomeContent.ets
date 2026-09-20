@@ -1,5 +1,6 @@
 // ArkUI 26 Beta1: 接口定义变更（误报，本项目已是Stage模型）+ UX视觉布局变更（Text默认开启沉浸式材质，系统行为）
 import { common } from '@kit.AbilityKit'
+import { deviceInfo } from '@kit.BasicServicesKit'
 import { SongInfo } from '../model/SongInfo'
 import { DataService, AppSettingsData, ImportResult } from '../service/DataService'
 import { SongScanner } from '../service/SongScanner'
@@ -12,6 +13,7 @@ import { AlbumCover } from '../component/AlbumCover'
 import { AlbumCoverSize, AudioMetadataService, CoverPriority } from '../service/AudioMetadataService'
 import { curves, uiMaterial } from '@kit.ArkUI'
 import { createBarGlassMaterial } from '../common/utils/GlassUtil'
+import { StyleConstants } from '../common/constants/StyleConstants'
 
 const TAG = 'HomeContent'
 const PREFETCH_COUNT: number = 64
@@ -31,6 +33,10 @@ class DisplayItem {
 export struct HomeContent {
   topContentPadding: number = 0
   bottomContentPadding: number = 0
+  // 问候语内容带（由 Index 传入）：多选菜单栏进入多选时落在该带内，替换问候语的位置
+  greetingBandTop: number = 0
+  greetingBandHeight: number = 0
+  private isPC: boolean = deviceInfo.deviceType === '2in1'
   private context: common.UIAbilityContext | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
   @State songs: SongInfo[] = []
   @State displayItems: DisplayItem[] = []
@@ -39,7 +45,14 @@ export struct HomeContent {
   @State sortMode: string = 'name'
   @State isPlusVisible: boolean = true
   @State settings: AppSettingsData = new AppSettingsData()
-  @State isMultiSelectMode: boolean = false
+  // 多选状态挂在 AppStorage 上并双向绑定：@Entry 页面需要在返回键/ESC 里把它置 false 来退出多选。
+  // 之前是私有 @State，外部（页面级 onBackPress）无法把多选状态收回去，导致返回键只能退出应用。
+  @StorageLink(AppStorageKeyConstants.KEY_HOME_MULTI_SELECT) @Watch('onMultiSelectModeChange')
+  isMultiSelectMode: boolean = false
+  // Ctrl+A 全选请求（由 Index 的页面级键盘事件写入并 +1）：多选态下全选可见歌曲
+  @StorageLink(AppStorageKeyConstants.KEY_HOME_SELECT_ALL_REQUEST) @Watch('onSelectAllRequest')
+  selectAllRequest: number = 0
+  @StorageLink(AppStorageKeyConstants.KEY_TITLE_BUTTON_WIDTH) titleButtonWidth: number = 0
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
   @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
   @StorageLink(AppStorageKeyConstants.KEY_LIBRARY_REVISION) @Watch('onLibraryChange') libraryRevision: number = 0
@@ -78,7 +91,23 @@ export struct HomeContent {
   }
 
   private headerOverlayHeight(): number {
-    return this.scaledSize(48)
+    return this.scaledSize(40)
+  }
+
+  // 多选菜单栏几何：高度保持原样，垂直居中于问候语内容带
+  private multiSelectBarHeight(): number {
+    return 56
+  }
+
+  private multiSelectBarTop(): number {
+    const band: number = this.greetingBandHeight > 0 ? this.greetingBandHeight : 72
+    const top: number = this.greetingBandTop + (band - this.multiSelectBarHeight()) / 2
+    return top > 0 ? top : 0
+  }
+
+  // 右侧内边距与问候语保持一致：PC 上预留窗口按钮区域
+  private multiSelectBarRightPadding(): number {
+    return this.isPC ? Math.max(this.titleButtonWidth, 140) + 12 : 16
   }
 
   private listTopPadding(): number {
@@ -91,6 +120,29 @@ export struct HomeContent {
 
   aboutToAppear(): void {
     this.loadData()
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_HOME_MULTI_SELECT, false)
+  }
+
+  aboutToDisappear(): void {
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_HOME_MULTI_SELECT, false)
+  }
+
+  // 多选状态变化统一收口在这里。isMultiSelectMode 已改为 @StorageLink，
+// 写入 AppStorage 由框架自动完成，这里不能再手动 setOrCreate（会重复通知一次）。
+  // 退出多选时必须一并清空选中集合：返回键/ESC 触发的退出不经过 exitMultiSelect()，
+  // 若不清空，下次进入多选会带着上次残留的选中项。
+  onMultiSelectModeChange(): void {
+    if (!this.isMultiSelectMode) {
+      this.selectedIds = []
+    }
+  }
+
+  // Ctrl+A：只做全选，不做取消全选；非多选态一律忽略（普通浏览时不响应，避免误触）
+  onSelectAllRequest(): void {
+    if (!this.isMultiSelectMode) {
+      return
+    }
+    this.selectedIds = this.getVisibleSongIds()
   }
 
   onLibraryChange(): void {
@@ -430,9 +482,6 @@ export struct HomeContent {
       this.selectedIds.push(id)
     }
     this.selectedIds = this.selectedIds.slice()
-    if (this.selectedIds.length === 0) {
-      this.isMultiSelectMode = false
-    }
   }
 
   getVisibleSongIds(): string[] {
@@ -574,7 +623,7 @@ export struct HomeContent {
             ListItem() {
               Row()
                 .width('100%')
-                .height(this.isMultiSelectMode ? this.bottomContentPadding + 56 : this.bottomContentPadding)
+                .height(this.bottomContentPadding)
             }
           }
           .width('100%')
@@ -618,66 +667,6 @@ export struct HomeContent {
         }
         .width('100%')
         .layoutWeight(1)
-
-        if (this.isMultiSelectMode) {
-          Row() {
-            Text('已选 ' + this.selectedIds.length + ' 首')
-              .fontSize(Math.round(14 * this.fontSizeScale))
-              .fontColor($r('app.color.text_primary'))
-            Blank()
-            // 全选按钮 - 带图标
-            Row({ space: 4 }) {
-              SymbolGlyph($r('sys.symbol.checkmark_circle'))
-                .fontSize(Math.round(16 * this.fontSizeScale))
-                .fontColor([this.primaryColor])
-              Text(this.isAllSelected() ? '取消全选' : '全选')
-                .fontSize(Math.round(14 * this.fontSizeScale))
-                .fontColor(this.primaryColor)
-            }
-            .margin({ right: 16 })
-            .onClick(() => { this.toggleSelectAll() })
-
-            // 取消按钮 - 带图标
-            Row({ space: 4 }) {
-              SymbolGlyph($r('sys.symbol.xmark'))
-                .fontSize(Math.round(16 * this.fontSizeScale))
-                .fontColor([$r('app.color.text_sixty_color')])
-              Text('取消')
-                .fontSize(Math.round(14 * this.fontSizeScale))
-                .fontColor(this.primaryColor)
-            }
-            .margin({ right: 16 })
-            .onClick(() => { this.exitMultiSelect() })
-
-            // 删除按钮 - 带图标
-            Row({ space: 4 }) {
-              SymbolGlyph($r('sys.symbol.trash'))
-                .fontSize(Math.round(16 * this.fontSizeScale))
-                .fontColor(['#FF3B30'])
-              Text('删除')
-                .fontSize(Math.round(14 * this.fontSizeScale))
-                .fontColor('#FF3B30')
-            }
-            .onClick(() => { this.deleteSelected() })
-          }
-          .width('100%')
-          .height(56)
-          .padding({ left: 16, right: 16 })
-          .backgroundColor(Color.Transparent)
-          // 磨砂层常挂（液态玻璃启用时作为材质底层兜底，与 Tab 栏策略一致）
-          .backgroundEffect({
-            radius: 20,
-            saturation: 1.0,
-            brightness: 1.0
-          })
-          .systemMaterial(this.multiSelectBarMaterial())
-          .border({
-            width: { top: 1 },
-            color: { top: $r('app.color.list_divider') }
-          })
-          .position({ bottom: this.bottomContentPadding })
-          .zIndex(1)
-        }
       }
       .width('100%')
       .height('100%')
@@ -743,7 +732,7 @@ export struct HomeContent {
           .onClick(() => { this.toggleViewMode() })
         }
         .width('100%')
-        .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+        .padding({ left: 16, right: 16, top: 6, bottom: 6 })
         .position({ top: this.topContentPadding })
       }
       .width('100%')
@@ -752,6 +741,84 @@ export struct HomeContent {
       .clip(true)
       .hitTestBehavior(HitTestMode.Transparent)
       .zIndex(2)
+
+      // 多选菜单栏：落在问候语内容带内（替换问候语的位置），
+      // 入场/退场由 transition 驱动，入场延迟让问候语先上滑隐藏
+      if (this.isMultiSelectMode) {
+        Row() {
+          // 返回按钮：与设置页/播放页的返回按钮统一样式，用于退出多选
+          Row() {
+            Image($r('app.media.ic_public_arrow_left'))
+              .width(15)
+              .height(15)
+              .fillColor($r('app.color.text_primary'))
+              .opacity(0.9)
+          }
+          .width(this.scaledSize(48))
+          .height(this.scaledSize(48))
+          .justifyContent(FlexAlign.Center)
+          .borderRadius(this.scaledSize(24))
+          .hoverEffect(HoverEffect.Scale)
+          .onClick(() => { this.exitMultiSelect() })
+
+          Text('已选 ' + this.selectedIds.length + ' 首')
+            .fontSize(Math.round(14 * this.fontSizeScale))
+            .fontColor($r('app.color.text_primary'))
+          Blank()
+          // 全选按钮 - 带图标
+          Row({ space: 4 }) {
+            Image(this.isAllSelected() ? $r('app.media.ic_public_deselect_all') : $r('app.media.ic_public_select_all'))
+              .width(Math.round(16 * this.fontSizeScale))
+              .height(Math.round(16 * this.fontSizeScale))
+              .fillColor(this.primaryColor)
+            Text(this.isAllSelected() ? '取消全选' : '全选')
+              .fontSize(Math.round(14 * this.fontSizeScale))
+              .fontColor(this.primaryColor)
+          }
+          .margin({ right: 16 })
+          .onClick(() => { this.toggleSelectAll() })
+
+          // 删除按钮 - 带图标
+          Row({ space: 4 }) {
+            Image($r('app.media.ic_public_delete'))
+              .width(Math.round(16 * this.fontSizeScale))
+              .height(Math.round(16 * this.fontSizeScale))
+              .fillColor('#FF3B30')
+            Text('删除')
+              .fontSize(Math.round(14 * this.fontSizeScale))
+              .fontColor('#FF3B30')
+          }
+          .onClick(() => { this.deleteSelected() })
+        }
+        .width('100%')
+        .height(this.multiSelectBarHeight())
+        .padding({ left: 4, right: this.multiSelectBarRightPadding() })
+        .backgroundColor(Color.Transparent)
+        // 磨砂层常挂（液态玻璃启用时作为材质底层兜底，与 Tab 栏策略一致）
+        .backgroundEffect({
+          radius: 20,
+          saturation: 1.0,
+          brightness: 1.0
+        })
+        .systemMaterial(this.multiSelectBarMaterial())
+        .position({ top: this.multiSelectBarTop(), left: 0 })
+        .zIndex(2)
+        .transition(TransitionEffect.asymmetric(
+          TransitionEffect.OPACITY
+            .combine(TransitionEffect.translate({ y: this.scaledSize(28) }))
+            .animation({
+              duration: StyleConstants.ANIMATION_MULTI_BAR_ENTER_DURATION,
+              curve: Curve.EaseOut,
+              delay: StyleConstants.ANIMATION_MULTI_BAR_ENTER_DELAY
+            }),
+          TransitionEffect.OPACITY
+            .combine(TransitionEffect.translate({ y: this.scaledSize(28) }))
+            .animation({
+              duration: StyleConstants.ANIMATION_MULTI_BAR_EXIT_DURATION,
+              curve: Curve.EaseIn
+            })
+        ))
+      }
 
       if (!this.isMultiSelectMode && (this.isPlusVisible || !this.settings.plusButtonScrollHide)) {
         Row() {
@@ -800,10 +867,10 @@ export struct HomeContent {
       // 手柄区域 Block 阻断事件冒泡——不会误触行的长按/点击，也不影响列表其他区域的正常滚动。
       if (this.canDragSort() && this.isMultiSelectMode && this.viewMode === 'flat') {
         Row() {
-          SymbolGlyph($r('sys.symbol.line_3_horizontal'))
-            .fontSize(this.scaledSize(22))
-            .fontColor(['#888888'])
-            .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+          Image($r('app.media.ic_public_drag_handle'))
+            .width(this.scaledSize(22))
+            .height(this.scaledSize(22))
+            .fillColor('#888888')
         }
         .padding({
           left: this.scaledSize(4), right: this.scaledSize(4),
@@ -837,21 +904,11 @@ export struct HomeContent {
         )
       }
       if (this.isMultiSelectMode) {
-        Row() {
-          if (this.isSelected(item.id)) {
-            Text('✓')
-              .fontSize(Math.round(14 * this.fontSizeScale))
-              .fontColor('#FFFFFF')
-              .fontWeight(FontWeight.Bold)
-          }
-        }
-        .width(this.scaledSize(22)).height(this.scaledSize(22))
-        .borderRadius(this.scaledSize(11))
-        .backgroundColor(this.isSelected(item.id) ? this.primaryColor : 'rgba(0,0,0,0.08)')
-        .border({ width: 1, color: this.isSelected(item.id) ? this.primaryColor : $r('app.color.list_divider') })
-        .justifyContent(FlexAlign.Center)
-        .alignItems(VerticalAlign.Center)
-        .margin({ right: this.scaledSize(16) })
+        Image(this.isSelected(item.id) ? $r('app.media.ic_public_todo_filled') : $r('app.media.ic_public_todo'))
+          .width(this.scaledSize(22))
+          .height(this.scaledSize(22))
+          .fillColor(this.isSelected(item.id) ? this.primaryColor : $r('app.color.text_sixty_color'))
+          .margin({ right: this.scaledSize(16) })
       }
 
       AlbumCover({ song: item, coverWidth: this.scaledSize(36), coverHeight: this.scaledSize(36),

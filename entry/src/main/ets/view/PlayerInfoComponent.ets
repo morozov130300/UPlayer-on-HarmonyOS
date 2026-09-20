@@ -235,8 +235,8 @@ export struct PlayerInfoComponent {
 
       Row() {
         Image($r('app.media.ic_public_arrow_left'))
-          .width(24)
-          .height(24)
+          .width(18)
+          .height(18)
           .fillColor(Color.White)
           .opacity(0.8)
       }

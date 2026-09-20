@@ -71,10 +71,10 @@ export struct SettingsContent {
       .width('100%')
       .padding({
         left: this.scaledSize(16), right: this.titleButtonWidth + this.scaledSize(12),
-        top: this.topContentPadding + this.scaledSize(20), bottom: this.scaledSize(10)
+        top: this.topContentPadding + this.scaledSize(12), bottom: this.scaledSize(6)
       })
 
-      Column({ space: this.scaledSize(8) }) {
+      Column({ space: this.scaledSize(6) }) {
         ForEach(this.categories, (cat: SettingCategory) => {
           Column() {
             Text(cat.title)
@@ -91,11 +91,11 @@ export struct SettingsContent {
           .width('100%')
           .padding({
             left: this.scaledSize(16), right: this.scaledSize(16),
-            top: this.scaledSize(13), bottom: this.scaledSize(13)
+            top: this.scaledSize(10), bottom: this.scaledSize(10)
           })
           .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
           .borderRadius(this.scaledSize(10))
-          .constraintSize({ minHeight: this.scaledSize(64), maxHeight: this.scaledSize(120) })
+          .constraintSize({ minHeight: this.scaledSize(52), maxHeight: this.scaledSize(120) })
           .alignItems(HorizontalAlign.Start)
           .onClick(() => { this.onCategoryClick(cat) })
         }, (cat: SettingCategory) => cat.route)

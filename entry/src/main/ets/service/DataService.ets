@@ -94,6 +94,8 @@ export class DataService {
   private dbSnapshot: Map<string, SongInfo> = new Map<string, SongInfo>()
   private flushInFlight: boolean = false
   private flushQueued: boolean = false
+  // initToAppStorage 幂等标志：EntryAbility 与页面都会调用，重复执行会重复跑可访问性检查
+  private appStorageInitialized: boolean = false
 
   public static getInstance(): DataService {
     return DataService.instance
@@ -351,8 +353,9 @@ export class DataService {
         nextSortOrder = songs[i].sortOrder + 1
       }
     }
-    const result: ImportResult = new ImportResult()
-    for (let i = 0; i < newSongs.length; i++) {
+const result: ImportResult = new ImportResult()
+    let lyricChanged: boolean = false
+    for (let i: number = 0; i < newSongs.length; i++) {
       const existingIndex: number | undefined = existingIndexes.get(newSongs[i].filePath)
       if (existingIndex !== undefined) {
         songs[existingIndex].title = newSongs[i].title
@@ -360,9 +363,14 @@ export class DataService {
         songs[existingIndex].album = newSongs[i].album
         songs[existingIndex].duration = newSongs[i].duration
         songs[existingIndex].uri = newSongs[i].uri
-        // 重新导入时同步歌词路径（含用户选中的 .lrc/.krc 配对结果）
-        songs[existingIndex].lyricPath = newSongs[i].lyricPath
-        songs[existingIndex].lyricUri = newSongs[i].lyricUri
+        // 重新导入时同步歌词路径（含用户选中的 .lrc/.krc 配对结果）。
+        // 仅在本次扫描确实解析出歌词时才覆盖：若本次未选中歌词文件，
+        // 必须保留数据库里已存的引用，否则会把有效歌词引用抹掉（历史丢歌词的路径之一）
+        if (newSongs[i].lyricUri.length > 0 || newSongs[i].lyricPath.length > 0) {
+          songs[existingIndex].lyricPath = newSongs[i].lyricPath
+          songs[existingIndex].lyricUri = newSongs[i].lyricUri
+          lyricChanged = true
+        }
         songs[existingIndex].isAvailable = true
         result.dupCount++
       } else {
@@ -374,7 +382,10 @@ export class DataService {
       }
     }
     this.saveSongs(songs)
-    return result
+    if (lyricChanged) {
+      this.bumpLyricRevision()
+    }
+return result
   }
 
   removeSong(songId: string): void {
@@ -856,23 +867,14 @@ export class DataService {
       } catch (e) {
         songs[i].isAvailable = false
       }
-      if (songs[i].lyricUri.length > 0) {
-        // accessSync 对 picker docs URI 不可靠，用 openSync 实际打开校验
-        try {
-          const lyricFile: fs.File = fs.openSync(songs[i].lyricUri, fs.OpenMode.READ_ONLY)
-          fs.closeSync(lyricFile)
-        } catch (e) {
-          songs[i].lyricPath = ''
-          songs[i].lyricUri = ''
-        }
-      } else if (songs[i].lyricPath.length > 0) {
-        try {
-          const lyricFile: fs.File = fs.openSync(songs[i].lyricPath, fs.OpenMode.READ_ONLY)
-          fs.closeSync(lyricFile)
-        } catch (e) {
-          songs[i].lyricPath = ''
-        }
-      }
+      // ⚠️ 这里绝不能清空 lyricPath / lyricUri。
+      // 这是本 bug 的根因：本函数在 initToAppStorage 中被同步调用，那时持久化授权
+      // （activatePersistedUris）尚未激活，picker docs URI 的 openSync 必然失败；
+      // 一旦据此清空歌词字段，第二次校验（激活完成后）也无法恢复已被销毁的值，
+      // 且 changed 分支会把清空结果落库，造成歌词被永久抹除、播放器显示「无歌词」。
+      // 歌词文件还可能位于临时未挂载的外置存储，删除引用更是不该有的副作用。
+      // 引用是否有效只由导入这个源头决定；文件读不到就如实显示「无歌词」，
+      // 绝不在运行期猜测、推导或改写歌词引用。
       if (songs[i].isAvailable !== prevAvailable) {
         changed = true
       }
@@ -895,11 +897,25 @@ export class DataService {
 
   // ═══════════ Init ═══════════
 
+  // 歌词引用发生集合级变化（重新导入覆盖）时通知各个歌词视图重新加载。
+  // 只做「通知刷新」，不做任何数据推导或找回：损坏原因不可知，任何自动猜测都是伪命题，
+  // 唯一的正经做法是在源头阻止歌词字段被破坏（见 checkSongsAccessibility）。
+  private bumpLyricRevision(): void {
+    const revision: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_LYRIC_REVISION) ?? 0
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_LYRIC_REVISION, revision + 1)
+  }
+
   initToAppStorage(): AppSettingsData {
+    // 幂等：EntryAbility 与页面都调用过本函数，重复执行会把可访问性检查跑两遍并制造授权竞态
+    if (this.appStorageInitialized) {
+      return this.getSettings()
+    }
+    this.appStorageInitialized = true
     const settings: AppSettingsData = this.getSettings()
     AppStorage.setOrCreate(KEY_SETTINGS, settings)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_LIBRARY_REVISION, 0)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_FILTER_REVISION, 0)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_LYRIC_REVISION, 0)
     AppStorage.setOrCreate(KEY_SORT_MODE, this.getSortMode())
     AppStorage.setOrCreate(KEY_VIEW_MODE, this.getViewMode())
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PLAY_MODE, this.getPlayMode())
@@ -967,9 +983,11 @@ export class DataService {
       } catch (err) {
         const error: BusinessError<Array<fileShare.PolicyErrorResult>> =
           err as BusinessError<Array<fileShare.PolicyErrorResult>>
-        if (error.data !== undefined) {
-          for (let i = 0; i < error.data.length; i++) {
-            Logger.error(TAG, `activatePersistedUris failed uri=${error.data[i].uri} code=${error.data[i].code}`)
+        // 先取出到局部变量：直接访问 error.data 时 ArkTS 不做属性收窄，会报 possibly undefined
+        const failedUris: Array<fileShare.PolicyErrorResult> | undefined = error.data
+        if (failedUris !== undefined) {
+          for (let i = 0; i < failedUris.length; i++) {
+            Logger.error(TAG, `activatePersistedUris failed uri=${failedUris[i].uri} code=${failedUris[i].code}`)
           }
         } else {
           Logger.error(TAG, `activatePersistedUris failed: code=${error.code} message=${error.message}`)
@@ -978,7 +996,9 @@ export class DataService {
     }
     // 持久化授权激活完成后重新校验歌曲可访问性：
     // initToAppStorage 首次 checkSongsAccessibility 时激活可能尚未完成，
-    // 会导致已持久化授权的歌曲被误判为不可用（首页灰色），此处纠正回来
+    // 会导致已持久化授权的歌曲被误判为不可用（首页灰色），此处纠正回来。
+    // 注意：歌词字段不再参与该校验（校验里已彻底移除清空逻辑），
+    // 因此「误判」只影响 isAvailable，不会再有数据被销毁。
     this.checkSongsAccessibility()
   }
 }

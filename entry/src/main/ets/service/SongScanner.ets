@@ -1,4 +1,4 @@
-import { picker, fileIo as fs, fileShare } from '@kit.CoreFileKit'
+import { picker, fileShare } from '@kit.CoreFileKit'
 import { common } from '@kit.AbilityKit'
 import { SongInfo } from '../model/SongInfo'
 import { FolderInfo } from '../model/FolderInfo'
@@ -6,6 +6,7 @@ import { DataService, AUDIO_EXTENSIONS } from './DataService'
 import { AudioMetadataService } from './AudioMetadataService'
 import { applyMetadataToSong, extractSongMetadata } from './MetadataTask'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
+import { LyricFile } from '../common/constants/LyricConst'
 import Logger from '../common/utils/Logger'
 
 const TAG = 'SongScanner'
@@ -40,29 +41,29 @@ export class SongScanner {
       }
       const songs: SongInfo[] = []
       Logger.info(TAG, `picker returned ${uris.length} URIs`)
+      // 按 README 约定，导入时用户会同时选中与歌曲同名的 .lrc/.krc。
+      // 用「解码后去掉扩展名的完整路径（小写）」做配对键，直接命中用户实际授权的那一个文件，
+      // 而不是靠字符串拼接去撞运气（旧实现用派生路径 + fs.access，中文/空格/大小写都会失配，
+      // 且 fs.access 对 picker docs URI 本身就不可靠）。
+      const lyricUriByKey: Map<string, string> = new Map<string, string>()
       const allUrisToPersist: string[] = []
       for (let i = 0; i < uris.length; i++) {
         const uri: string = uris[i]
         const fileName: string = this.getFileNameFromUri(uri)
-        const isAudio: boolean = this.isAudioFile(fileName)
-        if (isAudio) {
-          const song: SongInfo = SongInfo.fromFile(uri, fileName)
-          songs.push(song)
-          allUrisToPersist.push(uri)
+        if (this.isAudioFile(fileName)) {
+          songs.push(SongInfo.fromFile(uri, fileName))
+        } else if (this.isLyricFile(fileName)) {
+          lyricUriByKey.set(this.lyricMatchKey(uri), uri)
         }
       }
-      // 歌词存在性检查：异步 access 并发执行，避免主线程串行阻塞
-      const lyricChecks: Promise<boolean>[] = []
+      // 歌词绑定：只匹配本次显式选中的同名歌词文件
       for (let i = 0; i < songs.length; i++) {
-        lyricChecks.push(this.checkLyricExists(songs[i]))
+        this.attachLyric(songs[i], lyricUriByKey)
       }
-      const lyricResults: boolean[] = await Promise.all(lyricChecks)
       for (let i = 0; i < songs.length; i++) {
-        if (lyricResults[i]) {
+        allUrisToPersist.push(songs[i].uri)
+        if (songs[i].lyricUri.length > 0) {
           allUrisToPersist.push(songs[i].lyricUri)
-        } else {
-          songs[i].lyricPath = ''
-          songs[i].lyricUri = ''
         }
       }
       // 先持久化授权，再进行后台提取
@@ -118,16 +119,34 @@ export class SongScanner {
     await Promise.all(workers)
   }
 
-  private async checkLyricExists(song: SongInfo): Promise<boolean> {
-    if (song.lyricUri.length === 0) {
-      return false
+  private isLyricFile(fileName: string): boolean {
+    const lower: string = fileName.toLowerCase()
+    return lower.endsWith(LyricFile.LRC) || lower.endsWith(LyricFile.KRC)
+  }
+
+  // 配对键：解码后的「目录 + 文件名（去扩展名）」，统一小写以容忍大小写差异。
+  // 必须保留目录部分，避免把不同文件夹里的同名文件错配到一起。
+  private lyricMatchKey(uri: string): string {
+    const decoded: string = decodeURIComponent(uri)
+    const dotIdx: number = decoded.lastIndexOf('.')
+    const base: string = dotIdx > 0 ? decoded.substring(0, dotIdx) : decoded
+    return base.toLowerCase()
+  }
+
+  // 歌词绑定：只认用户在本次选择中「显式选中的同名歌词文件」，不做任何同目录推导或探测。
+  // 推导出来的引用一旦失效，运行期无法判断失效原因，只会让「有没有歌词」变成不可靠的猜测。
+  private attachLyric(song: SongInfo, lyricUriByKey: Map<string, string>): void {
+    const matched: string | undefined = lyricUriByKey.get(this.lyricMatchKey(song.uri))
+    if (matched !== undefined) {
+      song.lyricUri = matched
+      song.lyricPath = decodeURIComponent(matched)
+      return
     }
-    try {
-      await fs.access(song.lyricUri)
-      return true
-    } catch (err) {
-      return false
-    }
+    // 未选中同名歌词文件：清掉 fromFile 的乐观派生值（那个 .lrc 未必真的存在），
+    // 避免在数据库里留下一个打不开的假引用。
+    // 已有歌曲上原有的有效引用由 addSongs 的非空覆盖规则保留，不会被这里波及。
+    song.lyricPath = ''
+    song.lyricUri = ''
   }
 
   private async persistUris(uris: string[]): Promise<void> {

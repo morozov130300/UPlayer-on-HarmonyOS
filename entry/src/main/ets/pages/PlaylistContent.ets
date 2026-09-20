@@ -210,9 +210,6 @@ export struct PlaylistContent {
       this.editSelectedFolderIds.push(folderId)
       this.editSelectedFolderIds = [...this.editSelectedFolderIds]
     }
-    if (this.editSelectedFolderIds.length === 0) {
-      this.isEditMode = false
-    }
   }
 
   exitEditMode(): void {
@@ -415,21 +412,10 @@ export struct PlaylistContent {
   folderCard(item: FolderInfo): void {
     Column() {
       if (this.isEditMode) {
-        Row() {
-          if (this.isEditSelected(item.id)) {
-            Text('✓')
-              .fontSize(Math.round(12 * this.fontSizeScale))
-              .fontColor('#FFFFFF')
-              .fontWeight(FontWeight.Bold)
-          }
-        }
-        .width(20).height(20)
-        .borderRadius(10)
-        .backgroundColor(this.isEditSelected(item.id) ? this.primaryColor : 'rgba(0,0,0,0.08)')
-        .border({ width: 1, color: this.isEditSelected(item.id) ? this.primaryColor : $r('app.color.list_divider') })
-        .justifyContent(FlexAlign.Center)
-        .alignItems(VerticalAlign.Center)
-        .position({ x: 6, y: 6 })
+        Image(this.isEditSelected(item.id) ? $r('app.media.ic_public_todo_filled') : $r('app.media.ic_public_todo'))
+          .width(20).height(20)
+          .fillColor(this.isEditSelected(item.id) ? this.primaryColor : $r('app.color.text_sixty_color'))
+          .position({ x: 6, y: 6 })
       }
       if (item.id === FAVORITES_FOLDER_ID) {
         Image($r('app.media.ic_public_favor_filled'))
