@@ -618,9 +618,10 @@ struct MainPage {
           .onClick(() => { this.openPlayer() })
       } else {
         Stack() {
-          SymbolGlyph($r('sys.symbol.music_note_list'))
-            .fontSize(this.scaledSize(20))
-            .fontColor([$r('app.color.player_icon_color')])
+          Image($r('app.media.ic_public_music'))
+            .width(this.scaledSize(20))
+            .height(this.scaledSize(20))
+            .fillColor($r('app.color.player_icon_color'))
         }
         .width(this.scaledSize(32))
         .height(this.scaledSize(32))
