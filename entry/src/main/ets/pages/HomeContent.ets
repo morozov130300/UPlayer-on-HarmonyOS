@@ -74,7 +74,13 @@ export struct HomeContent {
   @StorageLink('uplayer_interactive') interactive: boolean = true
   // 智感握姿：左手握持 → 加号靠左；其余（右手/双手/无握持/未知即默认）→ 靠右。
   // 滤波与订阅由 HoldingHandService 统一持有，本组件只订阅它的广播结果
-  @StorageLink(KEY_HOLDING_HAND_LEFT) holdingHandLeft: boolean = false
+  @StorageLink(KEY_HOLDING_HAND_LEFT) @Watch('onHoldingHandLeftChange') holdingHandLeft: boolean = false
+  // 真正参与布局的贴边状态：只在 animateTo 闭包里跟随 holdingHandLeft 变化，
+  // 握姿切换时加号才会「滑」到另一侧（position 支持属性动画），而不是瞬移
+  @State plusOnLeft: boolean = false
+  // 握姿切换的滑动曲线：弹簧跟手，与设置页主题切换等动效保持一致的手感
+  private readonly PLUS_SIDE_SPRING_RESPONSE: number = 0.4
+  private readonly PLUS_SIDE_SPRING_DAMPING: number = 0.8
   private dataService: DataService = DataService.getInstance()
   private songScanner: SongScanner = SongScanner.getInstance()
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
@@ -142,8 +148,23 @@ export struct HomeContent {
     return 'calc(100% - ' + this.listTopPadding() + 'vp)'
   }
 
+  // 智感握姿切换：把贴边状态放进动画闭包，让加号从一侧滑到另一侧
+  onHoldingHandLeftChange(): void {
+    const isLeft: boolean = this.holdingHandLeft
+    if (isLeft === this.plusOnLeft) {
+      return
+    }
+    this.getUIContext()?.animateTo({
+      curve: curves.springMotion(this.PLUS_SIDE_SPRING_RESPONSE, this.PLUS_SIDE_SPRING_DAMPING)
+    }, () => {
+      this.plusOnLeft = isLeft
+    })
+  }
+
   aboutToAppear(): void {
     this.loadData()
+    // 首次进入按当前握姿直接落位，不做动画（避免首帧从默认侧滑过来）
+    this.plusOnLeft = this.holdingHandLeft
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_HOME_MULTI_SELECT, false)
   }
 
@@ -847,11 +868,12 @@ export struct HomeContent {
         .borderRadius(this.scaledSize(20))
         .backgroundColor(this.primaryColor)
         .shadow({ radius: 10, color: ColorHelper.hexWithAlpha(this.primaryColor, '44'), offsetY: 4 })
-        // 智感握姿：只切换贴边方向，不改变与底部的间距，避免握姿切换时按钮上下跳动
+        // 智感握姿：只切换贴边方向，不改变与底部的间距，避免握姿切换时按钮上下跳动。
+        // 读 plusOnLeft（动画态）而不是 holdingHandLeft，切换才会走滑动动画
         .position({
           bottom: this.bottomContentPadding + this.scaledSize(12),
-          left: this.holdingHandLeft ? this.scaledSize(20) : undefined,
-          right: this.holdingHandLeft ? undefined : this.scaledSize(20)
+          left: this.plusOnLeft ? this.scaledSize(20) : undefined,
+          right: this.plusOnLeft ? undefined : this.scaledSize(20)
         })
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
