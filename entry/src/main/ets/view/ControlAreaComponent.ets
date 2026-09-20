@@ -54,7 +54,6 @@ export struct ControlAreaComponent {
   @State trackThickness: number = 6;
   @State playBtnScale: number = 1.0;
   @State sliderGlow: number = 0;
-  @State isShowInfoPanel: boolean = false;
   @State isShowMorePanel: boolean = false;
   @State isShowTimerPanel: boolean = false;
   @State isShowSongInfoPanel: boolean = false;
@@ -236,21 +235,6 @@ export struct ControlAreaComponent {
     const newPos: number = Math.max(this.value - SKIP_MS, 0);
     this.avPlayerService.seek(newPos);
     this.pageShowTime = 0;
-  }
-
-  private openInfoPanel(): void {
-    if (this.selectIndex < 0 || !this.songList || this.selectIndex >= this.songList.length) {
-      return;
-    }
-    this.edittingFieldIndex = -1;
-    this.edittingValue = '';
-    this.isShowInfoPanel = true;
-  }
-
-  private closeInfoPanel(): void {
-    this.edittingFieldIndex = -1;
-    this.edittingValue = '';
-    this.isShowInfoPanel = false;
   }
 
   // ═══════════ 定时关闭 ═══════════
@@ -770,71 +754,73 @@ export struct ControlAreaComponent {
           .width(StyleConstants.FULL_WIDTH)
         }
         .layoutWeight(1)
+        .align(Alignment.TopStart)
+        .scrollBar(BarState.Off)
       }
       .width(StyleConstants.FULL_WIDTH)
+      .height(StyleConstants.FULL_HEIGHT)
+      .justifyContent(FlexAlign.Start)
+      .alignItems(HorizontalAlign.Start)
     }
   }
 
   @Builder
   morePanelInfoRow(index: number, label: string, value: string, editable: boolean) {
-    Column() {
-      Row() {
-        Text(label)
+    Row() {
+      Text(label)
+        .fontSize(this.scaledFont(12))
+        .fontColor($r('app.color.text_sixty_color'))
+        .width(64)
+      if (index === this.edittingFieldIndex && editable) {
+        TextInput({ text: this.edittingValue })
+          .fontSize(this.scaledFont(13))
+          .fontColor($r('app.color.text_primary'))
+          .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.08))
+          .borderRadius(4)
+          .height(this.scaledFont(32))
+          .padding({ left: 8, right: 8 })
+          .layoutWeight(1)
+          .defaultFocus(true)
+          .enterKeyType(EnterKeyType.Done)
+          .onChange((newValue: string) => {
+            this.edittingValue = newValue
+          })
+          .onSubmit(() => {
+            this.saveEditField()
+          })
+        Button('取消')
+          .height(this.scaledFont(32))
           .fontSize(this.scaledFont(12))
           .fontColor($r('app.color.text_sixty_color'))
-          .width(64)
-        if (index === this.edittingFieldIndex && editable) {
-          Column({ space: 4 }) {
-            TextInput({ text: this.edittingValue })
-              .fontSize(this.scaledFont(13))
-              .fontColor($r('app.color.text_primary'))
-              .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.08))
-              .borderRadius(4)
-              .height(this.scaledFont(32))
-              .padding({ left: 8, right: 8 })
-              .layoutWeight(1)
-              .onChange((newValue: string) => {
-                this.edittingValue = newValue
-              })
-            Row() {
-              Button('取消')
-                .height(this.scaledFont(26))
-                .fontSize(this.scaledFont(11))
-                .fontColor($r('app.color.text_sixty_color'))
-                .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.08))
-                .borderRadius(4)
-                .padding({ left: 8, right: 8 })
-                .onClick(() => { this.cancelEditField() })
-              Button('保存')
-                .height(this.scaledFont(26))
-                .fontSize(this.scaledFont(11))
-                .fontColor(Color.White)
-                .backgroundColor(this.primaryColor)
-                .borderRadius(4)
-                .padding({ left: 8, right: 8 })
-                .onClick(() => { this.saveEditField() })
-            }
-            .width('100%')
-            .justifyContent(FlexAlign.End)
-          }
+          .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.08))
+          .borderRadius(4)
+          .margin({ left: 8 })
+          .padding({ left: 10, right: 10 })
+          .onClick(() => { this.cancelEditField() })
+        Button('确定')
+          .height(this.scaledFont(32))
+          .fontSize(this.scaledFont(12))
+          .fontColor(Color.White)
+          .backgroundColor(this.primaryColor)
+          .borderRadius(4)
+          .margin({ left: 8 })
+          .padding({ left: 10, right: 10 })
+          .onClick(() => { this.saveEditField() })
+      } else {
+        Text(value && value.length > 0 ? value : '-')
+          .fontSize(this.scaledFont(13))
+          .fontColor($r('app.color.text_primary'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
           .layoutWeight(1)
-        } else {
-          Text(value && value.length > 0 ? value : '-')
-            .fontSize(this.scaledFont(13))
-            .fontColor($r('app.color.text_primary'))
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .layoutWeight(1)
-        }
       }
-      .width('100%')
-      .height(this.scaledFont(38))
-      .alignItems(VerticalAlign.Center)
     }
     .width('100%')
+    .height(this.scaledFont(40))
+    .alignItems(VerticalAlign.Center)
     .border({ width: { bottom: 1 }, color: $r('app.color.list_divider') })
     .onClick(() => {
-      if (editable) {
+      if (editable && index !== this.edittingFieldIndex) {
         this.startEditField(index, this.infoValue(index))
       }
     })
@@ -988,108 +974,6 @@ export struct ControlAreaComponent {
     .padding({ top: 16, bottom: 16, left: 16, right: 16 })
   }
 
-  @Builder
-  infoPanelBuilder() {
-    Column({ space: 0 }) {
-      this.infoPanelTopBar()
-      Scroll() {
-        Column({ space: 0 }) {
-          this.infoPanelCover()
-          this.infoPanelContent()
-        }
-      }
-      .layoutWeight(1)
-    }
-    .width(StyleConstants.FULL_WIDTH)
-    .height(StyleConstants.FULL_HEIGHT)
-    .backgroundColor(this.primaryColor)
-    .opacity(0.95)
-    .borderRadius(16)
-  }
-
-  @Builder
-  infoPanelTopBar() {
-    Row() {
-      Text('歌曲信息')
-        .fontSize(this.scaledFont(16))
-        .fontWeight(FontWeight.Bold)
-        .fontColor(Color.White)
-      Blank()
-    }
-    .width('100%')
-    .height(this.scaledFont(44))
-    .alignItems(VerticalAlign.Center)
-    .padding({ left: 16, right: 16 })
-  }
-
-  @Builder
-  infoPanelCover() {
-    if (this.selectIndex >= 0 && this.songList && this.selectIndex < this.songList.length) {
-      Row() {
-        AlbumCover({ song: this.songList[this.selectIndex], coverWidth: 72, coverHeight: 72, coverRadius: 8 })
-        Column() {
-          Text(this.songList[this.selectIndex].title)
-            .fontSize(this.scaledFont(16))
-            .fontWeight(FontWeight.Bold)
-            .fontColor(Color.White)
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-          Text(this.songList[this.selectIndex].artist.length > 0 ? this.songList[this.selectIndex].artist : '未知歌手')
-            .fontSize(this.scaledFont(13))
-            .fontColor('rgba(255,255,255,0.7)')
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-          if (this.songList[this.selectIndex].album.length > 0) {
-            Text(this.songList[this.selectIndex].album)
-              .fontSize(this.scaledFont(12))
-              .fontColor('rgba(255,255,255,0.5)')
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-          }
-        }
-        .margin({ left: 12 })
-        .alignItems(HorizontalAlign.Start)
-        Blank()
-      }
-      .width('100%')
-      .height(this.scaledFont(90))
-      .alignItems(VerticalAlign.Center)
-      .padding({ left: 16, right: 16 })
-    }
-  }
-
-  @Builder
-  infoPanelContent() {
-    Column({ space: 0 }) {
-      this.infoRow(0, '标题', this.infoValue(0), true)
-      this.infoRow(1, '歌手', this.infoValue(1), true)
-      this.infoRow(2, '专辑', this.infoValue(2), true)
-      this.infoRow(3, '流派', this.infoValue(3), false)
-      this.infoRow(4, '音轨号', this.infoValue(4), false)
-      this.infoRow(5, '碟片号', this.infoValue(5), false)
-      this.infoRow(6, '作曲者', this.infoValue(6), false)
-      this.infoRow(7, '专辑艺术家', this.infoValue(7), false)
-      this.infoRow(8, '作者', this.infoValue(8), false)
-      this.infoRow(9, '编码日期', this.infoValue(9), false)
-      this.infoRow(10, '编码器', this.infoValue(10), false)
-      this.infoRow(11, '描述', this.infoValue(11), false)
-      this.infoRow(12, '时长', this.infoValue(12), false)
-      this.infoRow(13, '采样率', this.infoValue(13), false)
-      this.infoRow(14, '比特率', this.infoValue(14), false)
-      this.infoRow(15, '文件类型', this.infoValue(15), false)
-      this.infoRow(16, '文件路径', this.infoValue(16), false)
-      this.infoRow(17, '文件夹', this.infoValue(17), false)
-    }
-    .width('100%')
-    .padding({ left: 16, right: 16, top: 8, bottom: 16 })
-    if (this.selectIndex < 0 || !this.songList || this.selectIndex >= this.songList.length) {
-      Column()
-        .width('100%')
-        .height(200)
-        .justifyContent(FlexAlign.Center)
-    }
-  }
-
   private infoValue(index: number): string {
     if (this.selectIndex < 0 || !this.songList || this.selectIndex >= this.songList.length) {
       return ''
@@ -1116,75 +1000,6 @@ export struct ControlAreaComponent {
       case 17: return song.folderName
       default: return ''
     }
-  }
-
-  private infoIsEditable(index: number): boolean {
-    return index >= 0 && index <= 2
-  }
-
-  @Builder
-  infoRow(index: number, label: string, value: string, editable: boolean) {
-    Column() {
-      Row() {
-        Text(label)
-          .fontSize(this.scaledFont(12))
-          .fontColor('rgba(255,255,255,0.5)')
-          .width(64)
-        if (index === this.edittingFieldIndex && editable) {
-          Column({ space: 4 }) {
-            TextInput({ text: this.edittingValue })
-              .fontSize(this.scaledFont(13))
-              .fontColor(Color.White)
-              .backgroundColor('rgba(255,255,255,0.08)')
-              .borderRadius(4)
-              .height(this.scaledFont(32))
-              .padding({ left: 8, right: 8 })
-              .layoutWeight(1)
-              .onChange((newValue: string) => {
-                this.edittingValue = newValue
-              })
-            Row() {
-              Button('取消')
-                .height(this.scaledFont(26))
-                .fontSize(this.scaledFont(11))
-                .fontColor('rgba(255,255,255,0.7)')
-                .backgroundColor('rgba(255,255,255,0.1)')
-                .borderRadius(4)
-                .padding({ left: 8, right: 8 })
-                .onClick(() => { this.cancelEditField() })
-              Button('保存')
-                .height(this.scaledFont(26))
-                .fontSize(this.scaledFont(11))
-                .fontColor(Color.White)
-                .backgroundColor(this.primaryColor)
-                .borderRadius(4)
-                .padding({ left: 8, right: 8 })
-                .onClick(() => { this.saveEditField() })
-            }
-            .width('100%')
-            .justifyContent(FlexAlign.End)
-          }
-          .layoutWeight(1)
-        } else {
-          Text(value && value.length > 0 ? value : '-')
-            .fontSize(this.scaledFont(13))
-            .fontColor('rgba(255,255,255,0.8)')
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .layoutWeight(1)
-        }
-      }
-      .width('100%')
-      .height(this.scaledFont(38))
-      .alignItems(VerticalAlign.Center)
-    }
-    .width('100%')
-    .border({ width: { bottom: 1 }, color: 'rgba(255,255,255,0.06)' })
-    .onClick(() => {
-      if (editable) {
-        this.startEditField(index, this.infoValue(index))
-      }
-    })
   }
 
   @Builder
