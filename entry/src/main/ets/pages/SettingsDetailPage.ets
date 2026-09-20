@@ -253,8 +253,7 @@ struct SettingsDetailPage {
         .width('100%')
         .height('100%')
         .backgroundColor(Color.Transparent)
-        .linearGradientBlur(this.homeTopBlurStrength *
-          (1.6 - this.homeTopBlurStrength * 0.004), {
+        .linearGradientBlur(this.topBlurRadius(), {
           fractionStops: [[1, 0], [1, 0.5], [0, 1]],
           direction: GradientDirection.Bottom
         })
@@ -310,6 +309,23 @@ struct SettingsDetailPage {
   // 与 Index.glassBlurRadius 同公式：模糊强度 × 0.5
   private previewGlassBlurRadius(): number {
     return this.glassBlurStrength * 0.5
+  }
+
+  // 与 HomeContent.glassBlurRadius 同公式：先正比例（斜率 1.6），强度到 60 之后恒定封顶 96
+  private static readonly TOP_BLUR_SLOPE: number = 1.6
+  private static readonly TOP_BLUR_MAX_RADIUS: number = 96
+
+  private topBlurRadius(): number {
+    const linear: number = this.homeTopBlurStrength * SettingsDetailPage.TOP_BLUR_SLOPE
+    if (linear <= 0) {
+      return 0
+    }
+    return linear < SettingsDetailPage.TOP_BLUR_MAX_RADIUS ? linear : SettingsDetailPage.TOP_BLUR_MAX_RADIUS
+  }
+
+  // 顶部标题带高度：与本页标题栏（返回按钮 + 页面标题）等高
+  private titleBandHeight(): number {
+    return Math.max(56, this.titleButtonHeight) + (this.isPC ? 0 : this.topSafeHeight)
   }
 
   // 与 Index.selectedTabContentColor 同逻辑
@@ -710,33 +726,8 @@ struct SettingsDetailPage {
     build() {
     Stack() {
       Column() {
-        Row() {
-          GlassBackButton({
-            clickSize: this.scaledSize(48),
-            iconSize: this.scaledSize(15),
-            iconColor: this.settingTextColor(),
-            iconOpacity: 0.9,
-            onBack: () => {
-              this.getUIContext()?.getRouter()
-                .back()
-            }
-          })
-
-          Text(this.pageTitle)
-            .fontSize(this.scaledFont(17))
-            .fontColor(this.settingTextColor())
-            .fontWeight(FontWeight.Bold)
-            .margin({ left: 4 })
-        }
-        .width('100%')
-        .height(Math.max(56, this.titleButtonHeight) + (this.isPC ? 0 : this.topSafeHeight))
-        .padding({
-          left: 4,
-          right: this.titleButtonWidth + 12,
-          top: this.isPC ? 0 : this.topSafeHeight
-        })
-        .alignItems(VerticalAlign.Center)
-
+        // 沉浸式顶部：滚动内容从页面顶部开始（顶部空出标题带高度），
+        // 内容向上滚动时从标题带下方穿过，被标题带上的渐变模糊层模糊（与首页上端一致）
         Stack({ alignContent: Alignment.Center }) {
           Column() {
             Scroll() {
@@ -753,7 +744,7 @@ struct SettingsDetailPage {
               .constraintSize({ minWidth: 0, maxWidth: '100%' })
               .padding({
                 left: this.scaledSize(12), right: this.scaledSize(12),
-                top: this.scaledSize(5), bottom: this.scaledSize(40)
+                top: this.scaledSize(5) + this.titleBandHeight(), bottom: this.scaledSize(40)
               })
             }
             .width('100%')
@@ -767,6 +758,9 @@ struct SettingsDetailPage {
           if (this.showColorPicker) {
             this.colorPickerOverlay()
           }
+
+          // 标题带最后声明：浮在滚动内容与取色遮罩之上，返回按钮保持可点、标题文字保持清晰
+          this.titleBand()
         }
         .width('100%')
         .layoutWeight(1)
@@ -785,6 +779,67 @@ struct SettingsDetailPage {
       showClose: true,
       backgroundColor: $r('app.color.page_background_other')
     })
+  }
+
+  // 顶部标题带：与首页上端完全同款的渐变模糊层（先正比例后恒定）+ 主题色渐变着色层，
+  // 标题带浮在滚动内容之上，内容滚动到其下方时被模糊；经典/玻璃两种 Tab 风格下均启用
+  @Builder
+  titleBand(): void {
+    Stack({ alignContent: Alignment.Top }) {
+      Row()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(Color.Transparent)
+        .linearGradientBlur(this.topBlurRadius(), {
+          fractionStops: [[1, 0], [1, 0.5], [0, 1]],
+          direction: GradientDirection.Bottom
+        })
+
+      Row()
+        .width('100%')
+        .height('100%')
+        .linearGradient({
+          angle: 180,
+          colors: [
+            [ColorHelper.hexToRgba(this.primaryColor, 0.04), 0],
+            [ColorHelper.hexToRgba(this.primaryColor, 0.02), 0.5],
+            ['rgba(0,0,0,0)', 1]
+          ]
+        })
+
+      Row() {
+        GlassBackButton({
+          clickSize: this.scaledSize(48),
+          iconSize: this.scaledSize(15),
+          iconColor: this.settingTextColor(),
+          iconOpacity: 0.9,
+          onBack: () => {
+            this.getUIContext()?.getRouter()
+              .back()
+          }
+        })
+
+        Text(this.pageTitle)
+          .fontSize(this.scaledFont(17))
+          .fontColor(this.settingTextColor())
+          .fontWeight(FontWeight.Bold)
+          .margin({ left: 4 })
+      }
+      .width('100%')
+      .height('100%')
+      .padding({
+        left: 4,
+        right: this.titleButtonWidth + 12,
+        top: this.isPC ? 0 : this.topSafeHeight
+      })
+      .alignItems(VerticalAlign.Center)
+    }
+    .width('100%')
+    .height(this.titleBandHeight())
+    .position({ top: 0 })
+    .clip(true)
+    .hitTestBehavior(HitTestMode.Transparent)
+    .zIndex(2)
   }
 
   @Builder

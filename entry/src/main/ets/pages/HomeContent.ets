@@ -80,9 +80,16 @@ export struct HomeContent {
     return Math.round(size * this.displaySizeScale)
   }
 
+  // 首页上端模糊强度 → 渐变模糊半径：先正比例（斜率 1.6），强度到 60 之后恒定封顶 96
+  private static readonly TOP_BLUR_SLOPE: number = 1.6
+  private static readonly TOP_BLUR_MAX_RADIUS: number = 96
+
   private glassBlurRadius(): number {
-    return this.homeTopBlurStrength *
-      (1.6 - this.homeTopBlurStrength * 0.004)
+    const linear: number = this.homeTopBlurStrength * HomeContent.TOP_BLUR_SLOPE
+    if (linear <= 0) {
+      return 0
+    }
+    return linear < HomeContent.TOP_BLUR_MAX_RADIUS ? linear : HomeContent.TOP_BLUR_MAX_RADIUS
   }
 
   // 多选底栏液态玻璃材质（API 26+）：能力不足/玻璃关断/低算力返回 undefined，
