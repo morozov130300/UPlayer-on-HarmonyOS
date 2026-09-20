@@ -68,6 +68,8 @@ export struct HomeContent {
   // 最近一次长按触发的时间戳，用于丢弃长按结束后的那次 click
   private longPressAtMs: number = 0
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
+  // 底部栏样式：经典样式下多选菜单栏不挂任何背景效果（磨砂/液态玻璃）
+  @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
   @StorageLink('uplayer_home_top_blur_strength') homeTopBlurStrength: number = 25
   @StorageLink('uplayer_glass_thickness') glassThickness: number = 50
   @StorageLink('uplayer_interactive') interactive: boolean = true
@@ -86,9 +88,18 @@ export struct HomeContent {
   }
 
   // 多选底栏液态玻璃材质（API 26+）：能力不足/玻璃关断/低算力返回 undefined，
-  // 调用处保留 backgroundEffect 兜底，保证老设备仍有磨砂
+  // 调用处保留 backgroundEffect 兜底，保证老设备仍有磨砂。
+  // 经典底部栏样式下整条不应用任何背景效果（避免压出一层灰突突的色块）
   private multiSelectBarMaterial(): uiMaterial.Material | undefined {
+    if (this.tabStyle === 'classic') {
+      return undefined
+    }
     return createBarGlassMaterial(this.glassThickness, this.interactive)
+  }
+
+  // 经典样式下同样不挂磨砂层（与材质一起关断）
+  private multiSelectBarBlurEnabled(): boolean {
+    return this.tabStyle !== 'classic'
   }
 
   private headerOverlayHeight(): number {
@@ -789,12 +800,13 @@ export struct HomeContent {
         .height(this.multiSelectBarHeight())
         .padding({ left: 4, right: this.multiSelectBarRightPadding() })
         .backgroundColor(Color.Transparent)
-        // 磨砂层常挂（液态玻璃启用时作为材质底层兜底，与 Tab 栏策略一致）
-        .backgroundEffect({
+        // 磨砂层常挂（液态玻璃启用时作为材质底层兜底，与 Tab 栏策略一致）；
+        // 经典样式下不挂任何背景效果
+        .backgroundEffect(this.multiSelectBarBlurEnabled() ? {
           radius: 20,
           saturation: 1.0,
           brightness: 1.0
-        })
+        } : undefined)
         .systemMaterial(this.multiSelectBarMaterial())
         .position({ top: this.multiSelectBarTop(), left: 0 })
         .zIndex(2)
