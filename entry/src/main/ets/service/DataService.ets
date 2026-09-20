@@ -172,6 +172,8 @@ export class DataService {
         this.dbSnapshot = snapshot
         if (inserts.length > 0 || updates.length > 0 || deletes.length > 0) {
           Logger.info(TAG, `flush: +${inserts.length} ~${updates.length} -${deletes.length} rows`)
+          // 有实际写入才收敛 WAL：把只增不减的 wal 文件 TRUNCATE 回最小体积（异步、失败只记日志）
+          void db.checkpoint()
         }
       }
     } catch (err) {

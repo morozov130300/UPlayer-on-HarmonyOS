@@ -141,8 +141,30 @@ export struct PlaylistContent {
       display.push(result[i])
     }
     this.folders = display
-    // 同步持久化，保证新增文件夹的自定义序号被保存
-    this.dataService.saveFolders(result)
+    // 只在文件夹集合（id/名称/序号/歌曲数）真的变了时才回写 preferences：
+    // 曲库每次变更都会走到这里，无脑 saveFolders 会造成一次无意义的磁盘写入
+    if (this.foldersChanged(persisted, result)) {
+      this.dataService.saveFolders(result)
+    }
+  }
+
+  // 对比重建结果与已持久化的文件夹列表：任一字段不同即视为需要落盘
+  private foldersChanged(persisted: FolderInfo[], rebuilt: FolderInfo[]): boolean {
+    if (persisted.length !== rebuilt.length) {
+      return true
+    }
+    const persistedMap: Map<string, FolderInfo> = new Map<string, FolderInfo>()
+    for (let i = 0; i < persisted.length; i++) {
+      persistedMap.set(persisted[i].id, persisted[i])
+    }
+    for (let i = 0; i < rebuilt.length; i++) {
+      const old: FolderInfo | undefined = persistedMap.get(rebuilt[i].id)
+      if (old === undefined || old.sortOrder !== rebuilt[i].sortOrder
+        || old.songCount !== rebuilt[i].songCount || old.name !== rebuilt[i].name) {
+        return true
+      }
+    }
+    return false
   }
 
   sortFolders(folders: FolderInfo[]): void {

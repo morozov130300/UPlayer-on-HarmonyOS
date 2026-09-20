@@ -12,6 +12,7 @@ import { LiveViewService } from '../service/LiveViewService';
 import Logger from '../common/utils/Logger';
 import { AudioMetadataService } from '../service/AudioMetadataService';
 import { HoldingHandService } from '../service/HoldingHandService';
+import { SongDatabase } from '../service/SongDatabase';
 import { ShareService } from '../service/ShareService';
 import { ColorConversion } from '../common/utils/ColorConversion';
 import { PreferencesUtil } from '../common/utils/PreferencesUtil';
@@ -125,6 +126,8 @@ export default class EntryAbility extends UIAbility {
   onBackground(): void {
     DataService.getInstance().flushPendingSongWrites();
     PreferencesUtil.getInstance().flushNow();
+    // 退到后台时收敛一次数据库 WAL，避免 wal 文件长期只增不减撑大本地数据
+    void SongDatabase.getInstance().checkpoint();
     // 退到后台即退订握姿监听，避免后台持续占用传感器；回到前台由 onForeground 重新订阅
     HoldingHandService.getInstance().stop();
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onBackground');
