@@ -399,6 +399,12 @@ struct MainPage {
     .justifyContent(FlexAlign.Center)
     .backgroundColor(this.hoverTabIndex === index && this.effectiveTouchIndicator() === 'mask' ? 'rgba(255,255,255,0.16)' : Color.Transparent)
     .borderRadius(this.scaledSize(18))
+    // 蓝色悬停投影属于「白色蒙版」模式的悬停指示，蒙版关闭（off/light）时不再残留
+    .shadow({
+      radius: this.hoverTabIndex === index && this.effectiveTouchIndicator() === 'mask' ? 14 : 0,
+      color: this.hoverTabIndex === index && this.effectiveTouchIndicator() === 'mask'
+        ? ColorHelper.hexWithAlpha(this.primaryColor, '66') : Color.Transparent
+    })
     .scale({ x: this.hoverTabIndex === index ? 1.06 : 1, y: this.hoverTabIndex === index ? 1.06 : 1 })
     .animation({ duration: StyleConstants.ANIMATION_HOVER_DURATION, curve: Curve.EaseOut })
     .hoverEffect(this.bottomHoverEffect())
@@ -430,6 +436,12 @@ struct MainPage {
     .justifyContent(FlexAlign.Center)
     .backgroundColor(this.hoverTabIndex === index && this.effectiveTouchIndicator() === 'mask' ? 'rgba(255,255,255,0.18)' : Color.Transparent)
     .borderRadius(this.scaledSize(18))
+    // 蓝色悬停投影属于「白色蒙版」模式的悬停指示，蒙版关闭（off/light）时不再残留
+    .shadow({
+      radius: this.hoverTabIndex === index && this.effectiveTouchIndicator() === 'mask' ? 16 : 0,
+      color: this.hoverTabIndex === index && this.effectiveTouchIndicator() === 'mask'
+        ? ColorHelper.hexWithAlpha(this.primaryColor, '77') : Color.Transparent
+    })
     .scale({ x: this.hoverTabIndex === index ? 1.06 : 1, y: this.hoverTabIndex === index ? 1.06 : 1 })
     .animation({ duration: StyleConstants.ANIMATION_HOVER_DURATION, curve: Curve.EaseOut })
     .hoverEffect(this.bottomHoverEffect())

@@ -5,7 +5,7 @@ import { ColorHelper } from '../common/utils/ColorHelper'
 import { createBarGlassMaterial, createTabGlassMaterial, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
 import { KEY_HAS_POINTER_DEVICE } from '../common/utils/InputDeviceUtil'
 
-// 返回按钮统一组件：可点击区域维持原尺寸，内部套一层「可点击区域 × 0.7」的内切圆形，
+// 返回按钮统一组件：可点击区域维持原尺寸，内部套一层「可点击区域 × 0.6」的内切圆形，
 // 圆形的液态玻璃/磨砂/描边/阴影完全与底部 Tab 栏同源同参（同一批 AppStorage 配置驱动），
 // 保证风格切换时返回按钮与 Tab 栏同步变化。
 @Component
@@ -31,9 +31,9 @@ export struct GlassBackButton {
   @StorageLink('uplayer_theme_mode') themeMode: string = 'system'
 
   // 圆形相对可点击区的直径比例：可点击区不变，视觉圆更小
-  private static readonly CIRCLE_RATIO: number = 0.7
+  private static readonly CIRCLE_RATIO: number = 0.6
 
-  // 内切圆直径 = 可点击区 × 0.7，随调用方传入的 clickSize（含显示大小缩放）同步变化
+  // 内切圆直径 = 可点击区 × 0.6，随调用方传入的 clickSize（含显示大小缩放）同步变化
   private circleSize(): number {
     return Math.round(this.clickSize * GlassBackButton.CIRCLE_RATIO)
   }

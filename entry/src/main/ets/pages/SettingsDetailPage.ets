@@ -450,6 +450,11 @@ struct SettingsDetailPage {
     .backgroundColor(this.previewHoverTabIndex === index && this.effectiveTouchIndicator() === 'mask'
       ? 'rgba(255,255,255,0.16)' : Color.Transparent)
     .borderRadius(this.scaledSize(18))
+    .shadow({
+      radius: this.previewHoverTabIndex === index && this.effectiveTouchIndicator() === 'mask' ? 14 : 0,
+      color: this.previewHoverTabIndex === index && this.effectiveTouchIndicator() === 'mask'
+        ? ColorHelper.hexWithAlpha(this.primaryColor, '66') : Color.Transparent
+    })
     .scale({
       x: this.previewHoverTabIndex === index ? 1.06 : 1,
       y: this.previewHoverTabIndex === index ? 1.06 : 1
@@ -485,6 +490,11 @@ struct SettingsDetailPage {
     .backgroundColor(this.previewHoverTabIndex === index && this.effectiveTouchIndicator() === 'mask'
       ? 'rgba(255,255,255,0.18)' : Color.Transparent)
     .borderRadius(this.scaledSize(18))
+    .shadow({
+      radius: this.previewHoverTabIndex === index && this.effectiveTouchIndicator() === 'mask' ? 16 : 0,
+      color: this.previewHoverTabIndex === index && this.effectiveTouchIndicator() === 'mask'
+        ? ColorHelper.hexWithAlpha(this.primaryColor, '77') : Color.Transparent
+    })
     .scale({
       x: this.previewHoverTabIndex === index ? 1.06 : 1,
       y: this.previewHoverTabIndex === index ? 1.06 : 1
