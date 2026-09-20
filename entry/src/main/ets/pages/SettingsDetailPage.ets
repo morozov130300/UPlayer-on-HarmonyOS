@@ -2056,8 +2056,10 @@ struct SettingsDetailPage {
     for (let i = 0; i < total; i++) {
       ys.push(sliderMidY - (points[i] / 10) * (sliderH / 2))
     }
-    // 弦长参数化 Catmull-Rom → Cubic Bezier
-    // 使用实际 x 距离作为参数，适应非均匀间距
+    // 逐段独立平滑曲线（分段三次 Hermite，两端切线斜率恒为 0）：
+    // 每两个相邻点之间单独生成一条平滑曲线，且在点的两侧斜率均为 0，
+    // 保证曲线精确穿过每个数据点，且不会因相邻点差异产生过冲。
+    // 控制点取水平方向 1/3 处，即 CP1=(x0+dx/3, y0)、CP2=(x1-dx/3, y1)
     ctx.beginPath()
     ctx.moveTo(xs[0], ys[0])
     for (let i = 0; i < total - 1; i++) {
@@ -2065,21 +2067,11 @@ struct SettingsDetailPage {
       const p0y: number = ys[i]
       const p1x: number = xs[i + 1]
       const p1y: number = ys[i + 1]
-      // 前一点和后一点（边界处使用自身）
-      const prevX: number = i > 0 ? xs[i - 1] : xs[i]
-      const prevY: number = i > 0 ? ys[i - 1] : ys[i]
-      const nextX: number = i + 2 < total ? xs[i + 2] : xs[i + 1]
-      const nextY: number = i + 2 < total ? ys[i + 2] : ys[i + 1]
-      // 弦长参数化 Catmull-Rom：
-      // CP1 = P0 + (P1 - P_{i-1}) * (x_{i+1} - x_i) / (2 * (x_{i+1} - x_{i-1}))
-      // CP2 = P1 - (P_{i+2} - P_i) * (x_{i+1} - x_i) / (2 * (x_{i+2} - x_i))
       const dx: number = p1x - p0x
-      const dPrev: number = p1x - prevX
-      const dNext: number = nextX - p0x
-      const cp1x: number = p0x + (p1x - prevX) * dx / (2 * dPrev)
-      const cp1y: number = p0y + (p1y - prevY) * dx / (2 * dPrev)
-      const cp2x: number = p1x - (nextX - p0x) * dx / (2 * dNext)
-      const cp2y: number = p1y - (nextY - p0y) * dx / (2 * dNext)
+      const cp1x: number = p0x + dx / 3
+      const cp1y: number = p0y
+      const cp2x: number = p1x - dx / 3
+      const cp2y: number = p1y
       ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p1x, p1y)
     }
     ctx.strokeStyle = color
