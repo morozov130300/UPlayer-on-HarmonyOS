@@ -982,10 +982,10 @@ export struct HomeContent {
 
       if (item.isAvailable) {
         Row() {
-          SymbolGlyph($r('sys.symbol.list_bullet'))
-            .fontSize(Math.round(22 * this.fontSizeScale))
-            .renderingStrategy(SymbolRenderingStrategy.SINGLE)
-            .fontColor([$r('app.color.text_sixty_color')])
+          Image($r('app.media.ic_public_list_add_transparent'))
+            .width(Math.round(22 * this.fontSizeScale))
+            .height(Math.round(22 * this.fontSizeScale))
+            .fillColor($r('app.color.text_sixty_color'))
             .hitTestBehavior(HitTestMode.Block)
             .onClick(() => {
               this.dataService.addToPlayNext(item.id)

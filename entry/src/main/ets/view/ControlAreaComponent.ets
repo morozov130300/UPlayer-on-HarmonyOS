@@ -1,6 +1,6 @@
 // ArkUI 26 Beta1: 接口定义变更（误报，本项目已是Stage模型）+ UX视觉布局变更（Text默认开启沉浸式材质，系统行为）
 import {
-  curves, LengthMetrics, PromptAction, SymbolGlyphModifier, uiMaterial, uiAppearance
+  curves, LengthMetrics, PromptAction, uiMaterial, uiAppearance
 } from '@kit.ArkUI';
 import { DatePickerComponent, DisplayMode, TimeFormat, DatePickerComponentResult } from '@ohos.arkui.advanced.DatePickerComponent';
 import { AVVolumePanel } from '@kit.AudioKit';
@@ -408,10 +408,10 @@ export struct ControlAreaComponent {
 
       Row() {
         Column() {
-          SymbolGlyph($r('sys.symbol.gobackward_15'))
-            .fontSize(28)
-            .renderingStrategy(SymbolRenderingStrategy.SINGLE)
-            .fontColor([Color.White])
+          Image($r('app.media.ic_public_arrow_left'))
+            .width(28)
+            .height(28)
+            .fillColor(Color.White)
             .opacity(0.86)
             .hoverEffect(HoverEffect.Scale)
             .onClick(() => { this.skipBackward(); })
@@ -476,10 +476,10 @@ export struct ControlAreaComponent {
         .justifyContent(FlexAlign.Center)
 
         Column() {
-          SymbolGlyph($r('sys.symbol.goforward_15'))
-            .fontSize(28)
-            .renderingStrategy(SymbolRenderingStrategy.SINGLE)
-            .fontColor([Color.White])
+          Image($r('app.media.ic_public_arrow_right'))
+            .width(28)
+            .height(28)
+            .fillColor(Color.White)
             .opacity(0.86)
             .hoverEffect(HoverEffect.Scale)
             .onClick(() => { this.skipForward(); })
@@ -490,11 +490,11 @@ export struct ControlAreaComponent {
       .width(StyleConstants.FULL_WIDTH)
 
       Row() {
-        SymbolGlyph(this.playMode === MusicPlayMode.ORDER ? $r('sys.symbol.order_play') :
-          this.playMode === MusicPlayMode.RANDOM ? $r('sys.symbol.shuffle') : $r('sys.symbol.repeat_1'))
-          .fontSize(26)
-          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
-          .fontColor([Color.White])
+        Image(this.playMode === MusicPlayMode.ORDER ? $r('app.media.ic_public_order_play') :
+          this.playMode === MusicPlayMode.RANDOM ? $r('app.media.ic_public_shuffle') : $r('app.media.ic_public_single_cycle'))
+          .width(26)
+          .height(26)
+          .fillColor(Color.White)
           .opacity(0.86)
           .scale({ x: this.playModeScale, y: this.playModeScale })
           .hoverEffect(HoverEffect.Scale)
@@ -510,10 +510,10 @@ export struct ControlAreaComponent {
             this.switchPlayMode();
           })
 
-        SymbolGlyph($r('sys.symbol.music_note_list'))
-          .fontSize(26)
-          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
-          .fontColor([Color.White])
+        Image($r('app.media.ic_public_more_list'))
+          .width(26)
+          .height(26)
+          .fillColor(Color.White)
           .opacity(0.86)
           .scale({ x: this.playlistScale, y: this.playlistScale })
           .hoverEffect(HoverEffect.Scale)
@@ -540,10 +540,10 @@ export struct ControlAreaComponent {
             }
           })
 
-        SymbolGlyph($r('sys.symbol.speed_multiple'))
-          .fontSize(26)
-          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
-          .fontColor([Color.White])
+        Image($r('app.media.ic_public_fast'))
+          .width(26)
+          .height(26)
+          .fillColor(Color.White)
           .opacity(0.86)
           .scale({ x: this.speedScale, y: this.speedScale })
           .hoverEffect(HoverEffect.Scale)
@@ -636,10 +636,10 @@ export struct ControlAreaComponent {
         .alignItems(HorizontalAlign.Start)
         .layoutWeight(1)
         Blank()
-        SymbolGlyph($r('sys.symbol.chevron_right'))
-          .fontSize(this.scaledFont(18))
-          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
-          .fontColor([$r('app.color.text_twenty_color')])
+        Image($r('app.media.ic_public_arrow_right'))
+          .width(this.scaledSize(18))
+          .height(this.scaledSize(18))
+          .fillColor($r('app.color.text_twenty_color'))
       }
       .width('100%')
       .height(52)
@@ -676,10 +676,10 @@ export struct ControlAreaComponent {
         }
         .alignItems(HorizontalAlign.Start)
         Blank()
-        SymbolGlyph($r('sys.symbol.chevron_right'))
-          .fontSize(this.scaledFont(18))
-          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
-          .fontColor([$r('app.color.text_twenty_color')])
+        Image($r('app.media.ic_public_arrow_right'))
+          .width(this.scaledSize(18))
+          .height(this.scaledSize(18))
+          .fillColor($r('app.color.text_twenty_color'))
       }
       .width('100%')
       .height(52)
@@ -1141,10 +1141,10 @@ struct MusicListContainer {
         .alignItems(HorizontalAlign.Start)
         if (this.selectIndex === this.index && this.isPlay) {
           Column() {
-            SymbolGlyph($r('sys.symbol.waveform_1'))
-              .fontSize(26)
-              .renderingStrategy(SymbolRenderingStrategy.SINGLE)
-              .fontColor([Color.Red])
+            Image($r('app.media.ic_public_sound'))
+              .width(26)
+              .height(26)
+              .fillColor(Color.Red)
               .opacity(0.86)
           }
         }

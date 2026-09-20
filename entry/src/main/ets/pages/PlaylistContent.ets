@@ -423,10 +423,10 @@ export struct PlaylistContent {
           .fillColor(this.favoritesSelected ? Color.Red : this.primaryColor)
           .margin({ bottom: 6 })
       } else {
-        SymbolGlyph($r('sys.symbol.music_note_list'))
-          .fontSize(28)
-          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
-          .fontColor([$r('app.color.text_sixty_color')])
+        Image($r('app.media.ic_public_folder'))
+          .width(28)
+          .height(28)
+          .fillColor($r('app.color.text_sixty_color'))
           .margin({ bottom: 6 })
       }
       Text(item.name)
