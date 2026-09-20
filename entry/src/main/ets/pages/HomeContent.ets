@@ -12,7 +12,7 @@ import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstan
 import { AlbumCover } from '../component/AlbumCover'
 import { AlbumCoverSize, AudioMetadataService, CoverPriority } from '../service/AudioMetadataService'
 import { curves, uiMaterial } from '@kit.ArkUI'
-import { createBarGlassMaterial } from '../common/utils/GlassUtil'
+import { createBarGlassMaterial, topBlurRadiusFromStrength } from '../common/utils/GlassUtil'
 import { GlassBackButton } from '../view/GlassBackButton'
 import { StyleConstants } from '../common/constants/StyleConstants'
 
@@ -80,16 +80,10 @@ export struct HomeContent {
     return Math.round(size * this.displaySizeScale)
   }
 
-  // 首页上端模糊强度 → 渐变模糊半径：先正比例（斜率 1.6），强度到 60 之后恒定封顶 96
-  private static readonly TOP_BLUR_SLOPE: number = 1.6
-  private static readonly TOP_BLUR_MAX_RADIUS: number = 96
-
+  // 首页上端模糊半径：统一走 GlassUtil 的分段函数（先正比例、到 60 后恒定，临界处无缝相接）。
+  // 只允许调用工厂，不允许在本文件重写公式——否则会与设置页顶部带产生断口
   private glassBlurRadius(): number {
-    const linear: number = this.homeTopBlurStrength * HomeContent.TOP_BLUR_SLOPE
-    if (linear <= 0) {
-      return 0
-    }
-    return linear < HomeContent.TOP_BLUR_MAX_RADIUS ? linear : HomeContent.TOP_BLUR_MAX_RADIUS
+    return topBlurRadiusFromStrength(this.homeTopBlurStrength)
   }
 
   // 多选底栏液态玻璃材质（API 26+）：能力不足/玻璃关断/低算力返回 undefined，

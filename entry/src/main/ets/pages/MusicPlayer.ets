@@ -32,10 +32,8 @@ struct MusicPlayer {
   pageTransition() {
     PageTransitionEnter({ duration: StyleConstants.ANIMATION_PAGE_ENTER_DURATION, curve: curves.springMotion(0.6, 0.8) })
       .slide(SlideEffect.Bottom)
-      .opacity(0)
     PageTransitionExit({ duration: StyleConstants.ANIMATION_PAGE_EXIT_DURATION, curve: curves.springMotion(0.7, 0.9) })
       .slide(SlideEffect.Bottom)
-      .opacity(0)
   }
 
   private handleKeyEvent(event: KeyEvent): boolean {
@@ -94,6 +92,7 @@ struct MusicPlayer {
     }
     .height('100%')
     .width('100%')
+    .backgroundColor(Color.Black)
     .expandSafeArea()
     .opacity(this.bgOpacity)
     .onKeyEvent((event: KeyEvent): boolean => this.handleKeyEvent(event))

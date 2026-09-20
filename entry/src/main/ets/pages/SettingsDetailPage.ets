@@ -14,7 +14,8 @@ import {
   createTabGlassMaterial,
   GLASS_THICKNESS_STEPS,
   glassThicknessLabel,
-  isLiquidGlassAvailable
+  isLiquidGlassAvailable,
+  topBlurRadiusFromStrength
 } from '../common/utils/GlassUtil'
 import { StyleConstants } from '../common/constants/StyleConstants'
 import { KEY_HAS_POINTER_DEVICE, refreshPointerDeviceState } from '../common/utils/InputDeviceUtil'
@@ -311,16 +312,10 @@ struct SettingsDetailPage {
     return this.glassBlurStrength * 0.5
   }
 
-  // 与 HomeContent.glassBlurRadius 同公式：先正比例（斜率 1.6），强度到 60 之后恒定封顶 96
-  private static readonly TOP_BLUR_SLOPE: number = 1.6
-  private static readonly TOP_BLUR_MAX_RADIUS: number = 96
-
+  // 设置页顶部带模糊半径：统一走 GlassUtil 的分段函数（先正比例、到 60 后恒定，临界处无缝相接），
+  // 与首页上端 glassBlurRadius 是同一个函数、同一份取值，禁止在本文件重写公式
   private topBlurRadius(): number {
-    const linear: number = this.homeTopBlurStrength * SettingsDetailPage.TOP_BLUR_SLOPE
-    if (linear <= 0) {
-      return 0
-    }
-    return linear < SettingsDetailPage.TOP_BLUR_MAX_RADIUS ? linear : SettingsDetailPage.TOP_BLUR_MAX_RADIUS
+    return topBlurRadiusFromStrength(this.homeTopBlurStrength)
   }
 
   // 顶部标题带高度：与本页标题栏（返回按钮 + 页面标题）等高

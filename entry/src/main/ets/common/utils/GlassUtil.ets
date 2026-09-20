@@ -39,6 +39,26 @@ export function isGlassOff(value: number): boolean {
   return value <= 0
 }
 
+// 上端渐变模糊（首页上端 / 设置页顶部带 / 设置页预览方块）的「模糊强度 → 模糊半径」映射：
+// 全项目唯一一份，禁止各处再抄第二份，否则首页与设置页会在临界处各说各话。
+//   0 ≤ strength ≤ TOP_BLUR_CAP_STRENGTH：r = TOP_BLUR_SLOPE × strength            （正比例段）
+//   strength > TOP_BLUR_CAP_STRENGTH    ：r = TOP_BLUR_SLOPE × TOP_BLUR_CAP_STRENGTH（常数段）
+// 常数段必须取正比例段在临界强度处的同一取值（60 × 1.6 = 96），两段在 strength = 60 处
+// 严丝合缝相接（两侧都是 96），临界处强度不变、无断口；常数段不得写死第二个数值。
+// 曲线从下往上读即「先正比例升到满，再恒定不变」。
+export const TOP_BLUR_SLOPE: number = 1.6
+export const TOP_BLUR_CAP_STRENGTH: number = 60
+
+export function topBlurRadiusFromStrength(strength: number): number {
+  if (strength <= 0) {
+    return 0
+  }
+  if (strength <= TOP_BLUR_CAP_STRENGTH) {
+    return TOP_BLUR_SLOPE * strength
+  }
+  return TOP_BLUR_SLOPE * TOP_BLUR_CAP_STRENGTH
+}
+
 // backgroundBlurStyle 用的 BlurStyle 枚举（API 7+，所有设备可用）
 export function glassBlurStyleFromStrength(value: number): BlurStyle {
   if (value < 15) {
