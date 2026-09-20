@@ -12,8 +12,7 @@ import { SettingsContent } from './SettingsContent'
 import { DataService } from '../service/DataService'
 import { PoetryService } from '../service/PoetryService'
 import { ColorHelper } from '../common/utils/ColorHelper'
-import { createBarGlassMaterial, createTabGlassMaterial, DEFAULT_GLASS_STYLE, isLiquidGlassAvailable,
-  materialCapabilityInfo } from '../common/utils/GlassUtil'
+import { createBarGlassMaterial, createTabGlassMaterial, DEFAULT_GLASS_STYLE, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
 import Logger from '../common/utils/Logger'
 import { LrcEntry } from '../viewmodel/LrcEntry'
 import { loadLyricEntries } from '../service/LyricLoader'
@@ -68,9 +67,6 @@ struct MainPage {
   @State isTitleMarqueeRunning: boolean = true
   @State isArtistMarqueeRunning: boolean = true
   @State hoverTabIndex: number = -1
-  // 自绘跟手光效（低算力设备兜底）：光晕中心（相对 Tab 栏左边缘）与显隐透明度
-  @State tabGlowCenterX: number = -1
-  @State tabGlowOpacity: number = 0
   @State currentLyricLine: string = ''
   @State nextLyricLine: string = ''
   @State lyricEntries: LrcEntry[] = []
@@ -83,8 +79,6 @@ struct MainPage {
   private tabWidth: number = 72
   private tabGap: number = 6
   private indicatorInset: number = 4
-  // 自绘跟手光效的宽度（高度与 Tab 项等高）
-  private tabGlowWidth: number = 84
   private rotationTimer: number = -1
   private dataService: DataService = DataService.getInstance()
   private poetryService: PoetryService = PoetryService.getInstance()
@@ -161,77 +155,20 @@ struct MainPage {
     return this.tabTouchIndicator
   }
 
-  // 材质只负责玻璃本体（档位/交互形变/自动反色/阴影）；「跟手光效」不再交给系统 lightEffect
-  // （系统沉浸式材质只在 Navigation 标题栏/Tabs 底部栏等区域渲染，本项目自绘底部栏不在范围内），
-  // 统一由组件侧自绘（见 tabLightGlow），手机上同样可见。
+  // 颜色由 lightColorMode 控制（白/主题），仅在 tabTouchIndicator='light' 时开启，
+  // 否则传 undefined 让 lightEffect 完全关闭，便于外层使用系统自带的按压白色蒙版。
   private liquidGlassMaterial(): uiMaterial.Material | undefined {
-    return createTabGlassMaterial(this.glassThickness, this.interactive, this.colorInvert, this.applyShadow)
+    const useLight: boolean = this.effectiveTouchIndicator() === 'light'
+    const lightColor: string | undefined = useLight
+      ? (this.lightColorMode === 'white' ? '#FFFFFF' : this.primaryColor)
+      : undefined
+    return createTabGlassMaterial(this.glassThickness, this.interactive, lightColor, this.colorInvert, this.applyShadow)
   }
 
   // 开启白色蒙版（按下雾蒙蒙的发白指示器）时返回 HoverEffect.Highlight，否则返回 None
   // mask 模式下仅 Tab item 显示白色蒙版；light 模式下不做任何 hover 效果（避免白色蒙版）
   private bottomHoverEffect(): HoverEffect {
     return this.effectiveTouchIndicator() === 'mask' ? HoverEffect.Highlight : HoverEffect.None
-  }
-
-// ── 自绘跟手光效 ──
-  // 系统 ImmersiveMaterial.lightEffect 受官方「生效范围」限制（只在 Navigation 标题栏 /
-  // Tabs 底部 TabBar / 弹窗类等区域内渲染），本项目的自绘底部栏拿不到这束光——真机实测
-  // 手机 materialLevel=EXQUISITE 时依旧无光。因此「跟手光效」统一由本组件自绘：
-  // 按下/滑动时光晕跟随触点，抬起淡出，颜色走「跟手光效颜色」设置，三端表现一致。
-  private selfDrawnLightEnabled(): boolean {
-    return this.effectiveTouchIndicator() === 'light'
-  }
-
-  // 光晕颜色与「跟手光效颜色」设置一致：white=纯白光，theme=主题色
-  private tabLightColor(): string {
-    return this.lightColorMode === 'white' ? '#FFFFFF' : this.primaryColor
-  }
-
-  // Tab 栏内容宽度（3 个 Tab + 2 个间距）
-  private tabBarContentWidth(): number {
-    return this.scaledSize(this.tabWidth * 3 + this.tabGap * 2)
-  }
-
-  // 跟手：按下/滑动时光晕跟随触点，抬起或取消时淡出
-  private updateTabLightGlow(event: TouchEvent): void {
-    if (!this.selfDrawnLightEnabled()) {
-      return
-    }
-    if (event.type === TouchType.Down || event.type === TouchType.Move) {
-      const half: number = this.scaledSize(this.tabGlowWidth) / 2
-      const raw: number = event.touches.length > 0 ? event.touches[0].x : this.tabGlowCenterX
-      // 光晕中心收敛在栏内，避免光晕溢出 Tab 栏两端
-      this.tabGlowCenterX = Math.max(half, Math.min(this.tabBarContentWidth() - half, raw))
-      this.tabGlowOpacity = 1
-    } else {
-      this.tabGlowOpacity = 0
-    }
-  }
-
-  @Builder
-  tabLightGlow() {
-    Row()
-      .width(this.scaledSize(this.tabGlowWidth))
-      .height(this.scaledSize(36))
-      .borderRadius(this.scaledSize(18))
-      .radialGradient({
-        center: ['50%', '50%'],
-        radius: '60%',
-        colors: [
-          [ColorHelper.hexToRgba(this.tabLightColor(), 0.60), 0.0],
-          [ColorHelper.hexToRgba(this.tabLightColor(), 0.30), 0.55],
-          [ColorHelper.hexToRgba(this.tabLightColor(), 0.0), 1.0]
-        ]
-      })
-      .margin({
-        left: this.tabGlowCenterX - this.scaledSize(this.tabGlowWidth) / 2,
-        bottom: this.scaledSize(12)
-      })
-      .opacity(this.tabGlowOpacity)
-      .animation({ duration: StyleConstants.ANIMATION_HOVER_DURATION, curve: Curve.EaseOut })
-      .hitTestBehavior(HitTestMode.None)
-      .zIndex(1)
   }
 
   // 仅当「玻璃样式 + 设备系统达到 API 26 + 厚度未关断」时启用真·液态玻璃；

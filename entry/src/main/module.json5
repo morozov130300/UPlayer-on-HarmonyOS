@@ -11,6 +11,8 @@
     ],
     "deliveryWithInstall": true,
     "installationFree": false,
+    // so 以压缩形式打包（安装时由系统解压），减小应用包体积；见官方《应用包体积优化》
+    "compressNativeLibs": true,
     "pages": "$profile:main_pages",
     "requestPermissions": [
       {

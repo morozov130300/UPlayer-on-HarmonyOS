@@ -6,6 +6,12 @@
       "arguments": "-DOHOS_STL=c++_static",
       "cppFlags": "-std=c++17"
     },
+    // strip 掉 so 的调试信息与符号表，减小 libuplayer.so 体积（debug/release 均生效）
+    "nativeLib": {
+      "debugSymbol": {
+        "strip": true
+      }
+    },
     "arkOptions": {
       "runtimeOnly": {
         "packages": [

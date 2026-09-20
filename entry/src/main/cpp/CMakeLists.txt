@@ -18,3 +18,8 @@ target_link_libraries(uplayer PUBLIC
   libnative_media_avdemuxer.so
   libnative_media_avsource.so
 )
+
+# 体积裁剪：函数/数据分节 + 链接期回收未引用段（--gc-sections），并对内联函数合并去重。
+# 只回收「确实没人引用的段」，不改变可执行语义；符号可见性保持默认，避免影响 NAPI 模块注册。
+target_compile_options(uplayer PRIVATE -ffunction-sections -fdata-sections -fmerge-all-constants)
+target_link_options(uplayer PRIVATE -Wl,--gc-sections)

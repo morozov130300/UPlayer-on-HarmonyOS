@@ -123,29 +123,6 @@ export function isLowPowerGlassDevice(): boolean {
   return getDeviceMaterialLevel() === uiMaterial.MaterialLevel.SMOOTH
 }
 
-// 系统沉浸光效（ImmersiveMaterial.lightEffect，即底部栏「跟手光效」）是否真的会渲染：
-// 官方明确该参数仅对「高算力/中算力」设备生效，低算力（SMOOTH）设备上会被系统直接忽略，
-// 表现为：玻璃材质本身还在（低档位用背景色/边框/阴影实现），但按压/跟手的光效完全没有。
-// 这类设备必须由组件侧自绘跟手光效兜底（见 Index.tabLightGlow）。
-export function isSystemLightEffectAvailable(): boolean {
-  return isLiquidGlassAvailable() && !isLowPowerGlassDevice()
-}
-
-// 设备材质能力诊断串：跟手光效不生效时用于真机 hilog 定位（TAG = Index/GlassUtil）
-export function materialCapabilityInfo(): string {
-  const level: uiMaterial.MaterialLevel | undefined = getDeviceMaterialLevel()
-  let levelName: string = 'unknown'
-  if (level === uiMaterial.MaterialLevel.EXQUISITE) {
-    levelName = 'EXQUISITE'
-  } else if (level === uiMaterial.MaterialLevel.GENTLE) {
-    levelName = 'GENTLE'
-  } else if (level === uiMaterial.MaterialLevel.SMOOTH) {
-    levelName = 'SMOOTH'
-  }
-  return `api26=${deviceInfo.apiAvailable('26.0.0')}, liquidGlassAvailable=${isLiquidGlassAvailable()}, ` +
-    `materialLevel=${levelName}, systemLightEffectAvailable=${isSystemLightEffectAvailable()}`
-}
-
 // 页面级背景只用档位，不开启 interactive 与 lightEffect：
 // - interactive 会让所有页面在按下/拖动时产生 Q 弹形变（页面级不需要）
 // - lightEffect 会让普通滚动也出现跟手光效（用户未同意，仅 Tab 栏保留）
@@ -160,19 +137,17 @@ export function createPageGlassMaterial(strength: number): uiMaterial.Material |
 }
 
 // Tab 栏液态玻璃材质的统一构造工厂：Index 真实 Tab 栏与设置页预览器必须共用此函数，
-// 保证预览效果与真实渲染一致（style/interactive/colorInvert/applyShadow 全参数）。
-// 刻意不配 lightEffect（跟手光效）：官方限定沉浸式材质只在 Navigation 标题栏 / Tabs 底部 TabBar
-// 等区域内渲染，本项目的自绘底部栏不在生效范围内，系统 lightEffect 不保证出现（真机实测手机
-// materialLevel=EXQUISITE 也看不到光）。因此「跟手光效」统一由组件侧自绘（见 Index.tabLightGlow），
-// 三端表现一致、可预期。能力不足或玻璃关闭返回 undefined。
+// 保证预览效果与真实渲染一致（style/interactive/lightEffect/colorInvert/applyShadow 全参数）。
+// lightColor 为 undefined 时关闭 lightEffect；能力不足或玻璃关闭返回 undefined。
 export function createTabGlassMaterial(strength: number, interactive: boolean,
-  colorInvert: boolean, applyShadow: boolean): uiMaterial.Material | undefined {
+  lightColor: string | undefined, colorInvert: boolean, applyShadow: boolean): uiMaterial.Material | undefined {
   if (!isLiquidGlassAvailable() || isGlassOff(strength)) {
     return undefined
   }
   return new uiMaterial.ImmersiveMaterial({
     style: glassImmersiveStyleFromStrength(strength),
     interactive: interactive,
+    lightEffect: lightColor !== undefined ? { color: lightColor } : undefined,
     colorInvert: colorInvert,
     applyShadow: applyShadow
   })

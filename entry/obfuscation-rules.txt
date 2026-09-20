@@ -21,3 +21,7 @@
 -enable-toplevel-obfuscation
 -enable-filename-obfuscation
 -enable-export-obfuscation
+# 去空白/换行，进一步压缩字节码体积（仅 release 构建生效）
+-compact
+# 移除 console.* 语句；本项目日志统一走 hilog，不受影响
+-remove-log
