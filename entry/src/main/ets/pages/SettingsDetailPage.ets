@@ -1215,35 +1215,6 @@ struct SettingsDetailPage {
           }
           .width('100%')
 
-          // 磨砂层叠加：仅液态玻璃可用时显示（老设备/低算力下磨砂层是唯一兜底手段，由下方强度滑块控制）
-          if (isLiquidGlassAvailable()) {
-            Row() {
-              Column({ space: this.scaledSize(6) }) {
-                Text('磨砂层叠加')
-                  .fontSize(this.scaledFont(14))
-                  .fontColor(this.settingTextColor())
-                  .fontWeight(FontWeight.Medium)
-                Text('在液态玻璃材质之上叠加一层磨砂模糊层（明亮模式生效，暗黑模式不启用）。建议保持关闭，以获得通透的材质观感。')
-                  .fontSize(this.scaledFont(12))
-                  .fontColor(this.settingSubTextColor())
-              }
-              .layoutWeight(1)
-              .justifyContent(FlexAlign.Center)
-              .alignItems(HorizontalAlign.Start)
-              Toggle({ type: ToggleType.Switch, isOn: this.settings.glassFrostOverlay })
-                .selectedColor(this.primaryColor)
-                .alignSelf(ItemAlign.Center)
-                .onChange((isOn: boolean) => {
-                  this.settings.glassFrostOverlay = isOn
-                  this.glassFrostOverlay = isOn
-                  this.updateSetting()
-                })
-            }
-            .width('100%')
-            .height(this.scaledSize(52))
-            .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-          }
-
           // 磨砂兜底模糊强度：仅在不支持液态玻璃的老设备上显示（新设备材质接管背景，该项无可见效果）
           if (!isLiquidGlassAvailable()) {
             Column({ space: this.scaledSize(6) }) {
@@ -1422,6 +1393,36 @@ struct SettingsDetailPage {
           .width('100%')
           .height(this.scaledSize(52))
           .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+
+          // 磨砂层叠加：与其他开关行同款结构；仅液态玻璃可用时显示（老设备下磨砂层是唯一兜底手段，
+          // 由本页「Tab栏与播控条模糊强度」滑块控制，该开关无效果故隐藏）
+          if (isLiquidGlassAvailable()) {
+            Row() {
+              Column({ space: this.scaledSize(6) }) {
+                Text('磨砂层叠加')
+                  .fontSize(this.scaledFont(14))
+                  .fontColor(this.settingTextColor())
+                  .fontWeight(FontWeight.Medium)
+                Text('在液态玻璃材质之上叠加一层磨砂模糊层（明亮模式生效，暗黑模式不启用）。建议保持关闭，以获得通透的材质观感。')
+                  .fontSize(this.scaledFont(12))
+                  .fontColor(this.settingSubTextColor())
+              }
+              .layoutWeight(1)
+              .justifyContent(FlexAlign.Center)
+              .alignItems(HorizontalAlign.Start)
+              Toggle({ type: ToggleType.Switch, isOn: this.settings.glassFrostOverlay })
+                .selectedColor(this.primaryColor)
+                .alignSelf(ItemAlign.Center)
+                .onChange((isOn: boolean) => {
+                  this.settings.glassFrostOverlay = isOn
+                  this.glassFrostOverlay = isOn
+                  this.updateSetting()
+                })
+            }
+            .width('100%')
+            .height(this.scaledSize(52))
+            .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+          }
 
           Row() {
             Column({ space: this.scaledSize(6) }) {
