@@ -583,7 +583,7 @@ struct MainPage {
           Image($r('app.media.ic_public_music'))
             .width(this.scaledSize(20))
             .height(this.scaledSize(20))
-            .fillColor($r('app.color.player_icon_color'))
+            .fillColor($r('app.color.text_sixty_color'))
         }
         .width(this.scaledSize(32))
         .height(this.scaledSize(32))
@@ -648,17 +648,17 @@ struct MainPage {
       }
       Image($r('app.media.ic_public_play_last'))
         .height(this.scaledSize(18))
-        .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') : $r('app.color.text_twenty_color'))
+        .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') : $r('app.color.text_sixty_color'))
         .onClick(() => { this.playPrevious() })
       Image(this.isPlaying ? $r('app.media.ic_public_play') : $r('app.media.ic_public_pause'))
         .height(this.scaledSize(22))
-        .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') : $r('app.color.text_twenty_color'))
+        .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') : $r('app.color.text_sixty_color'))
         .onClick(() => {
           this.togglePlay()
         })
       Image($r('app.media.ic_public_play_next'))
         .height(this.scaledSize(18))
-        .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') : $r('app.color.text_twenty_color'))
+        .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') : $r('app.color.text_sixty_color'))
         .onClick(() => { this.playNext() })
     }
     .constraintSize({ maxWidth: this.breakpoint === 'sm' || this.breakpoint === 'md' ? '85%' : '42%' })
