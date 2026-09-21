@@ -268,6 +268,7 @@ export struct HomeContent {
     }
     this.displayItems = items
     this.displayDataSource.reloadData(items)
+    this.syncPlayQueue()
     const visible: SongInfo[] = []
     for (let i = 0; i < items.length && visible.length < PREFETCH_COUNT; i++) {
       if (!items[i].isHeader && items[i].song.isAvailable) {
@@ -276,6 +277,31 @@ export struct HomeContent {
     }
     AudioMetadataService.getInstance().prefetchAlbumCovers(
       visible, AlbumCoverSize.SMALL, CoverPriority.HIGH)
+  }
+
+  // 播放队列与首页显示顺序保持一致：把当前可见顺序（跳过分组标题）同步为播放队列
+  // （KEY_SONG_LIST），播放器歌单、上一首/下一首、点击播放都基于该队列索引；
+  // 队列变化后按当前播放歌曲 id 重映射 selectIndex，保证高亮与切歌定位正确。
+  syncPlayQueue(): void {
+    const queue: SongInfo[] = []
+    for (let i = 0; i < this.displayItems.length; i++) {
+      const item: DisplayItem = this.displayItems[i]
+      if (!item.isHeader) {
+        queue.push(item.song)
+      }
+    }
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SONG_LIST, queue)
+    const currentId: string = AppStorage.get<string>('uplayer_current_song_id') ?? ''
+    if (currentId.length > 0) {
+      let idx: number = -1
+      for (let i = 0; i < queue.length; i++) {
+        if (queue[i].id === currentId) {
+          idx = i
+          break
+        }
+      }
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, idx)
+    }
   }
 
   sortSongs(songs: SongInfo[]): SongInfo[] {
@@ -489,6 +515,7 @@ export struct HomeContent {
       }
     }
     this.dataService.saveSongsNoReload(songs)
+    this.syncPlayQueue()
   }
 
   onSongTap(item: SongInfo): void {
@@ -496,9 +523,13 @@ export struct HomeContent {
       this.toggleSelectItem(item.id)
       return
     }
-    const allSongs: SongInfo[] = this.dataService.getSongs()
-    for (let i = 0; i < allSongs.length; i++) {
-      if (allSongs[i].id === item.id) {
+    // 点击播放按播放队列（与首页可见顺序一致）定位索引
+    const queue: SongInfo[] | undefined = AppStorage.get<SongInfo[]>(AppStorageKeyConstants.KEY_SONG_LIST)
+    if (queue === undefined) {
+      return
+    }
+    for (let i = 0; i < queue.length; i++) {
+      if (queue[i].id === item.id) {
         this.avPlayerService.playSongAt(i)
         break
       }

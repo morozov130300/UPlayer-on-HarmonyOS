@@ -65,6 +65,7 @@ export class AVPlayerService {
   private desiredSpeed: number = 1
   private isSeeking: boolean = false
   private seekingClearTimer: number = -1
+  private seekFromMs: number = -1
 
   public static getInstance(): AVPlayerService {
     return AVPlayerService.instance
@@ -144,6 +145,14 @@ export class AVPlayerService {
     this.avPlayer.on('timeUpdate', (time: number): void => {
       if (this.nativeMode) {
         return
+      }
+      if (this.isSeeking && this.seekFromMs >= 0 && Math.abs(time - this.seekFromMs) > 200) {
+        this.isSeeking = false
+        this.seekFromMs = -1
+        if (this.seekingClearTimer !== -1) {
+          clearTimeout(this.seekingClearTimer)
+          this.seekingClearTimer = -1
+        }
       }
       if (this.isUiActive()) {
         if (!this.isSeeking) {
@@ -239,6 +248,7 @@ export class AVPlayerService {
           this.sessionController.setPlayState(true)
         }
         this.backendState = BackendState.PLAYING_NATIVE
+        this.applyPendingNativeSeek()
         return
       }
       this.backendState = BackendState.STARTING_NATIVE
@@ -254,6 +264,7 @@ export class AVPlayerService {
       if (nativeStarted) {
         this.backendState = BackendState.PLAYING_NATIVE
         this.fallbackGeneration = -1
+        this.applyPendingNativeSeek()
         return
       }
       if (!this.isCurrentGeneration(requestId)) {
@@ -293,8 +304,15 @@ export class AVPlayerService {
     await this.play(song.uri.length > 0 ? song.uri : song.filePath, 0, startPaused)
   }
 
+  // 播放队列：与首页可见顺序一致（由 HomeContent 同步到 KEY_SONG_LIST），
+  // 未同步前回退到曲库原始顺序
+  private getPlayQueue(): SongInfo[] {
+    const queue: SongInfo[] | undefined = AppStorage.get<SongInfo[]>(AppStorageKeyConstants.KEY_SONG_LIST)
+    return queue !== undefined ? queue : DataService.getInstance().getSongs()
+  }
+
   async playSongAt(index: number, startPaused: boolean = false): Promise<boolean> {
-    const songs: SongInfo[] = DataService.getInstance().getSongs()
+    const songs: SongInfo[] = this.getPlayQueue()
     if (index < 0 || index >= songs.length || !songs[index].isAvailable) {
       return false
     }
@@ -303,7 +321,7 @@ export class AVPlayerService {
   }
 
   async playNextSong(naturalCompletion: boolean = false): Promise<boolean> {
-    const songs: SongInfo[] = DataService.getInstance().getSongs()
+    const songs: SongInfo[] = this.getPlayQueue()
     if (songs.length === 0) {
       return false
     }
@@ -331,7 +349,7 @@ export class AVPlayerService {
   }
 
   async playPreviousSong(): Promise<boolean> {
-    const songs: SongInfo[] = DataService.getInstance().getSongs()
+    const songs: SongInfo[] = this.getPlayQueue()
     if (songs.length === 0) {
       return false
     }
@@ -411,7 +429,7 @@ export class AVPlayerService {
   }
 
   private prefetchSongCovers(index: number): void {
-    const songs: SongInfo[] = DataService.getInstance().getSongs()
+    const songs: SongInfo[] = this.getPlayQueue()
     if (songs.length === 0 || index < 0 || index >= songs.length) {
       return
     }
@@ -761,9 +779,25 @@ export class AVPlayerService {
     })
   }
 
+  // native 启动完成（PLAYING_NATIVE）后补投递启动窗口期间积累的 seek 请求，
+  // 否则 pendingSeekMs 只会在 AV 分支被消费，native 路径静默丢弃
+  private applyPendingNativeSeek(): void {
+    if (this.pendingSeekMs === undefined) {
+      return
+    }
+    const target: number = this.pendingSeekMs
+    this.pendingSeekMs = undefined
+    const seekOk: boolean = nativeAudio.seek(target)
+    if (!seekOk) {
+      Logger.error(TAG, `pending native seek rejected pos=${target}`)
+    }
+  }
+
   async seek(timeMs: number): Promise<void> {
+    Logger.info(TAG, `seek to ${timeMs} nativeMode=${this.nativeMode} state=${this.backendState} from=${this.getCurrentPositionMs()}`)
     this.sessionController.setProgressState(timeMs)
     this.isSeeking = true
+    this.seekFromMs = this.getCurrentPositionMs()
     if (this.seekingClearTimer !== -1) {
       clearTimeout(this.seekingClearTimer)
       this.seekingClearTimer = -1
@@ -772,12 +806,23 @@ export class AVPlayerService {
       this.seekingClearTimer = -1
       this.isSeeking = false
     }, AVPlayerService.SEEK_SETTLE_MS)
+    // 乐观更新进度：seek 生效期间进度回调被抑制，先让 UI/歌词立即跳到目标位置
+    if (this.isUiActive()) {
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PROGRESS, timeMs)
+      const totalMs: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_TOTAL_MS_TIME) ?? 0
+      if (totalMs > 0) {
+        AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_TIME, this.formatTime(timeMs))
+      }
+    }
     if (this.backendState === BackendState.STARTING_NATIVE || this.backendState === BackendState.STARTING_AV) {
       this.pendingSeekMs = timeMs
       return
     }
     if (this.nativeMode) {
-      nativeAudio.seek(timeMs)
+      const seekOk: boolean = nativeAudio.seek(timeMs)
+      if (!seekOk) {
+        Logger.error(TAG, `native seek rejected pos=${timeMs}`)
+      }
       return
     }
     if (this.avPlayer === undefined) {
@@ -1043,8 +1088,10 @@ export class AVPlayerService {
         AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_TIME, this.formatTime(position))
       }
       this.sessionController.setProgressState(position)
-      if (this.isSeeking && position !== nativeAudio.getPosition()) {
+      // seek 已实际生效（位置离开 seek 前的基准）则提前解除进度抑制，不等 2s 兜底
+      if (this.isSeeking && this.seekFromMs >= 0 && Math.abs(position - this.seekFromMs) > 200) {
         this.isSeeking = false
+        this.seekFromMs = -1
         if (this.seekingClearTimer !== -1) {
           clearTimeout(this.seekingClearTimer)
           this.seekingClearTimer = -1

@@ -324,23 +324,22 @@ export struct ControlAreaComponent {
       return;
     }
     const song: SongInfo = this.songList[this.selectIndex];
+    // songList 可能是过滤后的播放队列子集，持久化必须基于完整曲库，避免覆盖丢歌
+    const allSongs: SongInfo[] = DataService.getInstance().getSongs();
     if (this.edittingFieldIndex === 0) {
       if (song.title !== this.edittingValue) {
         song.title = this.edittingValue;
-        const songs: SongInfo[] = this.songList.slice();
-        DataService.getInstance().updateSongFields(song.id, songs);
+        DataService.getInstance().updateSongFields(song.id, allSongs);
       }
     } else if (this.edittingFieldIndex === 1) {
       if (song.artist !== this.edittingValue) {
         song.artist = this.edittingValue;
-        const songs: SongInfo[] = this.songList.slice();
-        DataService.getInstance().updateSongFields(song.id, songs);
+        DataService.getInstance().updateSongFields(song.id, allSongs);
       }
     } else if (this.edittingFieldIndex === 2) {
       if (song.album !== this.edittingValue) {
         song.album = this.edittingValue;
-        const songs: SongInfo[] = this.songList.slice();
-        DataService.getInstance().updateSongFields(song.id, songs);
+        DataService.getInstance().updateSongFields(song.id, allSongs);
       }
     }
     this.cancelEditField();
@@ -1002,7 +1001,7 @@ export struct ControlAreaComponent {
           ListItem() {
             MusicListContainer({ item: item, index: index })
           }
-        }, (item: SongInfo, index: number) => item.id + index.toString())
+        }, (item: SongInfo) => item.id)
         ListItem().height(48)
       }
       .height(StyleConstants.FULL_HEIGHT)
@@ -1097,7 +1096,6 @@ function controlImageBuilder() {
   .objectFit(ImageFit.Contain)
 }
 
-@Reusable
 @Component
 struct MusicListContainer {
   @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) isPlay: boolean = false;
