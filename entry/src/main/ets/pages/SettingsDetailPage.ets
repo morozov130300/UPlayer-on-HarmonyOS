@@ -19,6 +19,7 @@ import {
   GLASS_THICKNESS_STEPS,
   glassThicknessLabel,
   isLiquidGlassAvailable,
+  isLowPowerGlassDevice,
   topBlurRadiusFromStrength
 } from '../common/utils/GlassUtil'
 import { StyleConstants } from '../common/constants/StyleConstants'
@@ -76,6 +77,7 @@ struct SettingsDetailPage {
   @StorageLink('uplayer_color_invert') colorInvert: boolean = false
   @StorageLink('uplayer_apply_shadow') applyShadow: boolean = true
   @StorageLink('uplayer_system_component_glass') systemComponentGlass: boolean = true
+  @StorageLink('uplayer_glass_frost_overlay') glassFrostOverlay: boolean = false
   // 是否存在鼠标/触控板设备（决定「白色蒙版」开关是否显示）
   @StorageLink(KEY_HAS_POINTER_DEVICE) hasPointerDevice: boolean = false
   @State pageTitle: string = ''
@@ -252,6 +254,29 @@ struct SettingsDetailPage {
     return createTabGlassMaterial(this.glassThickness, this.interactive, lightColor, this.colorInvert, this.applyShadow)
   }
 
+  // 条状预览材质（createBarGlassMaterial 工厂）的激活条件，与 Index.barMaterialActive 共用同一判定：
+  // API 26+ 且设备支持 + 厚度未关断 + 高/中算力（低算力退化为纯色面，走磨砂兜底）
+  private previewBarMaterialActive(): boolean {
+    return isLiquidGlassAvailable() && this.glassThickness > 0 && !isLowPowerGlassDevice()
+  }
+
+  // 沉浸式预览材质（createTabGlassMaterial 工厂）的激活条件，与 Index.liquidGlassEnabled 等价
+  // （预览 builder 仅在玻璃样式 tabStyle 下渲染，builder 内无需再判样式）
+  private previewTabMaterialActive(): boolean {
+    return isLiquidGlassAvailable() && this.glassThickness > 0
+  }
+
+  // 磨砂层挂载条件（预览两栏共用，与 Index.frostLayerEnabled 完全一致）：
+  // - 暗黑模式或模糊强度 0：从不挂载
+  // - 材质激活：仅当「磨砂层叠加」开关开启时挂载（默认关，避免明亮模式双层叠加蓝雾）
+  // - 材质未激活（老设备 / 低算力 / 厚度 0）：兜底挂载，不受开关影响
+  private frostLayerEnabled(materialActive: boolean): boolean {
+    if (this.isDark() || this.glassBlurStrength <= 0) {
+      return false
+    }
+    return materialActive ? this.glassFrostOverlay : true
+  }
+
   // 与 Index.glassBlurRadius 同公式：模糊强度 × 0.5
   private previewGlassBlurRadius(): number {
     return this.glassBlurStrength * 0.5
@@ -299,9 +324,9 @@ struct SettingsDetailPage {
         .margin({ bottom: this.scaledSize(10) })
         .borderRadius(this.scaledSize(20))
         .backgroundColor(Color.Transparent)
-        // 磨砂层只由「模糊强度」控制（0 关闭），暗黑模式不挂；
-        // 液态玻璃启用时磨砂层作为材质底层兜底保留（与 Index 经典 Tab 栏一致）
-        .backgroundEffect(!this.isDark() && this.glassBlurStrength > 0 ? {
+        // 磨砂层挂载条件与 Index.customTabBar 一致（frostLayerEnabled）：
+        // 材质激活时由「磨砂层叠加」开关控制；材质未激活时保持兜底挂载
+        .backgroundEffect(this.frostLayerEnabled(this.previewBarMaterialActive()) ? {
           radius: this.previewGlassBlurRadius()
         } : undefined)
         .systemMaterial(this.previewClassicBarMaterial())
@@ -357,9 +382,25 @@ struct SettingsDetailPage {
         .borderRadius(this.scaledSize(18))
         .alignItems(VerticalAlign.Center)
         .margin({ left: this.previewIndicatorOffset, bottom: this.scaledSize(12) })
-        // 指示器深浅接入：alpha 基准 0.4，深浅 50 时等效原 '33'（与 Index 玻璃样式一致）
-        .backgroundColor(ColorHelper.hexWithAlpha(this.primaryColor,
-          this.indicatorAlpha(0.4).toString(16).padStart(2, '0')))
+        // 与 Index.immersiveTabBar 指示器一致：径向渐变 + 蓝色光晕（深浅接入 indicatorAlpha(0.8)），
+        // 浅色玻璃下边缘更锐利
+        .shadow({
+          radius: 14,
+          color: ColorHelper.hexWithAlpha(this.primaryColor, this.indicatorAlpha(0.8)
+            .toString(16)
+            .padStart(2, '0')),
+          offsetX: 0,
+          offsetY: 0
+        })
+        .radialGradient({
+          center: ['50%', '50%'],
+          radius: '75%',
+          colors: [
+            [this.indicatorGradientColor(0.95), 0.0],
+            [this.indicatorGradientColor(0.75), 0.58],
+            [this.indicatorGradientColor(0.55), 1.0],
+          ]
+        })
 
       Row({ space: this.scaledSize(this.previewTabGap) }) {
         this.previewImmersiveTabItem(0, '首页', $r('app.media.ic_public_home'))
@@ -370,11 +411,11 @@ struct SettingsDetailPage {
       .height(this.scaledSize(40))
       .borderRadius(this.scaledSize(20))
       .backgroundColor(Color.Transparent)
-      // 磨砂层只由「模糊强度」控制（0 关闭），暗黑模式不挂；液态玻璃启用时作为材质底层兜底保留
-      // （与 Index 玻璃样式 Tab 栏一致）
-      .backgroundEffect(this.isDark() || this.glassBlurStrength <= 0 ? undefined : {
+      // 磨砂层挂载条件与 Index.immersiveTabBar 一致（frostLayerEnabled）：
+      // 材质激活时由「磨砂层叠加」开关控制（默认关，避免明亮模式蓝雾）；材质未激活时兜底挂载
+      .backgroundEffect(this.frostLayerEnabled(this.previewTabMaterialActive()) ? {
         radius: this.previewGlassBlurRadius()
-      })
+      } : undefined)
       .systemMaterial(this.previewImmersiveBarMaterial())
       .border({ width: 1, color: 'rgba(255,255,255,0.22)' })
       .shadow({ radius: 18, color: ColorHelper.hexWithAlpha(this.primaryColor, '44'), offsetY: 5 })
@@ -1173,6 +1214,35 @@ struct SettingsDetailPage {
             .padding({ left: this.scaledSize(10), right: this.scaledSize(10) })
           }
           .width('100%')
+
+          // 磨砂层叠加：仅液态玻璃可用时显示（老设备/低算力下磨砂层是唯一兜底手段，由下方强度滑块控制）
+          if (isLiquidGlassAvailable()) {
+            Row() {
+              Column({ space: this.scaledSize(6) }) {
+                Text('磨砂层叠加')
+                  .fontSize(this.scaledFont(14))
+                  .fontColor(this.settingTextColor())
+                  .fontWeight(FontWeight.Medium)
+                Text('在液态玻璃材质之上叠加一层磨砂模糊层（明亮模式生效，暗黑模式不启用）。建议保持关闭，以获得通透的材质观感。')
+                  .fontSize(this.scaledFont(12))
+                  .fontColor(this.settingSubTextColor())
+              }
+              .layoutWeight(1)
+              .justifyContent(FlexAlign.Center)
+              .alignItems(HorizontalAlign.Start)
+              Toggle({ type: ToggleType.Switch, isOn: this.settings.glassFrostOverlay })
+                .selectedColor(this.primaryColor)
+                .alignSelf(ItemAlign.Center)
+                .onChange((isOn: boolean) => {
+                  this.settings.glassFrostOverlay = isOn
+                  this.glassFrostOverlay = isOn
+                  this.updateSetting()
+                })
+            }
+            .width('100%')
+            .height(this.scaledSize(52))
+            .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+          }
 
           // 磨砂兜底模糊强度：仅在不支持液态玻璃的老设备上显示（新设备材质接管背景，该项无可见效果）
           if (!isLiquidGlassAvailable()) {

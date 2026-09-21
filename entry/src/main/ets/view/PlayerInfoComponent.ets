@@ -13,6 +13,7 @@ import { ColorConversion } from '../common/utils/ColorConversion';
 import { WindowInfo } from '../common/utils/WindowUtil';
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
 import { AlbumCoverLease, AlbumCoverSize, AudioMetadataService } from '../service/AudioMetadataService';
+import { DataService } from '../service/DataService';
 import { GlassBackButton } from './GlassBackButton';
 
 const TAG = 'PlayerInfoComponent'
@@ -20,8 +21,9 @@ const TAG = 'PlayerInfoComponent'
 @Component
 export struct PlayerInfoComponent {
   @ObjectLink @Watch('mainWindowInfoChange') mainWindowInfo: WindowInfo;
-  @StorageLink(AppStorageKeyConstants.KEY_SONG_LIST) songList: SongInfo[] = [];
   @StorageProp(AppStorageKeyConstants.KEY_SELECT_INDEX) @Watch('getImageColor') selectIndex: number = 0;
+  // 按 id 解析当前播放歌曲，避免队列下标失配导致背景与实际播放不一致
+  @StorageProp('uplayer_current_song_id') @Watch('getImageColor') currentSongId: string = '';
   @StorageLink(AppStorageKeyConstants.KEY_IMAGE_COLOR) @Watch('onImageColorChange') imageColor: string = 'rgba(0, 0, 2, 1.00)';
   @StorageLink(AppStorageKeyConstants.KEY_TOP_HEIGHT) topHeight: number = 0;
   @StorageLink(AppStorageKeyConstants.KEY_BOTTOM_HEIGHT) bottomHeight: number = 0;
@@ -280,11 +282,11 @@ export struct PlayerInfoComponent {
     if (!this.context) {
       return;
     }
-    if (!this.songList || this.selectIndex < 0 || this.selectIndex >= this.songList.length) {
+    const song: SongInfo | undefined = DataService.getInstance().getSongById(this.currentSongId);
+    if (song === undefined) {
       this.setDefaultBackground();
       return;
     }
-    const song: SongInfo = this.songList[this.selectIndex];
     this.loadAlbumArt(song);
   }
 

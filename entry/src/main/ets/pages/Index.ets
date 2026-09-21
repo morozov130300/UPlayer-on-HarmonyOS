@@ -12,7 +12,7 @@ import { SettingsContent } from './SettingsContent'
 import { DataService } from '../service/DataService'
 import { PoetryService } from '../service/PoetryService'
 import { ColorHelper } from '../common/utils/ColorHelper'
-import { createBarGlassMaterial, createTabGlassMaterial, DEFAULT_GLASS_STYLE, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
+import { createBarGlassMaterial, createTabGlassMaterial, DEFAULT_GLASS_STYLE, isLiquidGlassAvailable, isLowPowerGlassDevice } from '../common/utils/GlassUtil'
 import Logger from '../common/utils/Logger'
 import { LrcEntry } from '../viewmodel/LrcEntry'
 import { loadLyricEntries } from '../service/LyricLoader'
@@ -48,6 +48,8 @@ struct MainPage {
   @StorageLink('uplayer_current_title') currentSongTitle: string = ''
   @StorageLink('uplayer_current_artist') currentSongArtist: string = ''
   @StorageLink('uplayer_current_album_art') @Watch('onAlbumArtChange') currentSongAlbumArt: string = ''
+  // 播控条封面/迷你歌词按 id 解析当前歌曲，避免队列下标失配
+  @StorageLink('uplayer_current_song_id') @Watch('onCurrentSongChange') currentSongId: string = ''
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
   @StorageLink('uplayer_theme_mode') themeMode: string = 'system'
   @StorageLink('uplayer_display_size_scale') @Watch('onDisplaySizeChange') displaySizeScale: number = 1.0
@@ -63,6 +65,7 @@ struct MainPage {
   @StorageLink('uplayer_interactive') interactive: boolean = true
   @StorageLink('uplayer_color_invert') colorInvert: boolean = false
   @StorageLink('uplayer_apply_shadow') applyShadow: boolean = true
+  @StorageLink('uplayer_glass_frost_overlay') glassFrostOverlay: boolean = false
   @State albumArtFailed: boolean = false
   @State isTitleMarqueeRunning: boolean = true
   @State isArtistMarqueeRunning: boolean = true
@@ -177,6 +180,25 @@ struct MainPage {
   // 其余情况（经典样式、老系统、厚度为 0）回退到原有 backgroundEffect 玻璃模糊。
   private liquidGlassEnabled(): boolean {
     return this.tabStyle === 'immersive' && isLiquidGlassAvailable() && this.glassThickness > 0
+  }
+
+  // 条状组件（经典 Tab 栏 / 播控条）液态玻璃材质的激活条件，与 createBarGlassMaterial 工厂
+  // 及设置页预览共用同一判定：API 26+ 且设备支持 + 厚度未关断 + 高/中算力（低算力材质退化为
+  // 纯色面，由磨砂层兜底，不受「磨砂层叠加」开关约束）
+  private barMaterialActive(): boolean {
+    return isLiquidGlassAvailable() && this.glassThickness > 0 && !isLowPowerGlassDevice()
+  }
+
+  // 磨砂层挂载条件（经典 Tab 栏 / 玻璃 Tab 栏 / 播控条三处统一）：
+  // - 暗黑模式或模糊强度为 0：从不挂载（保持原有行为）
+  // - 材质激活：仅当「磨砂层叠加」开关开启时挂载（默认关 = 纯液态玻璃观感，
+  //   避免明亮模式下磨砂层叠在材质之上把指示器糊成蓝雾，官方 FAQ 亦标注二者同设为重复处理）
+  // - 材质未激活（老设备 / 低算力 / 厚度为 0）：作为兜底挂载，不受开关影响
+  private frostLayerEnabled(materialActive: boolean): boolean {
+    if (this.isDarkTheme() || this.glassBlurStrength <= 0) {
+      return false
+    }
+    return materialActive ? this.glassFrostOverlay : true
   }
 
   private liquidGlassTabMaterial(): uiMaterial.Material | undefined {
@@ -296,9 +318,9 @@ struct MainPage {
         .margin({ bottom: this.scaledSize(10) })
         .borderRadius(this.scaledSize(20))
         .backgroundColor(Color.Transparent)
-        // 磨砂层只由「模糊强度」控制（0 关闭），暗黑模式不挂；
-        // 液态玻璃启用时磨砂层作为材质底层兜底保留（低档位材质下仍提供磨砂），与玻璃样式/播控条一致
-        .backgroundEffect(!this.isDarkTheme() && this.glassBlurStrength > 0 ? {
+        // 磨砂层挂载条件统一走 frostLayerEnabled：材质激活时由「磨砂层叠加」开关控制，
+        // 材质未激活（老设备/低算力/厚度 0）保持兜底挂载（暗黑模式与强度 0 不挂）
+        .backgroundEffect(this.frostLayerEnabled(this.barMaterialActive()) ? {
           radius: this.glassBlurRadius()
         } : undefined)
         .systemMaterial(this.classicTabBarMaterial())
@@ -352,9 +374,23 @@ struct MainPage {
         .borderRadius(this.scaledSize(18))
         .alignItems(VerticalAlign.Center)
         .margin({ left: this.indicatorOffset, bottom: this.scaledSize(12) })
-        // 指示器深浅接入：alpha 基准 0.4，深浅 50 时等效原 '33'（默认观感不变），0 时完全隐藏
-        .backgroundColor(ColorHelper.hexWithAlpha(this.primaryColor,
-          this.indicatorAlpha(0.4).toString(16).padStart(2, '0')))
+        // 指示器与经典样式同款径向渐变 + 蓝色光晕（深浅接入 indicatorAlpha/indicatorGradientColor），
+        // 去掉纯色 backgroundColor：浅色玻璃下边缘更锐利，避免「蓝雾」观感
+        .shadow({
+          radius: 14,
+          color: ColorHelper.hexWithAlpha(this.primaryColor, this.indicatorAlpha(0.8).toString(16).padStart(2, '0')),
+          offsetX: 0,
+          offsetY: 0
+        })
+        .radialGradient({
+          center: ['50%', '50%'],
+          radius: '75%',
+          colors: [
+            [this.indicatorGradientColor(0.95), 0.0],
+            [this.indicatorGradientColor(0.75), 0.58],
+            [this.indicatorGradientColor(0.55), 1.0],
+          ]
+        })
 
       Row({ space: this.scaledSize(this.tabGap) }) {
         this.immersiveTabItem(0, '首页', $r('app.media.ic_public_home'))
@@ -365,11 +401,11 @@ struct MainPage {
       .height(this.scaledSize(40))
       .borderRadius(this.scaledSize(20))
       .backgroundColor(Color.Transparent)
-      // 液态玻璃启用时 systemMaterial 接管渲染；backgroundEffect 作为兜底磨砂层保留。
-      // 磨砂层只由「模糊强度」控制（与玻璃厚度解耦）：强度为 0 才关闭，暗黑模式不挂
-      .backgroundEffect(this.isDarkTheme() || this.glassBlurStrength <= 0 ? undefined : {
+      // 液态玻璃启用时 systemMaterial 接管渲染；磨砂层由「磨砂层叠加」开关控制（默认关，
+      // 避免明亮模式下双层叠加造成蓝雾）；材质未激活时保持兜底挂载
+      .backgroundEffect(this.frostLayerEnabled(this.liquidGlassEnabled()) ? {
         radius: this.glassBlurRadius()
-      })
+      } : undefined)
       // 液态玻璃：沉浸式系统材质 + 光效跟手 + 交互形变；能力不足时传 undefined 关闭
       .systemMaterial(this.liquidGlassTabMaterial())
       .border({ width: 1, color: 'rgba(255,255,255,0.22)' })
@@ -631,9 +667,9 @@ struct MainPage {
       top: this.scaledSize(4), bottom: this.scaledSize(4)
     })
     .backgroundColor(Color.Transparent)
-    // 磨砂层与玻璃厚度、Tab 风格解耦：仅由「模糊强度」控制（0 关闭），两种风格统一挂载；
-    // 暗黑模式不挂；液态玻璃启用时磨砂层保留作为材质底层兜底
-    .backgroundEffect(!this.isDarkTheme() && this.glassBlurStrength > 0 ? {
+    // 磨砂层与玻璃厚度、Tab 风格解耦，两种样式统一挂载；挂载条件统一走 frostLayerEnabled
+    // （材质激活时由「磨砂层叠加」开关控制，材质未激活时兜底挂载；暗黑模式与强度 0 不挂）
+    .backgroundEffect(this.frostLayerEnabled(this.barMaterialActive()) ? {
       radius: this.glassBlurRadius()
     } : undefined)
     // 液态玻璃：与磨砂层一致不区分 Tab 风格；能力不足时传 undefined 关闭
@@ -662,11 +698,8 @@ struct MainPage {
   }
 
   private currentSong(): SongInfo {
-    const songs: SongInfo[] = this.dataService.getSongs()
-    if (this.selectedSongIndex >= 0 && this.selectedSongIndex < songs.length) {
-      return songs[this.selectedSongIndex]
-    }
-    return new SongInfo()
+    const song: SongInfo | undefined = this.dataService.getSongById(this.currentSongId)
+    return song !== undefined ? song : new SongInfo()
   }
 
   onCurrentSongChange(): void {
@@ -696,16 +729,13 @@ struct MainPage {
     this.lyricEntries = []
     this.currentLyricLine = ''
     this.nextLyricLine = ''
-    const songs: SongInfo[] = this.dataService.getSongs()
-    // 准入条件应是「当前选中项有效」，与歌曲标题无关：
-    // 旧的 currentSongTitle.length === 0 判断会在标题缺失时误拦截歌词加载
-    if (this.selectedSongIndex < 0 || this.selectedSongIndex >= songs.length) {
+    const song: SongInfo = this.currentSong()
+    // 准入条件是「当前播放歌曲有效」（按 id 解析），与队列下标、标题无关
+    if (song.id.length === 0) {
       return
     }
-    const song: SongInfo = songs[this.selectedSongIndex]
     const entries: LrcEntry[] = await loadLyricEntries(song)
-    if (requestId !== this.lyricLoadRequestId || this.selectedSongIndex < 0 ||
-      this.selectedSongIndex >= songs.length || songs[this.selectedSongIndex].id !== song.id) {
+    if (requestId !== this.lyricLoadRequestId || this.currentSongId !== song.id) {
       return
     }
     this.lyricEntries = entries

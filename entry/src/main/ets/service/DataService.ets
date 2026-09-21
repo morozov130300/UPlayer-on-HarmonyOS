@@ -81,6 +81,9 @@ export class AppSettingsData {
   applyShadow: boolean = true
   // 系统组件液态玻璃：Toast 等调用级 systemMaterial 的总开关（API 26+ 且设备支持才实际生效）
   systemComponentGlass: boolean = true
+  // 磨砂层叠加：液态玻璃材质激活时，是否把 backgroundEffect 磨砂层叠加在材质之上
+  // 默认关：明亮模式下双层叠加会使 Tab 指示器呈雾状；开则回到「磨砂 + 材质」观感
+  glassFrostOverlay: boolean = false
   }
 
 export class DataService {
@@ -321,6 +324,21 @@ export class DataService {
     }
     // 数据库初始化完成前返回空列表；init() 完成后缓存始终可用
     return []
+  }
+
+  // 按 id 在完整曲库中查找歌曲；播放中歌曲可能被过滤条件踢出 KEY_SONG_LIST（可见队列），
+  // 因此查找必须基于全量曲库缓存，而非 AppStorage 中的列表
+  getSongById(songId: string): SongInfo | undefined {
+    if (songId.length === 0) {
+      return undefined
+    }
+    const songs: SongInfo[] = this.getSongs()
+    for (let i = 0; i < songs.length; i++) {
+      if (songs[i].id === songId) {
+        return songs[i]
+      }
+    }
+    return undefined
   }
 
   saveSongs(songs: SongInfo[]): void {
@@ -616,6 +634,8 @@ return result
       s.applyShadow = rawApplyShadow !== undefined ? rawApplyShadow as boolean : true
       let rawSystemComponentGlass: Object | undefined = r['systemComponentGlass']
       s.systemComponentGlass = rawSystemComponentGlass !== undefined ? rawSystemComponentGlass as boolean : true
+      let rawGlassFrostOverlay: Object | undefined = r['glassFrostOverlay']
+      s.glassFrostOverlay = rawGlassFrostOverlay !== undefined ? rawGlassFrostOverlay as boolean : false
       if (eqBandsMigrated) {
         this.saveSettings(s)
       }
@@ -656,6 +676,7 @@ return result
     r['colorInvert'] = settings.colorInvert
     r['applyShadow'] = settings.applyShadow
     r['systemComponentGlass'] = settings.systemComponentGlass
+    r['glassFrostOverlay'] = settings.glassFrostOverlay
     this.getPref().preferencesPut(KEY_SETTINGS, JSON.stringify(r))
     AppStorage.setOrCreate(KEY_SETTINGS, settings)
     AppStorage.setOrCreate('uplayer_fade_in_out', settings.fadeInOut)
@@ -884,6 +905,7 @@ return result
     AppStorage.setOrCreate('uplayer_color_invert', settings.colorInvert)
     AppStorage.setOrCreate('uplayer_apply_shadow', settings.applyShadow)
     AppStorage.setOrCreate('uplayer_system_component_glass', settings.systemComponentGlass)
+    AppStorage.setOrCreate('uplayer_glass_frost_overlay', settings.glassFrostOverlay)
     this.activatePersistedUris()
     return settings
   }

@@ -45,6 +45,8 @@ export struct ControlAreaComponent {
   @StorageLink(AppStorageKeyConstants.KEY_PLAY_MODE) @Watch('onPlayModeChange')
   playMode: MusicPlayMode = PlayModeSwitchList[this.playModeIndex];
   @StorageLink(AppStorageKeyConstants.KEY_SELECT_INDEX) selectIndex: number = 0;
+  // 按 id 解析当前播放歌曲用于显示，避免队列下标失配
+  @StorageLink('uplayer_current_song_id') currentSongId: string = '';
   @StorageLink(AppStorageKeyConstants.KEY_CURRENT_SPEED) speed: number = 1;
   @StorageLink(AppStorageKeyConstants.KEY_CURRENT_VOLUME) volume: number = 0;
   @State isShowSpeedBuild: boolean = false;
@@ -318,12 +320,24 @@ export struct ControlAreaComponent {
     this.edittingValue = '';
   }
 
+  private currentSong(): SongInfo {
+    if (this.songList !== undefined) {
+      for (let i = 0; i < this.songList.length; i++) {
+        if (this.songList[i].id === this.currentSongId) {
+          return this.songList[i]
+        }
+      }
+    }
+    const song: SongInfo | undefined = DataService.getInstance().getSongById(this.currentSongId)
+    return song !== undefined ? song : new SongInfo()
+  }
+
   private saveEditField(): void {
-    if (this.selectIndex < 0 || !this.songList || this.selectIndex >= this.songList.length) {
+    const song: SongInfo = this.currentSong();
+    if (song.id.length === 0) {
       this.cancelEditField();
       return;
     }
-    const song: SongInfo = this.songList[this.selectIndex];
     // songList 可能是过滤后的播放队列子集，持久化必须基于完整曲库，避免覆盖丢歌
     const allSongs: SongInfo[] = DataService.getInstance().getSongs();
     if (this.edittingFieldIndex === 0) {
@@ -616,8 +630,8 @@ export struct ControlAreaComponent {
             .fontSize(this.scaledFont(14))
             .fontWeight(FontWeight.Medium)
             .fontColor(this.settingTextColor())
-          if (this.selectIndex >= 0 && this.songList && this.selectIndex < this.songList.length) {
-            Text(this.songList[this.selectIndex].title)
+          if (this.currentSongId.length > 0) {
+            Text(this.currentSong().title)
               .fontSize(this.scaledFont(12))
               .fontColor($r('app.color.text_sixty_color'))
               .maxLines(1)
@@ -698,26 +712,26 @@ export struct ControlAreaComponent {
 
   @Builder
   songInfoPanelBuilder() {
-    if (this.selectIndex >= 0 && this.songList && this.selectIndex < this.songList.length) {
+    if (this.currentSongId.length > 0) {
       Column() {
         Scroll() {
           Column() {
             Row() {
-              AlbumCover({ song: this.songList[this.selectIndex], coverWidth: 72, coverHeight: 72, coverRadius: 8 })
+              AlbumCover({ song: this.currentSong(), coverWidth: 72, coverHeight: 72, coverRadius: 8 })
               Column() {
-                Text(this.songList[this.selectIndex].title)
+                Text(this.currentSong().title)
                   .fontSize(this.scaledFont(16))
                   .fontWeight(FontWeight.Bold)
                   .fontColor($r('app.color.text_primary'))
                   .maxLines(1)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
-                Text(this.songList[this.selectIndex].artist.length > 0 ? this.songList[this.selectIndex].artist : '未知歌手')
+                Text(this.currentSong().artist.length > 0 ? this.currentSong().artist : '未知歌手')
                   .fontSize(this.scaledFont(13))
                   .fontColor($r('app.color.text_sixty_color'))
                   .maxLines(1)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
-                if (this.songList[this.selectIndex].album.length > 0) {
-                  Text(this.songList[this.selectIndex].album)
+                if (this.currentSong().album.length > 0) {
+                  Text(this.currentSong().album)
                     .fontSize(this.scaledFont(12))
                     .fontColor($r('app.color.text_twenty_color'))
                     .maxLines(1)
@@ -966,10 +980,10 @@ export struct ControlAreaComponent {
   }
 
   private infoValue(index: number): string {
-    if (this.selectIndex < 0 || !this.songList || this.selectIndex >= this.songList.length) {
+    const song: SongInfo = this.currentSong();
+    if (song.id.length === 0) {
       return ''
     }
-    const song: SongInfo = this.songList[this.selectIndex]
     switch (index) {
       case 0: return song.title
       case 1: return song.artist

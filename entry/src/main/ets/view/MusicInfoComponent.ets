@@ -16,6 +16,9 @@ export struct MusicInfoComponent {
   @Prop mainWindowInfo: WindowInfo;
   @StorageLink(AppStorageKeyConstants.KEY_SONG_LIST) songList: SongInfo[] = [];
   @StorageProp(AppStorageKeyConstants.KEY_SELECT_INDEX) @Watch('onSongChange') selectIndex: number = 0;
+  // 当前播放歌曲 id：显示信息一律按 id 从全量曲库解析，不依赖队列下标，
+  // 避免队列被全量列表覆盖/过滤后下标指向另一首歌导致与播控条不一致
+  @StorageProp('uplayer_current_song_id') @Watch('onSongChange') currentSongId: string = '';
   @State isShowControl: boolean = false;
   @State isFavorite: boolean = false;
   @State favoriteScale: number = 1.0;
@@ -43,19 +46,30 @@ export struct MusicInfoComponent {
     this.updateFavoriteState()
   }
 
-  updateFavoriteState() {
-    if (this.songList && this.selectIndex >= 0 && this.selectIndex < this.songList.length) {
-      this.isFavorite = this.songList[this.selectIndex].isFavorite
-    } else {
-      this.isFavorite = false
+  private currentSong(): SongInfo {
+    // 先在播放队列中按 id 查找（保持对 songList 的渲染依赖，曲库整体刷新时同步重渲染），
+    // 队列中被过滤掉时回退全量曲库
+    if (this.songList !== undefined) {
+      for (let i = 0; i < this.songList.length; i++) {
+        if (this.songList[i].id === this.currentSongId) {
+          return this.songList[i]
+        }
+      }
     }
+    const song: SongInfo | undefined = this.dataService.getSongById(this.currentSongId)
+    return song !== undefined ? song : new SongInfo()
+  }
+
+  updateFavoriteState() {
+    const song: SongInfo = this.currentSong()
+    this.isFavorite = song.id.length > 0 && song.isFavorite
   }
 
   toggleFavorite() {
-    if (!this.songList || this.selectIndex < 0 || this.selectIndex >= this.songList.length) {
+    const song: SongInfo = this.currentSong()
+    if (song.id.length === 0) {
       return
     }
-    const song: SongInfo = this.songList[this.selectIndex]
     this.dataService.toggleFavorite(song.id)
     this.isFavorite = !this.isFavorite
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_IS_FAVORITE, this.isFavorite)
@@ -119,8 +133,7 @@ export struct MusicInfoComponent {
           .rotate({ angle: this.glowRotation })
           .opacity(this.isPlay ? 0.8 : 0)
           .animation({ duration: StyleConstants.ANIMATION_COVER_CROSS_FADE_DURATION, curve: Curve.EaseInOut })
-        AlbumCover({ song: this.songList && this.selectIndex >= 0 && this.selectIndex < this.songList.length ?
-          this.songList[this.selectIndex] : new SongInfo(), coverWidth: '100%', coverHeight: '100%', coverRadius: 8,
+        AlbumCover({ song: this.currentSong(), coverWidth: '100%', coverHeight: '100%', coverRadius: 8,
           decodeSize: 640 })
           .width('100%')
           .aspectRatio(1)
@@ -140,8 +153,7 @@ export struct MusicInfoComponent {
     Row() {
       Column() {
         Row() {
-          Text(this.songList && this.selectIndex >= 0 && this.selectIndex < this.songList.length ?
-            this.songList[this.selectIndex].title : '')
+          Text(this.currentSong().title)
             .fontSize(Math.round(24 * this.fontSizeScale))
             .fontColor(Color.White).opacity(0.86)
             .fontWeight(FontWeight.Bold)
@@ -151,8 +163,7 @@ export struct MusicInfoComponent {
         }
 
         Row() {
-          Text(this.songList && this.selectIndex >= 0 && this.selectIndex < this.songList.length ?
-            this.songList[this.selectIndex].artist : '')
+          Text(this.currentSong().artist)
             .textAlign(TextAlign.Start)
             .fontSize(Math.round(16 * this.fontSizeScale))
             .fontColor($r('app.color.play_text_color'))

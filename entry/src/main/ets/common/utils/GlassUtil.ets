@@ -114,6 +114,10 @@ export function isLowPowerGlassDevice(): boolean {
 // Tab 栏液态玻璃材质的统一构造工厂：Index 真实 Tab 栏与设置页预览器必须共用此函数，
 // 保证预览效果与真实渲染一致（style/interactive/lightEffect/colorInvert/applyShadow 全参数）。
 // lightColor 为 undefined 时关闭 lightEffect；能力不足或玻璃关闭返回 undefined。
+// 与 createBarGlassMaterial 的差异：此处刻意不加 isLowPowerGlassDevice() 检查——
+// 低算力设备上材质仍激活（ImmersiveStyle 退化为纯色面），用户可通过「磨砂层叠加」
+// 设置项自行决定是否在材质之上叠加磨砂层；条状组件（播控条/经典 Tab 栏）则因自身
+// 有手写 shadow 设计，低算力直接走磨砂兜底，两者策略互不干扰。
 export function createTabGlassMaterial(strength: number, interactive: boolean,
   lightColor: string | undefined, colorInvert: boolean, applyShadow: boolean): uiMaterial.Material | undefined {
   if (!isLiquidGlassAvailable() || isGlassOff(strength)) {
