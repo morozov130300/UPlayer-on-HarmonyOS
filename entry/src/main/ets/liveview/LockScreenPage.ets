@@ -57,11 +57,11 @@ struct LockScreenPage {
 
           Button({ type: ButtonType.Circle }) {
             if (this.isPlay) {
-              Image($r('app.media.ic_public_pause'))
+              Image($r('app.media.ic_public_play'))
                 .width(28).height(28)
                 .fillColor(Color.White)
             } else {
-              Image($r('app.media.ic_public_play'))
+              Image($r('app.media.ic_public_pause'))
                 .width(28).height(28)
                 .fillColor(Color.White)
             }

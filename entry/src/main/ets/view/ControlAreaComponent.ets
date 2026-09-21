@@ -426,7 +426,7 @@ export struct ControlAreaComponent {
         .justifyContent(FlexAlign.Center)
 
         Column() {
-          Image(this.isPlay ? $r('app.media.ic_public_pause') : $r('app.media.ic_public_play'))
+          Image(this.isPlay ? $r('app.media.ic_public_play') : $r('app.media.ic_public_pause'))
             .controlImageBuilder()
             .width(60)
             .fillColor(Color.White)

@@ -612,7 +612,7 @@ struct MainPage {
         .height(this.scaledSize(18))
         .fillColor($r('app.color.player_icon_color'))
         .onClick(() => { this.playPrevious() })
-      Image(this.isPlaying ? $r('app.media.ic_public_pause') : $r('app.media.ic_public_play'))
+      Image(this.isPlaying ? $r('app.media.ic_public_play') : $r('app.media.ic_public_pause'))
         .height(this.scaledSize(22))
         .fillColor($r('app.color.player_icon_color'))
         .onClick(() => {
