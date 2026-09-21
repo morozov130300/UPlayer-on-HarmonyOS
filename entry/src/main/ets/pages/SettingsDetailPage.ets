@@ -77,6 +77,7 @@ struct SettingsDetailPage {
   @StorageLink('uplayer_apply_shadow') applyShadow: boolean = true
   @StorageLink('uplayer_system_component_glass') systemComponentGlass: boolean = true
   @StorageLink('uplayer_glass_frost_overlay') glassFrostOverlay: boolean = false
+  @StorageLink('uplayer_tab_indicator_visible') tabIndicatorVisible: boolean = true
   // 是否存在鼠标/触控板设备（决定「白色蒙版」开关是否显示）
   @StorageLink(KEY_HAS_POINTER_DEVICE) hasPointerDevice: boolean = false
   @State pageTitle: string = ''
@@ -1414,6 +1415,32 @@ struct SettingsDetailPage {
             .height(this.scaledSize(52))
             .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
           }
+
+          Row() {
+            Column({ space: this.scaledSize(6) }) {
+              Text('Tab 指示器')
+                .fontSize(this.scaledFont(14))
+                .fontColor(this.settingTextColor())
+                .fontWeight(FontWeight.Medium)
+              Text('显示或隐藏当前选中 Tab 下方的指示条。对经典与玻璃两种 Tab 样式同时生效，独立于深浅、厚度等全部其他设置。')
+                .fontSize(this.scaledFont(12))
+                .fontColor(this.settingSubTextColor())
+            }
+            .layoutWeight(1)
+            .justifyContent(FlexAlign.Center)
+            .alignItems(HorizontalAlign.Start)
+            Toggle({ type: ToggleType.Switch, isOn: this.settings.tabIndicatorVisible })
+              .selectedColor(this.primaryColor)
+              .alignSelf(ItemAlign.Center)
+              .onChange((isOn: boolean) => {
+                this.settings.tabIndicatorVisible = isOn
+                this.tabIndicatorVisible = isOn
+                this.updateSetting()
+              })
+          }
+          .width('100%')
+          .height(this.scaledSize(52))
+          .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
 
           Row() {
             Column({ space: this.scaledSize(6) }) {

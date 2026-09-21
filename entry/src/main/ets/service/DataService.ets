@@ -84,6 +84,8 @@ export class AppSettingsData {
   // 磨砂层叠加：液态玻璃材质激活时，是否把 backgroundEffect 磨砂层叠加在材质之上
   // 默认关：明亮模式下双层叠加会使 Tab 指示器呈雾状；开则回到「磨砂 + 材质」观感
   glassFrostOverlay: boolean = false
+  // Tab 指示器：当前选中 Tab 下方指示条的显隐，独立于其他全部设置（深浅/厚度/磨砂层等）
+  tabIndicatorVisible: boolean = true
   }
 
 export class DataService {
@@ -636,6 +638,8 @@ return result
       s.systemComponentGlass = rawSystemComponentGlass !== undefined ? rawSystemComponentGlass as boolean : true
       let rawGlassFrostOverlay: Object | undefined = r['glassFrostOverlay']
       s.glassFrostOverlay = rawGlassFrostOverlay !== undefined ? rawGlassFrostOverlay as boolean : false
+      let rawTabIndicatorVisible: Object | undefined = r['tabIndicatorVisible']
+      s.tabIndicatorVisible = rawTabIndicatorVisible !== undefined ? rawTabIndicatorVisible as boolean : true
       if (eqBandsMigrated) {
         this.saveSettings(s)
       }
@@ -677,6 +681,7 @@ return result
     r['applyShadow'] = settings.applyShadow
     r['systemComponentGlass'] = settings.systemComponentGlass
     r['glassFrostOverlay'] = settings.glassFrostOverlay
+    r['tabIndicatorVisible'] = settings.tabIndicatorVisible
     this.getPref().preferencesPut(KEY_SETTINGS, JSON.stringify(r))
     AppStorage.setOrCreate(KEY_SETTINGS, settings)
     AppStorage.setOrCreate('uplayer_fade_in_out', settings.fadeInOut)
@@ -906,6 +911,7 @@ return result
     AppStorage.setOrCreate('uplayer_apply_shadow', settings.applyShadow)
     AppStorage.setOrCreate('uplayer_system_component_glass', settings.systemComponentGlass)
     AppStorage.setOrCreate('uplayer_glass_frost_overlay', settings.glassFrostOverlay)
+    AppStorage.setOrCreate('uplayer_tab_indicator_visible', settings.tabIndicatorVisible)
     this.activatePersistedUris()
     return settings
   }

@@ -66,6 +66,7 @@ struct MainPage {
   @StorageLink('uplayer_color_invert') colorInvert: boolean = false
   @StorageLink('uplayer_apply_shadow') applyShadow: boolean = true
   @StorageLink('uplayer_glass_frost_overlay') glassFrostOverlay: boolean = false
+  @StorageLink('uplayer_tab_indicator_visible') tabIndicatorVisible: boolean = true
   @State albumArtFailed: boolean = false
   @State isTitleMarqueeRunning: boolean = true
   @State isArtistMarqueeRunning: boolean = true
@@ -323,28 +324,31 @@ struct MainPage {
         .shadow({ radius: 18, color: ColorHelper.hexWithAlpha(this.primaryColor, '44'), offsetY: 5 })
         .zIndex(0)
 
-      Row()
-        .width(this.scaledSize(this.tabWidth - 2 * this.indicatorInset))
-        .height(this.scaledSize(36))
-        .borderRadius(this.scaledSize(18))
-        .alignItems(VerticalAlign.Center)
-        .margin({ left: this.indicatorOffset, bottom: this.scaledSize(12) })
-        .shadow({
-          radius: 14,
-          color: ColorHelper.hexWithAlpha(this.primaryColor, this.indicatorAlpha(0.8).toString(16).padStart(2, '0')),
-          offsetX: 0,
-          offsetY: 0
-        })
-        .radialGradient({
-          center: ['50%', '50%'],
-          radius: '75%',
-          colors: [
-            [this.indicatorGradientColor(0.95), 0.0],
-            [this.indicatorGradientColor(0.75), 0.58],
-            [this.indicatorGradientColor(0.55), 1.0],
-          ]
-        })
-        .zIndex(1)
+      // 指示器显隐由「Tab 指示器」开关单独掌管，独立于其他全部设置
+      if (this.tabIndicatorVisible) {
+        Row()
+          .width(this.scaledSize(this.tabWidth - 2 * this.indicatorInset))
+          .height(this.scaledSize(36))
+          .borderRadius(this.scaledSize(18))
+          .alignItems(VerticalAlign.Center)
+          .margin({ left: this.indicatorOffset, bottom: this.scaledSize(12) })
+          .shadow({
+            radius: 14,
+            color: ColorHelper.hexWithAlpha(this.primaryColor, this.indicatorAlpha(0.8).toString(16).padStart(2, '0')),
+            offsetX: 0,
+            offsetY: 0
+          })
+          .radialGradient({
+            center: ['50%', '50%'],
+            radius: '75%',
+            colors: [
+              [this.indicatorGradientColor(0.95), 0.0],
+              [this.indicatorGradientColor(0.75), 0.58],
+              [this.indicatorGradientColor(0.55), 1.0],
+            ]
+          })
+          .zIndex(1)
+      }
 
       Row({ space: this.scaledSize(this.tabGap) }) {
         this.tabItem(0, '首页', $r('app.media.ic_public_home'))
@@ -363,29 +367,32 @@ struct MainPage {
   @Builder
   immersiveTabBar() {
     Stack({ alignContent: Alignment.BottomStart }) {
-      Row()
-        .width(this.scaledSize(this.tabWidth - 2 * this.indicatorInset))
-        .height(this.scaledSize(36))
-        .borderRadius(this.scaledSize(18))
-        .alignItems(VerticalAlign.Center)
-        .margin({ left: this.indicatorOffset, bottom: this.scaledSize(12) })
-        // 指示器与经典样式同款径向渐变 + 蓝色光晕（深浅接入 indicatorAlpha/indicatorGradientColor），
-        // 去掉纯色 backgroundColor：浅色玻璃下边缘更锐利，避免「蓝雾」观感
-        .shadow({
-          radius: 14,
-          color: ColorHelper.hexWithAlpha(this.primaryColor, this.indicatorAlpha(0.8).toString(16).padStart(2, '0')),
-          offsetX: 0,
-          offsetY: 0
-        })
-        .radialGradient({
-          center: ['50%', '50%'],
-          radius: '75%',
-          colors: [
-            [this.indicatorGradientColor(0.95), 0.0],
-            [this.indicatorGradientColor(0.75), 0.58],
-            [this.indicatorGradientColor(0.55), 1.0],
-          ]
-        })
+      // 指示器显隐由「Tab 指示器」开关单独掌管，独立于其他全部设置
+      if (this.tabIndicatorVisible) {
+        Row()
+          .width(this.scaledSize(this.tabWidth - 2 * this.indicatorInset))
+          .height(this.scaledSize(36))
+          .borderRadius(this.scaledSize(18))
+          .alignItems(VerticalAlign.Center)
+          .margin({ left: this.indicatorOffset, bottom: this.scaledSize(12) })
+          // 指示器与经典样式同款径向渐变 + 蓝色光晕（深浅接入 indicatorAlpha/indicatorGradientColor），
+          // 去掉纯色 backgroundColor：浅色玻璃下边缘更锐利，避免「蓝雾」观感
+          .shadow({
+            radius: 14,
+            color: ColorHelper.hexWithAlpha(this.primaryColor, this.indicatorAlpha(0.8).toString(16).padStart(2, '0')),
+            offsetX: 0,
+            offsetY: 0
+          })
+          .radialGradient({
+            center: ['50%', '50%'],
+            radius: '75%',
+            colors: [
+              [this.indicatorGradientColor(0.95), 0.0],
+              [this.indicatorGradientColor(0.75), 0.58],
+              [this.indicatorGradientColor(0.55), 1.0],
+            ]
+          })
+      }
 
       Row({ space: this.scaledSize(this.tabGap) }) {
         this.immersiveTabItem(0, '首页', $r('app.media.ic_public_home'))
@@ -641,17 +648,17 @@ struct MainPage {
       }
       Image($r('app.media.ic_public_play_last'))
         .height(this.scaledSize(18))
-        .fillColor($r('app.color.player_icon_color'))
+        .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') : $r('app.color.text_twenty_color'))
         .onClick(() => { this.playPrevious() })
       Image(this.isPlaying ? $r('app.media.ic_public_play') : $r('app.media.ic_public_pause'))
         .height(this.scaledSize(22))
-        .fillColor($r('app.color.player_icon_color'))
+        .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') : $r('app.color.text_twenty_color'))
         .onClick(() => {
           this.togglePlay()
         })
       Image($r('app.media.ic_public_play_next'))
         .height(this.scaledSize(18))
-        .fillColor($r('app.color.player_icon_color'))
+        .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') : $r('app.color.text_twenty_color'))
         .onClick(() => { this.playNext() })
     }
     .constraintSize({ maxWidth: this.breakpoint === 'sm' || this.breakpoint === 'md' ? '85%' : '42%' })
