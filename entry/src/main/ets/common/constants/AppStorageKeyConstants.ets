@@ -16,8 +16,6 @@
 import { BaseConstants } from './BaseConstants'
 
 export class AppStorageKeyConstants {
-  public static readonly KEY_WIDTH_BREAKPOINT: string = BaseConstants.KEY_PREFIX + 'WidthBreakPoint';
-  public static readonly KEY_HEIGHT_BREAKPOINT: string = BaseConstants.KEY_PREFIX + 'HeightBreakPoint';
   public static readonly KEY_WINDOW_UTIL: string = BaseConstants.KEY_PREFIX + 'WindowUtil'
   public static readonly KEY_IS_PLAY: string = BaseConstants.KEY_PREFIX + 'IsPlay'
   public static readonly KEY_CURRENT_TIME: string = BaseConstants.KEY_PREFIX + 'CurrentTime'

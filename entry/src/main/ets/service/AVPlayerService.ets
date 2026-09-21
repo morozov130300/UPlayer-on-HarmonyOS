@@ -918,8 +918,8 @@ export class AVPlayerService {
     if (!isPlaying || this.currentFilePath.length === 0) {
       return
     }
-    const position: number = this.nativeMode ? nativeAudio.getPosition() :
-      (AppStorage.get<number>(AppStorageKeyConstants.KEY_PROGRESS) ?? 0)
+    // 上面已按 nativeMode 提前返回，此处恒为非 native 模式，直接取 AppStorage 进度
+    const position: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_PROGRESS) ?? 0
     const fileUri: string = this.currentFilePath
     await this.play(fileUri, position)
   }

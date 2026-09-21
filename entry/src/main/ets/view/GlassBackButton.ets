@@ -86,9 +86,11 @@ export struct GlassBackButton {
   build() {
     Row() {
       Row() {
-        Image($r('app.media.ic_public_arrow_left'))
+        // 图标源为 12×24（1:2 竖长 chevron）：渲染框必须保持 1:2，
+        // 否则默认 Cover 会把 chevron 上下臂的尖端裁掉
+        Image($r('app.media.ic_public_arrow_left_filled'))
           .width(this.visualIconSize())
-          .height(this.visualIconSize())
+          .height(this.visualIconSize() * 2)
           .fillColor(this.iconColor)
           .opacity(this.iconOpacity)
       }

@@ -795,9 +795,9 @@ struct SettingsDetailPage {
   }
 
   // 一级标题（用于把同类设置项聚合在一起，可选带右上角「问号」角标以引出说明弹窗）
-  // helpIconLabel 非空时，问号图标紧跟文字；为空时通过 Blank() 撑到行尾（兼容旧调用）
+  // helpIconLabel 非空时，问号图标紧跟文字
   @Builder
-  groupTitle(title: string, hasHelpIcon: boolean, helpIconLabel?: string): void {
+  groupTitle(title: string, helpIconLabel?: string): void {
     Row() {
       Text(title)
         .fontSize(this.scaledFont(11))
@@ -817,24 +817,6 @@ struct SettingsDetailPage {
         .width(this.scaledSize(18))
         .height(this.scaledSize(18))
         .margin({ left: this.scaledSize(4) })
-        .onClick(() => {
-          this.showGlassScope = true
-        })
-      }
-      if (hasHelpIcon && helpIconLabel === undefined) {
-        Blank()
-        Stack({ alignContent: Alignment.Center }) {
-          Circle()
-            .width(this.scaledSize(18))
-            .height(this.scaledSize(18))
-            .fill(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-          Image($r('app.media.ic_public_help'))
-            .width(this.scaledSize(13))
-            .height(this.scaledSize(13))
-            .fillColor(this.primaryColor)
-        }
-        .width(this.scaledSize(18))
-        .height(this.scaledSize(18))
         .onClick(() => {
           this.showGlassScope = true
         })
@@ -916,7 +898,7 @@ struct SettingsDetailPage {
   buildCustomizeSection(): void {
     Column({ space: this.scaledSize(10) }) {
       Row(){
-        this.groupTitle('全局', false)
+        this.groupTitle('全局')
       }
       Column() {
         this.toggleRow('向下滑动时隐藏加号按钮', this.settings.plusButtonScrollHide, (val: boolean) => {
@@ -1001,7 +983,7 @@ struct SettingsDetailPage {
 
       // ─── 一级标题「交互」（底部栏交互设置）───
       Column() {
-        this.groupTitle('交互', false)
+        this.groupTitle('交互')
       }
       .width('100%')
 
@@ -1135,7 +1117,7 @@ struct SettingsDetailPage {
       // ─── 一级标题「高级样式」（玻璃模式下显示） + 右上角叹号角标 ───
       // 点击叹号弹窗说明玻璃效果所影响的所有位置
       Column() {
-        this.groupTitle('高级样式', true, 'glass')
+        this.groupTitle('高级样式', 'glass')
         // 玻璃厚度 / 模糊强度 / 指示器深浅三合一卡片：
         // 顶部为真实 Tab 栏实时预览（复刻 Index，可点击/悬停），三个滑块调节时实时反映透视与磨砂效果
         Column({ space: this.scaledSize(10) }) {
@@ -1417,7 +1399,7 @@ struct SettingsDetailPage {
 
       // ─── 一级标题「背景模糊」（两种 Tab 风格下均显示）───
       Column() {
-        this.groupTitle('背景模糊', false)
+        this.groupTitle('背景模糊')
 
         // 首页上端模糊强度
         Column({ space: this.scaledSize(6) }) {
