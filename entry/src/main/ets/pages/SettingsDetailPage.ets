@@ -784,16 +784,6 @@ struct SettingsDetailPage {
     .zIndex(2)
   }
 
-  @Builder
-  sectionTitle(title: string): void {
-    Text(title)
-      .fontSize(this.scaledFont(13))
-      .fontColor(this.settingTextColor())
-      .fontWeight(FontWeight.Medium)
-      .width('100%')
-      .padding({ left: this.scaledSize(4), top: this.scaledSize(6), bottom: this.scaledSize(2) })
-  }
-
   // 一级标题（用于把同类设置项聚合在一起，可选带右上角「问号」角标以引出说明弹窗）
   // helpIconLabel 非空时，问号图标紧跟文字
   @Builder
@@ -916,6 +906,7 @@ struct SettingsDetailPage {
           Text('主题模式')
             .fontSize(this.scaledFont(14))
             .fontColor(this.settingTextColor())
+            .fontWeight(FontWeight.Medium)
           Blank()
           ForEach(this.themeOptions, (opt: ThemeOption) => {
             Column() {
@@ -951,6 +942,7 @@ struct SettingsDetailPage {
           Text('底部栏样式')
             .fontSize(this.scaledFont(14))
             .fontColor(this.settingTextColor())
+            .fontWeight(FontWeight.Medium)
           Blank()
           ForEach(this.tabStyleOptions, (opt: TabStyleOption) => {
             Column() {
@@ -1113,6 +1105,8 @@ struct SettingsDetailPage {
       .width('100%')
       .height(this.scaledSize(52))
       .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
 
       // ─── 一级标题「高级样式」（玻璃模式下显示） + 右上角叹号角标 ───
       // 点击叹号弹窗说明玻璃效果所影响的所有位置
@@ -1499,8 +1493,7 @@ struct SettingsDetailPage {
               .padding({ left: this.scaledSize(8), right: this.scaledSize(8), top: this.scaledSize(4), bottom: this.scaledSize(4) })
               .margin({ bottom: this.scaledSize(4) })
               .borderRadius(this.scaledSize(10))
-              .backgroundColor(this.settings.primaryColor === option.value ?
-                ColorHelper.hexToRgba(option.value, 0.18) : ColorHelper.hexToRgba(this.primaryColor, 0.04))
+              .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
               .onClick(() => {
                 this.setPrimaryColor(option.value)
               })
@@ -1820,7 +1813,11 @@ struct SettingsDetailPage {
       .borderRadius(this.scaledSize(10))
 
       Column() {
-        this.sectionTitle('播放速度')
+        Row() {
+          this.subTitleRow('播放速度')
+          Blank()
+        }
+        .width('100%')
         Row() {
           Text(this.settings.playSpeed.toFixed(1) + 'x')
             .fontSize(this.scaledFont(12))
@@ -2159,6 +2156,7 @@ struct SettingsDetailPage {
       Text(toggleLabel)
         .fontSize(this.scaledFont(14))
         .fontColor(this.settingTextColor())
+        .fontWeight(FontWeight.Medium)
         .maxLines(1)
       Blank()
       Toggle({ type: ToggleType.Switch, isOn: isChecked })
