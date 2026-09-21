@@ -12,7 +12,7 @@ import { SettingsContent } from './SettingsContent'
 import { DataService } from '../service/DataService'
 import { PoetryService } from '../service/PoetryService'
 import { ColorHelper } from '../common/utils/ColorHelper'
-import { createBarGlassMaterial, createTabGlassMaterial, DEFAULT_GLASS_STYLE, isLiquidGlassAvailable, isLowPowerGlassDevice } from '../common/utils/GlassUtil'
+import { createBarGlassMaterial, createTabGlassMaterial, DEFAULT_GLASS_STYLE, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
 import Logger from '../common/utils/Logger'
 import { LrcEntry } from '../viewmodel/LrcEntry'
 import { loadLyricEntries } from '../service/LyricLoader'
@@ -182,23 +182,19 @@ struct MainPage {
     return this.tabStyle === 'immersive' && isLiquidGlassAvailable() && this.glassThickness > 0
   }
 
-  // 条状组件（经典 Tab 栏 / 播控条）液态玻璃材质的激活条件，与 createBarGlassMaterial 工厂
-  // 及设置页预览共用同一判定：API 26+ 且设备支持 + 厚度未关断 + 高/中算力（低算力材质退化为
-  // 纯色面，由磨砂层兜底，不受「磨砂层叠加」开关约束）
-  private barMaterialActive(): boolean {
-    return isLiquidGlassAvailable() && this.glassThickness > 0 && !isLowPowerGlassDevice()
-  }
-
   // 磨砂层挂载条件（经典 Tab 栏 / 玻璃 Tab 栏 / 播控条三处统一）：
   // - 暗黑模式或模糊强度为 0：从不挂载（保持原有行为）
-  // - 材质激活：仅当「磨砂层叠加」开关开启时挂载（默认关 = 纯液态玻璃观感，
-  //   避免明亮模式下磨砂层叠在材质之上把指示器糊成蓝雾，官方 FAQ 亦标注二者同设为重复处理）
-  // - 材质未激活（老设备 / 低算力 / 厚度为 0）：作为兜底挂载，不受开关影响
-  private frostLayerEnabled(materialActive: boolean): boolean {
+  // - 无液态玻璃能力的老设备（设置页中开关已隐藏）：保留兜底磨砂层，由模糊强度控制
+  // - 新设备：磨砂层与玻璃厚度/材质状态完全解耦，唯一判据是「磨砂层叠加」开关——
+  //   开关开 = 挂磨砂层（厚度 0、材质关断时同样生效）；开关关 = 不挂（纯材质观感）
+  private frostLayerEnabled(): boolean {
     if (this.isDarkTheme() || this.glassBlurStrength <= 0) {
       return false
     }
-    return materialActive ? this.glassFrostOverlay : true
+    if (!isLiquidGlassAvailable()) {
+      return true
+    }
+    return this.glassFrostOverlay
   }
 
   private liquidGlassTabMaterial(): uiMaterial.Material | undefined {
@@ -318,9 +314,8 @@ struct MainPage {
         .margin({ bottom: this.scaledSize(10) })
         .borderRadius(this.scaledSize(20))
         .backgroundColor(Color.Transparent)
-        // 磨砂层挂载条件统一走 frostLayerEnabled：材质激活时由「磨砂层叠加」开关控制，
-        // 材质未激活（老设备/低算力/厚度 0）保持兜底挂载（暗黑模式与强度 0 不挂）
-        .backgroundEffect(this.frostLayerEnabled(this.barMaterialActive()) ? {
+        // 磨砂层与玻璃厚度/材质状态解耦，统一走 frostLayerEnabled（新设备由「磨砂层叠加」开关控制）
+        .backgroundEffect(this.frostLayerEnabled() ? {
           radius: this.glassBlurRadius()
         } : undefined)
         .systemMaterial(this.classicTabBarMaterial())
@@ -401,9 +396,9 @@ struct MainPage {
       .height(this.scaledSize(40))
       .borderRadius(this.scaledSize(20))
       .backgroundColor(Color.Transparent)
-      // 液态玻璃启用时 systemMaterial 接管渲染；磨砂层由「磨砂层叠加」开关控制（默认关，
-      // 避免明亮模式下双层叠加造成蓝雾）；材质未激活时保持兜底挂载
-      .backgroundEffect(this.frostLayerEnabled(this.liquidGlassEnabled()) ? {
+      // 液态玻璃启用时 systemMaterial 接管渲染；磨砂层与厚度解耦，仅由「磨砂层叠加」开关控制
+      // （默认关，避免明亮模式下双层叠加造成蓝雾）
+      .backgroundEffect(this.frostLayerEnabled() ? {
         radius: this.glassBlurRadius()
       } : undefined)
       // 液态玻璃：沉浸式系统材质 + 光效跟手 + 交互形变；能力不足时传 undefined 关闭
@@ -668,8 +663,8 @@ struct MainPage {
     })
     .backgroundColor(Color.Transparent)
     // 磨砂层与玻璃厚度、Tab 风格解耦，两种样式统一挂载；挂载条件统一走 frostLayerEnabled
-    // （材质激活时由「磨砂层叠加」开关控制，材质未激活时兜底挂载；暗黑模式与强度 0 不挂）
-    .backgroundEffect(this.frostLayerEnabled(this.barMaterialActive()) ? {
+    // （新设备由「磨砂层叠加」开关控制；暗黑模式与强度 0 不挂）
+    .backgroundEffect(this.frostLayerEnabled() ? {
       radius: this.glassBlurRadius()
     } : undefined)
     // 液态玻璃：与磨砂层一致不区分 Tab 风格；能力不足时传 undefined 关闭
