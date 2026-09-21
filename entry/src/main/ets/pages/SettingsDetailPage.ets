@@ -2094,7 +2094,7 @@ struct SettingsDetailPage {
     Row() {
       Text(label)
         .fontSize(this.scaledFont(13))
-        .fontColor(this.settingSubTextColor())
+        .fontColor(this.settingTextColor())
         .width(this.scaledSize(56))
         .textAlign(TextAlign.Start)
       Text(value)
@@ -2131,20 +2131,30 @@ struct SettingsDetailPage {
           .fontWeight(FontWeight.Bold)
         Text('v' + this.aboutVersionName)
           .fontSize(this.scaledFont(12))
-          .fontColor(this.settingSubTextColor())
+          .fontColor(this.settingTextColor())
       }
       .width('100%')
       .alignItems(HorizontalAlign.Center)
       .padding({ top: this.scaledSize(24), bottom: this.scaledSize(8) })
 
       Column({ space: this.scaledSize(6) }) {
-        this.groupTitle('仓库地址', false)
+        Text('仓库地址')
+          .fontSize(this.scaledFont(13))
+          .fontColor(this.settingTextColor())
+          .fontWeight(FontWeight.Bold)
+          .width('100%')
+          .padding({ left: this.scaledSize(4) })
         this.aboutInfoRow('仓库', this.aboutRepoUrl)
       }
       .width('100%')
 
       Column({ space: this.scaledSize(6) }) {
-        this.groupTitle('联系方式', false)
+        Text('联系方式')
+          .fontSize(this.scaledFont(13))
+          .fontColor(this.settingTextColor())
+          .fontWeight(FontWeight.Bold)
+          .width('100%')
+          .padding({ left: this.scaledSize(4) })
         this.aboutInfoRow('邮箱', this.aboutEmail)
         this.aboutInfoRow('QQ', this.aboutQq)
       }
@@ -2152,7 +2162,7 @@ struct SettingsDetailPage {
 
       Text('本地音乐播放器 · 为鸿蒙打造')
         .fontSize(this.scaledFont(11))
-        .fontColor(this.settingSubTextColor())
+        .fontColor(this.settingTextColor())
         .width('100%')
         .textAlign(TextAlign.Center)
         .margin({ top: this.scaledSize(8) })

@@ -1,5 +1,5 @@
 // ArkUI 26 Beta1: 接口定义变更（误报，本项目已是Stage模型）+ UX视觉布局变更（Text默认开启沉浸式材质，系统行为）
-import { common } from '@kit.AbilityKit'
+import { common, ConfigurationConstant } from '@kit.AbilityKit'
 import { deviceInfo } from '@kit.BasicServicesKit'
 import { SongInfo } from '../model/SongInfo'
 import { DataService, AppSettingsData, ImportResult } from '../service/DataService'
@@ -67,6 +67,7 @@ export struct HomeContent {
   @State dragOffsetY: number = 0
   private dragLastY: number = 0
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
+  @StorageLink('uplayer_theme_mode') themeMode: string = 'system'
   // 底部栏样式：经典样式下多选菜单栏不挂任何背景效果（磨砂/液态玻璃）
   @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
   @StorageLink('uplayer_home_top_blur_strength') homeTopBlurStrength: number = 25
@@ -982,10 +983,10 @@ export struct HomeContent {
 
       if (item.isAvailable) {
         Row() {
-          Image($r('app.media.ic_public_list_add_transparent'))
-            .width(Math.round(22 * this.fontSizeScale))
-            .height(Math.round(22 * this.fontSizeScale))
-            .fillColor($r('app.color.text_sixty_color'))
+          SymbolGlyph($r('sys.symbol.list_bullet'))
+            .fontSize(Math.round(22 * this.fontSizeScale))
+            .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+            .fontColor([$r('app.color.text_sixty_color')])
             .hitTestBehavior(HitTestMode.Block)
             .onClick(() => {
               this.dataService.addToPlayNext(item.id)
@@ -1023,7 +1024,7 @@ export struct HomeContent {
       GestureGroup(GestureMode.Exclusive,
         TapGesture({ count: 1, fingers: 1 })
           .onAction(() => {
-            if (!item.isAvailable) {
+            if (!item.isAvailable && !this.isMultiSelectMode) {
               try {
                 this.getUIContext()?.getPromptAction().showToast({
                   message: '歌曲可能已被删除或移动'

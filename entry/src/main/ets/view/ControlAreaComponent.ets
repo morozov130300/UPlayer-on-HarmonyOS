@@ -400,7 +400,7 @@ export struct ControlAreaComponent {
 
       Row() {
         Column() {
-          Image($r('app.media.ic_public_arrow_left'))
+          Image($r('app.media.ic_public_fast_backward'))
             .width(28)
             .height(28)
             .fillColor(Color.White)
@@ -468,7 +468,7 @@ export struct ControlAreaComponent {
         .justifyContent(FlexAlign.Center)
 
         Column() {
-          Image($r('app.media.ic_public_arrow_right'))
+          Image($r('app.media.ic_public_fast_forward'))
             .width(28)
             .height(28)
             .fillColor(Color.White)
@@ -502,7 +502,7 @@ export struct ControlAreaComponent {
             this.switchPlayMode();
           })
 
-        Image($r('app.media.ic_public_more_list'))
+        Image($r('app.media.ic_music_list'))
           .width(26)
           .height(26)
           .fillColor(Color.White)
