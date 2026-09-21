@@ -9,6 +9,10 @@
       "value": "#333333"
     },
     {
+      "name": "player_icon_inactive_color",
+      "value": "#99333333"
+    },
+    {
       "name": "player_bg_color",
       "value": "#F5F5F5"
     },
@@ -30,15 +34,15 @@
     },
     {
       "name": "list_divider",
-      "value": "#1A182431"
+      "value": "#1A333333"
     },
     {
       "name": "text_sixty_color",
-      "value": "#99376668"
+      "value": "#99333333"
     },
     {
       "name": "text_twenty_color",
-      "value": "#33376668"
+      "value": "#33333333"
     },
     {
       "name": "play_text_color",

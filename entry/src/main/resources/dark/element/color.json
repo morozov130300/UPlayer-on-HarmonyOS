@@ -9,6 +9,10 @@
       "value": "#FFFFFF"
     },
     {
+      "name": "player_icon_inactive_color",
+      "value": "#99FFFFFF"
+    },
+    {
       "name": "player_bg_color",
       "value": "#CC333333"
     },

@@ -1147,6 +1147,35 @@ struct SettingsDetailPage {
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(this.scaledSize(10))
 
+      // 交互形变：液态玻璃按压/拖动 Q 弹反馈（置于「交互」分组下）
+      Row() {
+        Column({ space: this.scaledSize(6) }) {
+          Text('交互形变')
+            .fontSize(this.scaledFont(14))
+            .fontColor(this.settingTextColor())
+            .fontWeight(FontWeight.Medium)
+          Text('按压或拖动时，液态玻璃材质表面产生弹性形变反馈。')
+            .fontSize(this.scaledFont(12))
+            .fontColor(this.settingSubTextColor())
+        }
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Start)
+        Toggle({ type: ToggleType.Switch, isOn: this.settings.interactive })
+          .selectedColor(this.primaryColor)
+          .alignSelf(ItemAlign.Center)
+          .onChange((isOn: boolean) => {
+            this.settings.interactive = isOn
+            this.interactive = isOn
+            this.updateSetting()
+          })
+      }
+      .width('100%')
+      .height(this.scaledSize(52))
+      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
+
       // ─── 一级标题「高级样式」（玻璃模式下显示） + 右上角叹号角标 ───
       // 点击叹号弹窗说明玻璃效果所影响的所有位置
       Column() {
@@ -1312,34 +1341,8 @@ struct SettingsDetailPage {
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
         .borderRadius(this.scaledSize(10))
 
-        // 交互形变：按压/拖动时液态玻璃产生 Q 弹反馈
+        // 交互形变已移至「交互」分组
         Column({ space: this.scaledSize(10) }) {
-          Row() {
-            Column({ space: this.scaledSize(6) }) {
-              Text('交互形变')
-                .fontSize(this.scaledFont(14))
-                .fontColor(this.settingTextColor())
-                .fontWeight(FontWeight.Medium)
-              Text('按压或拖动时，材质表面产生弹性形变反馈。')
-                .fontSize(this.scaledFont(12))
-                .fontColor(this.settingSubTextColor())
-            }
-            .layoutWeight(1)
-            .justifyContent(FlexAlign.Center)
-            .alignItems(HorizontalAlign.Start)
-            Toggle({ type: ToggleType.Switch, isOn: this.settings.interactive })
-              .selectedColor(this.primaryColor)
-              .alignSelf(ItemAlign.Center)
-              .onChange((isOn: boolean) => {
-                this.settings.interactive = isOn
-                this.interactive = isOn
-                this.updateSetting()
-              })
-          }
-          .width('100%')
-          .height(this.scaledSize(52))
-          .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-
           Row() {
             Column({ space: this.scaledSize(6) }) {
               Text('自动反色')
