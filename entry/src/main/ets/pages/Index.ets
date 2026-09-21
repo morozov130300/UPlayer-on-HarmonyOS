@@ -152,12 +152,6 @@ struct MainPage {
     return this.glassBlurStrength * 0.5
   }
 
-  // 首帧兜底实色：systemMaterial 未接管前用主题实色垫底，避免透明底+阴影叠加发灰发暗；
-  // 材质激活后 systemMaterial 优先渲染，兜底色被覆盖，不影响正常液态玻璃观感
-  private tabFallbackBg(): ResourceColor {
-    return this.isDarkTheme() ? '#F0000000' : '#FFFFFF'
-  }
-
   // ── 液态玻璃（沉浸式系统材质，HarmonyOS API 26+）──
   // 材质构造统一走 GlassUtil.createTabGlassMaterial 工厂，与设置页预览器共用同一份逻辑，
   // 保证预览效果与真实渲染一致。
@@ -221,6 +215,26 @@ struct MainPage {
   private bottomBarGlassMaterial(): uiMaterial.Material | undefined {
     return createBarGlassMaterial(this.glassThickness, this.interactive)
   }
+
+  // [仅诊断，不改行为] 启动期把 Tab 栏渲染路径的关键决策值打到日志，用于确认：
+  // - liquidAvailable=false → 走「磨砂兜底」路径（systemMaterial 恒 undefined，frostLayerEnabled 被强制 true）
+  // - liquidAvailable=true  → 走「材质」路径（磨砂层仅由 glassFrostOverlay 开关控制）
+  // 注意：此处直接调 xxxMaterial()/frostLayerEnabled() 取的是「能力决定值」（绕过 materialReady 门控），
+  // 再配合 materialReady 字段即可看出 t=0 与 t=250ms 两帧各自实际挂上了什么。诊断完随 materialReady 逻辑一起删
+  private logMaterialDiagnostics(): void {
+    const liquidAvailable: boolean = isLiquidGlassAvailable()
+    const frost: boolean = this.frostLayerEnabled()
+    const classicMat: uiMaterial.Material | undefined = this.classicTabBarMaterial()
+    const immersiveMat: uiMaterial.Material | undefined = this.liquidGlassTabMaterial()
+    const bottomMat: uiMaterial.Material | undefined = this.bottomBarGlassMaterial()
+    Logger.info(TAG,
+      `[材质诊断] phase=${this.materialReady ? 't=250ms' : 't=0'} materialReady=${this.materialReady} ` +
+      `isDarkTheme=${this.isDarkTheme()} liquidAvailable=${liquidAvailable} frostEnabled=${frost} ` +
+      `tabStyle=${this.tabStyle} glassThickness=${this.glassThickness} glassBlurStrength=${this.glassBlurStrength} ` +
+      `frostOverlay=${this.glassFrostOverlay} ` +
+      `classicMat=${classicMat !== undefined} immersiveMat=${immersiveMat !== undefined} bottomMat=${bottomMat !== undefined}`)
+  }
+
   private isSongInfoShort(): boolean {
     const artistLength: number = this.currentSongArtist.length > 0 ? this.currentSongArtist.length : 4
     return this.currentSongTitle.length + artistLength <= 16
@@ -253,10 +267,12 @@ struct MainPage {
       this.greetingOpacity = 1
       this.greetingOffset = 0
     })
-    // 液态玻璃材质服务异步就绪：首帧不挂 systemMaterial（未接管会降级灰面发暗），
-    // 延迟 250ms 后材质就绪再挂，期间用 tabFallbackBg 实色兜底，消除 2 秒发灰窗口
+    // 液态玻璃材质服务与磨砂层异步就绪：首帧不挂 systemMaterial（未接管会降级灰面发暗）
+    // 也不挂磨砂层（backgroundEffect 采样未渲染完的内容区会发灰），延迟 250ms 后一并挂上
+    this.logMaterialDiagnostics()
     setTimeout(() => {
       this.materialReady = true
+      this.logMaterialDiagnostics()
     }, 250)
   }
 
@@ -328,9 +344,10 @@ struct MainPage {
         .height(this.scaledSize(40))
         .margin({ bottom: this.scaledSize(10) })
         .borderRadius(this.scaledSize(20))
-        .backgroundColor(this.tabFallbackBg())
-        // 磨砂层与玻璃厚度/材质状态解耦，统一走 frostLayerEnabled（新设备由「磨砂层叠加」开关控制）
-        .backgroundEffect(this.frostLayerEnabled() ? {
+        .backgroundColor(Color.Transparent)
+        // 磨砂层与玻璃厚度/材质状态解耦，统一走 frostLayerEnabled（新设备由「磨砂层叠加」开关控制）；
+        // 启动期 materialReady=false 不挂磨砂层，避免 backgroundEffect 采样未渲染完的内容区发灰
+        .backgroundEffect(this.materialReady && this.frostLayerEnabled() ? {
           radius: this.glassBlurRadius()
         } : undefined)
         .systemMaterial(this.materialReady ? this.classicTabBarMaterial() : undefined)
@@ -416,10 +433,11 @@ struct MainPage {
       .margin({ bottom: this.scaledSize(10) })
       .height(this.scaledSize(40))
       .borderRadius(this.scaledSize(20))
-      .backgroundColor(this.tabFallbackBg())
+      .backgroundColor(Color.Transparent)
       // 液态玻璃启用时 systemMaterial 接管渲染；磨砂层与厚度解耦，仅由「磨砂层叠加」开关控制
-      // （默认关，避免明亮模式下双层叠加造成蓝雾）
-      .backgroundEffect(this.frostLayerEnabled() ? {
+      // （默认关，避免明亮模式下双层叠加造成蓝雾）；启动期 materialReady=false 不挂磨砂层
+      // （backgroundEffect 采样未渲染完的内容区会发灰），250ms 后随材质一起挂上
+      .backgroundEffect(this.materialReady && this.frostLayerEnabled() ? {
         radius: this.glassBlurRadius()
       } : undefined)
       // 液态玻璃：沉浸式系统材质 + 光效跟手 + 交互形变；能力不足时传 undefined 关闭；
@@ -683,10 +701,10 @@ struct MainPage {
       left: this.scaledSize(12), right: this.scaledSize(16),
       top: this.scaledSize(4), bottom: this.scaledSize(4)
     })
-    .backgroundColor(this.tabFallbackBg())
+    .backgroundColor(Color.Transparent)
     // 磨砂层与玻璃厚度、Tab 风格解耦，两种样式统一挂载；挂载条件统一走 frostLayerEnabled
-    // （新设备由「磨砂层叠加」开关控制；暗黑模式与强度 0 不挂）
-    .backgroundEffect(this.frostLayerEnabled() ? {
+    // （新设备由「磨砂层叠加」开关控制；暗黑模式与强度 0 不挂）；启动期 materialReady=false 不挂磨砂层
+    .backgroundEffect(this.materialReady && this.frostLayerEnabled() ? {
       radius: this.glassBlurRadius()
     } : undefined)
     // 液态玻璃：与磨砂层一致不区分 Tab 风格；能力不足时传 undefined 关闭；

@@ -47,6 +47,8 @@ export struct HomeContent {
   @State sortMode: string = 'name'
   @State isPlusVisible: boolean = true
   @State settings: AppSettingsData = new AppSettingsData()
+  // 筛选胶囊与歌单页卡片选中状态实时同步：歌单页每次勾选都调用 setFilterState（同时 bump KEY_FILTER_REVISION），
+  // 这里用 @Watch 跟随刷新，保证首页胶囊文字/底色即时反映当前选中的文件夹或收藏
   // 多选状态挂在 AppStorage 上并双向绑定：@Entry 页面需要在返回键/ESC 里把它置 false 来退出多选。
   // 之前是私有 @State，外部（页面级 onBackPress）无法把多选状态收回去，导致返回键只能退出应用。
   @StorageLink(AppStorageKeyConstants.KEY_HOME_MULTI_SELECT) @Watch('onMultiSelectModeChange')
@@ -59,6 +61,8 @@ export struct HomeContent {
   @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
   @StorageLink(AppStorageKeyConstants.KEY_LIBRARY_REVISION) @Watch('onLibraryChange') libraryRevision: number = 0
   @StorageLink(AppStorageKeyConstants.KEY_FILTER_REVISION) @Watch('onFilterChange') filterRevision: number = 0
+  // 胶囊文字用 @State 缓存：KEY_FILTER_REVISION 变化时由 @Watch 赋值，保证 UI 响应式刷新
+  @State filterLabel: string = '全部歌曲'
   @State selectedIds: string[] = []
   @State failedArtIds: Set<string> = new Set<string>()
   // 手动拖拽排序状态：dragSongId 为被拖拽歌曲 id，空串表示未拖拽。
@@ -164,6 +168,7 @@ export struct HomeContent {
 
   aboutToAppear(): void {
     this.loadData()
+    this.refreshFilterLabel()
     // 首次进入按当前握姿直接落位，不做动画（避免首帧从默认侧滑过来）
     this.plusOnLeft = this.holdingHandLeft
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_HOME_MULTI_SELECT, false)
@@ -197,6 +202,26 @@ export struct HomeContent {
 
   onFilterChange(): void {
     this.applyFilters()
+    this.refreshFilterLabel()
+  }
+
+  // 把 DataService 当前筛选状态写入 @State，驱动胶囊 UI 刷新
+  private refreshFilterLabel(): void {
+    if (this.dataService.isFavoritesSelected()) {
+      this.filterLabel = '我的收藏'
+    } else {
+      const paths: string[] = this.dataService.getSelectedFolderPaths()
+      if (paths.length === 1) {
+        const lastSlash: number = paths[0].lastIndexOf('/')
+        const lastBackslash: number = paths[0].lastIndexOf('\\')
+        const sepIdx: number = lastSlash > lastBackslash ? lastSlash : lastBackslash
+        this.filterLabel = sepIdx >= 0 ? paths[0].substring(sepIdx + 1) : paths[0]
+      } else if (paths.length > 1) {
+        this.filterLabel = paths.length + ' 个文件夹'
+      } else {
+        this.filterLabel = '全部歌曲'
+      }
+    }
   }
 
   loadData(): void {
@@ -327,27 +352,6 @@ export struct HomeContent {
 
   clearFilters(): void {
     this.dataService.setFilterState([], false)
-  }
-
-  hasActiveFilter(): boolean {
-    return this.dataService.isFavoritesSelected() || this.dataService.getSelectedFolderPaths().length > 0
-  }
-
-  getFilterLabel(): string {
-    if (this.dataService.isFavoritesSelected()) {
-      return '我的收藏'
-    }
-    const paths: string[] = this.dataService.getSelectedFolderPaths()
-    if (paths.length === 1) {
-      const lastSlash: number = paths[0].lastIndexOf('/')
-      const lastBackslash: number = paths[0].lastIndexOf('\\')
-      const sepIdx: number = lastSlash > lastBackslash ? lastSlash : lastBackslash
-      return sepIdx >= 0 ? paths[0].substring(sepIdx + 1) : paths[0]
-    }
-    if (paths.length > 1) {
-      return paths.length + ' 个文件夹'
-    }
-    return '全部歌曲'
   }
 
   toggleViewMode(): void {
@@ -766,13 +770,13 @@ export struct HomeContent {
 
         Row() {
           Row() {
-            Text(this.getFilterLabel())
+            Text(this.filterLabel)
               .fontSize(Math.round(14 * this.fontSizeScale))
               .fontColor($r('app.color.text_primary'))
               .fontWeight(FontWeight.Bold)
           }
           .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-          .backgroundColor(this.hasActiveFilter() ? ColorHelper.hexToRgba(this.primaryColor, 0.12) : 'rgba(0,0,0,0.05)')
+          .backgroundColor(this.filterLabel === '全部歌曲' ? 'rgba(0,0,0,0.05)' : ColorHelper.hexToRgba(this.primaryColor, 0.12))
           .borderRadius(16)
           .onClick(() => { this.clearFilters() })
 
