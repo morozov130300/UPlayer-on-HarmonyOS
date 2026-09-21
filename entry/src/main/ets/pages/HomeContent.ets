@@ -772,7 +772,7 @@ export struct HomeContent {
               .fontWeight(FontWeight.Bold)
           }
           .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-          .backgroundColor(this.hasActiveFilter() ? ColorHelper.hexToRgba(this.primaryColor, 0.12) : 'rgba(0,0,0,0.05)')
+          .backgroundColor(this.hasActiveFilter() ? ColorHelper.hexToRgba(this.primaryColor, 0.12) : ColorHelper.hexToRgba(this.primaryColor, 0.08))
           .borderRadius(16)
           .onClick(() => { this.clearFilters() })
 
