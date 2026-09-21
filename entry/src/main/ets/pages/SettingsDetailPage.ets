@@ -788,8 +788,7 @@ struct SettingsDetailPage {
   sectionTitle(title: string): void {
     Text(title)
       .fontSize(this.scaledFont(13))
-      .fontColor(this.isDark() ? ColorHelper.hexWithAlpha('#FFFFFF', '99') : ColorHelper.hexWithAlpha(this.primaryColor,
-        '99'))
+      .fontColor(this.settingTextColor())
       .fontWeight(FontWeight.Medium)
       .width('100%')
       .padding({ left: this.scaledSize(4), top: this.scaledSize(6), bottom: this.scaledSize(2) })
@@ -802,8 +801,7 @@ struct SettingsDetailPage {
     Row() {
       Text(title)
         .fontSize(this.scaledFont(11))
-        .fontColor(this.isDark() ? ColorHelper.hexWithAlpha('#FFFFFF', '66')
-          : ColorHelper.hexWithAlpha(this.primaryColor, '77'))
+        .fontColor(this.settingTextColor())
         .fontWeight(FontWeight.Bold)
       if (helpIconLabel !== undefined) {
         Stack({ alignContent: Alignment.Center }) {
