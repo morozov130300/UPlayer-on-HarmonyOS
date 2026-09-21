@@ -72,6 +72,10 @@ export struct MusicInfoComponent {
   startGlowAnimation() {
     this.stopGlowAnimation()
     this.glowTimer = setInterval(() => {
+      // 窗口隐藏时跳过本帧灯光推进：角度是 360 循环累加，暂停期间无感知，回前台无缝续转
+      if (AppStorage.get<boolean>(AppStorageKeyConstants.KEY_UI_ACTIVE) === false) {
+        return
+      }
       this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_AMBIENT_GLOW_DURATION, curve: Curve.Linear }, () => {
         this.glowRotation = (this.glowRotation + 360) % 360
       })

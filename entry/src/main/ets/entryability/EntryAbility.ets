@@ -119,6 +119,7 @@ export default class EntryAbility extends UIAbility {
 
   onForeground(): void {
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onForeground');
+    AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_UI_ACTIVE, true)
     AVPlayerService.getInstance().onForegroundRestore();
     HoldingHandService.getInstance().syncWithSetting();
   }

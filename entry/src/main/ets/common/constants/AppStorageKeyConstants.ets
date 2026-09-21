@@ -53,4 +53,8 @@ export class AppStorageKeyConstants {
   // Ctrl+A 全选请求（计数器）：页面级键盘事件无法直接改 HomeContent 的 @State，
   // 每次按下 +1 触发 HomeContent 的 @Watch，由它在多选态下把可见歌曲全部选中
   public static readonly KEY_HOME_SELECT_ALL_REQUEST: string = BaseConstants.KEY_PREFIX + 'HomeSelectAllRequest'
+  // 主窗口可见性（EntryAbility onForeground/onBackground 写入）：
+  // 窗口隐藏时各周期性 UI 状态更新检查此键并暂停写入，避免隐藏窗口请求 vsync 收不到帧刷告警；
+  // 键缺失时按可见处理
+  public static readonly KEY_UI_ACTIVE: string = BaseConstants.KEY_PREFIX + 'UiActive'
 }

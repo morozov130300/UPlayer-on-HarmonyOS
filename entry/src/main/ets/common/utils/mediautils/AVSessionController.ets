@@ -606,7 +606,9 @@ export class AVSessionController {
     }
     this.lastProgressReportTime = 0;
     this.lastProgressReportPosition = -1;
-    const position: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_PROGRESS) ?? 0;
+    // 取引擎实时位置而非 AppStorage 缓存：缓存会因主窗口隐藏而暂停更新，
+    // 直接读缓存会让播控中心的进度回跳到隐藏前的旧值
+    const position: number = this.getAvPlayerService().getCurrentPositionMs();
     this.queuePlaybackState({
       state: state,
       activeItemId: activeItemId,

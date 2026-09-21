@@ -74,6 +74,8 @@ struct MainPage {
   @StorageLink(AppStorageKeyConstants.KEY_SELECT_INDEX) @Watch('onCurrentSongChange') selectedSongIndex: number = 0
   // 曲库歌词引用发生集合级变化（自愈回填 / 重新导入）时重新加载迷你歌词
   @StorageProp(AppStorageKeyConstants.KEY_LYRIC_REVISION) @Watch('loadCurrentLyrics') lyricRevision: number = 0
+  // 主窗口可见性（EntryAbility 前后台写入）：窗口隐藏时停掉封面旋转定时器，避免持续请求 vsync
+  @StorageProp(AppStorageKeyConstants.KEY_UI_ACTIVE) @Watch('onUiActiveChange') uiActive: boolean = true
 
   private swiperController: SwiperController = new SwiperController()
   private tabWidth: number = 72
@@ -747,6 +749,10 @@ struct MainPage {
 
   startRotation() {
     this.stopRotation()
+    // 窗口隐藏时不起旋转定时器：角度原地冻结，回前台由 onUiActiveChange 续转，无跳变
+    if (!this.uiActive) {
+      return
+    }
     this.rotationTimer = setInterval(() => {
       this.rotationAngle = (this.rotationAngle + 2.25) % 360
     }, 50)
@@ -756,6 +762,16 @@ struct MainPage {
     if (this.rotationTimer !== -1) {
       clearInterval(this.rotationTimer)
       this.rotationTimer = -1
+    }
+  }
+
+  onUiActiveChange(): void {
+    if (!this.uiActive) {
+      this.stopRotation()
+      return
+    }
+    if (this.isPlaying) {
+      this.startRotation()
     }
   }
 

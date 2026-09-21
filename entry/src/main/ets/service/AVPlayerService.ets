@@ -145,12 +145,14 @@ export class AVPlayerService {
       if (this.nativeMode) {
         return
       }
-      if (!this.isSeeking) {
-        AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PROGRESS, time)
-      }
-      const totalMs: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_TOTAL_MS_TIME) ?? 0
-      if (totalMs > 0) {
-        AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_TIME, this.formatTime(time))
+      if (this.isUiActive()) {
+        if (!this.isSeeking) {
+          AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PROGRESS, time)
+        }
+        const totalMs: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_TOTAL_MS_TIME) ?? 0
+        if (totalMs > 0) {
+          AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_TIME, this.formatTime(time))
+        }
       }
       this.sessionController.setProgressState(time)
     })
@@ -918,8 +920,8 @@ export class AVPlayerService {
     if (!isPlaying || this.currentFilePath.length === 0) {
       return
     }
-    // 上面已按 nativeMode 提前返回，此处恒为非 native 模式，直接取 AppStorage 进度
-    const position: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_PROGRESS) ?? 0
+    // 上面已按 nativeMode 提前返回，此处取引擎实时位置，不依赖可能因窗口隐藏而暂停更新的 AppStorage 缓存
+    const position: number = this.getCurrentPositionMs()
     const fileUri: string = this.currentFilePath
     await this.play(fileUri, position)
   }
@@ -1009,6 +1011,23 @@ export class AVPlayerService {
     })
   }
 
+  // 主窗口是否可见（EntryAbility 前后台写入）：隐藏时进度/时间不再写入 AppStorage，
+  // 避免主窗口不可见时 UI 持续请求 vsync 收不到帧而刷告警；媒体会话进度不受影响
+  private isUiActive(): boolean {
+    return AppStorage.get<boolean>(AppStorageKeyConstants.KEY_UI_ACTIVE) !== false
+  }
+
+  // 实时播放位置（ms）：native 后端查 NAPI，AV 后端读引擎属性
+  public getCurrentPositionMs(): number {
+    if (this.nativeMode) {
+      return nativeAudio.getPosition()
+    }
+    if (this.avPlayer === undefined) {
+      return 0
+    }
+    return this.avPlayer.currentTime
+  }
+
   private startNativeProgressTimer(fileUri: string, requestId: number): void {
     this.stopNativeProgressTimer()
     this.nativeProgressTimer = setInterval(() => {
@@ -1017,10 +1036,12 @@ export class AVPlayerService {
         return
       }
       const position: number = nativeAudio.getPosition()
-      if (!this.isSeeking) {
+      if (!this.isSeeking && this.isUiActive()) {
         AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PROGRESS, position)
       }
-      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_TIME, this.formatTime(position))
+      if (this.isUiActive()) {
+        AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_TIME, this.formatTime(position))
+      }
       this.sessionController.setProgressState(position)
       if (this.isSeeking && position !== nativeAudio.getPosition()) {
         this.isSeeking = false
