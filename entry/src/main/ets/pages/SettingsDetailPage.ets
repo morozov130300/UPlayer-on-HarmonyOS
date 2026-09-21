@@ -326,30 +326,33 @@ struct SettingsDetailPage {
         .shadow({ radius: 18, color: ColorHelper.hexWithAlpha(this.primaryColor, '44'), offsetY: 5 })
         .zIndex(0)
 
-      Row()
-        .width(this.scaledSize(this.previewTabWidth - 2 * this.previewIndicatorInset))
-        .height(this.scaledSize(36))
-        .borderRadius(this.scaledSize(18))
-        .alignItems(VerticalAlign.Center)
-        .margin({ left: this.previewIndicatorOffset, bottom: this.scaledSize(12) })
-        .shadow({
-          radius: 14,
-          color: ColorHelper.hexWithAlpha(this.primaryColor, this.indicatorAlpha(0.8)
-            .toString(16)
-            .padStart(2, '0')),
-          offsetX: 0,
-          offsetY: 0
-        })
-        .radialGradient({
-          center: ['50%', '50%'],
-          radius: '75%',
-          colors: [
-            [this.indicatorGradientColor(0.95), 0.0],
-            [this.indicatorGradientColor(0.75), 0.58],
-            [this.indicatorGradientColor(0.55), 1.0],
-          ]
-        })
-        .zIndex(1)
+      // 指示器显隐与 Index.customTabBar 一致：由「Tab 指示器」开关掌管
+      if (this.tabIndicatorVisible) {
+        Row()
+          .width(this.scaledSize(this.previewTabWidth - 2 * this.previewIndicatorInset))
+          .height(this.scaledSize(36))
+          .borderRadius(this.scaledSize(18))
+          .alignItems(VerticalAlign.Center)
+          .margin({ left: this.previewIndicatorOffset, bottom: this.scaledSize(12) })
+          .shadow({
+            radius: 14,
+            color: ColorHelper.hexWithAlpha(this.primaryColor, this.indicatorAlpha(0.8)
+              .toString(16)
+              .padStart(2, '0')),
+            offsetX: 0,
+            offsetY: 0
+          })
+          .radialGradient({
+            center: ['50%', '50%'],
+            radius: '75%',
+            colors: [
+              [this.indicatorGradientColor(0.95), 0.0],
+              [this.indicatorGradientColor(0.75), 0.58],
+              [this.indicatorGradientColor(0.55), 1.0],
+            ]
+          })
+          .zIndex(1)
+      }
 
       Row({ space: this.scaledSize(this.previewTabGap) }) {
         this.previewTabItem(0, '首页', $r('app.media.ic_public_home'))
@@ -368,31 +371,34 @@ struct SettingsDetailPage {
   @Builder
   previewImmersiveTabBar(): void {
     Stack({ alignContent: Alignment.BottomStart }) {
-      Row()
-        .width(this.scaledSize(this.previewTabWidth - 2 * this.previewIndicatorInset))
-        .height(this.scaledSize(36))
-        .borderRadius(this.scaledSize(18))
-        .alignItems(VerticalAlign.Center)
-        .margin({ left: this.previewIndicatorOffset, bottom: this.scaledSize(12) })
-        // 与 Index.immersiveTabBar 指示器一致：径向渐变 + 蓝色光晕（深浅接入 indicatorAlpha(0.8)），
-        // 浅色玻璃下边缘更锐利
-        .shadow({
-          radius: 14,
-          color: ColorHelper.hexWithAlpha(this.primaryColor, this.indicatorAlpha(0.8)
-            .toString(16)
-            .padStart(2, '0')),
-          offsetX: 0,
-          offsetY: 0
-        })
-        .radialGradient({
-          center: ['50%', '50%'],
-          radius: '75%',
-          colors: [
-            [this.indicatorGradientColor(0.95), 0.0],
-            [this.indicatorGradientColor(0.75), 0.58],
-            [this.indicatorGradientColor(0.55), 1.0],
-          ]
-        })
+      // 指示器显隐与 Index.immersiveTabBar 一致：由「Tab 指示器」开关掌管
+      if (this.tabIndicatorVisible) {
+        Row()
+          .width(this.scaledSize(this.previewTabWidth - 2 * this.previewIndicatorInset))
+          .height(this.scaledSize(36))
+          .borderRadius(this.scaledSize(18))
+          .alignItems(VerticalAlign.Center)
+          .margin({ left: this.previewIndicatorOffset, bottom: this.scaledSize(12) })
+          // 与 Index.immersiveTabBar 指示器一致：径向渐变 + 蓝色光晕（深浅接入 indicatorAlpha(0.8)），
+          // 浅色玻璃下边缘更锐利
+          .shadow({
+            radius: 14,
+            color: ColorHelper.hexWithAlpha(this.primaryColor, this.indicatorAlpha(0.8)
+              .toString(16)
+              .padStart(2, '0')),
+            offsetX: 0,
+            offsetY: 0
+          })
+          .radialGradient({
+            center: ['50%', '50%'],
+            radius: '75%',
+            colors: [
+              [this.indicatorGradientColor(0.95), 0.0],
+              [this.indicatorGradientColor(0.75), 0.58],
+              [this.indicatorGradientColor(0.55), 1.0],
+            ]
+          })
+      }
 
       Row({ space: this.scaledSize(this.previewTabGap) }) {
         this.previewImmersiveTabItem(0, '首页', $r('app.media.ic_public_home'))
