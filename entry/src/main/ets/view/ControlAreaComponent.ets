@@ -502,10 +502,10 @@ export struct ControlAreaComponent {
             this.switchPlayMode();
           })
 
-        Image($r('app.media.ic_music_list'))
-          .width(26)
-          .height(26)
-          .fillColor(Color.White)
+        SymbolGlyph($r('sys.symbol.music_note_list'))
+          .fontSize(26)
+          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+          .fontColor([Color.White])
           .opacity(0.86)
           .scale({ x: this.playlistScale, y: this.playlistScale })
           .hoverEffect(HoverEffect.Scale)
