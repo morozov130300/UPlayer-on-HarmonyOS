@@ -788,7 +788,7 @@ export struct HomeContent {
               .margin({ left: 4 })
           }
           .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-          .backgroundColor('rgba(0,0,0,0.02)')
+          .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.08))
           .borderRadius(16)
           .onClick(() => { this.switchSortMode() })
 
@@ -798,7 +798,7 @@ export struct HomeContent {
               .fontColor($r('app.color.text_primary'))
           }
           .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-          .backgroundColor('rgba(0,0,0,0.02)')
+          .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.08))
           .borderRadius(16)
           .onClick(() => { this.toggleViewMode() })
         }
