@@ -482,11 +482,11 @@ export struct ControlAreaComponent {
       .width(StyleConstants.FULL_WIDTH)
 
       Row() {
-        Image(this.playMode === MusicPlayMode.ORDER ? $r('app.media.ic_public_order_play') :
-          this.playMode === MusicPlayMode.RANDOM ? $r('app.media.ic_public_shuffle') : $r('app.media.ic_public_single_cycle'))
-          .width(26)
-          .height(26)
-          .fillColor(Color.White)
+        SymbolGlyph(this.playMode === MusicPlayMode.ORDER ? $r('sys.symbol.order_play') :
+          this.playMode === MusicPlayMode.RANDOM ? $r('sys.symbol.shuffle') : $r('sys.symbol.repeat_1'))
+          .fontSize(26)
+          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+          .fontColor([Color.White])
           .opacity(0.86)
           .scale({ x: this.playModeScale, y: this.playModeScale })
           .hoverEffect(HoverEffect.Scale)
