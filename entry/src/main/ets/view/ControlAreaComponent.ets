@@ -532,10 +532,10 @@ export struct ControlAreaComponent {
             }
           })
 
-        Image($r('app.media.ic_public_fast'))
-          .width(26)
-          .height(26)
-          .fillColor(Color.White)
+        SymbolGlyph($r('sys.symbol.speed_multiple'))
+          .fontSize(26)
+          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+          .fontColor([Color.White])
           .opacity(0.86)
           .scale({ x: this.speedScale, y: this.speedScale })
           .hoverEffect(HoverEffect.Scale)
