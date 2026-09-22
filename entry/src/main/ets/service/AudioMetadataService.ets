@@ -208,7 +208,7 @@ export class AudioMetadataService {
     try {
       const data: ArrayBuffer | undefined = await extractCoverData(sourcePath)
       if (data !== undefined && data.byteLength > 0) {
-        source = image.createImageSource(data)
+        source = image.createImageSource(new Uint8Array(data))
         const cover: image.PixelMap = await this.decodeCover(source, maxEdge)
         Logger.debug(TAG, `Album cover native hit for ${song.fileName}, size=${data.byteLength}`)
         return cover
@@ -355,7 +355,7 @@ export class AudioMetadataService {
       this.fallbackCircuitUntil = 0
       this.negativeCoverCache.delete(sourcePath)
       // 先解码再缓存：若 decodeCover 抛出，不需要写入缓存（否则脏数据会污染后续请求）
-      source = image.createImageSource(data)
+      source = image.createImageSource(new Uint8Array(data))
       let cover: image.PixelMap | undefined = undefined
       try {
         cover = await this.decodeCover(source, maxEdge)
