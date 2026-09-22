@@ -329,8 +329,9 @@ export function fetchFallbackCoverData(uri: string): Promise<ArrayBuffer | undef
       Logger.warn(TAG, `fallback cover task returned undefined/null for ${uri}`)
       return undefined
     }
-    Logger.info(TAG, `fallback cover extracted ${raw.byteLength} bytes for ${uri}`)
-    return raw as ArrayBuffer
+    const data: ArrayBuffer = raw as ArrayBuffer
+    Logger.info(TAG, `fallback cover extracted ${data.byteLength} bytes for ${uri}`)
+    return data
   }).catch((err: Error): ArrayBuffer | undefined => {
     Logger.error(TAG, `fallback cover taskpool failed uri=${uri}: ${JSON.stringify(err)}`)
     return undefined
