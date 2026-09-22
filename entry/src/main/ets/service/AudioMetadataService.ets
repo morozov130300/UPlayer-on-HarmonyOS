@@ -7,6 +7,7 @@ import { SongInfo } from '../model/SongInfo'
 import Logger from '../common/utils/Logger'
 import uplayer from 'libuplayer.so'
 import { extractCoverData, fetchFallbackCoverData } from './MetadataTask'
+import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 
 const TAG = 'AudioMetadataService'
 const COVER_MAX_EDGE: number = 640
@@ -336,6 +337,7 @@ export class AudioMetadataService {
     if (halfOpen && this.fallbackProbeActive) return undefined
     if (halfOpen) this.fallbackProbeActive = true
     let source: image.ImageSource | undefined = undefined
+    let tempPath: string = ''
     try {
       const data: ArrayBuffer | undefined = await fetchFallbackCoverData(sourcePath)
       if (data === undefined) {
@@ -354,12 +356,18 @@ export class AudioMetadataService {
       this.fallbackFailureCount = 0
       this.fallbackCircuitUntil = 0
       this.negativeCoverCache.delete(sourcePath)
-      // 先解码再缓存：若 decodeCover 抛出，不需要写入缓存（否则脏数据会污染后续请求）
+      // 先解码再缓存：写临时文件再创建 ImageSource（buffer 版 createImageSource 在此设备返回 undefined）
       try {
-        source = image.createImageSource(new Uint8Array(data))
+        const ctx = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
+        const fileDir: string = ctx?.filesDir ?? '/data/storage/el2/base/haps/entry/files'
+        tempPath = fileDir + '/cover_' + Date.now() + '_' + song.id + '.jpg'
+        const tmpFile: fs.File = fs.openSync(tempPath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC)
+        fs.writeSync(tmpFile.fd, new Uint8Array(data))
+        fs.closeSync(tmpFile)
+        source = image.createImageSource(tempPath)
       } catch (e1) {
-        const bizErr: BusinessError = e1 as BusinessError
-        Logger.warn(TAG, `createImageSource failed for ${song.fileName}: code=${bizErr.code} msg=${String(e1)}`)
+        Logger.warn(TAG, `createImageSource via temp file failed for ${song.fileName}: ${String(e1)}`)
+        try { if (tempPath.length > 0) fs.unlinkSync(tempPath) } catch (_) {}
         this.recordFallbackFailure()
         return undefined
       }
@@ -392,6 +400,9 @@ export class AudioMetadataService {
         } catch (err) {
           Logger.warn(TAG, `ImageSource release failed: ${JSON.stringify(err)}`)
         }
+      }
+      if (tempPath.length > 0) {
+        try { fs.unlinkSync(tempPath) } catch (_) { /* ignore */ }
       }
       if (halfOpen) this.fallbackProbeActive = false
     }
