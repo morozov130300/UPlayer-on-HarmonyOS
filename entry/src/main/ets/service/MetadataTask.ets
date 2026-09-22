@@ -281,11 +281,8 @@ async function fetchFallbackCoverTask(fd: number, fileSize: number): Promise<Arr
     const packer: image.ImagePacker = image.createImagePacker()
     try {
       const options: image.PackingOption = { format: 'image/jpeg', quality: 90 }
-      const packed: Uint8Array = await packer.packToData(cover, options)
-      // 显式转为 ArrayBuffer（packToData 返回 Uint8Array，TaskPool 序列化需要 ArrayBuffer）
-      const buf: ArrayBuffer = new ArrayBuffer(packed.byteLength)
-      new Uint8Array(buf).set(packed)
-      return buf
+      const data: ArrayBuffer = await packer.packToData(cover, options)
+      return data
     } finally {
       packer.release()
     }
