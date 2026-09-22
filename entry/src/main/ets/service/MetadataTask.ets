@@ -287,6 +287,7 @@ async function fetchFallbackCoverTask(fd: number, fileSize: number): Promise<Arr
       packer.release()
     }
   } catch (err) {
+    Logger.error(TAG, `fallback cover task inner error: ${JSON.stringify(err)}`)
     return undefined
   } finally {
     if (cover !== undefined) {
@@ -322,10 +323,13 @@ export function fetchFallbackCoverData(uri: string): Promise<ArrayBuffer | undef
     }
     return Promise.resolve(undefined)
   }
+  Logger.info(TAG, `starting fallback cover extraction for ${uri}`)
   return taskpool.execute(fetchFallbackCoverTask, openedFile.fd, fileSize).then((raw: Object): ArrayBuffer | undefined => {
     if (raw === undefined || raw === null) {
+      Logger.warn(TAG, `fallback cover task returned undefined/null for ${uri}`)
       return undefined
     }
+    Logger.info(TAG, `fallback cover extracted ${raw.byteLength} bytes for ${uri}`)
     return raw as ArrayBuffer
   }).catch((err: Error): ArrayBuffer | undefined => {
     Logger.error(TAG, `fallback cover taskpool failed uri=${uri}: ${JSON.stringify(err)}`)
