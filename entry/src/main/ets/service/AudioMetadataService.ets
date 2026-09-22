@@ -303,18 +303,28 @@ export class AudioMetadataService {
   }
 
   /**
-   * 安全提取 err 的可读字段。
-   * 注意：BusinessError 的 message 字段在某些 ArkTS 编译器版本中不能直接通过属性访问，
-   * 需通过 (err as Record<string, Object>) 间接访问或仅用 JSON.stringify 兜底。
+   * 安全提取 err 的可读字段，避免 ArkTS 编译期对 Error 属性访问的错误优化。
    */
   private describeError(err: Object): string {
+    // ArkTS 对 Error 子类属性（如 message）有特殊的内部表示，
+    // 直接属性访问会被编译成无法执行的内部符号引用。
+    // 使用 JSON.stringify 配合 Object.getOwnPropertyNames 兜底读取。
     try {
-      const e: Record<string, Object> = err as Record<string, Object>
-      const codeVal: number | undefined = e['code'] as number | undefined
-      const msgVal: string | undefined = e['message'] as string | undefined
-      return `code=${String(codeVal ?? 'n/a')} msg=${String(msgVal ?? 'n/a')}`
+      const keys: string[] = Object.getOwnPropertyNames(err)
+      const parts: string[] = []
+      for (let i: number = 0; i < keys.length; i++) {
+        const k: string = keys[i]
+        if (k === 'constructor') {
+          continue
+        }
+        const val: Object | undefined = (err as Record<string, Object>)[k] as Object | undefined
+        if (val !== undefined && val !== null) {
+          parts.push(k + '=' + JSON.stringify(val))
+        }
+      }
+      return parts.length > 0 ? parts.join(', ') : 'error'
     } catch (_) {
-      return 'error (unavailable)'
+      return 'error'
     }
   }
 
