@@ -355,7 +355,13 @@ export class AudioMetadataService {
       this.fallbackCircuitUntil = 0
       this.negativeCoverCache.delete(sourcePath)
       // 先解码再缓存：若 decodeCover 抛出，不需要写入缓存（否则脏数据会污染后续请求）
-      source = image.createImageSource(new Uint8Array(data))
+      try {
+        source = image.createImageSource(new Uint8Array(data))
+      } catch (e1: BusinessError) {
+        Logger.warn(TAG, `createImageSource failed for ${song.fileName}: code=${e1.code} msg=${String(e1)}`)
+        this.recordFallbackFailure()
+        return undefined
+      }
       let cover: image.PixelMap | undefined = undefined
       try {
         cover = await this.decodeCover(source, maxEdge)
@@ -376,7 +382,7 @@ export class AudioMetadataService {
       this.recordFallbackFailure()
       return undefined
     } catch (err) {
-      Logger.warn(TAG, `Album cover fallback failed for ${song.fileName}: ${JSON.stringify(err)}`)
+      Logger.warn(TAG, `Album cover fallback failed for ${song.fileName}: ${String(err)}`)
       return undefined
     } finally {
       if (source !== undefined) {
