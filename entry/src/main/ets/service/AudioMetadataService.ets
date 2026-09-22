@@ -304,11 +304,27 @@ export class AudioMetadataService {
 
   /**
    * 安全提取 err 的可读字段，避免 ArkTS 编译期对 Error 属性访问的错误优化。
-   * ArkTS 中 Error 类属性的访问有特殊处理，直接访问可能生成错误代码。
-   * 此处仅返回简化信息，足够用于日志诊断即可。
+   * ArkTS 中 Error 类属性的访问有特殊处理，直接访问会生成无法执行的内部符号引用。
+   * 通过 JSON.stringify 兜底读取可枚举属性，失败时降级为简化描述。
    */
-  private describeError(_err: Object): string {
-    return 'error (use JSON.stringify in production for details)'
+  private describeError(err: Object): string {
+    try {
+      // 尝试用 JSON.stringify 获取可枚举属性
+      const str: string = JSON.stringify(err)
+      if (str !== '{}' && str.length > 0) {
+        return str
+      }
+    } catch (_) {
+      // ignore
+    }
+    // 降级：返回类型名（如果可访问）
+    try {
+      const ctor: Object | undefined = (err as Record<string, Object>)['constructor']
+      const name: string | undefined = (ctor as Record<string, Object>)?.['name'] as string | undefined
+      return name ?? 'error'
+    } catch (_) {
+      return 'error'
+    }
   }
 
   private async fetchFallbackCover(song: SongInfo, sourcePath: string,
