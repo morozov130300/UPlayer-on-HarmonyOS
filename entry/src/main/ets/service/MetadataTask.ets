@@ -287,7 +287,6 @@ async function fetchFallbackCoverTask(fd: number, fileSize: number): Promise<Arr
       packer.release()
     }
   } catch (err) {
-    Logger.error(TAG, `fallback cover task inner error: ${JSON.stringify(err)}`)
     return undefined
   } finally {
     if (cover !== undefined) {
