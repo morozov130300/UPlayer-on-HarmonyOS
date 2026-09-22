@@ -303,15 +303,24 @@ export class AudioMetadataService {
   }
 
   /**
-   * 安全提取 err 的可读字段，处理 BusinessError / Error 属性可能不可枚举的情况。
+   * 安全提取 err 的可读字段。
+   * 注意：BusinessError 的 message 字段在某些 ArkTS 编译器版本中不能直接通过属性访问，
+   * 需通过 (err as Record<string, Object>) 间接访问或仅用 JSON.stringify 兜底。
    */
   private describeError(err: Object): string {
-    const e2: BusinessError = err as BusinessError
-    return `code=${String(e2.code ?? 'n/a')} msg=${e2.message ?? 'n/a'}`
+    try {
+      const e: Record<string, Object> = err as Record<string, Object>
+      const codeVal: number | undefined = e['code'] as number | undefined
+      const msgVal: string | undefined = e['message'] as string | undefined
+      return `code=${String(codeVal ?? 'n/a')} msg=${String(msgVal ?? 'n/a')}`
+    } catch (_) {
+      return 'error (unavailable)'
+    }
   }
 
   private async fetchFallbackCover(song: SongInfo, sourcePath: string,
     maxEdge: number): Promise<image.PixelMap | undefined> {
+    // 诊断日志：记录每个文件的封面提取流程，帮助定位主线程异常原因
     const now: number = new Date().getTime()
     if (now < this.fallbackCircuitUntil) return undefined
     const halfOpen: boolean = this.fallbackFailureCount >= FALLBACK_FAILURE_THRESHOLD
