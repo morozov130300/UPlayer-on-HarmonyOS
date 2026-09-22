@@ -13,6 +13,7 @@ import { SongInfo } from '../model/SongInfo'
 import { AlbumCoverSize, AudioMetadataService, CoverPriority } from './AudioMetadataService'
 import { DataService } from './DataService'
 import { MusicPlayMode } from '../common/constants/PlayerConstants'
+import { WindowUtil } from '../common/utils/WindowUtil'
 
 const TAG = 'AVPlayerService'
 
@@ -192,9 +193,9 @@ export class AVPlayerService {
       this.finishPrepare(false)
       // 向用户显示播放失败提示
       try {
-        const ctx: common.UIAbilityContext | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
-        if (ctx !== undefined) {
-          ctx.getUIContext()?.getPromptAction()?.showToast({
+        const windowUtil: WindowUtil | undefined = AppStorage.get<WindowUtil>(AppStorageKeyConstants.KEY_WINDOW_UTIL)
+        if (windowUtil !== undefined) {
+          windowUtil.getUiContext()?.getPromptAction()?.showToast({
             message: '播放失败: ' + (err.message?.length > 0 ? err.message.substring(0, 50) : '未知错误')
           })
         }

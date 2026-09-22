@@ -34,6 +34,9 @@ export class WindowUtil {
   }
 
   private uiContext: UIContext | undefined = undefined;
+  public getUiContext(): UIContext | undefined {
+    return this.uiContext;
+  }
   private mainWindow: window.Window | undefined = undefined;
   public mainWindowInfo: WindowInfo = new WindowInfo();
   public onWindowSizeChange: (windowSize: window.Size) => void = (windowSize: window.Size) => {
