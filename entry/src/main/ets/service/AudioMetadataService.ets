@@ -210,7 +210,7 @@ export class AudioMetadataService {
       if (data !== undefined && data.byteLength > 0) {
         source = image.createImageSource(data)
         const cover: image.PixelMap = await this.decodeCover(source, maxEdge)
-        Logger.debug(TAG, `Album cover native hit for ${song.fileName}`)
+        Logger.debug(TAG, `Album cover native hit for ${song.fileName}, size=${data.byteLength}`)
         return cover
       }
     } catch (err) {
@@ -376,7 +376,7 @@ export class AudioMetadataService {
       this.recordFallbackFailure()
       return undefined
     } catch (err) {
-      Logger.warn(TAG, `Album cover fallback failed for ${song.fileName}: ${this.describeError(err as Object)}`)
+      Logger.info(TAG, `Album cover fallback result for ${song.fileName}: ${this.describeError(err as Object)}`)
       return undefined
     } finally {
       if (source !== undefined) {

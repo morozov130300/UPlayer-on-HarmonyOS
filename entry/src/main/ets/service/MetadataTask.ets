@@ -191,7 +191,7 @@ export function extractSongMetadata(uri: string): Promise<Record<string, string>
     }
     const errVal: string | undefined = record['error']
     if (errVal !== undefined) {
-      Logger.error(TAG, `extract failed uri=${uri}: ${errVal}`)
+      Logger.warn(TAG, `metadata extract failed uri=${uri}: ${errVal}`)
       return undefined
     }
     return record

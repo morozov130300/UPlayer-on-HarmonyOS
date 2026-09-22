@@ -101,7 +101,12 @@ export class AVPlayerService {
       return
     }
     this.avPlayer.on('stateChange', (state: string): void => {
-      Logger.error(TAG, `AVPlayer state: ${state}`)
+      // 正常状态流转使用 debug 级别，仅异常情况使用 error
+      if (state === 'error') {
+        Logger.error(TAG, `AVPlayer state: ${state}`)
+      } else {
+        Logger.debug(TAG, `AVPlayer state: ${state}`)
+      }
       if (state === 'initialized') {
         if (this.avPlayer !== undefined && this.prepareRequestId === this.playRequestId) {
           this.avPlayer.prepare()
@@ -180,8 +185,22 @@ export class AVPlayerService {
       if (this.nativeMode) {
         return
       }
+      // 重置状态机，允许用户重试播放
+      this.backendState = BackendState.IDLE
+      this.isPrepared = false
       AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, false)
       this.finishPrepare(false)
+      // 向用户显示播放失败提示
+      try {
+        const ctx: common.UIAbilityContext | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
+        if (ctx !== undefined) {
+          ctx.getUIContext()?.getPromptAction()?.showToast({
+            message: '播放失败: ' + (err.message?.length > 0 ? err.message.substring(0, 50) : '未知错误')
+          })
+        }
+      } catch (e) {
+        Logger.warn(TAG, `showToast failed: ${JSON.stringify(e)}`)
+      }
     })
 
     this.avPlayer.on('audioInterrupt', (event: audio.InterruptEvent): void => {
