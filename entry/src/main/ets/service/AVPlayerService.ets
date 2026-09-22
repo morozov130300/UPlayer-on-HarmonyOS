@@ -73,8 +73,17 @@ export class AVPlayerService {
   }
 
   private enqueueOperation(operation: () => Promise<void>): Promise<void> {
-    const queued: Promise<void> = this.operationQueue.then(operation, operation)
-    this.operationQueue = queued.catch((err: BusinessError) => {
+    const self: AVPlayerService = this
+    const queued: Promise<void> = new Promise<void>(async (resolve: () => void, reject: (err: BusinessError) => void): Promise<void> => {
+      await self.operationQueue
+      try {
+        await operation()
+        resolve()
+      } catch (err) {
+        reject(err as BusinessError)
+      }
+    })
+    this.operationQueue = queued.catch((err: BusinessError): void => {
       Logger.error(TAG, `playback operation failed: code=${err.code}, message=${err.message}`)
     })
     return queued
