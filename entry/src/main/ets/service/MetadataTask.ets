@@ -2,11 +2,24 @@ import { media } from '@kit.MediaKit'
 import { fileIo as fs } from '@kit.CoreFileKit'
 import { image } from '@kit.ImageKit'
 import { taskpool } from '@kit.ArkTS'
+import { common } from '@kit.AbilityKit'
 import { SongInfo } from '../model/SongInfo'
 import Logger from '../common/utils/Logger'
 import uplayer from 'libuplayer.so'
+import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 
 const TAG = 'MetadataTask'
+
+// 封面提取结果（主线程消费）：
+// ok=true 时 tempPath 指向沙箱内已写好的封面 JPEG 临时文件（消费方用完必须 unlink）
+// none=true 时表示确认文件无嵌入封面（调用方进入负缓存）
+// 两者皆否表示提取失败（可重试），errorMessage 带回原因
+export class CoverDataResult {
+  ok: boolean = false
+  none: boolean = false
+  tempPath: string = ''
+  errorMessage: string = ''
+}
 
 // TaskPool 并行元数据提取：
 // - fd 由主线程打开（规避子线程直接打开 content:// URI 的权限/兼容性问题），fd 进程内可跨线程使用
@@ -206,28 +219,97 @@ export function extractSongMetadata(uri: string): Promise<Record<string, string>
   })
 }
 
-// TaskPool 并行提取 native ID3 封面：成功返回图片字节，未命中/失败返回 undefined
+// TaskPool 并行提取 native ID3 封面：worker 内把封面字节写入沙箱临时文件，返回 JSON 结果字符串。
+// 字符串是 TaskPool 已验证可靠的序列化类型（元数据任务同款方案）；此前直接回传 ArrayBuffer，
+// 主线程收到的数据在本设备上无法用于 createImageSource，导致封面全量加载失败。
 @Concurrent
-async function extractCoverDataTask(fd: number, fileSize: number, cacheKey: string): Promise<ArrayBuffer | undefined> {
+async function extractCoverDataTask(fd: number, fileSize: number, cacheKey: string, workDir: string): Promise<string> {
   try {
     const data: ArrayBuffer | undefined = uplayer.getAlbumCover(fd, fileSize, cacheKey)
     if (data === undefined || data.byteLength === 0) {
-      return undefined
+      const noneRec: Record<string, string> = {}
+      noneRec['none'] = '1'
+      return JSON.stringify(noneRec)
     }
-    return data
+    const tempPath: string = workDir + '/cover_native_' + Date.now().toString() + '_' +
+      Math.floor(Math.random() * 1000000).toString() + '.jpg'
+    const tmpFile: fs.File = fs.openSync(tempPath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC)
+    try {
+      fs.writeSync(tmpFile.fd, data)
+      fs.closeSync(tmpFile)
+    } catch (writeErr) {
+      try {
+        fs.closeSync(tmpFile)
+      } catch (closeErr) {
+      }
+      try {
+        fs.unlinkSync(tempPath)
+      } catch (unlinkErr) {
+      }
+      const writeRec: Record<string, string> = {}
+      writeRec['error'] = `write temp failed: ${String(writeErr)}`.substring(0, 200)
+      return JSON.stringify(writeRec)
+    }
+    const rec: Record<string, string> = {}
+    rec['path'] = tempPath
+    return JSON.stringify(rec)
   } catch (err) {
-    return undefined
+    const errRec: Record<string, string> = {}
+    errRec['error'] = `${String(err)}`.substring(0, 200)
+    return JSON.stringify(errRec)
   }
 }
 
+// 解析 worker 任务返回的 JSON 结果（主线程）
+function parseCoverTaskResult(raw: Object, uri: string): CoverDataResult {
+  const result: CoverDataResult = new CoverDataResult()
+  let record: Record<string, string> | undefined = undefined
+  try {
+    record = JSON.parse(raw as string) as Record<string, string>
+  } catch (err) {
+    result.errorMessage = `result parse failed uri=${uri}: ${String(raw).substring(0, 120)}`
+    return result
+  }
+  if (record === undefined) {
+    result.errorMessage = `result is null uri=${uri}`
+    return result
+  }
+  const errVal: string | undefined = record['error']
+  if (errVal !== undefined) {
+    result.errorMessage = errVal
+    return result
+  }
+  if (record['none'] !== undefined) {
+    result.none = true
+    return result
+  }
+  const pathVal: string | undefined = record['path']
+  if (pathVal !== undefined && pathVal.length > 0) {
+    result.ok = true
+    result.tempPath = pathVal
+    return result
+  }
+  result.errorMessage = 'unexpected result'
+  return result
+}
+
+// 封面临时文件目录：优先 UIAbilityContext.filesDir，缺省回退标准沙箱路径
+function coverWorkDir(): string {
+  const ctx: common.UIAbilityContext | undefined =
+    AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
+  return ctx?.filesDir ?? '/data/storage/el2/base/haps/entry/files'
+}
+
 // native ID3 封面提取（主线程开 fd 传 fd，任务在 worker 中并行执行）
-export function extractCoverData(uri: string): Promise<ArrayBuffer | undefined> {
+export function extractCoverData(uri: string): Promise<CoverDataResult> {
+  const failed: CoverDataResult = new CoverDataResult()
   let file: fs.File
   try {
     file = fs.openSync(uri, fs.OpenMode.READ_ONLY)
   } catch (err) {
     Logger.error(TAG, `cover open failed uri=${uri}: ${JSON.stringify(err)}`)
-    return Promise.resolve(undefined)
+    failed.errorMessage = 'open failed'
+    return Promise.resolve(failed)
   }
   const openedFile: fs.File = file
   let fileSize: number = 0
@@ -239,29 +321,29 @@ export function extractCoverData(uri: string): Promise<ArrayBuffer | undefined> 
       fs.closeSync(openedFile)
     } catch (closeErr) {
     }
-    return Promise.resolve(undefined)
+    failed.errorMessage = 'stat failed'
+    return Promise.resolve(failed)
   }
-  return taskpool.execute(extractCoverDataTask, openedFile.fd, fileSize, uri).then((raw: Object): ArrayBuffer | undefined => {
-    if (raw === undefined || raw === null) {
-      return undefined
-    }
-    const data: ArrayBuffer = raw as ArrayBuffer
-    return data.byteLength > 0 ? data : undefined
-  }).catch((err: Error): ArrayBuffer | undefined => {
-    Logger.error(TAG, `cover taskpool failed uri=${uri}: ${JSON.stringify(err)}`)
-    return undefined
-  }).finally((): void => {
-    try {
-      fs.closeSync(openedFile)
-    } catch (closeErr) {
-    }
-  })
+  return taskpool.execute(extractCoverDataTask, openedFile.fd, fileSize, uri, coverWorkDir())
+    .then((raw: Object): CoverDataResult => parseCoverTaskResult(raw, uri))
+    .catch((err: Error): CoverDataResult => {
+      const result: CoverDataResult = new CoverDataResult()
+      result.errorMessage = String(err)
+      Logger.error(TAG, `cover taskpool failed uri=${uri}: ${String(err)}`)
+      return result
+    }).finally((): void => {
+      try {
+        fs.closeSync(openedFile)
+      } catch (closeErr) {
+      }
+    })
 }
 
 // TaskPool 并行提取 fallback 封面（AVMetadataExtractor）：
-// 成功返回 JPEG 字节（最长边 640）；确认无封面返回空 ArrayBuffer；异常返回 undefined
+// worker 内缩放封装为 JPEG（最长边 640）并写入沙箱临时文件，返回 JSON 结果字符串：
+// path=成功；none=确认无嵌入封面；error=异常（可重试）
 @Concurrent
-async function fetchFallbackCoverTask(fd: number, fileSize: number): Promise<ArrayBuffer | undefined> {
+async function fetchFallbackCoverTask(fd: number, fileSize: number, workDir: string): Promise<string> {
   let extractor: media.AVMetadataExtractor | undefined = undefined
   let cover: image.PixelMap | undefined = undefined
   try {
@@ -270,7 +352,9 @@ async function fetchFallbackCoverTask(fd: number, fileSize: number): Promise<Arr
     extractor.fdSrc = avFd
     cover = await extractor.fetchAlbumCover()
     if (cover === undefined) {
-      return new ArrayBuffer(0)
+      const noneRec: Record<string, string> = {}
+      noneRec['none'] = '1'
+      return JSON.stringify(noneRec)
     }
     const info: image.ImageInfo = await cover.getImageInfo()
     const longEdge: number = Math.max(info.size.width, info.size.height)
@@ -282,12 +366,35 @@ async function fetchFallbackCoverTask(fd: number, fileSize: number): Promise<Arr
     try {
       const options: image.PackingOption = { format: 'image/jpeg', quality: 90 }
       const data: ArrayBuffer = await packer.packToData(cover, options)
-      return data
+      const tempPath: string = workDir + '/cover_fallback_' + Date.now().toString() + '_' +
+        Math.floor(Math.random() * 1000000).toString() + '.jpg'
+      const tmpFile: fs.File = fs.openSync(tempPath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC)
+      try {
+        fs.writeSync(tmpFile.fd, data)
+        fs.closeSync(tmpFile)
+      } catch (writeErr) {
+        try {
+          fs.closeSync(tmpFile)
+        } catch (closeErr) {
+        }
+        try {
+          fs.unlinkSync(tempPath)
+        } catch (unlinkErr) {
+        }
+        const writeRec: Record<string, string> = {}
+        writeRec['error'] = `write temp failed: ${String(writeErr)}`.substring(0, 200)
+        return JSON.stringify(writeRec)
+      }
+      const rec: Record<string, string> = {}
+      rec['path'] = tempPath
+      return JSON.stringify(rec)
     } finally {
       packer.release()
     }
   } catch (err) {
-    return undefined
+    const errRec: Record<string, string> = {}
+    errRec['error'] = `${String(err)}`.substring(0, 200)
+    return JSON.stringify(errRec)
   } finally {
     if (cover !== undefined) {
       cover.release()
@@ -302,13 +409,15 @@ async function fetchFallbackCoverTask(fd: number, fileSize: number): Promise<Arr
 }
 
 // fallback 封面提取（主线程开 fd 传 fd，任务在 worker 中执行）
-export function fetchFallbackCoverData(uri: string): Promise<ArrayBuffer | undefined> {
+export function fetchFallbackCoverData(uri: string): Promise<CoverDataResult> {
+  const failed: CoverDataResult = new CoverDataResult()
   let file: fs.File
   try {
     file = fs.openSync(uri, fs.OpenMode.READ_ONLY)
   } catch (err) {
     Logger.error(TAG, `fallback cover open failed uri=${uri}: ${JSON.stringify(err)}`)
-    return Promise.resolve(undefined)
+    failed.errorMessage = 'open failed'
+    return Promise.resolve(failed)
   }
   const openedFile: fs.File = file
   let fileSize: number = 0
@@ -320,26 +429,22 @@ export function fetchFallbackCoverData(uri: string): Promise<ArrayBuffer | undef
       fs.closeSync(openedFile)
     } catch (closeErr) {
     }
-    return Promise.resolve(undefined)
+    failed.errorMessage = 'stat failed'
+    return Promise.resolve(failed)
   }
-  Logger.info(TAG, `starting fallback cover extraction for ${uri}`)
-  return taskpool.execute(fetchFallbackCoverTask, openedFile.fd, fileSize).then((raw: Object): ArrayBuffer | undefined => {
-    if (raw === undefined || raw === null) {
-      Logger.warn(TAG, `fallback cover task returned undefined/null for ${uri}`)
-      return undefined
-    }
-    const data: ArrayBuffer = raw as ArrayBuffer
-    Logger.info(TAG, `fallback cover extracted ${data.byteLength} bytes for ${uri}`)
-    return data
-  }).catch((err: Error): ArrayBuffer | undefined => {
-    Logger.error(TAG, `fallback cover taskpool failed uri=${uri}: ${JSON.stringify(err)}`)
-    return undefined
-  }).finally((): void => {
-    try {
-      fs.closeSync(openedFile)
-    } catch (closeErr) {
-    }
-  })
+  return taskpool.execute(fetchFallbackCoverTask, openedFile.fd, fileSize, coverWorkDir())
+    .then((raw: Object): CoverDataResult => parseCoverTaskResult(raw, uri))
+    .catch((err: Error): CoverDataResult => {
+      const result: CoverDataResult = new CoverDataResult()
+      result.errorMessage = String(err)
+      Logger.error(TAG, `fallback cover taskpool failed uri=${uri}: ${String(err)}`)
+      return result
+    }).finally((): void => {
+      try {
+        fs.closeSync(openedFile)
+      } catch (closeErr) {
+      }
+    })
 }
 
 // 将提取结果应用到 SongInfo（仅在主线程调用）

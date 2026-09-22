@@ -2,11 +2,11 @@
 import { fileIo as fs } from '@kit.CoreFileKit'
 import { image } from '@kit.ImageKit'
 import { common } from '@kit.AbilityKit'
-import { BusinessError, SuppressWarnings, SuppressWarningsType } from '@kit.BasicServicesKit'
+import { SuppressWarnings, SuppressWarningsType } from '@kit.BasicServicesKit'
 import { SongInfo } from '../model/SongInfo'
 import Logger from '../common/utils/Logger'
 import uplayer from 'libuplayer.so'
-import { extractCoverData, fetchFallbackCoverData } from './MetadataTask'
+import { extractCoverData, fetchFallbackCoverData, CoverDataResult } from './MetadataTask'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 
 const TAG = 'AudioMetadataService'
@@ -205,27 +205,20 @@ export class AudioMetadataService {
   private async loadAlbumCover(song: SongInfo, maxEdge: number,
     priority: CoverPriority): Promise<image.PixelMap | undefined> {
     const sourcePath: string = song.uri.length > 0 ? song.uri : song.filePath
-    let source: image.ImageSource | undefined = undefined
-    try {
-      const data: ArrayBuffer | undefined = await extractCoverData(sourcePath)
-      if (data !== undefined && data.byteLength > 0) {
-        source = image.createImageSource(data)
-        const cover: image.PixelMap = await this.decodeCover(source, maxEdge)
-        Logger.debug(TAG, `Album cover native hit for ${song.fileName}, size=${data.byteLength}`)
+    const nativeResult: CoverDataResult = await extractCoverData(sourcePath)
+    if (nativeResult.ok) {
+      const cover: image.PixelMap | undefined = await this.decodeTempCover(nativeResult.tempPath, maxEdge)
+      try {
+        fs.unlinkSync(nativeResult.tempPath)
+      } catch (err) {
+      }
+      if (cover !== undefined) {
+        Logger.debug(TAG, `Album cover native hit for ${song.fileName}`)
         return cover
       }
-    } catch (err) {
-      const error = err as BusinessError
-      Logger.warn(TAG,
-        `Album cover native extraction failed for ${song.fileName}: code=${error.code} sourcePath=${sourcePath}`)
-    } finally {
-      if (source !== undefined) {
-        try {
-          await source.release()
-        } catch (err) {
-          Logger.warn(TAG, `ImageSource release failed: ${JSON.stringify(err)}`)
-        }
-      }
+      Logger.warn(TAG, `Album cover native decode failed for ${song.fileName}`)
+    } else if (nativeResult.errorMessage.length > 0) {
+      Logger.warn(TAG, `Album cover native extraction failed for ${song.fileName}: ${nativeResult.errorMessage}`)
     }
 
     const now: number = new Date().getTime()
@@ -304,27 +297,50 @@ export class AudioMetadataService {
   }
 
   /**
-   * 安全提取 err 的可读字段，避免 ArkTS 编译期对 Error 属性访问的错误优化。
-   * ArkTS 中 Error 类属性的访问有特殊处理，直接访问会生成无法执行的内部符号引用。
-   * 通过 JSON.stringify 兜底读取可枚举属性，失败时降级为简化描述。
+   * 从沙箱临时文件解码封面（路径重载的 createImageSource 在本设备验证可用）。
+   * 解码失败或异常返回 undefined，调用方负责删除临时文件。
    */
-  private describeError(err: Object): string {
+  private async decodeTempCover(tempPath: string, maxEdge: number): Promise<image.PixelMap | undefined> {
+    let source: image.ImageSource | undefined = undefined
     try {
-      // 尝试用 JSON.stringify 获取可枚举属性
-      const str: string = JSON.stringify(err)
-      if (str !== '{}' && str.length > 0) {
-        return str
+      source = image.createImageSource(tempPath)
+      if (source === undefined) {
+        Logger.error(TAG, `createImageSource(path) returned undefined for ${tempPath}`)
+        return undefined
       }
-    } catch (_) {
-      // ignore
+      return await this.decodeCover(source, maxEdge)
+    } catch (err) {
+      Logger.warn(TAG, `decodeTempCover failed ${tempPath}: ${String(err)}`.substring(0, 200))
+      return undefined
+    } finally {
+      if (source !== undefined) {
+        try {
+          await source.release()
+        } catch (err) {
+          Logger.warn(TAG, `ImageSource release failed: ${JSON.stringify(err)}`)
+        }
+      }
     }
-    // 降级：返回类型名（如果可访问）
+  }
+
+  /** 读取临时文件字节（用于写入 native 封面缓存） */
+  private readTempFileBytes(tempPath: string): ArrayBuffer | undefined {
     try {
-      const ctor: Object | undefined = (err as Record<string, Object>)['constructor']
-      const name: string | undefined = (ctor as Record<string, Object>)?.['name'] as string | undefined
-      return name ?? 'error'
-    } catch (_) {
-      return 'error'
+      const file: fs.File = fs.openSync(tempPath, fs.OpenMode.READ_ONLY)
+      try {
+        const size: number = fs.statSync(file.fd).size
+        if (size <= 0) {
+          return undefined
+        }
+        const data: ArrayBuffer = new ArrayBuffer(size)
+        fs.readSync(file.fd, data)
+        return data
+      } finally {
+        fs.closeSync(file)
+      }
+    } catch (err) {
+      Logger.warn(TAG, `readTempFileBytes failed ${tempPath}: ${String(err)}`.substring(0, 200))
+      return undefined
     }
   }
 
@@ -336,18 +352,22 @@ export class AudioMetadataService {
     const halfOpen: boolean = this.fallbackFailureCount >= FALLBACK_FAILURE_THRESHOLD
     if (halfOpen && this.fallbackProbeActive) return undefined
     if (halfOpen) this.fallbackProbeActive = true
-    let source: image.ImageSource | undefined = undefined
+    let tempPath: string | undefined = undefined
     try {
-      const data: ArrayBuffer | undefined = await fetchFallbackCoverData(sourcePath)
-      if (data === undefined) {
-        // taskpool 内部异常或无法获取封面，按失败处理；不加入负缓存（负缓存仅针对
-        // 明确返回空字节的情况），允许下次重试
-        Logger.warn(TAG, `fallback data undefined for ${song.fileName}: taskpool returned undefined`)
+      const result: CoverDataResult = await fetchFallbackCoverData(sourcePath)
+      if (result.ok) {
+        tempPath = result.tempPath
+      }
+      if (result.errorMessage.length > 0) {
+        // taskpool 内部异常（打开/提取/写临时文件失败等），按失败处理；
+        // 不加入负缓存（负缓存仅针对确认无封面的情况），允许下次重试
+        Logger.warn(TAG,
+          `fallback cover failed for ${song.fileName}: ${result.errorMessage}`)
         this.recordFallbackFailure()
         return undefined
       }
-      if (data.byteLength === 0) {
-        // 任务池明确返回空 ArrayBuffer：文件无嵌入封面，进入负缓存
+      if (result.none) {
+        // 任务池明确确认：文件无嵌入封面，进入负缓存
         this.negativeCoverCache.set(sourcePath, new Date().getTime())
         return undefined
       }
@@ -355,40 +375,28 @@ export class AudioMetadataService {
       this.fallbackFailureCount = 0
       this.fallbackCircuitUntil = 0
       this.negativeCoverCache.delete(sourcePath)
-      source = image.createImageSource(data)
-      if (source === undefined) {
-        Logger.error(TAG, `createImageSource returned undefined for ${song.fileName}, dataLen=${data.byteLength}`)
-        this.recordFallbackFailure()
-        return undefined
-      }
-      let cover: image.PixelMap | undefined = undefined
-      try {
-        cover = await this.decodeCover(source, maxEdge)
-      } finally {
-        if (source !== undefined) {
-          try {
-            await source.release()
-          } catch (_) { /* ignore */ }
-          source = undefined
-        }
-      }
+      const cover: image.PixelMap | undefined = await this.decodeTempCover(result.tempPath, maxEdge)
       if (cover !== undefined) {
-        uplayer.cacheAlbumCover(sourcePath, data)
+        // 读取临时文件字节写入 native 缓存，供后续 ID3 路径直接命中
+        const data: ArrayBuffer | undefined = this.readTempFileBytes(result.tempPath)
+        if (data !== undefined) {
+          uplayer.cacheAlbumCover(sourcePath, data)
+        }
         Logger.debug(TAG, `Album cover fallback success for ${song.fileName}`)
         return cover
       }
-      // decodeCover 返回 undefined 视为失败
+      // 解码失败视为失败
       this.recordFallbackFailure()
       return undefined
     } catch (err) {
-      Logger.warn(TAG, `Album cover fallback failed for ${song.fileName}: ${String(err)}`)
+      Logger.warn(TAG, `Album cover fallback failed for ${song.fileName}: ${String(err)}`.substring(0, 200))
       return undefined
     } finally {
-      if (source !== undefined) {
+      if (tempPath !== undefined) {
         try {
-          await source.release()
+          fs.unlinkSync(tempPath)
         } catch (err) {
-          Logger.warn(TAG, `ImageSource release failed: ${JSON.stringify(err)}`)
+          Logger.warn(TAG, `temp cover unlink failed: ${String(err)}`.substring(0, 120))
         }
       }
       if (halfOpen) this.fallbackProbeActive = false
