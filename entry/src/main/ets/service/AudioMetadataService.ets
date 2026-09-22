@@ -357,8 +357,9 @@ export class AudioMetadataService {
       // 先解码再缓存：若 decodeCover 抛出，不需要写入缓存（否则脏数据会污染后续请求）
       try {
         source = image.createImageSource(new Uint8Array(data))
-      } catch (e1: BusinessError) {
-        Logger.warn(TAG, `createImageSource failed for ${song.fileName}: code=${e1.code} msg=${String(e1)}`)
+      } catch (e1) {
+        const bizErr: BusinessError = e1 as BusinessError
+        Logger.warn(TAG, `createImageSource failed for ${song.fileName}: code=${bizErr.code} msg=${String(e1)}`)
         this.recordFallbackFailure()
         return undefined
       }
