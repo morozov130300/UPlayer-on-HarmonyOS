@@ -73,8 +73,8 @@ export class AVPlayerService {
 
   private enqueueOperation(operation: () => Promise<void>): Promise<void> {
     const queued: Promise<void> = this.operationQueue.then(operation, operation)
-    this.operationQueue = queued.catch((err: Error) => {
-      Logger.error(TAG, `playback operation failed: ${JSON.stringify(err)}`)
+    this.operationQueue = queued.catch((err: BusinessError) => {
+      Logger.error(TAG, `playback operation failed: code=${err.code}, message=${err.message}`)
     })
     return queued
   }
@@ -284,7 +284,9 @@ export class AVPlayerService {
 
   async playSong(song: SongInfo, index: number, startPaused: boolean = false): Promise<void> {
     if (!song.isAvailable) {
-      Logger.error(TAG, `skip unavailable song index=${index} id=${song.id}`)
+      // 可访问性检查已修复（见 DataService.ets），此分支仅保留作为防御性日志；
+      // 触发前检查 KEY_SONG_LIST 是否已从 activatePersistedUris 获得最新状态。
+      Logger.warn(TAG, `skip unavailable song index=${index} id=${song.id} uri=${song.uri.length > 0 ? song.uri : song.filePath}`)
       return
     }
     this.prefetchSongCovers(index)

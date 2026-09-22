@@ -15,7 +15,7 @@
 import { window } from '@kit.ArkUI';
 import { AppStorageKeyConstants } from '../constants/AppStorageKeyConstants';
 import Logger from './Logger';
-import { SuppressWarnings, SuppressWarningsType } from '@kit.BasicServicesKit';
+import { BusinessError, SuppressWarnings, SuppressWarningsType } from '@kit.BasicServicesKit';
 
 const TAG = 'ColorConversion';
 
@@ -120,7 +120,7 @@ export class ColorConversion {
         Logger.info(TAG, 'setWindowSystemBarProperties success');
       }
     } catch (err) {
-      Logger.error(TAG, `setWindowSystemBarProperties failed: ${JSON.stringify(err)}`);
+      Logger.error(TAG, `setWindowSystemBarProperties failed: code=${(err as BusinessError).code}, message=${(err as BusinessError).message}`);
     }
   }
 }

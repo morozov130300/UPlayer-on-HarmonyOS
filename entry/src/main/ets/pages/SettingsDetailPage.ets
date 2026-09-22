@@ -106,6 +106,8 @@ struct SettingsDetailPage {
   // 智感握姿开关：写穿到 AppStorage（HoldingHandService 在页面外也要读开关），
   // 滤波与订阅统一交给 HoldingHandService，本页不再自行订阅 holdingHandChanged
   @StorageLink(KEY_HOLDING_HAND_ENABLED) holdingHandEnabled: boolean = true
+  // 设备是否支持智感握姿能力（检测失败时隐藏该设置项）
+  @State holdingHandSupported: boolean = true
   private themeOptions: ThemeOption[] = [
     { label: '跟随系统', value: 'system' },
     { label: '深色模式', value: 'dark' },
@@ -164,6 +166,12 @@ struct SettingsDetailPage {
     ColorConversion.setSysBarLightBackground(this.isDark())
     // 智感握姿监听由 HoldingHandService 统一持有（首页加号与本页预览共用同一份滤波结果）
     HoldingHandService.getInstance().syncWithSetting()
+    // 检测设备智感握姿能力：不支持时隐藏开关并将设置复位为默认值
+    this.holdingHandSupported = HoldingHandService.isSupported()
+    if (!this.holdingHandSupported) {
+      this.settings.holdingHandEnabled = true
+      AppStorage.setOrCreate(KEY_HOLDING_HAND_ENABLED, true)
+    }
     // 按明暗模式初始化 lightColorMode：未手动设置过时，暗黑默认白光，明亮默认主题色
     const existingLightMode: string = this.settings.lightColorMode
     if (existingLightMode === undefined || existingLightMode === '') {
@@ -1116,7 +1124,8 @@ struct SettingsDetailPage {
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(this.scaledSize(10))
 
-      // 智感握姿
+      // 智感握姿（设备不支持时隐藏）
+      if (this.holdingHandSupported) {
       Row() {
         Column({ space: this.scaledSize(6) }) {
           Text('智感握姿')
@@ -1146,6 +1155,7 @@ struct SettingsDetailPage {
       .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(this.scaledSize(10))
+      }
 
       // 交互形变：液态玻璃按压/拖动 Q 弹反馈（置于「交互」分组下）
       Row() {

@@ -15,6 +15,7 @@
 
 import Logger from "./Logger";
 import { window } from "@kit.ArkUI";
+import { BusinessError } from '@kit.BasicServicesKit';
 import { AppStorageKeyConstants } from "../constants/AppStorageKeyConstants";
 
 const TAG = 'WindowUtil'
@@ -82,7 +83,8 @@ export class WindowUtil {
       this.updateTitleButtonRect(this.mainWindow.getTitleButtonRect())
       this.mainWindow.on('windowTitleButtonRectChange', this.onTitleButtonRectChange)
     } catch (err) {
-      Logger.error(TAG, `setupImmersiveTitleButtons failed: ${JSON.stringify(err)}`)
+      const bizErr: BusinessError = err as BusinessError
+      Logger.warn(TAG, `setupImmersiveTitleButtons skipped: code=${bizErr.code}, message=${bizErr.message}`)
     }
   }
 

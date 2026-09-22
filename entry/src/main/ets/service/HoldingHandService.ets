@@ -37,7 +37,7 @@ export class HoldingHandService {
   // 按当前设置同步订阅状态：开关打开 + 非 PC + 能力支持 才订阅，其余一律退订并复位到默认（靠右）。
   // 页面外（EntryAbility）与设置页开关都调用本方法，重复调用安全。
   public syncWithSetting(): void {
-    if (this.isPC || !this.isEnabled() || !this.isSupported()) {
+    if (this.isPC || !this.isEnabled() || !HoldingHandService.isSupported()) {
       this.stop()
       return
     }
@@ -56,7 +56,7 @@ export class HoldingHandService {
 
   // 退订并复位：应用退到后台、开关关闭、能力不支持时调用
   public stop(): void {
-    if (this.registered && this.isSupported()) {
+    if (this.registered && HoldingHandService.isSupported()) {
       try {
         motion.off('holdingHandChanged', this.callback)
       } catch (err) {
@@ -76,8 +76,9 @@ export class HoldingHandService {
     return AppStorage.get<boolean>(KEY_HOLDING_HAND_ENABLED) ?? true
   }
 
-  private isSupported(): boolean {
-    return canIUse('SystemCapability.MultimodalAwareness.Motion')
+  // 公开：检测设备是否支持智感握姿（非 PC + 系统 Motion 能力可用）
+  public static isSupported(): boolean {
+    return deviceInfo.deviceType !== '2in1' && canIUse('SystemCapability.MultimodalAwareness.Motion')
   }
 
   private onStatusChanged(status: motion.HoldingHandStatus): void {

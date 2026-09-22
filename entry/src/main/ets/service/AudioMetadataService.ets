@@ -302,6 +302,16 @@ export class AudioMetadataService {
     }
   }
 
+  /**
+   * 安全提取 err 的可读字段，处理 BusinessError / Error 属性可能不可枚举的情况。
+   */
+  private describeError(err: Object): string {
+    const code: number | undefined = (err as BusinessError).code
+    const message: string | undefined = (err as BusinessError).message
+    const nameVal: string | undefined = (err as { name?: string }).name
+    return `code=${String(code ?? 'n/a')} msg=${message ?? 'n/a'} name=${nameVal ?? ''}`
+  }
+
   private async fetchFallbackCover(song: SongInfo, sourcePath: string,
     maxEdge: number): Promise<image.PixelMap | undefined> {
     const now: number = new Date().getTime()
@@ -313,31 +323,51 @@ export class AudioMetadataService {
     try {
       const data: ArrayBuffer | undefined = await fetchFallbackCoverData(sourcePath)
       if (data === undefined) {
-        this.negativeCoverCache.delete(sourcePath)
+        // taskpool 内部异常或无法获取封面，按失败处理；不加入负缓存（负缓存仅针对
+        // 明确返回空字节的情况），允许下次重试
+        Logger.warn(TAG, `fallback data undefined for ${song.fileName}: taskpool returned undefined`)
         this.recordFallbackFailure()
         return undefined
       }
       if (data.byteLength === 0) {
+        // 任务池明确返回空 ArrayBuffer：文件无嵌入封面，进入负缓存
         this.negativeCoverCache.set(sourcePath, new Date().getTime())
         return undefined
       }
+      // 封面提取成功，重置熔断器
       this.fallbackFailureCount = 0
       this.fallbackCircuitUntil = 0
       this.negativeCoverCache.delete(sourcePath)
-      uplayer.cacheAlbumCover(sourcePath, data)
+      // 先解码再缓存：若 decodeCover 抛出，不需要写入缓存（否则脏数据会污染后续请求）
       source = image.createImageSource(data)
-      const cover: image.PixelMap = await this.decodeCover(source, maxEdge)
-      Logger.debug(TAG, `Album cover fallback success for ${song.fileName}`)
-      return cover
+      let cover: image.PixelMap | undefined = undefined
+      try {
+        cover = await this.decodeCover(source, maxEdge)
+      } finally {
+        if (source !== undefined) {
+          try {
+            await source.release()
+          } catch (_) { /* ignore */ }
+          source = undefined
+        }
+      }
+      if (cover !== undefined) {
+        uplayer.cacheAlbumCover(sourcePath, data)
+        Logger.debug(TAG, `Album cover fallback success for ${song.fileName}`)
+        return cover
+      }
+      // decodeCover 返回 undefined 视为失败
+      this.recordFallbackFailure()
+      return undefined
     } catch (err) {
-      Logger.warn(TAG, `Album cover fallback failed for ${song.fileName}: ${JSON.stringify(err)}`)
+      Logger.warn(TAG, `Album cover fallback failed for ${song.fileName}: ${this.describeError(err as Object)}`)
       return undefined
     } finally {
       if (source !== undefined) {
         try {
           await source.release()
         } catch (err) {
-          Logger.warn(TAG, `ImageSource release failed: ${JSON.stringify(err)}`)
+          Logger.warn(TAG, `ImageSource release failed: ${this.describeError(err as Object)}`)
         }
       }
       if (halfOpen) this.fallbackProbeActive = false
@@ -372,8 +402,15 @@ export class AudioMetadataService {
     this.coverCache.forEach((entry: AlbumCoverCacheEntry) => {
       entry.cached = false
       if (entry.references === 0 && entry.pixelMap !== undefined) {
-        entry.pixelMap.release()
+        const pm: image.PixelMap | undefined = entry.pixelMap
         entry.pixelMap = undefined
+        if (pm !== undefined) {
+          try {
+            pm.release()
+          } catch (err) {
+            Logger.warn(TAG, `Album cover pixelMap release failed: ${JSON.stringify(err)}`)
+          }
+        }
       }
     })
     this.coverCache.clear()
@@ -383,6 +420,10 @@ export class AudioMetadataService {
     this.fallbackFailureCount = 0
     this.fallbackCircuitUntil = 0
     this.fallbackProbeActive = false
-    uplayer.clearAlbumCoverCache()
+    try {
+      uplayer.clearAlbumCoverCache()
+    } catch (err) {
+      Logger.warn(TAG, `clearAlbumCoverCache failed: ${JSON.stringify(err)}`)
+    }
   }
 }

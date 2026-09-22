@@ -1,7 +1,7 @@
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { window } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { deviceInfo } from '@kit.BasicServicesKit';
+import { deviceInfo, BusinessError } from '@kit.BasicServicesKit';
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
 import { WindowUtil } from '../common/utils/WindowUtil';
 import { AVPlayerService } from '../service/AVPlayerService';
@@ -33,13 +33,41 @@ export default class EntryAbility extends UIAbility {
   }
 
   onDestroy(): void {
-    DataService.getInstance().flushPendingSongWrites();
-    PreferencesUtil.getInstance().flushNow();
-    AudioMetadataService.getInstance().clearMemoryCache();
-    AVPlayerService.getInstance().release();
-    AVSessionController.getInstance().unregisterSessionListener();
-    BackgroundUtil.stopContinuousTask(this.context);
-    LiveViewService.getInstance().stopLiveView();
+    try {
+      DataService.getInstance().flushPendingSongWrites();
+    } catch (err) {
+      hilog.error(DOMAIN, 'testTag', 'flushPendingSongWrites failed: %{public}s', JSON.stringify(err));
+    }
+    try {
+      PreferencesUtil.getInstance().flushNow();
+    } catch (err) {
+      hilog.error(DOMAIN, 'testTag', 'PreferencesUtil flushNow failed: %{public}s', JSON.stringify(err));
+    }
+    try {
+      AudioMetadataService.getInstance().clearMemoryCache();
+    } catch (err) {
+      hilog.error(DOMAIN, 'testTag', 'clearMemoryCache failed: %{public}s', JSON.stringify(err));
+    }
+    try {
+      AVPlayerService.getInstance().release();
+    } catch (err) {
+      hilog.error(DOMAIN, 'testTag', 'AVPlayerService release failed: %{public}s', JSON.stringify(err));
+    }
+    try {
+      AVSessionController.getInstance().unregisterSessionListener();
+    } catch (err) {
+      hilog.error(DOMAIN, 'testTag', 'unregisterSessionListener failed: %{public}s', JSON.stringify(err));
+    }
+    try {
+      BackgroundUtil.stopContinuousTask(this.context);
+    } catch (err) {
+      hilog.error(DOMAIN, 'testTag', 'stopContinuousTask failed: %{public}s', JSON.stringify(err));
+    }
+    try {
+      LiveViewService.getInstance().stopLiveView();
+    } catch (err) {
+      hilog.error(DOMAIN, 'testTag', 'stopLiveView failed: %{public}s', JSON.stringify(err));
+    }
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onDestroy');
   }
 
@@ -96,10 +124,10 @@ export default class EntryAbility extends UIAbility {
             mainWindow.setWindowDecorVisible(false);
           }
         } catch (e) {
-          Logger.error(TAG, 'setWindowDecorVisible failed: ' + JSON.stringify(e));
+          Logger.error(TAG, `setWindowDecorVisible failed: code=${(e as BusinessError).code}, message=${(e as BusinessError).message}`);
         }
       }).catch((error: Error) => {
-        Logger.error(TAG, `getMainWindow failed: ${JSON.stringify(error)}`);
+        Logger.error(TAG, `getMainWindow failed: code=${(error as BusinessError).code}, message=${(error as BusinessError).message}`);
       });
 
       windowStage.getMainWindow().then((mainWindow: window.Window) => {

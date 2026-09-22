@@ -1,4 +1,4 @@
-import { uiMaterial } from '@kit.ArkUI'
+import { PromptAction, uiMaterial } from '@kit.ArkUI'
 import { deviceInfo } from '@kit.BasicServicesKit'
 
 // 玻璃风格强度：固定 6 档滑轨（0=关闭玻璃 + 官方 ImmersiveStyle 五档）。
@@ -157,4 +157,13 @@ export function createToastGlassMaterial(strength: number): uiMaterial.Material 
   return new uiMaterial.ImmersiveMaterial({
     style: glassImmersiveStyleFromStrength(strength)
   })
+}
+
+// 设备能力不足时显示简短 Toast，说明缺失能力与对应后果
+export function showCapabilityToast(promptAction: PromptAction | undefined, message: string): void {
+  try {
+    promptAction?.showToast({ message })
+  } catch (e) {
+    // showToast 失败时静默忽略
+  }
 }

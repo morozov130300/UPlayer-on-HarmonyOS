@@ -886,8 +886,9 @@ return result
     AppStorage.setOrCreate(KEY_SORT_MODE, this.getSortMode())
     AppStorage.setOrCreate(KEY_VIEW_MODE, this.getViewMode())
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PLAY_MODE, this.getPlayMode())
-    this.checkSongsAccessibility()
-    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SONG_LIST, this.getSongs())
+    // 启动期不在激活授权前跑可访问性检查：此时 docs URI 尚未激活，openSync 必然失败并
+    // 把全部 226 首误标为不可用并落库，导致激活完成后 UI 仍显示灰色、点击歌曲没反应。
+    // 可在访性检查完全由 activatePersistedUris 在授权激活后统一执行一次。
     AppStorage.setOrCreate(KEY_FOLDER_LIST, this.getFolders())
     AppStorage.setOrCreate(KEY_SELECTED_FOLDERS, this.getSelectedFolderPaths())
     AppStorage.setOrCreate(KEY_FAVORITES_SELECTED, this.isFavoritesSelected())
@@ -963,11 +964,13 @@ return result
         }
       }
     }
-    // 持久化授权激活完成后重新校验歌曲可访问性：
-    // initToAppStorage 首次 checkSongsAccessibility 时激活可能尚未完成，
-    // 会导致已持久化授权的歌曲被误判为不可用（首页灰色），此处纠正回来。
-    // 注意：歌词字段不再参与该校验（校验里已彻底移除清空逻辑），
-    // 因此「误判」只影响 isAvailable，不会再有数据被销毁。
+    // 持久化授权激活完成后重新校验歌曲可访问性，并刷新 KEY_SONG_LIST 及 LIBRARY_REVISION
+    // 让 UI 感知最新状态（即使 checkSongsAccessibility 未检测到变化也执行刷新）。
+    // 注意：歌词字段不再参与该校验（校验里已彻底移除清空逻辑），因此「误判」只影响
+    // isAvailable，不会再有数据被销毁。
     this.checkSongsAccessibility()
+    // 强制刷新 AppStorage 队列与版本号：确保首页 @StorageLink(KEY_SONG_LIST) 和 @Watch
+    // 立即拿到最新 isAvailable，避免播放队列与歌曲列表状态不一致。
+    this.scheduleSaveSongs(this.getSongs())
   }
 }
