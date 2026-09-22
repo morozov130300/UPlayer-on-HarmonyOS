@@ -968,9 +968,47 @@ return result
     // 让 UI 感知最新状态（即使 checkSongsAccessibility 未检测到变化也执行刷新）。
     // 注意：歌词字段不再参与该校验（校验里已彻底移除清空逻辑），因此「误判」只影响
     // isAvailable，不会再有数据被销毁。
-    this.checkSongsAccessibility()
-    // 强制刷新 AppStorage 队列与版本号：确保首页 @StorageLink(KEY_SONG_LIST) 和 @Watch
-    // 立即拿到最新 isAvailable，避免播放队列与歌曲列表状态不一致。
-    this.scheduleSaveSongs(this.getSongs())
+    this.repairAvailabilityAndRefresh()
+  }
+
+  /**
+   * 修复不可用歌曲的可访问性状态并刷新 AppStorage。
+   * 覆盖场景：之前构建版本在授权激活前错误地把全部歌曲标为不可用并已落库，
+   * 激活完成后需要重新检测并把实际可访问的歌曲恢复为可用状态。
+   */
+  private repairAvailabilityAndRefresh(): void {
+    const songs: SongInfo[] = this.getSongs()
+    let changed: boolean = false
+    for (let i: number = 0; i < songs.length; i++) {
+      const accessPath: string = songs[i].uri.length > 0 ? songs[i].uri : songs[i].filePath
+      try {
+        const file: fs.File = fs.openSync(accessPath, fs.OpenMode.READ_ONLY)
+        fs.closeSync(file)
+        if (!songs[i].isAvailable) {
+          songs[i].isAvailable = true
+          changed = true
+        }
+      } catch {
+        if (songs[i].isAvailable) {
+          songs[i].isAvailable = false
+          changed = true
+        }
+      }
+    }
+    let unavailableCount: number = 0
+    for (let i: number = 0; i < songs.length; i++) {
+      if (!songs[i].isAvailable) unavailableCount++
+    }
+    if (unavailableCount > 0) {
+      Logger.warn(TAG, `repairAvailabilityAndRefresh total=${songs.length} unavailable=${unavailableCount}`)
+    }
+    // 无论是否变化都刷新 AppStorage，确保 UI 立刻拿到最新状态
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SONG_LIST, songs.slice())
+    const revision: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_LIBRARY_REVISION) ?? 0
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_LIBRARY_REVISION, revision + 1)
+    if (changed) {
+      this.saveSongs(songs)
+      this.flushPendingSongWrites()
+    }
   }
 }
