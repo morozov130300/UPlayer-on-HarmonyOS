@@ -306,10 +306,8 @@ export class AudioMetadataService {
    * 安全提取 err 的可读字段，处理 BusinessError / Error 属性可能不可枚举的情况。
    */
   private describeError(err: Object): string {
-    const code: number | undefined = (err as BusinessError).code
-    const message: string | undefined = (err as BusinessError).message
-    const nameVal: string | undefined = (err as { name?: string }).name
-    return `code=${String(code ?? 'n/a')} msg=${message ?? 'n/a'} name=${nameVal ?? ''}`
+    const e2: BusinessError = err as BusinessError
+    return `code=${String(e2.code ?? 'n/a')} msg=${e2.message ?? 'n/a'}`
   }
 
   private async fetchFallbackCover(song: SongInfo, sourcePath: string,
