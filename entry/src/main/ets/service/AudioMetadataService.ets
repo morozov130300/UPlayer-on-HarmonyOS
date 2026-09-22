@@ -376,14 +376,14 @@ export class AudioMetadataService {
       this.recordFallbackFailure()
       return undefined
     } catch (err) {
-      Logger.info(TAG, `Album cover fallback result for ${song.fileName}: ${this.describeError(err as Object)}`)
+      Logger.warn(TAG, `Album cover fallback failed for ${song.fileName}: ${JSON.stringify(err)}`)
       return undefined
     } finally {
       if (source !== undefined) {
         try {
           await source.release()
         } catch (err) {
-          Logger.warn(TAG, `ImageSource release failed: ${this.describeError(err as Object)}`)
+          Logger.warn(TAG, `ImageSource release failed: ${JSON.stringify(err)}`)
         }
       }
       if (halfOpen) this.fallbackProbeActive = false

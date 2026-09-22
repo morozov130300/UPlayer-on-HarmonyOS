@@ -191,7 +191,7 @@ export function extractSongMetadata(uri: string): Promise<Record<string, string>
     }
     const errVal: string | undefined = record['error']
     if (errVal !== undefined) {
-      Logger.warn(TAG, `metadata extract failed uri=${uri}: ${errVal}`)
+      Logger.error(TAG, `extract failed uri=${uri}: ${errVal}`)
       return undefined
     }
     return record
@@ -258,10 +258,10 @@ export function extractCoverData(uri: string): Promise<ArrayBuffer | undefined> 
   })
 }
 
-// 主线程提取 fallback 封面（AVMetadataExtractor）：
-// 注意：AVMetadataExtractor 不支持在 TaskPool 子线程中运行，必须主线程执行
+// TaskPool 并行提取 fallback 封面（AVMetadataExtractor）：
 // 成功返回 JPEG 字节（最长边 640）；确认无封面返回空 ArrayBuffer；异常返回 undefined
-export async function extractFallbackCoverSync(fd: number, fileSize: number): Promise<ArrayBuffer | undefined> {
+@Concurrent
+async function fetchFallbackCoverTask(fd: number, fileSize: number): Promise<ArrayBuffer | undefined> {
   let extractor: media.AVMetadataExtractor | undefined = undefined
   let cover: image.PixelMap | undefined = undefined
   try {
@@ -302,7 +302,7 @@ export async function extractFallbackCoverSync(fd: number, fileSize: number): Pr
 }
 
 // fallback 封面提取（主线程开 fd 传 fd，任务在 worker 中执行）
-export async function fetchFallbackCoverData(uri: string): Promise<ArrayBuffer | undefined> {
+export function fetchFallbackCoverData(uri: string): Promise<ArrayBuffer | undefined> {
   let file: fs.File
   try {
     file = fs.openSync(uri, fs.OpenMode.READ_ONLY)
@@ -322,15 +322,20 @@ export async function fetchFallbackCoverData(uri: string): Promise<ArrayBuffer |
     }
     return Promise.resolve(undefined)
   }
-  try {
-    const data: ArrayBuffer | undefined = await extractFallbackCoverSync(openedFile.fd, fileSize)
-    return data
-  } finally {
+  return taskpool.execute(fetchFallbackCoverTask, openedFile.fd, fileSize).then((raw: Object): ArrayBuffer | undefined => {
+    if (raw === undefined || raw === null) {
+      return undefined
+    }
+    return raw as ArrayBuffer
+  }).catch((err: Error): ArrayBuffer | undefined => {
+    Logger.error(TAG, `fallback cover taskpool failed uri=${uri}: ${JSON.stringify(err)}`)
+    return undefined
+  }).finally((): void => {
     try {
       fs.closeSync(openedFile)
     } catch (closeErr) {
     }
-  }
+  })
 }
 
 // 将提取结果应用到 SongInfo（仅在主线程调用）
