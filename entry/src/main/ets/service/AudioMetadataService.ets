@@ -209,7 +209,7 @@ export class AudioMetadataService {
     try {
       const data: ArrayBuffer | undefined = await extractCoverData(sourcePath)
       if (data !== undefined && data.byteLength > 0) {
-        source = image.createImageSource(new Uint8Array(data))
+        source = image.createImageSource(data)
         const cover: image.PixelMap = await this.decodeCover(source, maxEdge)
         Logger.debug(TAG, `Album cover native hit for ${song.fileName}, size=${data.byteLength}`)
         return cover
@@ -337,7 +337,6 @@ export class AudioMetadataService {
     if (halfOpen && this.fallbackProbeActive) return undefined
     if (halfOpen) this.fallbackProbeActive = true
     let source: image.ImageSource | undefined = undefined
-    let tempPath: string = ''
     try {
       const data: ArrayBuffer | undefined = await fetchFallbackCoverData(sourcePath)
       if (data === undefined) {
@@ -356,18 +355,9 @@ export class AudioMetadataService {
       this.fallbackFailureCount = 0
       this.fallbackCircuitUntil = 0
       this.negativeCoverCache.delete(sourcePath)
-      // 先解码再缓存：写临时文件再创建 ImageSource（buffer 版 createImageSource 在此设备返回 undefined）
-      try {
-        const ctx = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
-        const fileDir: string = ctx?.filesDir ?? '/data/storage/el2/base/haps/entry/files'
-        tempPath = fileDir + '/cover_' + Date.now() + '_' + song.id + '.jpg'
-        const tmpFile: fs.File = fs.openSync(tempPath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC)
-        fs.writeSync(tmpFile.fd, new Uint8Array(data))
-        fs.closeSync(tmpFile)
-        source = image.createImageSource(tempPath)
-      } catch (e1) {
-        Logger.warn(TAG, `createImageSource via temp file failed for ${song.fileName}: ${String(e1)}`)
-        try { if (tempPath.length > 0) fs.unlinkSync(tempPath) } catch (_) {}
+      source = image.createImageSource(data)
+      if (source === undefined) {
+        Logger.error(TAG, `createImageSource returned undefined for ${song.fileName}, dataLen=${data.byteLength}`)
         this.recordFallbackFailure()
         return undefined
       }
@@ -400,9 +390,6 @@ export class AudioMetadataService {
         } catch (err) {
           Logger.warn(TAG, `ImageSource release failed: ${JSON.stringify(err)}`)
         }
-      }
-      if (tempPath.length > 0) {
-        try { fs.unlinkSync(tempPath) } catch (_) { /* ignore */ }
       }
       if (halfOpen) this.fallbackProbeActive = false
     }
