@@ -25,3 +25,41 @@
 -compact
 # 移除 console.* 语句；本项目日志统一走 hilog，不受影响
 -remove-log
+
+# libuplayer.so 原生模块接口名（属性混淆会改名导致 native 侧找不到接口：
+# 封面 getAlbumCover/cacheAlbumCover 与 native 播放 play/pause 等全部失效，
+# 曾表现为 "d48 is not callable" / "n30 is not callable"），必须全局保留
+-keep-property-name
+play
+resume
+pause
+stop
+seek
+setEqualizerEnable
+setEqualizerEnabled
+isEqualizerEnabled
+setEqualizerBands
+getEqualizerBands
+setPcmCaptureCallback
+clearPcmCaptureCallback
+setSpeed
+setVolume
+isEqualizerSupported
+isPlaying
+isCompleted
+isReady
+hasFailed
+getPosition
+getDuration
+getAlbumCover
+cacheAlbumCover
+clearAlbumCoverCache
+
+# TaskPool @Concurrent 任务函数及跨模块导出的封面提取入口：
+# taskpool 跨线程按名序列化，混淆改名存在失效风险，按官方推荐保留
+-keep-global-name
+extractMetadataTask
+extractCoverDataTask
+fetchFallbackCoverTask
+extractCoverData
+fetchFallbackCoverData
