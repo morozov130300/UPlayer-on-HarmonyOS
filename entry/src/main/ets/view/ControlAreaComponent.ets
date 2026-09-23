@@ -17,7 +17,7 @@ import { MediaTools } from '../common/utils/mediautils/MediaTools';
 import { WindowInfo } from '../common/utils/WindowUtil';
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
 import { audio } from '@kit.AudioKit';
-import { SuppressWarnings, SuppressWarningsType } from '@kit.BasicServicesKit';
+import { BusinessError, SuppressWarnings, SuppressWarningsType } from '@kit.BasicServicesKit';
 import { AlbumCover } from '../component/AlbumCover';
 import { AVSessionController } from '../common/utils/mediautils/AVSessionController';
 import { DataService } from '../service/DataService';
@@ -214,6 +214,7 @@ export struct ControlAreaComponent {
     AVSessionController.getInstance().updatePlayMode(this.playMode);
     Logger.info(TAG, 'playModeIndex is' + this.playModeIndex);
     try {
+      // openToast 返回 Promise，失败走异步 reject：必须用 .catch 兜底，try/catch 只能拦同步抛出
       this.promptAction.openToast({
         message: `${this.playMode === MusicPlayMode.ORDER ?
           (this.context?.resourceManager?.getStringSync($r('app.string.sequential_playback').id) ?? '') :
@@ -221,6 +222,8 @@ export struct ControlAreaComponent {
             (this.context?.resourceManager?.getStringSync($r('app.string.random_playback').id) ?? '') :
             (this.context?.resourceManager?.getStringSync($r('app.string.single_playback').id) ?? '')}`,
         systemMaterial: this.toastGlassMaterial(),
+      }).catch((err: BusinessError) => {
+        Logger.error(TAG, `openToast rejected: code=${err.code}, message=${err.message}`);
       });
     } catch (err) {
       Logger.error(TAG, `openToast failed: ${JSON.stringify(err)}`);

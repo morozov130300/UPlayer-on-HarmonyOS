@@ -19,6 +19,8 @@ import {
   GLASS_THICKNESS_STEPS,
   glassThicknessLabel,
   isLiquidGlassAvailable,
+  isLowPowerGlassDevice,
+  showCapabilityToast,
   topBlurRadiusFromStrength
 } from '../common/utils/GlassUtil'
 import { StyleConstants } from '../common/constants/StyleConstants'
@@ -275,6 +277,19 @@ struct SettingsDetailPage {
       return true
     }
     return this.glassFrostOverlay
+  }
+
+  // 开关依赖液态玻璃能力的设置项时的能力提示：设备不支持液态玻璃（或低算力设备上
+  // Toast 材质被 createToastGlassMaterial 主动禁用）时，弹简短 Toast 说明该设置在本机
+  // 不会生效；仅在打开开关时提示（关闭开关不消耗能力），能力正常时不做任何事
+  private warnGlassCapabilityUnavailable(isOn: boolean, settingName: string, requireToastMaterial: boolean): void {
+    if (!isOn) {
+      return
+    }
+    if (isLiquidGlassAvailable() && (!requireToastMaterial || !isLowPowerGlassDevice())) {
+      return
+    }
+    showCapabilityToast(this.getUIContext().getPromptAction(), `当前设备能力不足，「${settingName}」不会生效`)
   }
 
   // 与 Index.glassBlurRadius 同公式：模糊强度 × 0.5
@@ -1177,6 +1192,7 @@ struct SettingsDetailPage {
           .onChange((isOn: boolean) => {
             this.settings.interactive = isOn
             this.interactive = isOn
+            this.warnGlassCapabilityUnavailable(isOn, '交互形变', false)
             this.updateSetting()
           })
       }
@@ -1372,6 +1388,7 @@ struct SettingsDetailPage {
               .onChange((isOn: boolean) => {
                 this.settings.colorInvert = isOn
                 this.colorInvert = isOn
+                this.warnGlassCapabilityUnavailable(isOn, '自动反色', false)
                 this.updateSetting()
               })
           }
@@ -1398,6 +1415,7 @@ struct SettingsDetailPage {
               .onChange((isOn: boolean) => {
                 this.settings.applyShadow = isOn
                 this.applyShadow = isOn
+                this.warnGlassCapabilityUnavailable(isOn, '材质阴影', false)
                 this.updateSetting()
               })
           }
@@ -1480,6 +1498,7 @@ struct SettingsDetailPage {
               .onChange((isOn: boolean) => {
                 this.settings.systemComponentGlass = isOn
                 this.systemComponentGlass = isOn
+                this.warnGlassCapabilityUnavailable(isOn, '系统组件液态玻璃', true)
                 this.updateSetting()
               })
           }
