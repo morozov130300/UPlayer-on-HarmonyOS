@@ -87,9 +87,49 @@ export class AudioMetadataService {
   private negativeCoverCache: Map<string, number> = new Map<string, number>()
   // 封面任务生命周期 generation：应用销毁/缓存清理后使排队与执行中的任务失效
   private coverLifecycleGeneration: number = 0
+  // 文件访问就绪门：DataService.activatePersistedUris 异步激活 fileShare 持久授权期间
+  // （曲库越大越慢，实测 16 URI 约 300ms），首页封面可能抢跑打开用户文件而全量 EPERM
+  // （13900001）→ fallback 熔断 → 封面卡死空白。封面加载前等待开门；授权流程异常挂起时
+  // 超时保底放行，不阻塞封面链路。
+  private static fileAccessReady: boolean = false
+  private static fileAccessWaiters: Array<() => void> = []
+  private static readonly FILE_ACCESS_WAIT_TIMEOUT_MS: number = 5000
 
   public static getInstance(): AudioMetadataService {
     return AudioMetadataService.instance
+  }
+
+  // 由 DataService 在 fileShare 持久授权激活完成后调用，放行所有等待中的封面加载
+  notifyFileAccessReady(): void {
+    if (AudioMetadataService.fileAccessReady) {
+      return
+    }
+    AudioMetadataService.fileAccessReady = true
+    const waiters: Array<() => void> = AudioMetadataService.fileAccessWaiters
+    AudioMetadataService.fileAccessWaiters = []
+    for (let i = 0; i < waiters.length; i++) {
+      waiters[i]()
+    }
+  }
+
+  private async waitFileAccessReady(): Promise<void> {
+    if (AudioMetadataService.fileAccessReady) {
+      return
+    }
+    return new Promise<void>((resolve: () => void) => {
+      const waiters: Array<() => void> = AudioMetadataService.fileAccessWaiters
+      const timerId: number = setTimeout(() => {
+        const index: number = waiters.indexOf(resolve)
+        if (index >= 0) {
+          waiters.splice(index, 1)
+        }
+        resolve()
+      }, AudioMetadataService.FILE_ACCESS_WAIT_TIMEOUT_MS)
+      waiters.push(() => {
+        clearTimeout(timerId)
+        resolve()
+      })
+    })
   }
 
   async acquireAlbumCover(song: SongInfo, maxEdge: number = AlbumCoverSize.LARGE,
@@ -204,6 +244,7 @@ export class AudioMetadataService {
 
   private async loadAlbumCover(song: SongInfo, maxEdge: number,
     priority: CoverPriority): Promise<image.PixelMap | undefined> {
+    await this.waitFileAccessReady()
     const sourcePath: string = song.uri.length > 0 ? song.uri : song.filePath
     const nativeResult: CoverDataResult = await extractCoverData(sourcePath)
     if (nativeResult.ok) {
@@ -359,6 +400,15 @@ export class AudioMetadataService {
         tempPath = result.tempPath
       }
       if (result.errorMessage.length > 0) {
+        // demuxer 不支持属于永久性格式判定（如通话录音 m4a）：进负缓存、不计熔断，
+        // 避免此类文件集中的曲库触发熔断、饿死正常文件的封面请求
+        if (result.errorMessage.indexOf('format unsupported') >= 0 ||
+          result.errorMessage.indexOf('demuxer parsing failed') >= 0) {
+          Logger.debug(TAG,
+            `Album cover format unsupported for ${song.fileName}, mark absent`)
+          this.negativeCoverCache.set(sourcePath, new Date().getTime())
+          return undefined
+        }
         // taskpool 内部异常（打开/提取/写临时文件失败等），按失败处理；
         // 不加入负缓存（负缓存仅针对确认无封面的情况），允许下次重试
         Logger.warn(TAG,

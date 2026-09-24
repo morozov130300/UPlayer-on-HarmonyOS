@@ -9,6 +9,7 @@ import Logger from '../common/utils/Logger'
 import { BusinessError } from '@kit.BasicServicesKit'
 import { MusicPlayMode } from '../common/constants/PlayerConstants'
 import { normalizeGlassThickness } from '../common/utils/GlassUtil'
+import { AudioMetadataService } from './AudioMetadataService'
 
 const TAG = 'DataService'
 
@@ -924,6 +925,7 @@ return result
   async activatePersistedUris(): Promise<void> {
     if (!canIUse('SystemCapability.FileManagement.AppFileService.FolderAuthorization')) {
       Logger.info(TAG, 'activatePersistedUris: FolderAuthorization not supported')
+      AudioMetadataService.getInstance().notifyFileAccessReady()
       return
     }
     const songs: SongInfo[] = this.getSongs()
@@ -969,6 +971,8 @@ return result
     // 注意：歌词字段不再参与该校验（校验里已彻底移除清空逻辑），因此「误判」只影响
     // isAvailable，不会再有数据被销毁。
     this.repairAvailabilityAndRefresh()
+    // 放行等待授权激活的封面加载（修复启动竞态：封面抢跑 open 全量 EPERM 触发熔断）
+    AudioMetadataService.getInstance().notifyFileAccessReady()
   }
 
   /**
