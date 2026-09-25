@@ -16,22 +16,6 @@
 HarmonyOS图标库/
 ```
 
-#### 使用方式(仅供参考)
-
-在 ArkTS 代码中使用图标：
-
-```typescript
-// 方式一：使用 Image 组件加载 SVG
-Image($r('app.media.图标文件名'))
-  .width(24)
-  .height(24)
-
-// 方式二：在 @Builder 或 UI 中引用
-Image($r('app.media.ic_celiakeyboard_menu'))
-  .width(20)
-  .height(20)
-```
-
 #### 禁止事项
 
 - ❌ **严禁使用任何其他图标库**（如 Material Icons、Font Awesome、自定义图标等）
@@ -199,25 +183,6 @@ hdc shell hilog
 首次使用 → GetToolSpec(Git) → 获取 schema → CallDeferredTool(Git, {operation: "status"}) → 后续直接使用 CallDeferredTool
 ```
 
-**调用示例：**
-
-```json
-// 查看状态
-{"tool_name": "Git", "args": {"operation": "status"}}
-
-// 查看最近提交
-{"tool_name": "Git", "args": {"operation": "log", "args": "--oneline -5"}}
-
-// 暂存文件
-{"tool_name": "Git", "args": {"operation": "add", "args": "."}}
-
-// 提交
-{"tool_name": "Git", "args": {"operation": "commit", "args": "-m \"提交信息\""}}
-
-// 推送
-{"tool_name": "Git", "args": {"operation": "push"}}
-```
-
 #### 禁止事项
 
 - ❌ **严禁使用 ExecCommand 调用 `git` 命令**
@@ -323,12 +288,6 @@ hdc shell hilog
 ```json
 {"action": "Delete", "path": "<临时目录路径>", "recursive": true}
 ```
-
-#### 示例场景
-
-1. 使用 Write 工具创建临时配置文件 → 读取内容 → 删除临时文件 → 继续后续操作
-2. 创建临时测试脚本验证逻辑 → 验证完成 → 立即删除
-3. 生成中间产物用于展示 → 展示完毕 → 立即删除
 
 **核心原则：不留痕迹，不占空间，不造成混淆。**
 
