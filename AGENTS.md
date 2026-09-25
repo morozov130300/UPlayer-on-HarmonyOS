@@ -59,7 +59,7 @@ Image($r('app.media.ic_celiakeyboard_menu'))
 
 ### ⚠️ 编译必须由用户手动执行
 
-**智能体无法自行编译项目。所有编译操作必须由用户在本地 DevEco Studio 中执行，然后将编译输出粘贴给智能体。**
+**智能体无法自行编译项目。所有编译操作必须由用户在本地 DevEco 中执行，然后将编译输出粘贴给智能体。**
 
 原因：编译依赖用户本地的环境变量、SDK 路径、DevEco Studio 版本等配置，智能体端无法保证环境一致，直接调用必然失败。
 
@@ -75,43 +75,6 @@ Image($r('app.media.ic_celiakeyboard_menu'))
 **智能体绝对禁止在 `D:\DevEco Studio\sdk\` 下创建、删除或修改任何文件/目录（包括 junction、symlink、缓存等）。**
 
 遇到 SDK 路径不匹配、版本找不到等编译环境问题，只能给出排查建议，由用户自己决定如何处理，绝不能直接操作 SDK 目录。
-
-### ⚠️ Windows 命令行编译限制
-
-**hvigor 在 Windows 下无法正确处理 junction（符号链接）目录，导致编译失败。**
-
-问题表现：
-
-- 错误码：`00303312`
-- 错误信息：`Cannot find the corresponding SDK version under the specified SDK path`
-- 原因：`readdirSync({ withFileTypes: true })` 对 junction 返回 `isDirectory: false`，hvigor 会跳过这些目录
-
-解决方案：
-
-1. **优先使用 DevEco Studio IDE 编译** — IDE 内部有独立的 SDK 路径解析逻辑
-2. 不要尝试通过创建 junction 修复此问题
-
-```powershell
-# 用户执行的构建命令（仅供参考）
-& "D:\DevEco Studio\tools\node\node.exe" "D:\DevEco Studio\tools\hvigor\bin\hvigorw.js" --mode module -p module=entry@default -p product=default -p requiredDeviceType=2in1 -p buildMode=debug assembleHap --analyze=normal --parallel --incremental --daemon
-```
-
-### 参数说明（来自官方文档）
-
-| 参数 | 说明 |
-| --- | --- |
-| `--mode module` | 模块模式构建 |
-| `-p module=entry@default` | 指定要构建的模块和目标（必填） |
-| `-p product=default` | 指定产品配置 |
-| `-p requiredDeviceType=2in1` | 指定目标设备类型（PC/平板，2in1） |
-| `-p buildMode=debug` | debug/release 构建模式 |
-| `assembleHap` | 构建 HAP 包目标 |
-| `--analyze=normal` | 正常分析模式 |
-| `--parallel` | 并行编译 |
-| `--incremental` | 增量编译 |
-| `--daemon` | 使用守护进程 |
-
-> **注意**：必须包含 `-p module=entry@default` 和 `-p requiredDeviceType=2in1`，否则 hvigor 无法解析 SDK 版本导致构建失败（错误码 00303312）。
 
 ## 真机调试命令
 
@@ -288,98 +251,11 @@ hdc shell hilog
 | 设备适配 | 一多适配断点、deviceType 判断、窗口断点 API |
 | **任何不确定的问题** | **包括但不限于编译、代码、规范、布局、工具链等所有领域，必须查！** |
 
-#### 查询方式
-
-项目已配置华为「开发者知识 MCP」代理（`mcp-proxy.js`），通过 `searchDocuments` 工具可检索官方文档，直接在智能体向模型端暴露的工具即可调用。
-
 **标准查询流程：**
 
 1. 先用 MCP 搜索工具查询相关 API 文档
 2. 以搜索结果为准，禁止自行推断
 3. 若 MCP 无结果，再尝试 WebSearch 查找华为开发者文档链接
-
-### MCP 工具使用方法（重要：deferred 工具调用规范）
-
-项目通过 BitFun MCP 工具连接华为「开发者知识 MCP」，提供两个工具：`searchDocuments` 和 `getDocumentsById`。这两个工具是 **deferred 工具**，必须遵循以下调用顺序：
-
-#### ⚠️ Deferred 工具调用规则
-
-**必须先调用 `GetToolSpec` 加载工具 schema，再调用 `CallDeferredTool` 执行。** 不可直接调用 `CallDeferredTool`，否则会返回 `invalid_arguments` 错误。
-
-**正确步骤：**
-
-1. 第一次调用时，先执行 `GetToolSpec` 传入工具名（如 `mcp_______________searchDocuments`），获取工具的完整输入/输出 schema
-2. schema 加载成功后，该工具在对话中缓存在线，后续可直接用 `CallDeferredTool` 调用
-3. 只有当系统提示 schema 过期或不可用时，才需要重新调用 `GetToolSpec`
-
-```
-首次使用 → GetToolSpec(工具名) → 获取 schema → CallDeferredTool(工具名, 参数) → 后续直接使用 CallDeferredTool
-```
-
-#### searchDocuments（搜索文档）
-
-用于按关键词搜索华为官方文档，返回匹配的文档片段列表。
-
-**入参结构：**
-
-```json
-{
-  "SearchDocumentsReq": {
-    "query": "搜索词"
-  }
-}
-```
-
-**示例调用：**
-
-```json
-{
-  "SearchDocumentsReq": {
-    "query": "Grid 布局"
-  }
-}
-```
-
-**返回值：**
-
-- `code: 0` 表示成功，`resultList` 为匹配文档列表
-- 每项包含 `content`（片段内容）、`parent`（文档唯一标识）、`name`（文档标题）
-- `parent` 字段是调用 `getDocumentsById` 的入参
-
-**使用场景：**
-
-- 搜索特定 API、组件、装饰器的用法和示例
-- 查找最佳实践、FAQ、开发指南
-- 确认 API Level、设备兼容性、版本差异
-
-#### getDocumentsById（获取完整文档）
-
-用于通过 `searchDocuments` 返回的 `parent` 标识获取文档完整内容。每次最多可检索 10 个文档。
-
-**入参结构：**
-
-```json
-{
-  "GetDocumentsByIdRequest": {
-    "names": ["文档唯一标识1", "文档唯一标识2"]
-  }
-}
-```
-
-**示例调用：**
-
-```json
-{
-  "GetDocumentsByIdRequest": {
-    "names": ["document/cn/harmonyos-guides/web-same-layer"]
-  }
-}
-```
-
-**返回值：**
-
-- `code: 0` 表示成功，`resultList` 为完整文档列表
-- 每项包含 `name`（文档标识）、`title`（文档标题）、`uri`（官方链接）、`content`（Markdown 完整内容）
 
 **典型工作流：**
 
