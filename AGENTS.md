@@ -1,43 +1,22 @@
-# UPlayer 智能体规范
+# UPlayer 记忆
 
-## 强制规则（最高优先级）
+## 2026-09-26 Tab栏迁移
 
-### 1. MCP 查询
-**每次对话都必须调用 MCP**，不查就回答视为严重错误。
+### 变更
+- `Index.ets`: `Tabs` → `HdsTabs`（@kit.UIDesignKit）
+- 布局由断点决定：小屏 sm/md 上下叠，大屏 lg/xl 左右分栏
+- 玻璃厚度仅控制材质：glassThickness=0 时 pill 形状不变，无材质效果
+- 播控条在 `miniBarBuilder()`，小屏时降级为自建 `playerControl`
 
-### 2. 图标规范
-所有图标**必须**来自 `HarmonyOS图标库/` 目录，禁止使用任何外部图标库或 emoji。
+### 关键代码
+- `getHdsBarFloatingStyle()`: 仅检查 `tabStyle` 和 `isLiquidGlassAvailable()`，不再因 `glassThickness <= 0` 返回 undefined
+- `build()`: `.barHeight(44).barWidth(228)` 固定值，pill 形状不受玻璃厚度影响
+- `tabLabelBuilder`: 指示器内嵌 Stack（径向渐变 + shadow）
+- `miniBarBuilder`: 播控条内容
 
-### 3. 行为准则
-- 只做用户明确要求的任务，禁止擅自行动
-- 涉及决策时必须先问用户，不等用户确认不得执行
-- 完成后立即停止，不追加额外操作
+### Tab 文字间距
+- `top margin = 3vp`（图标底部到文字顶部）
 
-### 4. 编译调试流程
-**智能体完成代码修改后，执行编译调试：**
-1. `devecocli run --device "<设备名>" --module entry` 编译并部署到真机
-2. 连接设备：`& "D:\DevEco Studio\sdk\default\openharmony\toolchains\hdc.exe" tconn <IP>:<端口>`
-3. 截图验证：`devecocli ui screenshot --device "<设备名>" --path "<路径>"`
-4. 清理截图：`Remove-Item <截图路径>`
-
-**真机 IP**：`10.82.231.201:37391`（HUAWEI Mate X7 典藏版）
-
-### 5. Git 推送
-所有改动完成后立即推送远程：
-```
-git add .
-git commit -m "描述"
-git push
-```
-
-### 6. 工具优先
-优先使用工具（Read/Grep/Glob/Edit/Delete），只有在工具不可用时才用命令行。
-
-### 7. 临时文件清理
-任务完成后立即删除所有临时文件。
-
-## 项目信息
-- 名称：UPlayer
-- 技术栈：HarmonyOS NEXT API 26, ArkTS
-- bundleName：`cn.edu.whut.uplayer`
-- HAP 产物：`entry/build/default/outputs/default/`
+### 调试设备
+- HUAWEI Mate X7 典藏版: `10.82.231.201:37391`
+- bundleName: `cn.edu.whut.uplayer`
