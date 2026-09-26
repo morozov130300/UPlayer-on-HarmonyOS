@@ -365,35 +365,40 @@ export struct ControlAreaComponent {
   build() {
     Column() {
       Column() {
-        Slider({
-          min: 0, max: this.max, step: 1, style: SliderStyle.NONE, value: this.value
-        })
-          .trackThickness(this.trackThickness)
-          .selectedColor('#FFFFFF')
-          .trackColor('#B3FFFFFF')
-          .enabled(this.max > 0)
-          .focusable(false)
-          .onChange((value: number, mode: SliderChangeMode) => {
-            if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-              this.avPlayerService.seek(value);
-              this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
-                this.trackThickness = 6;
-                this.songTimeFontSize = 10;
-                this.songTimeFontColor = '#B3FFFFFF';
-              });
-            }
-            if (mode === SliderChangeMode.Moving) {
-              this.currentTime = MediaTools.msToCountdownTime(value);
-              this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
-                this.trackThickness = 10;
-                this.songTimeFontSize = 12;
-                this.songTimeFontColor = '#FFFFFF';
-              });
-            }
-            this.pageShowTime = 0;
+        Column() {
+          Slider({
+            min: 0, max: this.max, step: 1, style: SliderStyle.NONE, value: this.value
           })
-          .height($r('app.float.slider_height'))
-          .width(StyleConstants.FULL_WIDTH)
+            .trackThickness(this.trackThickness)
+            .selectedColor('#FFFFFF')
+            .trackColor('#B3FFFFFF')
+            .enabled(this.max > 0)
+            .focusable(false)
+            .onChange((value: number, mode: SliderChangeMode) => {
+              if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+                this.avPlayerService.seek(value);
+                this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
+                  this.trackThickness = 6;
+                  this.songTimeFontSize = 10;
+                  this.songTimeFontColor = '#B3FFFFFF';
+                });
+              }
+              if (mode === SliderChangeMode.Moving) {
+                this.currentTime = MediaTools.msToCountdownTime(value);
+                this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
+                  this.trackThickness = 10;
+                  this.songTimeFontSize = 12;
+                  this.songTimeFontColor = '#FFFFFF';
+                });
+              }
+              this.pageShowTime = 0;
+            })
+            .height($r('app.float.slider_height'))
+            .width(StyleConstants.FULL_WIDTH)
+        }
+        .height(this.scaledSize(32))
+        .width(StyleConstants.FULL_WIDTH)
+        .alignItems(HorizontalAlign.Center)
         Row() {
           Text(this.currentTime)
             .fontColor(this.songTimeFontColor)
