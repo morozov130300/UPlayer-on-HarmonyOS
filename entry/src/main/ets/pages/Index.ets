@@ -620,6 +620,7 @@ struct MainPage {
       .barPosition(BarPosition.End)
       .barOverlap(true)
       .barHeight(this.scaledSize(56))
+      .barWidth(this.scaledSize(228))
       .scrollable(true)
       .barFloatingStyle(this.getBarFloatingStyle())
       .barBackgroundBlurStyle(this.tabStyle !== 'immersive' || this.getBarFloatingStyle() === undefined
@@ -631,7 +632,10 @@ struct MainPage {
       .width('100%')
       .height('100%')
 
-      // 播控条：悬浮在 Tabs 之上，小屏（sm/md）置于 TabBar 正上方，大屏（lg/xl）与 TabBar 同高并靠右
+      // 播控条：悬浮在 Tabs 之上，小屏（sm/md）置于 TabBar 正上方居中，大屏（lg/xl）与 TabBar 同高并靠右
+      // TabBar 底部 margin=28vp，高度=56vp → TabBar 顶部距 Tabs 底部 = 84vp
+      // sm/md: playerControl bottom = 84 + 4(间距) = 88vp
+      // lg/xl: playerControl bottom = 28 + 4(间距) = 32vp（与 TabBar 底部同高）
       Row() {
         this.playerControl()
       }
@@ -640,8 +644,8 @@ struct MainPage {
         ? FlexAlign.Center : FlexAlign.End)
       .position({
         bottom: this.breakpoint === 'sm' || this.breakpoint === 'md'
-          ? this.scaledSize(56) + this.scaledSize(28) + this.bottomSafeHeight
-          : this.scaledSize(28) + this.bottomSafeHeight + this.scaledSize(4),
+          ? this.scaledSize(88) + this.bottomSafeHeight
+          : this.scaledSize(32) + this.bottomSafeHeight,
         right: this.breakpoint === 'sm' || this.breakpoint === 'md' ? 0 : 16,
       })
       .zIndex(10)
