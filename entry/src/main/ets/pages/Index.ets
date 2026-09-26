@@ -820,9 +820,10 @@ struct MainPage {
       .width('100%')
       .height('100%')
 
-      // 小屏/折叠态（sm/md）：系统迷你栏无法纵向堆叠，改用自建播控条叠放。
-      // 大屏态（lg/xl）：系统 miniBar 左右分栏；glassThickness=0 时 miniBar 也为 undefined，同样需要自建播控条。
-      if ((this.breakpoint === 'sm' || this.breakpoint === 'md') || this.glassThickness <= 0) {
+      // 小屏（sm/md）：系统迷你栏无法纵向堆叠，改用自建播控条叠放在 TabBar 上方。
+      // 大屏（lg/xl）：系统 miniBar 左右并排展示播控，不渲染自建 playerControl。
+      // 布局完全由断点决定，与 glassThickness 无关。
+      if (this.breakpoint === 'sm' || this.breakpoint === 'md') {
         Column() {
           this.playerControl()
         }

@@ -405,15 +405,21 @@ export struct PlaylistContent {
       .height('100%')
 
       if (!this.isEditMode && (this.isPlusVisible || !this.settings.plusButtonScrollHide)) {
-        // 加号组件：整体替换为 ic_public_add_norm_filled 图标库图标（自带圆形的实心加号），
-        // 不再手绘蓝色圆底 + Text('+')，直接以图标本体作为悬浮按钮
-        Image($r('app.media.ic_public_add_norm_filled'))
-          .width(this.scaledSize(44)).height(this.scaledSize(44))
-          .fillColor(this.primaryColor)
-          .position({ bottom: this.bottomContentPadding + this.scaledSize(12), right: this.scaledSize(20) })
-          .transition({ type: TransitionType.Insert, opacity: 0, scale: { x: 0.5, y: 0.5 } })
-          .transition({ type: TransitionType.Delete, opacity: 0, scale: { x: 0.5, y: 0.5 } })
-          .onClick(() => { this.onPlusClick() })
+        // 加号组件：ic_public_add_norm_filled 是「实心圆 + 加号镂空」，镂空处会漏背景光；
+        // 下方垫一个同样大小（40vp）的玻璃盘（磨砂 + 压暗），加号镂空处透出玻璃而非背景光
+        Stack({ alignContent: Alignment.Center }) {
+          Row()
+            .width(this.scaledSize(40)).height(this.scaledSize(40))
+            .borderRadius(this.scaledSize(20))
+            .backgroundEffect({ radius: 24, color: 'rgba(0,0,0,0.35)' })
+          Image($r('app.media.ic_public_add_norm_filled'))
+            .width(this.scaledSize(40)).height(this.scaledSize(40))
+            .fillColor(this.primaryColor)
+        }
+        .position({ bottom: this.bottomContentPadding + this.scaledSize(12), right: this.scaledSize(20) })
+        .transition({ type: TransitionType.Insert, opacity: 0, scale: { x: 0.5, y: 0.5 } })
+        .transition({ type: TransitionType.Delete, opacity: 0, scale: { x: 0.5, y: 0.5 } })
+        .onClick(() => { this.onPlusClick() })
       }
     }
     .width('100%')
