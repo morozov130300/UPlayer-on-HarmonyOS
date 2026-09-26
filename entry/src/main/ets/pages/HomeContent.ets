@@ -894,27 +894,21 @@ export struct HomeContent {
       }
 
       if (!this.isMultiSelectMode && (this.isPlusVisible || !this.settings.plusButtonScrollHide)) {
-        Row() {
-          Image($r('app.media.ic_public_add_norm_filled'))
-          .width(this.scaledSize(28)).height(this.scaledSize(28))
-          .fillColor('#FFFFFF')
-        }
-        .width(this.scaledSize(40)).height(this.scaledSize(40))
-        .borderRadius(this.scaledSize(20))
-        .backgroundColor(this.primaryColor)
-        .shadow({ radius: 10, color: ColorHelper.hexWithAlpha(this.primaryColor, '44'), offsetY: 4 })
-        // 智感握姿：只切换贴边方向，不改变与底部的间距，避免握姿切换时按钮上下跳动。
-        // 读 plusOnLeft（动画态）而不是 holdingHandLeft，切换才会走滑动动画
-        .position({
-          bottom: this.bottomContentPadding + this.scaledSize(12),
-          left: this.plusOnLeft ? this.scaledSize(20) : undefined,
-          right: this.plusOnLeft ? undefined : this.scaledSize(20)
-        })
-        .justifyContent(FlexAlign.Center)
-        .alignItems(VerticalAlign.Center)
-        .transition({ type: TransitionType.Insert, opacity: 0, scale: { x: 0.5, y: 0.5 } })
-        .transition({ type: TransitionType.Delete, opacity: 0, scale: { x: 0.5, y: 0.5 } })
-        .onClick(() => { this.onPlusClick() })
+        // 加号组件：整体替换为 ic_public_add_norm_filled 图标库图标（自带圆形的实心加号），
+        // 不再手绘蓝色圆底 + 内嵌图标，直接以图标本体作为悬浮按钮
+        Image($r('app.media.ic_public_add_norm_filled'))
+          .width(this.scaledSize(44)).height(this.scaledSize(44))
+          .fillColor(this.primaryColor)
+          // 智感握姿：只切换贴边方向，不改变与底部的间距，避免握姿切换时按钮上下跳动。
+          // 读 plusOnLeft（动画态）而不是 holdingHandLeft，切换才会走滑动动画
+          .position({
+            bottom: this.bottomContentPadding + this.scaledSize(12),
+            left: this.plusOnLeft ? this.scaledSize(20) : undefined,
+            right: this.plusOnLeft ? undefined : this.scaledSize(20)
+          })
+          .transition({ type: TransitionType.Insert, opacity: 0, scale: { x: 0.5, y: 0.5 } })
+          .transition({ type: TransitionType.Delete, opacity: 0, scale: { x: 0.5, y: 0.5 } })
+          .onClick(() => { this.onPlusClick() })
       }
     }
     .width('100%')

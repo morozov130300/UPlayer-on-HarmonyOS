@@ -231,16 +231,11 @@ struct MainPage {
   }
 
   private getHdsBarFloatingStyle(): HdsTabsFloatingStyle | undefined {
-    if (this.tabStyle !== 'immersive' || !isLiquidGlassAvailable()
-      || this.glassThickness <= 0) {
+    if (this.tabStyle !== 'immersive' || !isLiquidGlassAvailable()) {
       return undefined
     }
-    // Hds 材质档位（MaterialLevel）是「算力/性能档」，不是视觉厚薄档：
-    // 官方 FAQ 明确 hdsMaterial 不提供与 uiMaterial.ImmersiveStyle 对等的厚薄配置，
-    // 组件最终效果由 materialType + materialLevel 共同决定，且 SMOOTH 档在低算力下
-    // 会退化为纯色/边框/阴影（观感≈磨砂模糊）。若把「玻璃厚度滑轨」映射到该档位，
-    // 厚度调到较低档（如 20）就会在高端芯片上强制走低算力 SMOOTH，玻璃失效。
-    // 故页签栏统一用 ADAPTIVE：由系统按设备实际算力出最高质量玻璃，低算力设备自动降档兜底。
+    // glassThickness === 0 时仍返回 pill 布局（形状与 miniBar 完全一致），
+    // 仅不设置 systemMaterialEffect（无玻璃材质效果）；其余断点/宽度逻辑不变。
     const level: hdsMaterial.MaterialLevel = hdsMaterial.MaterialLevel.ADAPTIVE
     const useLight: boolean = this.tabTouchIndicator === 'light'
     const lightColor: ResourceColor | undefined = useLight
@@ -256,7 +251,7 @@ struct MainPage {
     // 改由 build() 中自建的 playerControl 播控条叠放在 TabBar 上方（见 controlBarBottomMargin）。
     // 大屏态（lg/xl/xxl）：保留系统迷你栏（默认展开、与页签栏左右并排）。
     let miniBar: HdsTabsMiniBar | undefined = undefined
-    if (!smallScreen) {
+    if (!smallScreen && this.glassThickness > 0) {
       const miniBarWidthVp: number = Math.min(328, barWidthVp) // 迷你栏最大宽度不超过 328vp（官方约束）
       miniBar = {
         miniBarBuilder: (): void => {
@@ -269,13 +264,13 @@ struct MainPage {
     }
     return {
       adaptToHandedness: true,
-      systemMaterialEffect: {
+      systemMaterialEffect: this.glassThickness > 0 ? {
         materialType: hdsMaterial.MaterialType.IMMERSIVE,
         materialLevel: level,
-      },
+      } : undefined,
       barBottomMargin: this.bottomSafeHeight > 0 ? 28 : 28,
       lightColor: lightColor,
-      barWidth: (smallScreen || !hasBarWidth) ? undefined :
+      barWidth: (smallScreen || !hasBarWidth || this.glassThickness <= 0) ? undefined :
         { smallWidth: barWidthVp, mediumWidth: barWidthVp, largeWidth: barWidthVp },
       miniBar: miniBar,
     } as HdsTabsFloatingStyle
@@ -814,8 +809,8 @@ struct MainPage {
       }
       .barPosition(BarPosition.End)
       .barOverlap(this.getHdsBarFloatingStyle() !== undefined)
-      .barHeight(this.getHdsBarFloatingStyle() !== undefined ? this.scaledSize(44) : 56)
-      .barWidth(this.getHdsBarFloatingStyle() !== undefined ? this.scaledSize(228) : '100%')
+      .barHeight(this.scaledSize(44))
+      .barWidth(this.scaledSize(228))
       .scrollable(true)
       .barFloatingStyle(this.getHdsBarFloatingStyle())
       .barBackgroundBlurStyle(this.tabStyle !== 'immersive' || this.getHdsBarFloatingStyle() === undefined
@@ -829,7 +824,8 @@ struct MainPage {
 
       // 小屏/折叠态（sm/md）：系统迷你栏无法纵向堆叠（页签栏被系统收折且接管布局），
       // 改用自建播控条叠放在 TabBar 正上方；大屏态不渲染，沿用系统迷你栏。
-      if (this.breakpoint === 'sm' || this.breakpoint === 'md') {
+      // glassThickness=0 时无迷你栏，同样需要自建播控条。
+      if ((this.breakpoint === 'sm' || this.breakpoint === 'md') || this.glassThickness <= 0) {
         Column() {
           this.playerControl()
         }

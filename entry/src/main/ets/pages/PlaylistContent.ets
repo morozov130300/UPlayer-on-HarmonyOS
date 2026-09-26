@@ -405,22 +405,15 @@ export struct PlaylistContent {
       .height('100%')
 
       if (!this.isEditMode && (this.isPlusVisible || !this.settings.plusButtonScrollHide)) {
-        Row() {
-          Text('+')
-            .fontSize(this.scaledSize(32))
-            .fontColor('#FFFFFF')
-            .fontWeight(FontWeight.Bold)
-        }
-        .width(this.scaledSize(40)).height(this.scaledSize(40))
-        .borderRadius(this.scaledSize(20))
-        .backgroundColor(this.primaryColor)
-        .shadow({ radius: 10, color: ColorHelper.hexWithAlpha(this.primaryColor, '44'), offsetY: 4 })
-        .position({ bottom: this.bottomContentPadding + this.scaledSize(12), right: this.scaledSize(20) })
-        .justifyContent(FlexAlign.Center)
-        .alignItems(VerticalAlign.Center)
-        .transition({ type: TransitionType.Insert, opacity: 0, scale: { x: 0.5, y: 0.5 } })
-        .transition({ type: TransitionType.Delete, opacity: 0, scale: { x: 0.5, y: 0.5 } })
-        .onClick(() => { this.onPlusClick() })
+        // 加号组件：整体替换为 ic_public_add_norm_filled 图标库图标（自带圆形的实心加号），
+        // 不再手绘蓝色圆底 + Text('+')，直接以图标本体作为悬浮按钮
+        Image($r('app.media.ic_public_add_norm_filled'))
+          .width(this.scaledSize(44)).height(this.scaledSize(44))
+          .fillColor(this.primaryColor)
+          .position({ bottom: this.bottomContentPadding + this.scaledSize(12), right: this.scaledSize(20) })
+          .transition({ type: TransitionType.Insert, opacity: 0, scale: { x: 0.5, y: 0.5 } })
+          .transition({ type: TransitionType.Delete, opacity: 0, scale: { x: 0.5, y: 0.5 } })
+          .onClick(() => { this.onPlusClick() })
       }
     }
     .width('100%')
