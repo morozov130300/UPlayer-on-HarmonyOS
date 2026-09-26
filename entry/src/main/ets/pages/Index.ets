@@ -1,7 +1,6 @@
 import { curves, uiMaterial } from '@kit.ArkUI'
 import {
-  HdsTabs, HdsTabsController, HdsTabsFloatingStyle, HdsTabsMiniBar, HdsBarStyle, HdsBarLayoutMode,
-  HdsTabsBarChangeMode, hdsMaterial
+  HdsTabs, HdsTabsController, HdsTabsFloatingStyle, HdsTabsMiniBar, hdsMaterial
 } from '@kit.UIDesignKit'
 import { common, ConfigurationConstant } from '@kit.AbilityKit'
 import { deviceInfo } from '@kit.BasicServicesKit'
@@ -213,34 +212,24 @@ struct MainPage {
       : undefined
     // HdsBarWidthRangeOptions 不支持百分比单位（官方约束），'40%' 会导致宽度解析失败（迷你栏宽度归 0）。
     // 改为按主容器实测宽度 × 0.4 的 vp 值；首次布局前宽度未知（0）时不设置，走系统分档默认。
+    const smallScreen: boolean = this.breakpoint === 'sm' || this.breakpoint === 'md'
     const barWidthVp: number = Math.round(this.mainWidthVp * 0.4)
-    const miniBarWidthVp: number = Math.min(328, barWidthVp) // 迷你栏最大宽度不超过 328vp（官方约束）
     const hasBarWidth: boolean = this.mainWidthVp > 0
-    const miniBar: HdsTabsMiniBar = {
-      miniBarBuilder: (): void => {
-        this.miniBarBuilder()
-      },
-      enableMiniBarBackground: true,
-      miniBarWidth: hasBarWidth ?
-        { smallWidth: miniBarWidthVp, mediumWidth: miniBarWidthVp, largeWidth: miniBarWidthVp } : undefined,
-      // 小屏态下系统在开合切换（NORMAL 模式）时可能把迷你栏重置回折叠样式，
-      // 这里兜底拉回展开，保证播控条始终以展开样式显示
-      onBarStyleChange: (miniStyle: HdsBarStyle, _tabStyle: HdsBarStyle, _miniW: number, _tabW: number,
-        _mode: HdsTabsBarChangeMode): void => {
-        Logger.info(TAG,
-          `onBarStyleChange miniStyle=${miniStyle} tabStyle=${_tabStyle} miniW=${_miniW} tabW=${_tabW} mode=${_mode} bp=${this.breakpoint}`)
-        if ((this.breakpoint === 'sm' || this.breakpoint === 'md') && miniStyle === HdsBarStyle.COLLAPSE) {
-          Logger.info(TAG, 'applyMiniBarStyle(EXPAND) pulled back by app')
-          this.tabsController.applyMiniBarStyle(HdsBarStyle.EXPAND)
-        }
-      },
-    }
-    // 宽度 <600vp（sm/md：小屏设备、折叠屏折叠态）时系统默认迷你栏为折叠样式且与 TabBar 左右并排；
-    // 需求要求：迷你栏展开并纵向叠放在 TabBar 上方（大宽屏保持默认左右布局）
-    if (this.breakpoint === 'sm' || this.breakpoint === 'md') {
-      miniBar.miniBarStyle = HdsBarStyle.EXPAND
-      miniBar.barLayoutMode = HdsBarLayoutMode.VERTICAL
-      Logger.info(TAG, `floating style: VERTICAL + EXPAND applied (bp=${this.breakpoint})`)
+    // 小屏/折叠态（sm/md）：系统会把页签栏强制收折成小胶囊并接管迷你栏布局（无 API 可阻止，
+    // barLayoutMode=VERTICAL 在此场景不生效），所以这里不下发系统迷你栏，
+    // 改由 build() 中自建的 playerControl 播控条叠放在 TabBar 上方（见 controlBarBottomMargin）。
+    // 大屏态（lg/xl/xxl）：保留系统迷你栏（默认展开、与页签栏左右并排）。
+    let miniBar: HdsTabsMiniBar | undefined = undefined
+    if (!smallScreen) {
+      const miniBarWidthVp: number = Math.min(328, barWidthVp) // 迷你栏最大宽度不超过 328vp（官方约束）
+      miniBar = {
+        miniBarBuilder: (): void => {
+          this.miniBarBuilder()
+        },
+        enableMiniBarBackground: true,
+        miniBarWidth: hasBarWidth ?
+          { smallWidth: miniBarWidthVp, mediumWidth: miniBarWidthVp, largeWidth: miniBarWidthVp } : undefined,
+      }
     }
     return {
       adaptToHandedness: true,
@@ -250,8 +239,8 @@ struct MainPage {
       },
       barBottomMargin: this.bottomSafeHeight > 0 ? 28 : 28,
       lightColor: lightColor,
-      barWidth: hasBarWidth ?
-        { smallWidth: barWidthVp, mediumWidth: barWidthVp, largeWidth: barWidthVp } : undefined,
+      barWidth: (smallScreen || !hasBarWidth) ? undefined :
+        { smallWidth: barWidthVp, mediumWidth: barWidthVp, largeWidth: barWidthVp },
       miniBar: miniBar,
     } as HdsTabsFloatingStyle
   }
@@ -802,6 +791,19 @@ struct MainPage {
       .width('100%')
       .height('100%')
 
+      // 小屏/折叠态（sm/md）：系统迷你栏无法纵向堆叠（页签栏被系统收折且接管布局），
+      // 改用自建播控条叠放在 TabBar 正上方；大屏态不渲染，沿用系统迷你栏。
+      if (this.breakpoint === 'sm' || this.breakpoint === 'md') {
+        Column() {
+          this.playerControl()
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Center)
+        .padding({ left: this.scaledSize(16), right: this.scaledSize(16) })
+        .margin({ bottom: this.controlBarBottomMargin() })
+        .hitTestBehavior(HitTestMode.Default)
+      }
+
       // 导入进度浮层：置顶显示，未导入时不拦截触摸
       ImportProgressOverlay()
     }
@@ -866,6 +868,12 @@ struct MainPage {
     }
     // lg/xl：playerControl 与 TabBar 大致同高，88vp ≈ 28(barBottomMargin) + 56(bar height) + 4(间距)
     return this.scaledSize(88) + this.bottomSafeHeight
+  }
+
+  // 小屏态自建播控条的底部偏移：压在 TabBar 顶部正上方。
+  // TabBar 悬浮于底部：barBottomMargin(28) + barHeight(scaled 44) 到屏幕底；再加 4vp 间距。
+  private controlBarBottomMargin(): number {
+    return 28 + this.scaledSize(44) + this.scaledSize(4)
   }
 
   private glassBlurRadius(): number {
