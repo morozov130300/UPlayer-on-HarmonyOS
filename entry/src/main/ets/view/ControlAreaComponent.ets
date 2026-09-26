@@ -17,6 +17,8 @@ import { MediaTools } from '../common/utils/mediautils/MediaTools';
 import { WindowInfo } from '../common/utils/WindowUtil';
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
 import { audio } from '@kit.AudioKit';
+import { AVCastPicker } from '@kit.AVSessionKit';
+import { AudioRoutingService } from '../service/AudioRoutingService';
 import { BusinessError, SuppressWarnings, SuppressWarningsType } from '@kit.BasicServicesKit';
 import { AlbumCover } from '../component/AlbumCover';
 import { AVSessionController } from '../common/utils/mediautils/AVSessionController';
@@ -82,6 +84,17 @@ export struct ControlAreaComponent {
   private volumeManager: audio.AudioVolumeManager | undefined = undefined;
   private isVolumeListenerRegistered: boolean = false;
   private isSeekingTimer: number = -1;
+  // 系统媒体音量最大格数（getMaxVolumeByStream，API 20+）：手机常见 15，PC 可能是 20/100，
+  // 归一化显示与 AVVolumePanel 档位映射都必须用它，不能硬编码
+  @State maxVolumeLevel: number = 15;
+  private volumeHideTimer: number = -1;
+  // 「更多」面板：输出设备选择（AudioRoutingManager + AudioDeviceEnhanceManager 系统接口）
+  @State isShowOutputDevicePanel: boolean = false;
+  @State outputDeviceList: audio.AudioDeviceDescriptors = [];
+  @State currentOutputDeviceLabel: string = '';
+  @StorageProp(AppStorageKeyConstants.KEY_OUTPUT_DEVICE_REVISION) @Watch('onOutputDeviceRevision')
+  private outputDeviceRevision: number = 0;
+  private audioRoutingService: AudioRoutingService = AudioRoutingService.getInstance();
 
   private settingTextColor(): ResourceColor {
     const themeMode: string = AppStorage.get<string>('uplayer_theme_mode') ?? 'system'
@@ -123,7 +136,7 @@ export struct ControlAreaComponent {
     }
   }
   private streamVolumeChangeCallback = (streamVolumeEvent: audio.StreamVolumeEvent): void => {
-    const maxVol: number = 15;
+    const maxVol: number = this.maxVolumeLevel > 0 ? this.maxVolumeLevel : 15;
     const newVol: number = streamVolumeEvent.volume / maxVol;
     this.volume = newVol;
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_VOLUME, newVol);

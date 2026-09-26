@@ -1963,6 +1963,22 @@ struct SettingsDetailPage {
       .borderRadius(this.scaledSize(10))
 
       Column() {
+        this.toggleRow('耳机断开时继续播放', this.settings.continuePlayOnHeadsetUnplug, (val: boolean) => {
+          this.settings.continuePlayOnHeadsetUnplug = val
+          this.updateSetting()
+        })
+        Text('关闭时：拔出耳机/断开蓝牙会自动暂停播放并提示；开启时：系统默认切回扬声器继续播放')
+          .fontSize(this.scaledFont(11))
+          .fontColor(this.settingSubTextColor())
+          .width('100%')
+          .margin({ top: this.scaledSize(2) })
+      }
+      .width('100%')
+      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
+
+      Column() {
         Row() {
           this.subTitleRow('播放速度')
           Blank()

@@ -58,6 +58,8 @@ export class AppSettingsData {
   playSpeed: number = 1
   folderSortMode: string = 'name'
   fadeInOut: boolean = false
+  // 耳机/蓝牙等输出设备断开时是否继续播放（系统默认路由到扬声器）；关闭则断开时自动暂停并提示
+  continuePlayOnHeadsetUnplug: boolean = false
   fontSizeScale: number = 1.0
   displaySizeScale: number = 1.0
   tabStyle: string = 'classic'
@@ -641,6 +643,8 @@ return result
       s.glassFrostOverlay = rawGlassFrostOverlay !== undefined ? rawGlassFrostOverlay as boolean : false
       let rawTabIndicatorVisible: Object | undefined = r['tabIndicatorVisible']
       s.tabIndicatorVisible = rawTabIndicatorVisible !== undefined ? rawTabIndicatorVisible as boolean : true
+      let rawContinuePlayOnHeadsetUnplug: Object | undefined = r['continuePlayOnHeadsetUnplug']
+      s.continuePlayOnHeadsetUnplug = rawContinuePlayOnHeadsetUnplug !== undefined ? rawContinuePlayOnHeadsetUnplug as boolean : false
       if (eqBandsMigrated) {
         this.saveSettings(s)
       }
@@ -683,9 +687,11 @@ return result
     r['systemComponentGlass'] = settings.systemComponentGlass
     r['glassFrostOverlay'] = settings.glassFrostOverlay
     r['tabIndicatorVisible'] = settings.tabIndicatorVisible
+    r['continuePlayOnHeadsetUnplug'] = settings.continuePlayOnHeadsetUnplug
     this.getPref().preferencesPut(KEY_SETTINGS, JSON.stringify(r))
     AppStorage.setOrCreate(KEY_SETTINGS, settings)
     AppStorage.setOrCreate('uplayer_fade_in_out', settings.fadeInOut)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CONTINUE_PLAY_ON_UNPLUG, settings.continuePlayOnHeadsetUnplug)
   }
 
   // ═══════════ Simple string flags ═══════════
@@ -897,6 +903,7 @@ return result
     AppStorage.setOrCreate('uplayer_primary_color', settings.primaryColor)
     AppStorage.setOrCreate('uplayer_theme_mode', settings.themeMode)
     AppStorage.setOrCreate('uplayer_fade_in_out', settings.fadeInOut)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CONTINUE_PLAY_ON_UNPLUG, settings.continuePlayOnHeadsetUnplug)
     AppStorage.setOrCreate('uplayer_font_size_scale', settings.fontSizeScale)
     AppStorage.setOrCreate('uplayer_display_size_scale', settings.displaySizeScale)
     AppStorage.setOrCreate('uplayer_tab_style', settings.tabStyle)

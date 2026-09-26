@@ -57,4 +57,10 @@ export class AppStorageKeyConstants {
   // 窗口隐藏时各周期性 UI 状态更新检查此键并暂停写入，避免隐藏窗口请求 vsync 收不到帧刷告警；
   // 键缺失时按可见处理
   public static readonly KEY_UI_ACTIVE: string = BaseConstants.KEY_PREFIX + 'UiActive'
+  // 耳机/蓝牙输出设备断开时是否继续播放（设置页「播放」区开关，默认关）：
+  // 关闭时 AudioRoutingService 检测到断开会暂停播放并提示
+  public static readonly KEY_CONTINUE_PLAY_ON_UNPLUG: string = BaseConstants.KEY_PREFIX + 'ContinuePlayOnUnplug'
+  // 输出设备列表/首选设备变化计数器：AudioRoutingService 在 availableDeviceChange 时 +1，
+  // 「更多」面板的「输出设备」行 @StorageProp @Watch 到变化后刷新设备名与列表
+  public static readonly KEY_OUTPUT_DEVICE_REVISION: string = BaseConstants.KEY_PREFIX + 'OutputDeviceRevision'
 }

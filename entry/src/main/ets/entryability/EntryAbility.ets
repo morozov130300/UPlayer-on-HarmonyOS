@@ -12,6 +12,7 @@ import { LiveViewService } from '../service/LiveViewService';
 import Logger from '../common/utils/Logger';
 import { AudioMetadataService } from '../service/AudioMetadataService';
 import { HoldingHandService } from '../service/HoldingHandService';
+import { AudioRoutingService } from '../service/AudioRoutingService';
 import { SongDatabase } from '../service/SongDatabase';
 import { ShareService } from '../service/ShareService';
 import { ColorConversion } from '../common/utils/ColorConversion';
@@ -79,6 +80,8 @@ export default class EntryAbility extends UIAbility {
       Logger.error(TAG, `DataService init failed: ${JSON.stringify(err)}`);
     }).then((): void => {
     const settings: AppSettingsData = DataService.getInstance().initToAppStorage();
+    // 音频输出设备路由监听（耳机断开自动暂停 / 输出设备切换入口）
+    AudioRoutingService.getInstance().init();
     // 智感握姿：按落库设置决定是否订阅 holdingHandChanged（首页加号与设置页预览共用同一份结果）
     HoldingHandService.getInstance().syncWithSetting();
     AVSessionController.getInstance().initAVSession();

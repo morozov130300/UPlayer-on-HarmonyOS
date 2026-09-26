@@ -80,6 +80,12 @@ export class AVSessionController {
       } catch (e) {
         Logger.error(TAG, `setBackgroundPlayMode failed: ${JSON.stringify(e)}`);
       }
+      // 系统接口：声明本会话支持投播（url-cast），AVCastPicker 投送设备列表才会包含本应用
+      try {
+        await this.AVSession.setExtras({ requireAbilityList: ['url-cast'] });
+      } catch (e) {
+        Logger.warn(TAG, `setExtras url-cast failed: ${JSON.stringify(e)}`);
+      }
       this.setAVQueueItems();
       Logger.info(TAG, `session create succeeded : sessionId : ${this.AVSession.sessionId}`);
     } catch (err) {
