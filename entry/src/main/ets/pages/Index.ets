@@ -1,5 +1,8 @@
 import display from '@ohos.display'
 import { curves, uiMaterial } from '@kit.ArkUI'
+import {
+  HdsTabs, HdsTabsController, HdsTabsFloatingStyle, HdsTabsMiniBar, HdsBarStyle, HdsBarLayoutMode, hdsMaterial
+} from '@kit.UIDesignKit'
 import { common, ConfigurationConstant } from '@kit.AbilityKit'
 import { deviceInfo } from '@kit.BasicServicesKit'
 import { KeyCode } from '@kit.InputKit'
@@ -69,6 +72,8 @@ struct MainPage {
   @StorageLink('uplayer_glass_thickness') glassThickness: number = DEFAULT_GLASS_STYLE
   @StorageLink('uplayer_light_color_mode') lightColorMode: string = 'theme'
   @StorageLink('uplayer_tab_touch_indicator') tabTouchIndicator: string = 'light'
+  @StorageLink('uplayer_tab_indicator_opacity') tabIndicatorOpacity: number = 50
+  @StorageLink('uplayer_tab_indicator_visible') tabIndicatorVisible: boolean = true
   // 是否存在鼠标/触控板设备（决定「白色蒙版」功能是否存在：无鼠标时 mask 降级为 off）
   @StorageLink(KEY_HAS_POINTER_DEVICE) hasPointerDevice: boolean = false
   @StorageLink('uplayer_interactive') interactive: boolean = true
@@ -87,8 +92,9 @@ struct MainPage {
   @StorageProp(AppStorageKeyConstants.KEY_LYRIC_REVISION) @Watch('loadCurrentLyrics') lyricRevision: number = 0
   // 主窗口可见性（EntryAbility 前后台写入）：窗口隐藏时停掉封面旋转定时器，避免持续请求 vsync
   @StorageProp(AppStorageKeyConstants.KEY_UI_ACTIVE) @Watch('onUiActiveChange') uiActive: boolean = true
-  private tabsController: TabsController = new TabsController()
+  private tabsController: HdsTabsController = new HdsTabsController()
   private tabWidth: number = 72
+  private indicatorInset: number = 4
   private rotationTimer: number = -1
   private dataService: DataService = DataService.getInstance()
   private poetryService: PoetryService = PoetryService.getInstance()
@@ -194,27 +200,46 @@ struct MainPage {
     }
   }
 
-  private getBarFloatingStyle(): FloatingTabBarStyle | undefined {
+  private getHdsBarFloatingStyle(): HdsTabsFloatingStyle | undefined {
     if (this.tabStyle !== 'immersive' || !isLiquidGlassAvailable()
       || this.glassThickness <= 0) {
       return undefined
     }
+    // glassThickness 映射到 hdsMaterial MaterialLevel
+    let level: hdsMaterial.MaterialLevel = hdsMaterial.MaterialLevel.ADAPTIVE
+    if (this.glassThickness <= 30) {
+      level = hdsMaterial.MaterialLevel.SMOOTH
+    } else if (this.glassThickness <= 65) {
+      level = hdsMaterial.MaterialLevel.GENTLE
+    } else {
+      level = hdsMaterial.MaterialLevel.EXQUISITE
+    }
     const useLight: boolean = this.tabTouchIndicator === 'light'
-    const lightColor: string | undefined = useLight
+    const lightColor: ResourceColor | undefined = useLight
       ? (this.lightColorMode === 'white' ? '#FFFFFF' : this.primaryColor)
       : undefined
-    // 构造 ImmersiveMaterial（类型精确，无需 cast），与设置页预览器保持同源
-    const material: uiMaterial.ImmersiveMaterial | undefined =
-      createTabImmersiveMaterial(this.glassThickness, this.interactive,
-        lightColor, this.colorInvert, this.applyShadow)
-    if (material === undefined) {
-      return undefined
+    const miniBar: HdsTabsMiniBar = {
+      miniBarBuilder: (): void => {
+        this.miniBarBuilder()
+      },
+      enableMiniBarBackground: true,
+    }
+    // 宽度 <600vp（sm/md：小屏设备、折叠屏折叠态）时系统默认迷你栏为折叠样式且与 TabBar 左右并排；
+    // 需求要求：迷你栏展开并纵向叠放在 TabBar 上方（大宽屏保持默认左右布局）
+    if (this.breakpoint === 'sm' || this.breakpoint === 'md') {
+      miniBar.miniBarStyle = HdsBarStyle.EXPAND
+      miniBar.barLayoutMode = HdsBarLayoutMode.VERTICAL
     }
     return {
       adaptToHandedness: true,
-      systemMaterial: material,
-      barBottomMargin: this.bottomSafeHeight > 0 ? 28 : 28
-    } as FloatingTabBarStyle
+      systemMaterialEffect: {
+        materialType: hdsMaterial.MaterialType.IMMERSIVE,
+        materialLevel: level,
+      },
+      barBottomMargin: this.bottomSafeHeight > 0 ? 28 : 28,
+      lightColor: lightColor,
+      miniBar: miniBar,
+    } as HdsTabsFloatingStyle
   }
 
   // 经典样式或 API 26 不可用时的 TabBar 毛玻璃：映射 glassBlurStrength → BlurStyle
@@ -234,18 +259,45 @@ struct MainPage {
 
   @Builder
   private tabLabelBuilder(index: number, name: string, icon: Resource) {
-    Column() {
-      Image(icon)
-        .height(this.scaledSize(18))
-        .fillColor(this.currentIndex === index ? this.selectedTabContentColor() : $r('app.color.tab_content_secondary'))
-        .scale({
-          x: this.currentIndex === index ? 1.15 : 1.0, y: this.currentIndex === index ? 1.15 : 1.0
-        })
-      Text(name)
-        .fontSize(9)
-        .fontColor(this.currentIndex === index ? this.selectedTabContentColor() : $r('app.color.tab_content_secondary'))
-        .margin({ top: this.scaledSize(2) })
-    }.width(this.scaledSize(this.tabWidth)).height(this.scaledSize(40)).justifyContent(FlexAlign.Center)
+    Stack() {
+      // 指示器光晕：选中 tab 时渲染径向渐变 + 蓝色光晕
+      if (this.tabIndicatorVisible && this.currentIndex === index) {
+        Row()
+          .width(this.scaledSize(this.tabWidth - 2 * this.indicatorInset))
+          .height(this.scaledSize(36))
+          .borderRadius(this.scaledSize(18))
+          .shadow({
+            radius: 14,
+            color: this.indicatorGradientColor(0.8),
+            offsetX: 0,
+            offsetY: 0
+          })
+          .radialGradient({
+            center: ['50%', '50%'],
+            radius: '75%',
+            colors: [
+              [this.indicatorGradientColor(0.95), 0.0],
+              [this.indicatorGradientColor(0.75), 0.58],
+              [this.indicatorGradientColor(0.55), 1.0],
+            ]
+          })
+      }
+
+      Column() {
+        Image(icon)
+          .height(this.scaledSize(18))
+          .fillColor(this.currentIndex === index ? this.selectedTabContentColor() : $r('app.color.tab_content_secondary'))
+          .scale({
+            x: this.currentIndex === index ? 1.15 : 1.0, y: this.currentIndex === index ? 1.15 : 1.0
+          })
+        Text(name)
+          .fontSize(9)
+          .fontColor(this.currentIndex === index ? this.selectedTabContentColor() : $r('app.color.tab_content_secondary'))
+          .margin({ top: this.scaledSize(2) })
+      }.width(this.scaledSize(this.tabWidth)).height(this.scaledSize(40)).justifyContent(FlexAlign.Center)
+    }
+    .width(this.scaledSize(this.tabWidth))
+    .height(this.scaledSize(40))
   }
 
   @Builder
@@ -385,6 +437,113 @@ struct MainPage {
       radius: this.isGlowing ? 60 : 50,
       color: this.isGlowing ? ColorHelper.hexWithAlpha(this.primaryColor, '66') : $r('app.color.shadow_color'),
       offsetY: 5
+    })
+  }
+
+  @Builder
+  miniBarBuilder() {
+    Row({ space: this.scaledSize(12) }) {
+      if (this.currentSongTitle.length > 0) {
+        AlbumCover({
+          song: this.currentSong(),
+          coverWidth: this.scaledSize(32),
+          coverHeight: this.scaledSize(32),
+          coverRadius: this.scaledSize(16)
+        }).width(this.scaledSize(32)).height(this.scaledSize(32)).rotate({ angle: this.rotationAngle }).onClick(() => {
+          this.openPlayer()
+        })
+      } else {
+        Stack() {
+          Image($r('app.media.ic_public_music'))
+            .width(this.scaledSize(20))
+            .height(this.scaledSize(20))
+            .fillColor($r('app.color.player_icon_inactive_color'))
+        }
+        .width(this.scaledSize(32))
+        .height(this.scaledSize(32))
+        .borderRadius(this.scaledSize(16))
+        .rotate({ angle: this.rotationAngle })
+        .onClick(() => {
+          this.openPlayer()
+        })
+      }
+
+      Column() {
+        if (this.currentSongTitle.length > 0) {
+          Column() {
+            Marquee({
+              start: this.isTitleMarqueeRunning,
+              step: 2,
+              loop: -1,
+              fromStart: true,
+              src: this.currentSongTitle
+            })
+              .fontSize(Math.round(13 * this.fontSizeScale))
+              .fontColor($r('app.color.text_primary'))
+              .fontWeight(FontWeight.Medium)
+              .width('100%')
+              .onFinish(() => {
+                this.isTitleMarqueeRunning = false
+              })
+            Marquee({
+              start: this.isArtistMarqueeRunning,
+              step: 1,
+              loop: -1,
+              fromStart: true,
+              src: this.currentSongArtist.length > 0 ? this.currentSongArtist : '未知歌手'
+            })
+              .fontSize(Math.round(10 * this.fontSizeScale))
+              .fontColor($r('app.color.text_sixty_color'))
+              .width('100%')
+              .onFinish(() => {
+                this.isArtistMarqueeRunning = false
+              })
+          }.width('100%').alignItems(HorizontalAlign.Start)
+        } else {
+          Column() {
+            Text('未播放')
+              .fontSize(Math.round(11 * this.fontSizeScale))
+              .fontColor($r('app.color.text_twenty_color'))
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+          }.width('100%').alignItems(HorizontalAlign.Start)
+        }
+      }
+      .layoutWeight(this.songInfoWeight())
+      .margin({ left: this.scaledSize(8), right: this.scaledSize(8) })
+      .onClick(() => {
+        this.openPlayer()
+      })
+
+      Image($r('app.media.ic_public_play_last'))
+        .height(this.scaledSize(18))
+        .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
+          $r('app.color.player_icon_inactive_color'))
+        .onClick(() => {
+          this.playPrevious()
+        })
+      Image(this.isPlaying ? $r('app.media.ic_public_play') : $r('app.media.ic_public_pause'))
+        .height(this.scaledSize(22))
+        .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
+          $r('app.color.player_icon_inactive_color'))
+        .onClick(() => {
+          this.togglePlay()
+        })
+      Image($r('app.media.ic_public_play_next'))
+        .height(this.scaledSize(18))
+        .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
+          $r('app.color.player_icon_inactive_color'))
+        .onClick(() => {
+          this.playNext()
+        })
+    }
+    .height(this.scaledSize(40))
+    .alignSelf(ItemAlign.Center)
+    .padding({
+      left: this.scaledSize(12),
+      right: this.scaledSize(16),
+      top: this.scaledSize(4),
+      bottom: this.scaledSize(4)
     })
   }
 
@@ -539,7 +698,7 @@ struct MainPage {
 
   build() {
     Stack() {
-      Tabs({ controller: this.tabsController, index: this.currentIndex }) {
+      HdsTabs({ controller: this.tabsController, index: this.currentIndex }) {
         TabContent() {
           Stack({ alignContent: Alignment.Top }) {
             HomeContent({
@@ -623,8 +782,8 @@ struct MainPage {
       .barHeight(this.scaledSize(56))
       .barWidth(this.scaledSize(228))
       .scrollable(true)
-      .barFloatingStyle(this.getBarFloatingStyle())
-      .barBackgroundBlurStyle(this.tabStyle !== 'immersive' || this.getBarFloatingStyle() === undefined
+      .barFloatingStyle(this.getHdsBarFloatingStyle())
+      .barBackgroundBlurStyle(this.tabStyle !== 'immersive' || this.getHdsBarFloatingStyle() === undefined
         ? this.getBarBackgroundBlur() : BlurStyle.NONE)
       .animationDuration(StyleConstants.ANIMATION_SWIPER_DURATION)
       .onChange((index: number) => {
@@ -632,24 +791,6 @@ struct MainPage {
       })
       .width('100%')
       .height('100%')
-
-      // 播控条：悬浮在 Tabs 之上，小屏（sm/md）置于 TabBar 正上方居中，大屏（lg/xl）与 TabBar 同高并靠右
-      // TabBar 底部 margin=28vp，高度=56vp → TabBar 顶部距 Tabs 底部 = 84vp
-      // sm/md: playerControl bottom = 84 + 4(间距) = 88vp
-      // lg/xl: playerControl bottom = 28 + 4(间距) = 32vp（与 TabBar 底部同高）
-      Row() {
-        this.playerControl()
-      }
-      .width('100%')
-      .justifyContent(this.breakpoint === 'sm' || this.breakpoint === 'md'
-        ? FlexAlign.Center : FlexAlign.End)
-      .position({
-        bottom: this.breakpoint === 'sm' || this.breakpoint === 'md'
-          ? this.scaledSize(88) + this.bottomSafeHeight
-          : this.scaledSize(32) + this.bottomSafeHeight,
-        right: this.breakpoint === 'sm' || this.breakpoint === 'md' ? 0 : 16,
-      })
-      .zIndex(10)
 
       // 导入进度浮层：置顶显示，未导入时不拦截触摸
       ImportProgressOverlay()
@@ -679,6 +820,17 @@ struct MainPage {
       return context?.config.colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK
     }
     return false
+  }
+
+  private indicatorAlpha(base: number): number {
+    const opacity: number = this.tabIndicatorOpacity / 100
+    return Math.round(base * opacity * 255)
+  }
+
+  private indicatorGradientColor(base: number): ResourceColor {
+    return ColorHelper.hexWithAlpha(this.primaryColor, this.indicatorAlpha(base)
+      .toString(16)
+      .padStart(2, '0'))
   }
 
   private selectedTabContentColor(): ResourceColor {
