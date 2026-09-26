@@ -26,6 +26,9 @@
 #include "multimedia/player_framework/native_avsource.h"
 #include "ohaudio/native_audiorenderer.h"
 #include "ohaudio/native_audiostreambuilder.h"
+#include "ohaudio/native_audio_common.h"
+#include "ohaudio/native_audio_manager.h"
+#include "ohaudio/native_audio_stream_manager.h"
 #include "ohaudiosuite/native_audio_suite_base.h"
 #include "ohaudiosuite/native_audio_suite_engine.h"
 
@@ -853,6 +856,28 @@ private:
         OH_AudioStreamBuilder_SetEncodingType(builder, AUDIOSTREAM_ENCODING_TYPE_RAW);
         OH_AudioStreamBuilder_SetRendererInfo(builder, AUDIOSTREAM_USAGE_MUSIC);
         OH_AudioStreamBuilder_SetRendererWriteDataCallback(builder, RendererDataCallback, this);
+        // 低时延播放：用系统接口探测当前设备对 48kHz/立体声/S16LE 音乐流是否支持 FAST 通路，
+        // 支持则启用低时延模式并设置官方示例回调帧长；不支持时系统静默回落普通模式（官方文档行为）。
+        // 注意：本机 SDK 头文件中 OH_AudioManager_GetAudioStreamManager 为单参签名，
+        // OH_AudioStreamInfo（v19 布局）无 channels 字段，声道用 channelLayout 表达
+        {
+            OH_AudioStreamManager* streamManager = nullptr;
+            if (OH_AudioManager_GetAudioStreamManager(&streamManager) == AUDIOCOMMON_RESULT_SUCCESS &&
+                streamManager != nullptr) {
+                OH_AudioStreamInfo streamInfo = {};
+                streamInfo.samplingRate = 48000;
+                streamInfo.channelLayout = CH_LAYOUT_STEREO;
+                streamInfo.encodingType = AUDIOSTREAM_ENCODING_TYPE_RAW;
+                streamInfo.sampleFormat = AUDIOSTREAM_SAMPLE_S16LE;
+                if (OH_AudioStreamManager_IsFastPlaybackSupported(streamManager, &streamInfo,
+                    AUDIOSTREAM_USAGE_MUSIC)) {
+                    OH_AudioStreamBuilder_SetLatencyMode(builder, AUDIOSTREAM_LATENCY_MODE_FAST);
+                    OH_AudioStreamBuilder_SetFrameSizeInCallback(builder, 2500);
+                    OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                        "low-latency playback supported: FAST latency mode enabled");
+                }
+            }
+        }
         bool success = OH_AudioStreamBuilder_GenerateRenderer(builder, &renderer_) == AUDIOSTREAM_SUCCESS;
         OH_AudioStreamBuilder_Destroy(builder);
         if (success) {
