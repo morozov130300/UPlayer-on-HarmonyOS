@@ -26,9 +26,6 @@
 #include "multimedia/player_framework/native_avsource.h"
 #include "ohaudio/native_audiorenderer.h"
 #include "ohaudio/native_audiostreambuilder.h"
-#include "ohaudio/native_audio_common.h"
-#include "ohaudio/native_audio_manager.h"
-#include "ohaudio/native_audio_stream_manager.h"
 #include "ohaudiosuite/native_audio_suite_base.h"
 #include "ohaudiosuite/native_audio_suite_engine.h"
 
@@ -856,29 +853,6 @@ private:
         OH_AudioStreamBuilder_SetEncodingType(builder, AUDIOSTREAM_ENCODING_TYPE_RAW);
         OH_AudioStreamBuilder_SetRendererInfo(builder, AUDIOSTREAM_USAGE_MUSIC);
         OH_AudioStreamBuilder_SetRendererWriteDataCallback(builder, RendererDataCallback, this);
-        // 低时延播放：通过系统接口探测当前设备对 48kHz/2ch/S16LE 音乐流是否支持 FAST 通路，
-        // 支持则启用低时延模式并设置官方示例回调帧长；不支持时系统静默回落普通模式（官方文档行为）
-        {
-            OH_AudioManager* audioManager = nullptr;
-            if (OH_GetAudioManager(&audioManager) == AUDIOCOMMON_RESULT_SUCCESS && audioManager != nullptr) {
-                OH_AudioStreamManager* streamManager = nullptr;
-                if (OH_AudioManager_GetAudioStreamManager(audioManager, &streamManager) == AUDIOCOMMON_RESULT_SUCCESS &&
-                    streamManager != nullptr) {
-                    OH_AudioStreamInfo streamInfo = {};
-                    streamInfo.samplingRate = 48000;
-                    streamInfo.channels = 2;
-                    streamInfo.sampleFormat = AUDIOSTREAM_SAMPLE_S16LE;
-                    streamInfo.encodingType = AUDIOSTREAM_ENCODING_TYPE_RAW;
-                    if (OH_AudioStreamManager_IsFastPlaybackSupported(streamManager, &streamInfo,
-                        AUDIOSTREAM_USAGE_MUSIC)) {
-                        OH_AudioStreamBuilder_SetLatencyMode(builder, AUDIOSTREAM_LATENCY_MODE_FAST);
-                        OH_AudioStreamBuilder_SetFrameSizeInCallback(builder, 2500);
-                        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                            "low-latency playback supported: FAST latency mode enabled");
-                    }
-                }
-            }
-        }
         bool success = OH_AudioStreamBuilder_GenerateRenderer(builder, &renderer_) == AUDIOSTREAM_SUCCESS;
         OH_AudioStreamBuilder_Destroy(builder);
         if (success) {
