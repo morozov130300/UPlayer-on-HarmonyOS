@@ -168,6 +168,7 @@ export struct ControlAreaComponent {
     this.syncPlayModeIndex();
     this.syncSystemVolume();
     this.restoreTimerState();
+    this.refreshOutputDeviceInfo();
   }
 
   aboutToDisappear(): void {
@@ -178,6 +179,10 @@ export struct ControlAreaComponent {
     if (this.timerIntervalID !== -1) {
       clearInterval(this.timerIntervalID);
       this.timerIntervalID = -1;
+    }
+    if (this.volumeHideTimer !== -1) {
+      clearTimeout(this.volumeHideTimer);
+      this.volumeHideTimer = -1;
     }
     if (this.volumeManager !== undefined && this.isVolumeListenerRegistered) {
       this.volumeManager.off('streamVolumeChange', this.streamVolumeChangeCallback);
@@ -203,10 +208,56 @@ export struct ControlAreaComponent {
         this.isVolumeListenerRegistered = true;
       }
       const currentVol: number = this.volumeManager.getVolumeByStream(audio.StreamUsage.STREAM_USAGE_MUSIC);
-      this.volume = currentVol / 15;
+      // 系统接口取真实最大格数（API 20+），失败时保持 15 的保守兜底
+      try {
+        const maxVol: number = this.volumeManager.getMaxVolumeByStream(audio.StreamUsage.STREAM_USAGE_MUSIC);
+        if (maxVol > 0) {
+          this.maxVolumeLevel = maxVol;
+        }
+      } catch (err) {
+        Logger.warn(TAG, `getMaxVolumeByStream failed: ${JSON.stringify(err)}`);
+      }
+      this.volume = currentVol / (this.maxVolumeLevel > 0 ? this.maxVolumeLevel : 15);
     } catch (err) {
       Logger.error(TAG, `syncSystemVolume failed: ${JSON.stringify(err)}`);
     }
+  }
+
+  // ─── 音量面板：系统 AVVolumePanel 显隐（点击音量按钮唤起，4 秒后自动收起） ───
+
+  toggleVolumePanel(): void {
+    if (this.isShowVolumeBuild) {
+      this.hideVolumePanel();
+      return;
+    }
+    this.isShowVolumeBuild = true;
+    if (this.volumeHideTimer !== -1) {
+      clearTimeout(this.volumeHideTimer);
+      this.volumeHideTimer = -1;
+    }
+    this.volumeHideTimer = setTimeout((): void => {
+      this.volumeHideTimer = -1;
+      this.hideVolumePanel();
+    }, 4000);
+  }
+
+  private hideVolumePanel(): void {
+    if (this.volumeHideTimer !== -1) {
+      clearTimeout(this.volumeHideTimer);
+      this.volumeHideTimer = -1;
+    }
+    this.isShowVolumeBuild = false;
+  }
+
+  // ─── 输出设备（系统接口：AudioRoutingManager + AudioDeviceEnhanceManager） ───
+
+  onOutputDeviceRevision(): void {
+    this.refreshOutputDeviceInfo();
+  }
+
+  refreshOutputDeviceInfo(): void {
+    this.currentOutputDeviceLabel = this.audioRoutingService.getCurrentOutputDeviceLabel();
+    this.outputDeviceList = this.audioRoutingService.getAvailableOutputDevices();
   }
 
   private syncPlayModeIndex(): void {
@@ -592,6 +643,26 @@ export struct ControlAreaComponent {
             }
           })
 
+        // 音量入口：点击唤起系统 AVVolumePanel（系统音量面板，可在面板内微调系统音量），4 秒自动收起
+        Image($r('app.media.ic_public_sound'))
+          .width(26)
+          .height(26)
+          .fillColor(Color.White)
+          .opacity(0.86)
+          .scale({ x: this.volumeScale, y: this.volumeScale })
+          .hoverEffect(HoverEffect.Scale)
+          .onClick(() => {
+            this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_PRESS_DURATION_SHORT, curve: Curve.EaseInOut }, () => {
+              this.volumeScale = 0.8;
+            });
+            setTimeout(() => {
+              this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_RELEASE_DURATION_SHORT, curve: curves.springMotion() }, () => {
+                this.volumeScale = 1.0;
+              });
+            }, StyleConstants.ANIMATION_PRESS_DELAY_MEDIUM);
+            this.toggleVolumePanel();
+          })
+
         Image($r('app.media.ic_public_more'))
           .width(26)
           .height(26)
@@ -626,7 +697,7 @@ export struct ControlAreaComponent {
       .margin({ top: 28 })
 
       AVVolumePanel({
-        volumeLevel: Math.round(this.volume * 15),
+        volumeLevel: Math.round(this.volume * (this.maxVolumeLevel > 0 ? this.maxVolumeLevel : 15)),
         volumeParameter: {
           position: {
             x: this.isShowVolumeBuild ? 100 : -1,
@@ -724,6 +795,122 @@ export struct ControlAreaComponent {
           this.isShowCustomPicker = false
         }
       })
+
+      // 输出设备行：显示系统首选输出设备，点击打开系统设备列表（AudioRoutingManager + 增强路由）
+      Row() {
+        Column({ space: 2 }) {
+          Text('输出设备')
+            .fontSize(this.scaledFont(14))
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.settingTextColor())
+          Text(this.currentOutputDeviceLabel.length > 0 ? this.currentOutputDeviceLabel : '系统默认')
+            .fontSize(this.scaledFont(12))
+            .fontColor($r('app.color.text_sixty_color'))
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        .alignItems(HorizontalAlign.Start)
+        Blank()
+        Image($r('app.media.ic_public_arrow_right'))
+          .width(this.scaledSize(18))
+          .height(this.scaledSize(18))
+          .fillColor($r('app.color.text_twenty_color'))
+      }
+      .width('100%')
+      .height(52)
+      .padding({ left: 16, right: 16 })
+      .backgroundColor($r('app.color.player_bg_color'))
+      .borderRadius(this.scaledSize(10))
+      .onClick(() => {
+        this.refreshOutputDeviceInfo()
+        this.isShowOutputDevicePanel = true
+      })
+      .bindSheet($$this.isShowOutputDevicePanel, this.outputDevicePanelBuilder(), {
+        detents: [SheetSize.MEDIUM],
+        dragBar: false,
+        title: { title: '输出设备' },
+        showClose: true,
+        preferType: SheetType.CENTER,
+        onWillDisappear: () => {
+          this.isShowOutputDevicePanel = false
+        }
+      })
+
+      // 投送设备行：系统 AVCastPicker 组件（设备发现/连接/认证/切换全部系统接管）
+      Row() {
+        Column({ space: 2 }) {
+          Text('投送设备')
+            .fontSize(this.scaledFont(14))
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.settingTextColor())
+          Text('投送 / 输出到其它设备')
+            .fontSize(this.scaledFont(12))
+            .fontColor($r('app.color.text_sixty_color'))
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        .alignItems(HorizontalAlign.Start)
+        Blank()
+        AVCastPicker({
+          normalColor: Color.White,
+          activeColor: this.primaryColor,
+          sessionType: 'audio'
+        })
+          .width(this.scaledSize(32))
+          .height(this.scaledSize(32))
+      }
+      .width('100%')
+      .height(52)
+      .padding({ left: 16, right: 16 })
+      .backgroundColor($r('app.color.player_bg_color'))
+      .borderRadius(this.scaledSize(10))
+    }
+    .width(StyleConstants.FULL_WIDTH)
+  }
+
+  // 输出设备选择 sheet：系统接口返回的可用媒体输出设备列表 + 应用级设备选择（API 26 增强路由）
+  @Builder
+  outputDevicePanelBuilder() {
+    Column({ space: 8 }) {
+      if (this.outputDeviceList.length === 0) {
+        Text('暂无可切换的输出设备')
+          .fontSize(this.scaledFont(13))
+          .fontColor($r('app.color.text_sixty_color'))
+          .width('100%')
+          .padding({ top: 20, bottom: 20 })
+      }
+      ForEach(this.outputDeviceList, (device: audio.AudioDeviceDescriptor) => {
+        Row() {
+          Text(this.audioRoutingService.getDeviceLabel(device))
+            .fontSize(this.scaledFont(14))
+            .fontColor($r('app.color.text_primary'))
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .layoutWeight(1)
+          if (this.currentOutputDeviceLabel.length > 0 &&
+            this.audioRoutingService.getDeviceLabel(device) === this.currentOutputDeviceLabel) {
+            Text('使用中')
+              .fontSize(this.scaledFont(12))
+              .fontColor(this.primaryColor)
+              .margin({ left: 8 })
+          }
+        }
+        .width('100%')
+        .height(52)
+        .padding({ left: 16, right: 16 })
+        .backgroundColor($r('app.color.player_bg_color'))
+        .borderRadius(this.scaledSize(10))
+        .onClick(() => {
+          if (!this.audioRoutingService.isEnhancedRoutingSupported()) {
+            this.getUIContext()?.getPromptAction()?.showToast({
+              message: '当前设备不支持应用级设备选择，使用系统默认路由'
+            })
+            return
+          }
+          this.audioRoutingService.selectOutputDevice(device)
+          this.isShowOutputDevicePanel = false
+        })
+      }, (device: audio.AudioDeviceDescriptor) => `dev_${device.deviceType}_${device.id}`)
     }
     .width(StyleConstants.FULL_WIDTH)
   }

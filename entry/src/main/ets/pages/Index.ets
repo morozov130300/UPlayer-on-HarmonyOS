@@ -420,7 +420,7 @@ struct MainPage {
             .fontColor($r('app.color.text_sixty_color'))
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .margin({ top: this.scaledSize(6) })
+            .margin({ top: this.scaledSize(8) })
         }.layoutWeight(this.lyricInfoWeight()).alignItems(HorizontalAlign.Start).onClick(() => {
           this.openPlayer()
         })

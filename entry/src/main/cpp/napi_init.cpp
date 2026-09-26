@@ -26,6 +26,9 @@
 #include "multimedia/player_framework/native_avsource.h"
 #include "ohaudio/native_audiorenderer.h"
 #include "ohaudio/native_audiostreambuilder.h"
+#include "ohaudio/native_audio_common.h"
+#include "ohaudio/native_audio_manager.h"
+#include "ohaudio/native_audio_stream_manager.h"
 #include "ohaudiosuite/native_audio_suite_base.h"
 #include "ohaudiosuite/native_audio_suite_engine.h"
 
