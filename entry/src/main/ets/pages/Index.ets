@@ -231,11 +231,10 @@ struct MainPage {
   }
 
   private getHdsBarFloatingStyle(): HdsTabsFloatingStyle | undefined {
-    if (this.tabStyle !== 'immersive' || !isLiquidGlassAvailable()) {
+    if (this.tabStyle !== 'immersive' || !isLiquidGlassAvailable()
+      || this.glassThickness <= 0) {
       return undefined
     }
-    // glassThickness === 0 时仍返回 pill 布局（形状与 miniBar 完全一致），
-    // 仅不设置 systemMaterialEffect（无玻璃材质效果）；其余断点/宽度逻辑不变。
     const level: hdsMaterial.MaterialLevel = hdsMaterial.MaterialLevel.ADAPTIVE
     const useLight: boolean = this.tabTouchIndicator === 'light'
     const lightColor: ResourceColor | undefined = useLight
@@ -251,7 +250,7 @@ struct MainPage {
     // 改由 build() 中自建的 playerControl 播控条叠放在 TabBar 上方（见 controlBarBottomMargin）。
     // 大屏态（lg/xl/xxl）：保留系统迷你栏（默认展开、与页签栏左右并排）。
     let miniBar: HdsTabsMiniBar | undefined = undefined
-    if (!smallScreen && this.glassThickness > 0) {
+    if (!smallScreen) {
       const miniBarWidthVp: number = Math.min(328, barWidthVp) // 迷你栏最大宽度不超过 328vp（官方约束）
       miniBar = {
         miniBarBuilder: (): void => {
@@ -264,13 +263,13 @@ struct MainPage {
     }
     return {
       adaptToHandedness: true,
-      systemMaterialEffect: this.glassThickness > 0 ? {
+      systemMaterialEffect: {
         materialType: hdsMaterial.MaterialType.IMMERSIVE,
         materialLevel: level,
-      } : undefined,
+      },
       barBottomMargin: this.bottomSafeHeight > 0 ? 28 : 28,
       lightColor: lightColor,
-      barWidth: (smallScreen || !hasBarWidth || this.glassThickness <= 0) ? undefined :
+      barWidth: (smallScreen || !hasBarWidth) ? undefined :
         { smallWidth: barWidthVp, mediumWidth: barWidthVp, largeWidth: barWidthVp },
       miniBar: miniBar,
     } as HdsTabsFloatingStyle
@@ -809,8 +808,8 @@ struct MainPage {
       }
       .barPosition(BarPosition.End)
       .barOverlap(this.getHdsBarFloatingStyle() !== undefined)
-      .barHeight(this.scaledSize(44))
-      .barWidth(this.scaledSize(228))
+      .barHeight(this.getHdsBarFloatingStyle() !== undefined ? this.scaledSize(44) : undefined)
+      .barWidth(this.getHdsBarFloatingStyle() !== undefined ? this.scaledSize(228) : undefined)
       .scrollable(true)
       .barFloatingStyle(this.getHdsBarFloatingStyle())
       .barBackgroundBlurStyle(this.tabStyle !== 'immersive' || this.getHdsBarFloatingStyle() === undefined
