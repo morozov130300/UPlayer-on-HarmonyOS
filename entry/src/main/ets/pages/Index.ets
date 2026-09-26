@@ -808,8 +808,8 @@ struct MainPage {
       }
       .barPosition(BarPosition.End)
       .barOverlap(this.getHdsBarFloatingStyle() !== undefined)
-      .barHeight(this.getHdsBarFloatingStyle() !== undefined ? this.scaledSize(44) : undefined)
-      .barWidth(this.getHdsBarFloatingStyle() !== undefined ? this.scaledSize(228) : undefined)
+      .barHeight(this.getHdsBarFloatingStyle() !== undefined ? this.scaledSize(44) : 56)
+      .barWidth(this.getHdsBarFloatingStyle() !== undefined ? this.scaledSize(228) : '100%')
       .scrollable(true)
       .barFloatingStyle(this.getHdsBarFloatingStyle())
       .barBackgroundBlurStyle(this.tabStyle !== 'immersive' || this.getHdsBarFloatingStyle() === undefined
