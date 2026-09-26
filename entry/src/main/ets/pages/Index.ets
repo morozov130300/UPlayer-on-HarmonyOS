@@ -910,14 +910,12 @@ struct MainPage {
   }
 
   // 加号组件底边位置：紧贴播控条（迷你栏）上沿。
-  // 加号在 HomeContent/PlaylistContent 内，其 bottom 参考系（内容区底）比屏幕底高约
-  // 底部安全区（实测 ~62vp），故需从「播控条上沿（自屏幕底）」里扣掉该偏移才能贴住。
-  // sm/md：自建播控条上沿≈116vp，扣偏移≈53；lg/xl：迷你栏上沿≈72vp，扣偏移≈9。
+  // 72 偏浮、9 偏低（跑到播控条下方），取中间值 40 作初值，待真机精调
   private plusButtonBottomInset(): number {
     if (this.breakpoint === 'sm' || this.breakpoint === 'md') {
-      return 53
+      return 48
     }
-    return 9
+    return 40
   }
 
   private glassBlurRadius(): number {
