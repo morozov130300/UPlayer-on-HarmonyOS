@@ -373,7 +373,6 @@ export struct ControlAreaComponent {
           .trackColor('#B3FFFFFF')
           .enabled(this.max > 0)
           .focusable(false)
-          .shadow({ radius: this.sliderGlow, color: '#B3FFFFFF' })
           .onChange((value: number, mode: SliderChangeMode) => {
             if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
               this.avPlayerService.seek(value);
@@ -381,7 +380,6 @@ export struct ControlAreaComponent {
                 this.trackThickness = 6;
                 this.songTimeFontSize = 10;
                 this.songTimeFontColor = '#B3FFFFFF';
-                this.sliderGlow = 0;
               });
             }
             if (mode === SliderChangeMode.Moving) {
@@ -390,7 +388,6 @@ export struct ControlAreaComponent {
                 this.trackThickness = 10;
                 this.songTimeFontSize = 12;
                 this.songTimeFontColor = '#FFFFFF';
-                this.sliderGlow = 8;
               });
             }
             this.pageShowTime = 0;
