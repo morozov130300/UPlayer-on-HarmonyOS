@@ -33,6 +33,7 @@ import {
 
 const TAG = 'Index'
 
+
 @Entry
 @Component
 struct MainPage {
