@@ -474,31 +474,41 @@ export class AudioMetadataService {
   }
 
   clearMemoryCache(): void {
-    // 使排队与执行中的封面任务失效，避免回写已销毁对象
-    this.coverLifecycleGeneration++
-    this.coverExtractionQueue.length = 0
-    this.coverExtractionActive = 0
-    this.coverCache.forEach((entry: AlbumCoverCacheEntry) => {
-      entry.cached = false
-      if (entry.references === 0 && entry.pixelMap !== undefined) {
-        const pm: image.PixelMap | undefined = entry.pixelMap
-        entry.pixelMap = undefined
-        if (pm !== undefined) {
-          try {
-            pm.release()
-          } catch (err) {
-            Logger.warn(TAG, `Album cover pixelMap release failed: ${JSON.stringify(err)}`)
+    // 销毁路径上的清理：整体加防护，任何一步失败都不应让进程崩溃
+    try {
+      // 使排队与执行中的封面任务失效，避免回写已销毁对象
+      this.coverLifecycleGeneration++
+      this.coverExtractionQueue.length = 0
+      this.coverExtractionActive = 0
+      this.coverCache.forEach((entry: AlbumCoverCacheEntry) => {
+        entry.cached = false
+        if (entry.references === 0 && entry.pixelMap !== undefined) {
+          const pm: image.PixelMap | undefined = entry.pixelMap
+          entry.pixelMap = undefined
+          if (pm !== undefined) {
+            // release() 返回 Promise<void>：同步 try/catch 拦不住异步 reject，
+            // 销毁期 native 桥可能已拆除导致 Promise reject，必须补 .catch()
+            try {
+              const p: Promise<void> = pm.release()
+              p.catch((err: Object) => {
+                Logger.warn(TAG, `Album cover pixelMap release rejected: ${JSON.stringify(err)}`)
+              })
+            } catch (err) {
+              Logger.warn(TAG, `Album cover pixelMap release failed: ${JSON.stringify(err)}`)
+            }
           }
         }
-      }
-    })
-    this.coverCache.clear()
-    this.pendingCovers.clear()
-    this.negativeCoverCache.clear()
-    this.cacheBytes = 0
-    this.fallbackFailureCount = 0
-    this.fallbackCircuitUntil = 0
-    this.fallbackProbeActive = false
+      })
+      this.coverCache.clear()
+      this.pendingCovers.clear()
+      this.negativeCoverCache.clear()
+      this.cacheBytes = 0
+      this.fallbackFailureCount = 0
+      this.fallbackCircuitUntil = 0
+      this.fallbackProbeActive = false
+    } catch (err) {
+      Logger.warn(TAG, `clearMemoryCache iteration failed: ${JSON.stringify(err)}`)
+    }
     try {
       uplayer.clearAlbumCoverCache()
     } catch (err) {

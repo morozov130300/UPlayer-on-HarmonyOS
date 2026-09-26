@@ -37,6 +37,10 @@ export struct PlayerInfoComponent {
   @State intervalID: number = 0;
   @Link isShowPlay: boolean;
   @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) isPlay: boolean = false;
+  // 返回按钮玻璃材质只在「Navigation 标题栏」生效区渲染；播放器页把返回键交给
+  // MusicPlayer 的 Navigation 标题栏（见 MusicPlayer.playerGlassTitleBar），
+  // 此处不再渲染自己的返回键，避免「内容区设材质不生效」+ 双份返回键
+  showBackButton: boolean = false;
   @State prevImageLabel: PixelMap | Resource = this.imageLabel;
   @State prevImageOpacity: number = 0;
   private context: common.UIAbilityContext | undefined = AppStorage.get(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT);
@@ -230,19 +234,21 @@ export struct PlayerInfoComponent {
         top: this.topHeight
       })
 
-      Row() {
-        GlassBackButton({
-          clickSize: 56,
-          iconSize: 18,
-          iconColor: Color.White,
-          iconOpacity: 0.8,
-          onBack: () => {
-            this.getUIContext()?.getRouter().back()
-          }
-        })
+      if (this.showBackButton) {
+        Row() {
+          GlassBackButton({
+            clickSize: 56,
+            iconSize: 18,
+            iconColor: Color.White,
+            iconOpacity: 0.8,
+            onBack: () => {
+              this.getUIContext()?.getRouter().back()
+            }
+          })
+        }
+        .position({ x: 8, y: this.topHeight })
+        .zIndex(2)
       }
-      .position({ x: 8, y: this.topHeight })
-      .zIndex(2)
     }
     .height(StyleConstants.FULL_HEIGHT)
     .width(StyleConstants.FULL_WIDTH)

@@ -813,9 +813,9 @@ struct MainPage {
         .tabBar(this.tabLabelBuilder(2, '设置', $r('app.media.ic_public_settings')))
       }
       .barPosition(BarPosition.End)
-      .barOverlap(true)
-      .barHeight(this.scaledSize(44))
-      .barWidth(this.scaledSize(228))
+      .barOverlap(this.getHdsBarFloatingStyle() !== undefined)
+      .barHeight(this.getHdsBarFloatingStyle() !== undefined ? this.scaledSize(44) : 56)
+      .barWidth(this.getHdsBarFloatingStyle() !== undefined ? this.scaledSize(228) : '100%')
       .scrollable(true)
       .barFloatingStyle(this.getHdsBarFloatingStyle())
       .barBackgroundBlurStyle(this.tabStyle !== 'immersive' || this.getHdsBarFloatingStyle() === undefined

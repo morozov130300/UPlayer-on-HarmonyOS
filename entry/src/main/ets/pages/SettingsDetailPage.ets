@@ -104,6 +104,9 @@ struct SettingsDetailPage {
   private eqCanvasHeight: number = 0
   private dataService: DataService = DataService.getInstance()
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
+  // 返回按钮玻璃材质只在「Navigation 标题栏」生效区渲染；用一个空路由栈把本页套进
+  // Navigation 仅为取得玻璃生效区，实际返回仍走 router（GlassBackButton.onBack）
+  private navStack: NavPathStack = new NavPathStack()
   private isPC: boolean = deviceInfo.deviceType === '2in1'
   // 智感握姿开关：写穿到 AppStorage（HoldingHandService 在页面外也要读开关），
   // 滤波与订阅统一交给 HoldingHandService，本页不再自行订阅 holdingHandChanged
@@ -726,56 +729,69 @@ struct SettingsDetailPage {
   }
 
     build() {
-    Stack() {
-      Column() {
-        // 沉浸式顶部：滚动内容从页面顶部开始（顶部空出标题带高度），
-        // 内容向上滚动时从标题带下方穿过，被标题带上的渐变模糊层模糊（与首页上端一致）
-        Stack({ alignContent: Alignment.Center }) {
-          Column() {
-            Scroll() {
-              Column({ space: this.scaledSize(10) }) {
-                if (this.pageTitle === '定制') {
-                  this.buildCustomizeSection()
-                } else if (this.pageTitle === '播放') {
-                  this.buildPlaybackSection()
-                } else if (this.pageTitle === '音效') {
-                  this.buildAudioSection()
-                } else if (this.pageTitle === '关于') {
-                  this.buildAboutSection()
+    // 套一层 Navigation：返回按钮的玻璃材质只在「Navigation 标题栏」生效区渲染。
+    // BarStyle.STACK 让内容区延伸到标题栏底下（保持原有全屏/沉浸式布局），
+    // 标题栏用自定义构建器放 GlassBackButton（自带 systemMaterial，进生效区即出玻璃）+ 标题。
+    Navigation(this.navStack) {
+      Stack() {
+        Column() {
+          // 沉浸式顶部：滚动内容从页面顶部开始（顶部空出标题带高度），
+          // 内容向上滚动时从标题栏下方穿过，被标题栏玻璃/渐变层模糊（与首页上端一致）
+          Stack({ alignContent: Alignment.Center }) {
+            Column() {
+              Scroll() {
+                Column({ space: this.scaledSize(10) }) {
+                  if (this.pageTitle === '定制') {
+                    this.buildCustomizeSection()
+                  } else if (this.pageTitle === '播放') {
+                    this.buildPlaybackSection()
+                  } else if (this.pageTitle === '音效') {
+                    this.buildAudioSection()
+                  } else if (this.pageTitle === '关于') {
+                    this.buildAboutSection()
+                  }
                 }
+                .width('100%')
+                .constraintSize({ minWidth: 0, maxWidth: '100%' })
+                .padding({
+                  left: this.scaledSize(12), right: this.scaledSize(12),
+                  top: this.scaledSize(5) + this.titleBandHeight(), bottom: this.scaledSize(40)
+                })
               }
               .width('100%')
-              .constraintSize({ minWidth: 0, maxWidth: '100%' })
-              .padding({
-                left: this.scaledSize(12), right: this.scaledSize(12),
-                top: this.scaledSize(5) + this.titleBandHeight(), bottom: this.scaledSize(40)
-              })
+              .layoutWeight(1)
+              .align(Alignment.Top)
+              .edgeEffect(EdgeEffect.Spring)
             }
             .width('100%')
-            .layoutWeight(1)
-            .align(Alignment.Top)
-            .edgeEffect(EdgeEffect.Spring)
+            .height('100%')
+
+            if (this.showColorPicker) {
+              this.colorPickerOverlay()
+            }
+
+            // 顶部渐变模糊/着色层保留（内容滚动到标题栏下方时被模糊）；返回按钮与标题已移至标题栏
+            this.titleBand()
           }
           .width('100%')
-          .height('100%')
-
-          if (this.showColorPicker) {
-            this.colorPickerOverlay()
-          }
-
-          // 标题带最后声明：浮在滚动内容与取色遮罩之上，返回按钮保持可点、标题文字保持清晰
-          this.titleBand()
+          .layoutWeight(1)
         }
         .width('100%')
-        .layoutWeight(1)
+        .height('100%')
       }
       .width('100%')
       .height('100%')
+      // 背景使用预设纯色（明暗自适应），不应用任何玻璃/模糊/透明度效果
+      .backgroundColor($r('app.color.page_background_sm'))
     }
+    .title({
+      builder: this.glassTitleBar,
+      height: this.titleBandHeight()
+    }, { barStyle: BarStyle.STACK })
+    .hideBackButton(true)
+    .hideTitleBar(false)
     .width('100%')
     .height('100%')
-    // 背景使用预设纯色（明暗自适应），不应用任何玻璃/模糊/透明度效果
-    .backgroundColor($r('app.color.page_background_sm'))
     .bindSheet($$this.showGlassScope, this.glassScopeSheetBuilder(), {
       height: SheetSize.FIT_CONTENT,
       dragBar: false,
@@ -783,6 +799,40 @@ struct SettingsDetailPage {
       showClose: true,
       backgroundColor: $r('app.color.page_background_other')
     })
+  }
+
+  // 玻璃标题栏：返回按钮（自带 systemMaterial，处于 Navigation 标题栏生效区内 → 出真玻璃）+ 标题。
+  // 右侧预留 PC 窗口标题按钮区（titleButtonWidth + 12），沿用原 titleBand 的避让逻辑。
+  @Builder
+  glassTitleBar() {
+    Row() {
+      GlassBackButton({
+        clickSize: this.scaledSize(48),
+        iconSize: this.scaledSize(15),
+        iconColor: this.settingTextColor(),
+        iconOpacity: 0.9,
+        onBack: () => {
+          this.getUIContext()?.getRouter().back()
+        }
+      })
+      Text(this.pageTitle)
+        .fontSize(this.scaledFont(17))
+        .fontColor(this.settingTextColor())
+        .fontWeight(FontWeight.Bold)
+        .margin({ left: 4 })
+      Blank()
+    }
+    .width('100%')
+    .padding({
+      left: 4,
+      right: this.isPC ? this.titleButtonWidth + 12 : 16,
+      top: this.isPC ? 0 : this.topSafeHeight
+    })
+    .alignItems(VerticalAlign.Center)
+    // 玻璃只落在返回键圆形上（GlassBackButton 自带 systemMaterial，处于 Navigation 标题栏生效区即渲染）；
+    // 条带本身不挂材质，避免「条带材质 + 返回键材质」同子树嵌套（官方功耗约束），
+    // 顶部观感由内容区既有磨砂 titleBand 承接
+    .backgroundColor(Color.Transparent)
   }
 
   // 顶部标题带：与首页上端完全同款的渐变模糊层（先正比例后恒定）+ 主题色渐变着色层，
@@ -810,33 +860,6 @@ struct SettingsDetailPage {
             ['rgba(0,0,0,0)', 1]
           ]
         })
-
-      Row() {
-        GlassBackButton({
-          clickSize: this.scaledSize(48),
-          iconSize: this.scaledSize(15),
-          iconColor: this.settingTextColor(),
-          iconOpacity: 0.9,
-          onBack: () => {
-            this.getUIContext()?.getRouter()
-              .back()
-          }
-        })
-
-        Text(this.pageTitle)
-          .fontSize(this.scaledFont(17))
-          .fontColor(this.settingTextColor())
-          .fontWeight(FontWeight.Bold)
-          .margin({ left: 4 })
-      }
-      .width('100%')
-      .height('100%')
-      .padding({
-        left: 4,
-        right: this.titleButtonWidth + 12,
-        top: this.isPC ? 0 : this.topSafeHeight
-      })
-      .alignItems(VerticalAlign.Center)
     }
     .width('100%')
     .height(this.titleBandHeight())
