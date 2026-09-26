@@ -895,14 +895,12 @@ export struct HomeContent {
 
       if (!this.isMultiSelectMode && (this.isPlusVisible || !this.settings.plusButtonScrollHide)) {
         // 加号组件：ic_public_add_norm_filled 是「实心圆 + 加号镂空」，镂空处会漏背景光；
-        // 下方垫一个同样大小（40vp）的玻璃盘（内容区走磨砂兜底 + 压暗），
-        // 加号镂空处透出玻璃而非背景光；玻璃盘略大于图标内切蓝圆(约36.7vp)，边缘留一圈玻璃衬底
+        // 下方垫一个同尺寸（40vp）玻璃盘，小模糊半径、不压暗，镂空透出玻璃而非背景光
         Stack({ alignContent: Alignment.Center }) {
           Row()
             .width(this.scaledSize(40)).height(this.scaledSize(40))
             .borderRadius(this.scaledSize(20))
-            // 磨砂 + 压暗：挡住加号镂空处的背景漏光（内容区沉浸式材质不渲染，磨砂即玻璃兜底）
-            .backgroundEffect({ radius: 24, color: 'rgba(0,0,0,0.35)' })
+            .backgroundEffect({ radius: 6 })
           Image($r('app.media.ic_public_add_norm_filled'))
             .width(this.scaledSize(40)).height(this.scaledSize(40))
             .fillColor(this.primaryColor)
@@ -910,7 +908,7 @@ export struct HomeContent {
         // 智感握姿：只切换贴边方向，不改变与底部的间距，避免握姿切换时按钮上下跳动。
         // 读 plusOnLeft（动画态）而不是 holdingHandLeft，切换才会走滑动动画
         .position({
-          bottom: this.bottomContentPadding + this.scaledSize(12),
+          bottom: this.bottomContentPadding + this.scaledSize(4),
           left: this.plusOnLeft ? this.scaledSize(20) : undefined,
           right: this.plusOnLeft ? undefined : this.scaledSize(20)
         })

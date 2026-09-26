@@ -406,17 +406,17 @@ export struct PlaylistContent {
 
       if (!this.isEditMode && (this.isPlusVisible || !this.settings.plusButtonScrollHide)) {
         // 加号组件：ic_public_add_norm_filled 是「实心圆 + 加号镂空」，镂空处会漏背景光；
-        // 下方垫一个同样大小（40vp）的玻璃盘（磨砂 + 压暗），加号镂空处透出玻璃而非背景光
+        // 下方垫一个同尺寸（40vp）玻璃盘，小模糊半径、不压暗，镂空透出玻璃而非背景光
         Stack({ alignContent: Alignment.Center }) {
           Row()
             .width(this.scaledSize(40)).height(this.scaledSize(40))
             .borderRadius(this.scaledSize(20))
-            .backgroundEffect({ radius: 24, color: 'rgba(0,0,0,0.35)' })
+            .backgroundEffect({ radius: 6 })
           Image($r('app.media.ic_public_add_norm_filled'))
             .width(this.scaledSize(40)).height(this.scaledSize(40))
             .fillColor(this.primaryColor)
         }
-        .position({ bottom: this.bottomContentPadding + this.scaledSize(12), right: this.scaledSize(20) })
+        .position({ bottom: this.bottomContentPadding + this.scaledSize(4), right: this.scaledSize(20) })
         .transition({ type: TransitionType.Insert, opacity: 0, scale: { x: 0.5, y: 0.5 } })
         .transition({ type: TransitionType.Delete, opacity: 0, scale: { x: 0.5, y: 0.5 } })
         .onClick(() => { this.onPlusClick() })

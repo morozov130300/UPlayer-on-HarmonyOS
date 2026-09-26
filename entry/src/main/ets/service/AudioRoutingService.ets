@@ -34,6 +34,7 @@ export class AudioRoutingService {
   private static instance: AudioRoutingService = new AudioRoutingService()
   private audioManager: audio.AudioManager | undefined = undefined
   private routingManager: audio.AudioRoutingManager | undefined = undefined
+  private musicRendererInfo: audio.AudioRendererInfo | undefined = undefined
   private initialized: boolean = false
 
   public static getInstance(): AudioRoutingService {
@@ -52,6 +53,13 @@ export class AudioRoutingService {
         this.deviceChangeCallback)
       this.routingManager.on('availableDeviceChange', audio.DeviceUsage.MEDIA_OUTPUT_DEVICES,
         this.availableDeviceChangeCallback)
+      // 首选输出设备变化（含用户在系统音量面板切换设备）→ 刷新「更多」面板设备名
+      this.musicRendererInfo = {
+        usage: audio.StreamUsage.STREAM_USAGE_MUSIC,
+        rendererFlags: 0
+      }
+      this.routingManager.on('preferOutputDeviceChangeForRendererInfo', this.musicRendererInfo,
+        this.preferOutputDeviceChangeCallback)
       this.initialized = true
       Logger.info(TAG, 'init succeeded')
     } catch (err) {
@@ -90,6 +98,10 @@ export class AudioRoutingService {
     AppStorage.setOrCreate<number>(AppStorageKeyConstants.KEY_OUTPUT_DEVICE_REVISION, revision + 1)
   }
 
+  private preferOutputDeviceChangeCallback = (desc: audio.AudioDeviceDescriptors): void => {
+    this.bumpRevision()
+  }
+
   // ─── 「更多」面板：输出设备选择（系统增强路由，API 26+） ───
 
   // 系统是否支持应用级输出设备选择（不支持时调用 selectOutputDevice 不生效）
@@ -108,12 +120,12 @@ export class AudioRoutingService {
       if (this.routingManager === undefined) {
         return '系统默认'
       }
-      const info: audio.AudioRendererInfo = {
+      const info: audio.AudioRendererInfo = this.musicRendererInfo ?? {
         usage: audio.StreamUsage.STREAM_USAGE_MUSIC,
         rendererFlags: 0
       }
       const descs: audio.AudioDeviceDescriptors =
-        this.routingManager.getPreferOutputDeviceForRendererInfoSync(info)
+        this.routingManager.getPreferredOutputDeviceForRendererInfoSync(info)
       if (descs !== undefined && descs.length > 0) {
         return this.getDeviceLabel(descs[0])
       }
