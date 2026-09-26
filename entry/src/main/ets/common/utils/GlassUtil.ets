@@ -132,6 +132,22 @@ export function createTabGlassMaterial(strength: number, interactive: boolean,
   })
 }
 
+// Tab 栏液态玻璃材质（返回类型收窄为 ImmersiveMaterial，供 barFloatingStyle.systemMaterial 直接使用）：
+// 与 createTabGlassMaterial 参数完全一致，仅返回类型更精确
+export function createTabImmersiveMaterial(strength: number, interactive: boolean,
+  lightColor: string | undefined, colorInvert: boolean, applyShadow: boolean): uiMaterial.ImmersiveMaterial | undefined {
+  if (!isLiquidGlassAvailable() || isGlassOff(strength)) {
+    return undefined
+  }
+  return new uiMaterial.ImmersiveMaterial({
+    style: glassImmersiveStyleFromStrength(strength),
+    interactive: interactive,
+    lightEffect: lightColor !== undefined ? { color: lightColor } : undefined,
+    colorInvert: colorInvert,
+    applyShadow: applyShadow
+  })
+}
+
 // 底部栏/多选操作栏等横向条状组件的液态玻璃材质工厂（API 26+）：
 // - interactive 复用全局「交互形变」开关控制 Q 弹形变
 // - applyShadow 固定关闭：这些组件均有手写 shadow 投影设计，避免材质阴影覆盖
