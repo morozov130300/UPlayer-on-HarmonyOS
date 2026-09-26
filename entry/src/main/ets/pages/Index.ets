@@ -449,13 +449,13 @@ struct MainPage {
         })
     }
     .constraintSize({ maxWidth: this.breakpoint === 'sm' || this.breakpoint === 'md' ? '85%' : '42%' })
-    .height(this.scaledSize(40))
+    .height(this.scaledSize(44))
     .alignSelf(ItemAlign.Center)
     .padding({
       left: this.scaledSize(12),
       right: this.scaledSize(16),
-      top: this.scaledSize(4),
-      bottom: this.scaledSize(4)
+      top: this.scaledSize(2),
+      bottom: this.scaledSize(2)
     })
     .backgroundColor(Color.Transparent)
     .backgroundEffect(this.frostLayerEnabled() ? {
@@ -465,7 +465,7 @@ struct MainPage {
     .border({
       width: 1, color: 'rgba(255,255,255,0.22)'
     })
-    .borderRadius(this.scaledSize(20))
+    .borderRadius(this.scaledSize(22))
     .shadow({
       radius: this.isGlowing ? 60 : 50,
       color: this.isGlowing ? ColorHelper.hexWithAlpha(this.primaryColor, '66') : $r('app.color.shadow_color'),
