@@ -900,11 +900,11 @@ export struct HomeContent {
         // 下方垫一个同尺寸（40vp）玻璃盘，小模糊半径、不压暗，镂空透出玻璃而非背景光
         Stack({ alignContent: Alignment.Center }) {
           Row()
-            .width(this.scaledSize(40)).height(this.scaledSize(40))
-            .borderRadius(this.scaledSize(20))
+            .width(this.scaledSize(28)).height(this.scaledSize(28))
+            .borderRadius(this.scaledSize(14))
             .backgroundEffect({ radius: 1 })
           Image($r('app.media.ic_public_add_norm_filled'))
-            .width(this.scaledSize(40)).height(this.scaledSize(40))
+            .width(this.scaledSize(28)).height(this.scaledSize(28))
             .fillColor(this.primaryColor)
         }
         // 智感握姿：只切换贴边方向，不改变与底部的间距，避免握姿切换时按钮上下跳动。

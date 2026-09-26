@@ -250,7 +250,8 @@ struct MainPage {
     // 大屏态（lg/xl/xxl）：下发系统迷你栏，左右并排。
     let miniBar: HdsTabsMiniBar | undefined = undefined
     if (!smallScreen) {
-      const miniBarWidthVp: number = Math.min(328, barWidthVp)
+      // tab 与播控条各占 2/5（= barWidthVp，主容器宽 × 0.4）；中间留 1/5 间隙
+      const miniBarWidthVp: number = barWidthVp
       miniBar = {
         miniBarBuilder: (): void => {
           this.miniBarBuilder()
@@ -909,14 +910,14 @@ struct MainPage {
   }
 
   // 加号组件底边位置：紧贴播控条（迷你栏）上沿。
-  // sm/md：自建 playerControl 叠在 TabBar 上方，上沿 = controlBarBottomMargin + 迷你栏高(40vp)；
-  // lg/xl：系统 miniBar 与 TabBar 左右并排，上沿 ≈ TabBar 上沿(barBottomMargin 28 + barHeight 44)。
-  // 与 HomeContent/PlaylistContent 加号处于同一全屏坐标系（底部均对齐屏幕底），传下去即可精确贴住
+  // 加号在 HomeContent/PlaylistContent 内，其 bottom 参考系（内容区底）比屏幕底高约
+  // 底部安全区（实测 ~62vp），故需从「播控条上沿（自屏幕底）」里扣掉该偏移才能贴住。
+  // sm/md：自建播控条上沿≈116vp，扣偏移≈53；lg/xl：迷你栏上沿≈72vp，扣偏移≈9。
   private plusButtonBottomInset(): number {
     if (this.breakpoint === 'sm' || this.breakpoint === 'md') {
-      return this.controlBarBottomMargin() + this.scaledSize(40)
+      return 53
     }
-    return 28 + this.scaledSize(44)
+    return 9
   }
 
   private glassBlurRadius(): number {
