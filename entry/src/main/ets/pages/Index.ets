@@ -1,7 +1,7 @@
-import display from '@ohos.display'
 import { curves, uiMaterial } from '@kit.ArkUI'
 import {
-  HdsTabs, HdsTabsController, HdsTabsFloatingStyle, HdsTabsMiniBar, HdsBarStyle, HdsBarLayoutMode, hdsMaterial
+  HdsTabs, HdsTabsController, HdsTabsFloatingStyle, HdsTabsMiniBar, HdsBarStyle, HdsBarLayoutMode,
+  HdsTabsBarChangeMode, hdsMaterial
 } from '@kit.UIDesignKit'
 import { common, ConfigurationConstant } from '@kit.AbilityKit'
 import { deviceInfo } from '@kit.BasicServicesKit'
@@ -54,6 +54,8 @@ struct MainPage {
   @State rotationAngle: number = 0
   @State isGlowing: boolean = false
   @State breakpoint: string = 'md'
+  // 主容器实测布局宽度（vp），onAreaChange 更新：悬浮样式宽度字段不支持百分比，需用具体 vp 值
+  @State mainWidthVp: number = 0
   @StorageLink(AppStorageKeyConstants.KEY_TOP_HEIGHT) topSafeHeight: number = 0
   @StorageLink(AppStorageKeyConstants.KEY_BOTTOM_HEIGHT) bottomSafeHeight: number = 0
   @StorageLink(AppStorageKeyConstants.KEY_TITLE_BUTTON_WIDTH) titleButtonWidth: number = 0
@@ -101,7 +103,6 @@ struct MainPage {
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
   private isPC: boolean = deviceInfo.deviceType === '2in1'
   private lyricLoadRequestId: number = 0
-  private isDisplayListenerRegistered: boolean = false
 
   onDisplaySizeChange(): void {
     // 官方 Tabs 指示器由系统管理，无需手动更新 offset
@@ -111,7 +112,6 @@ struct MainPage {
     ColorConversion.setSysBarLightBackground(this.isDarkTheme())
     this.updateGreeting()
     this.loadPoetryLine()
-    this.initBreakpoint()
     this.loadCurrentLyrics() // 白色蒙版开关按鼠标/触控板检测结果显隐：刷新状态并监听热插拔
     refreshPointerDeviceState()
     startPointerDeviceListener()
@@ -172,31 +172,24 @@ struct MainPage {
     })
   }
 
-  initBreakpoint() {
-    try {
-      const displayInfo = display.getDefaultDisplaySync()
-      this.updateBreakpoint(displayInfo.width)
-      if (!this.isDisplayListenerRegistered) {
-        display.on('change', this.displayChangeCallback)
-        this.isDisplayListenerRegistered = true
-      }
-    } catch (err) {
-      Logger.error(TAG, 'init breakpoint error')
-    }
-  }
-
-  updateBreakpoint(pxWidth: number) {
-    const vpWidth = this.getUIContext().px2vp(pxWidth)
+  // 断点改由主容器实际布局宽度（vp）驱动：折叠屏折叠/展开、窗口缩放、旋转都会实时触发 onAreaChange，
+  // 而 display.getDefaultDisplaySync().width 返回的是物理屏宽，折叠态不会随之收窄，导致断点卡在展开态。
+  updateBreakpointByVp(vpWidth: number) {
+    let bp: string
     if (vpWidth < 320) {
-      this.breakpoint = 'sm'
+      bp = 'sm'
     } else if (vpWidth < 600) {
-      this.breakpoint = 'md'
+      bp = 'md'
     } else if (vpWidth < 840) {
-      this.breakpoint = 'lg'
+      bp = 'lg'
     } else if (vpWidth < 1280) {
-      this.breakpoint = 'xl'
+      bp = 'xl'
     } else {
-      this.breakpoint = 'xxl'
+      bp = 'xxl'
+    }
+    if (this.breakpoint !== bp) {
+      this.breakpoint = bp
+      Logger.info(TAG, `breakpoint -> ${bp} (windowWidth=${vpWidth}vp)`)
     }
   }
 
@@ -218,17 +211,36 @@ struct MainPage {
     const lightColor: ResourceColor | undefined = useLight
       ? (this.lightColorMode === 'white' ? '#FFFFFF' : this.primaryColor)
       : undefined
+    // HdsBarWidthRangeOptions 不支持百分比单位（官方约束），'40%' 会导致宽度解析失败（迷你栏宽度归 0）。
+    // 改为按主容器实测宽度 × 0.4 的 vp 值；首次布局前宽度未知（0）时不设置，走系统分档默认。
+    const barWidthVp: number = Math.round(this.mainWidthVp * 0.4)
+    const miniBarWidthVp: number = Math.min(328, barWidthVp) // 迷你栏最大宽度不超过 328vp（官方约束）
+    const hasBarWidth: boolean = this.mainWidthVp > 0
     const miniBar: HdsTabsMiniBar = {
       miniBarBuilder: (): void => {
         this.miniBarBuilder()
       },
       enableMiniBarBackground: true,
+      miniBarWidth: hasBarWidth ?
+        { smallWidth: miniBarWidthVp, mediumWidth: miniBarWidthVp, largeWidth: miniBarWidthVp } : undefined,
+      // 小屏态下系统在开合切换（NORMAL 模式）时可能把迷你栏重置回折叠样式，
+      // 这里兜底拉回展开，保证播控条始终以展开样式显示
+      onBarStyleChange: (miniStyle: HdsBarStyle, _tabStyle: HdsBarStyle, _miniW: number, _tabW: number,
+        _mode: HdsTabsBarChangeMode): void => {
+        Logger.info(TAG,
+          `onBarStyleChange miniStyle=${miniStyle} tabStyle=${_tabStyle} miniW=${_miniW} tabW=${_tabW} mode=${_mode} bp=${this.breakpoint}`)
+        if ((this.breakpoint === 'sm' || this.breakpoint === 'md') && miniStyle === HdsBarStyle.COLLAPSE) {
+          Logger.info(TAG, 'applyMiniBarStyle(EXPAND) pulled back by app')
+          this.tabsController.applyMiniBarStyle(HdsBarStyle.EXPAND)
+        }
+      },
     }
     // 宽度 <600vp（sm/md：小屏设备、折叠屏折叠态）时系统默认迷你栏为折叠样式且与 TabBar 左右并排；
     // 需求要求：迷你栏展开并纵向叠放在 TabBar 上方（大宽屏保持默认左右布局）
     if (this.breakpoint === 'sm' || this.breakpoint === 'md') {
       miniBar.miniBarStyle = HdsBarStyle.EXPAND
       miniBar.barLayoutMode = HdsBarLayoutMode.VERTICAL
+      Logger.info(TAG, `floating style: VERTICAL + EXPAND applied (bp=${this.breakpoint})`)
     }
     return {
       adaptToHandedness: true,
@@ -238,6 +250,8 @@ struct MainPage {
       },
       barBottomMargin: this.bottomSafeHeight > 0 ? 28 : 28,
       lightColor: lightColor,
+      barWidth: hasBarWidth ?
+        { smallWidth: barWidthVp, mediumWidth: barWidthVp, largeWidth: barWidthVp } : undefined,
       miniBar: miniBar,
     } as HdsTabsFloatingStyle
   }
@@ -285,19 +299,19 @@ struct MainPage {
 
       Column() {
         Image(icon)
-          .height(this.scaledSize(18))
+          .height(this.scaledSize(24))
           .fillColor(this.currentIndex === index ? this.selectedTabContentColor() : $r('app.color.tab_content_secondary'))
           .scale({
-            x: this.currentIndex === index ? 1.15 : 1.0, y: this.currentIndex === index ? 1.15 : 1.0
+            x: this.currentIndex === index ? 1.1 : 1.0, y: this.currentIndex === index ? 1.1 : 1.0
           })
         Text(name)
-          .fontSize(9)
+          .fontSize(8)
           .fontColor(this.currentIndex === index ? this.selectedTabContentColor() : $r('app.color.tab_content_secondary'))
-          .margin({ top: this.scaledSize(2) })
-      }.width(this.scaledSize(this.tabWidth)).height(this.scaledSize(40)).justifyContent(FlexAlign.Center)
+          .margin({ top: this.scaledSize(1) })
+      }.width(this.scaledSize(this.tabWidth)).height(this.scaledSize(36)).justifyContent(FlexAlign.Center)
     }
     .width(this.scaledSize(this.tabWidth))
-    .height(this.scaledSize(40))
+    .height(this.scaledSize(36))
   }
 
   @Builder
@@ -442,26 +456,26 @@ struct MainPage {
 
   @Builder
   miniBarBuilder() {
-    Row({ space: this.scaledSize(12) }) {
+    Row({ space: this.scaledSize(8) }) {
       if (this.currentSongTitle.length > 0) {
         AlbumCover({
           song: this.currentSong(),
-          coverWidth: this.scaledSize(32),
-          coverHeight: this.scaledSize(32),
-          coverRadius: this.scaledSize(16)
-        }).width(this.scaledSize(32)).height(this.scaledSize(32)).rotate({ angle: this.rotationAngle }).onClick(() => {
+          coverWidth: this.scaledSize(36),
+          coverHeight: this.scaledSize(36),
+          coverRadius: this.scaledSize(18)
+        }).width(this.scaledSize(36)).height(this.scaledSize(36)).rotate({ angle: this.rotationAngle }).onClick(() => {
           this.openPlayer()
         })
       } else {
         Stack() {
           Image($r('app.media.ic_public_music'))
-            .width(this.scaledSize(20))
-            .height(this.scaledSize(20))
+            .width(this.scaledSize(24))
+            .height(this.scaledSize(24))
             .fillColor($r('app.color.player_icon_inactive_color'))
         }
-        .width(this.scaledSize(32))
-        .height(this.scaledSize(32))
-        .borderRadius(this.scaledSize(16))
+        .width(this.scaledSize(36))
+        .height(this.scaledSize(36))
+        .borderRadius(this.scaledSize(18))
         .rotate({ angle: this.rotationAngle })
         .onClick(() => {
           this.openPlayer()
@@ -510,27 +524,27 @@ struct MainPage {
         }
       }
       .layoutWeight(this.songInfoWeight())
-      .margin({ left: this.scaledSize(8), right: this.scaledSize(8) })
+      .margin({ left: this.scaledSize(4), right: this.scaledSize(4) })
       .onClick(() => {
         this.openPlayer()
       })
 
       Image($r('app.media.ic_public_play_last'))
-        .height(this.scaledSize(18))
+        .height(this.scaledSize(24))
         .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
           $r('app.color.player_icon_inactive_color'))
         .onClick(() => {
           this.playPrevious()
         })
       Image(this.isPlaying ? $r('app.media.ic_public_play') : $r('app.media.ic_public_pause'))
-        .height(this.scaledSize(22))
+        .height(this.scaledSize(28))
         .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
           $r('app.color.player_icon_inactive_color'))
         .onClick(() => {
           this.togglePlay()
         })
       Image($r('app.media.ic_public_play_next'))
-        .height(this.scaledSize(18))
+        .height(this.scaledSize(24))
         .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
           $r('app.color.player_icon_inactive_color'))
         .onClick(() => {
@@ -540,10 +554,10 @@ struct MainPage {
     .height(this.scaledSize(40))
     .alignSelf(ItemAlign.Center)
     .padding({
-      left: this.scaledSize(12),
-      right: this.scaledSize(16),
-      top: this.scaledSize(4),
-      bottom: this.scaledSize(4)
+      left: this.scaledSize(10),
+      right: this.scaledSize(12),
+      top: this.scaledSize(2),
+      bottom: this.scaledSize(2)
     })
   }
 
@@ -678,10 +692,6 @@ struct MainPage {
 
   aboutToDisappear(): void {
     this.stopRotation()
-    if (this.isDisplayListenerRegistered) {
-      display.off('change', this.displayChangeCallback)
-      this.isDisplayListenerRegistered = false
-    }
   }
 
   pageTransition() {
@@ -779,7 +789,7 @@ struct MainPage {
       }
       .barPosition(BarPosition.End)
       .barOverlap(true)
-      .barHeight(this.scaledSize(56))
+      .barHeight(this.scaledSize(44))
       .barWidth(this.scaledSize(228))
       .scrollable(true)
       .barFloatingStyle(this.getHdsBarFloatingStyle())
@@ -799,15 +809,14 @@ struct MainPage {
     .width('100%')
     .height('100%')
     .onKeyEvent((event: KeyEvent): boolean => this.handleKeyEvent(event))
-  }
-
-  private displayChangeCallback = (): void => {
-    try {
-      const newDisplayInfo = display.getDefaultDisplaySync()
-      this.updateBreakpoint(newDisplayInfo.width)
-    } catch (err) {
-      Logger.error(TAG, 'display change error')
-    }
+    // 以主容器实际宽度（vp）驱动断点，折叠屏折叠/展开、窗口缩放、旋转均可实时响应
+    .onAreaChange((_oldArea: Area, newArea: Area) => {
+      const w: number = newArea.width as number
+      if (w > 0 && w !== this.mainWidthVp) {
+        this.mainWidthVp = w
+      }
+      this.updateBreakpointByVp(w)
+    })
   }
 
   private isDarkTheme(): boolean {
