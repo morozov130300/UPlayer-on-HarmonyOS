@@ -324,10 +324,10 @@ struct MainPage {
 
       Column() {
         Image(icon)
-          .height(this.scaledSize(24))
+          .height(this.scaledSize(20))
           .fillColor(this.currentIndex === index ? this.selectedTabContentColor() : $r('app.color.tab_content_secondary'))
           .scale({
-            x: this.currentIndex === index ? 1.1 : 1.0, y: this.currentIndex === index ? 1.1 : 1.0
+            x: this.currentIndex === index ? 1.25 : 1.0, y: this.currentIndex === index ? 1.25 : 1.0
           })
         Text(name)
           .fontSize(8)
