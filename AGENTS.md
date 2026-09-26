@@ -320,11 +320,9 @@ hdc shell hilog
 
 **每次调试前必须先编译！** 智能体完成代码修改后，必须执行：
 ```powershell
-cd D:\UPlayer
-devecocli run --device "HUAWEI Mate X7 典藏版" --module entry
+devecocli run --device "<设备名>" --module entry
 ```
-连接设备：`& "D:\DevEco Studio\sdk\default\openharmony\toolchains\hdc.exe" tconn 10.82.231.201:37391`
-截图验证：`devecocli ui screenshot --device "HUAWEI Mate X7 典藏版" --path "D:\UPlayer\check.png"`
+截图验证：`devecocli ui screenshot --device "<设备名>" --path "D:\UPlayer\check.png"`
 清理截图：`Remove-Item D:\UPlayer\check.png`
 
 ## 项目信息
