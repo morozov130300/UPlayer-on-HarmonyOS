@@ -116,6 +116,12 @@ export struct HomeContent {
     return this.tabStyle !== 'classic'
   }
 
+  // 加号玻璃底盘材质：与底部栏同源（createBarGlassMaterial）。加号位于内容区，
+  // 沉浸式材质在生效区外不会渲染，实际由下方 backgroundEffect 磨砂兜底承接
+  private plusButtonGlassMaterial(): uiMaterial.Material | undefined {
+    return createBarGlassMaterial(this.glassThickness, this.interactive)
+  }
+
   @State headerRowHeight: number = 0
 
   private headerOverlayHeight(): number {

@@ -231,27 +231,26 @@ struct MainPage {
   }
 
   private getHdsBarFloatingStyle(): HdsTabsFloatingStyle | undefined {
-    if (this.tabStyle !== 'immersive' || !isLiquidGlassAvailable()
-      || this.glassThickness <= 0) {
+    if (this.tabStyle !== 'immersive' || !isLiquidGlassAvailable()) {
       return undefined
     }
+    // glassThickness <= 0 时仍返回 pill 配置（与开启时布局完全一致），
+    // 仅 systemMaterialEffect 为 undefined（无玻璃材质效果）。
+    // 布局由断点决定：小屏 sm/md 上下叠，大屏 lg/xl 左右分栏。
     const level: hdsMaterial.MaterialLevel = hdsMaterial.MaterialLevel.ADAPTIVE
     const useLight: boolean = this.tabTouchIndicator === 'light'
     const lightColor: ResourceColor | undefined = useLight
       ? (this.lightColorMode === 'white' ? '#FFFFFF' : this.primaryColor)
       : undefined
-    // HdsBarWidthRangeOptions 不支持百分比单位（官方约束），'40%' 会导致宽度解析失败（迷你栏宽度归 0）。
-    // 改为按主容器实测宽度 × 0.4 的 vp 值；首次布局前宽度未知（0）时不设置，走系统分档默认。
     const smallScreen: boolean = this.breakpoint === 'sm' || this.breakpoint === 'md'
     const barWidthVp: number = Math.round(this.mainWidthVp * 0.4)
     const hasBarWidth: boolean = this.mainWidthVp > 0
-    // 小屏/折叠态（sm/md）：系统会把页签栏强制收折成小胶囊并接管迷你栏布局（无 API 可阻止，
-    // barLayoutMode=VERTICAL 在此场景不生效），所以这里不下发系统迷你栏，
-    // 改由 build() 中自建的 playerControl 播控条叠放在 TabBar 上方（见 controlBarBottomMargin）。
-    // 大屏态（lg/xl/xxl）：保留系统迷你栏（默认展开、与页签栏左右并排）。
+    // 小屏/折叠态（sm/md）：系统会把页签栏强制收折成小胶囊并接管迷你栏布局，
+    // 不下发系统迷你栏，改由 build() 中自建的 playerControl 播控条叠放在 TabBar 上方。
+    // 大屏态（lg/xl/xxl）：下发系统迷你栏，左右并排。
     let miniBar: HdsTabsMiniBar | undefined = undefined
     if (!smallScreen) {
-      const miniBarWidthVp: number = Math.min(328, barWidthVp) // 迷你栏最大宽度不超过 328vp（官方约束）
+      const miniBarWidthVp: number = Math.min(328, barWidthVp)
       miniBar = {
         miniBarBuilder: (): void => {
           this.miniBarBuilder()
@@ -263,13 +262,13 @@ struct MainPage {
     }
     return {
       adaptToHandedness: true,
-      systemMaterialEffect: {
+      systemMaterialEffect: this.glassThickness > 0 ? {
         materialType: hdsMaterial.MaterialType.IMMERSIVE,
         materialLevel: level,
-      },
+      } : undefined,
       barBottomMargin: this.bottomSafeHeight > 0 ? 28 : 28,
       lightColor: lightColor,
-      barWidth: (smallScreen || !hasBarWidth) ? undefined :
+      barWidth: (smallScreen || !hasBarWidth || this.glassThickness <= 0) ? undefined :
         { smallWidth: barWidthVp, mediumWidth: barWidthVp, largeWidth: barWidthVp },
       miniBar: miniBar,
     } as HdsTabsFloatingStyle
@@ -807,9 +806,9 @@ struct MainPage {
         .tabBar(this.tabLabelBuilder(2, '设置', $r('app.media.ic_public_settings')))
       }
       .barPosition(BarPosition.End)
-      .barOverlap(this.getHdsBarFloatingStyle() !== undefined)
-      .barHeight(this.getHdsBarFloatingStyle() !== undefined ? this.scaledSize(44) : 56)
-      .barWidth(this.getHdsBarFloatingStyle() !== undefined ? this.scaledSize(228) : '100%')
+      .barOverlap(true)
+      .barHeight(this.scaledSize(44))
+      .barWidth(this.scaledSize(228))
       .scrollable(true)
       .barFloatingStyle(this.getHdsBarFloatingStyle())
       .barBackgroundBlurStyle(this.tabStyle !== 'immersive' || this.getHdsBarFloatingStyle() === undefined
@@ -821,9 +820,8 @@ struct MainPage {
       .width('100%')
       .height('100%')
 
-      // 小屏/折叠态（sm/md）：系统迷你栏无法纵向堆叠（页签栏被系统收折且接管布局），
-      // 改用自建播控条叠放在 TabBar 正上方；大屏态不渲染，沿用系统迷你栏。
-      // glassThickness=0 时无迷你栏，同样需要自建播控条。
+      // 小屏/折叠态（sm/md）：系统迷你栏无法纵向堆叠，改用自建播控条叠放。
+      // 大屏态（lg/xl）：系统 miniBar 左右分栏；glassThickness=0 时 miniBar 也为 undefined，同样需要自建播控条。
       if ((this.breakpoint === 'sm' || this.breakpoint === 'md') || this.glassThickness <= 0) {
         Column() {
           this.playerControl()
