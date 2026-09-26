@@ -1,6 +1,6 @@
 // ArkUI 26 Beta1: 接口定义变更（误报，本项目已是Stage模型）+ UX视觉布局变更（Text默认开启沉浸式材质，系统行为）
 import {
-  curves, LengthMetrics, PromptAction, uiMaterial, uiAppearance
+  curves, LengthMetrics, PromptAction, uiMaterial, uiAppearance, window
 } from '@kit.ArkUI';
 import { DatePickerComponent, DisplayMode, TimeFormat, DatePickerComponentResult } from '@ohos.arkui.advanced.DatePickerComponent';
 import { AVVolumePanel } from '@kit.AudioKit';
@@ -247,6 +247,25 @@ export struct ControlAreaComponent {
       this.volumeHideTimer = -1;
     }
     this.isShowVolumeBuild = false;
+  }
+
+  // 音量面板位置：position 参照系是窗口左上角（px 绝对偏移，官方示例 y=1000 即此量纲）。
+  // 面板定位在窗口左侧、底部控制栏上方一带；窗口高度取不到时给保守兜底值
+  private volumePanelPosition(): Position {
+    try {
+      const win: window.Window | undefined = AppStorage.get<window.Window>(AppStorageKeyConstants.KEY_WINDOW)
+      if (win !== undefined) {
+        const rect: window.Rect = win.getWindowProperties().windowRect
+        const hPx: number = rect.height
+        if (hPx > 0) {
+          const yPx: number = Math.max(240, hPx - 460)
+          return { x: 48, y: yPx }
+        }
+      }
+    } catch (err) {
+      Logger.warn(TAG, `volumePanelPosition failed: ${JSON.stringify(err)}`)
+    }
+    return { x: 48, y: 400 }
   }
 
   // ─── 输出设备（系统接口：AudioRoutingManager + AudioDeviceEnhanceManager） ───
@@ -696,16 +715,22 @@ export struct ControlAreaComponent {
       .justifyContent(FlexAlign.SpaceEvenly)
       .margin({ top: 28 })
 
-      AVVolumePanel({
-        volumeLevel: Math.round(this.volume * (this.maxVolumeLevel > 0 ? this.maxVolumeLevel : 15)),
-        volumeParameter: {
-          position: {
-            x: this.isShowVolumeBuild ? 100 : -1,
-            y: 200
+      // 系统音量面板：官方示例模式——visibility 控制显隐，position 用窗口绝对坐标(px)。
+      // 之前用 x=-1 藏面板没有依据（官方示例固定 position 靠 visibility 切换），
+      // 改为跟随窗口实际高度把面板定位在底部控制栏上方左侧，保证各分辨率/窗口尺寸下都可见
+      Column() {
+        AVVolumePanel({
+          volumeLevel: Math.round(this.volume * (this.maxVolumeLevel > 0 ? this.maxVolumeLevel : 15)),
+          volumeParameter: {
+            position: this.volumePanelPosition()
           }
-        }
-      })
-        .height(1)
+        })
+          .width(10)
+      }
+      .width(10)
+      .height(1)
+      .zIndex(99)
+      .visibility(this.isShowVolumeBuild ? Visibility.Visible : Visibility.Hidden)
     }
   }
 

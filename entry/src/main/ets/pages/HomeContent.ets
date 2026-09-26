@@ -35,6 +35,8 @@ class DisplayItem {
 export struct HomeContent {
   topContentPadding: number = 0
   bottomContentPadding: number = 0
+  // 加号底边位置：由 Index 计算为「紧贴播控条上沿」，跨断点自适应
+  plusButtonBottom: number = 0
   // 问候语内容带（由 Index 传入）：多选菜单栏进入多选时落在该带内，替换问候语的位置
   greetingBandTop: number = 0
   greetingBandHeight: number = 0
@@ -908,7 +910,7 @@ export struct HomeContent {
         // 智感握姿：只切换贴边方向，不改变与底部的间距，避免握姿切换时按钮上下跳动。
         // 读 plusOnLeft（动画态）而不是 holdingHandLeft，切换才会走滑动动画
         .position({
-          bottom: this.bottomContentPadding,
+          bottom: this.plusButtonBottom,
           left: this.plusOnLeft ? this.scaledSize(20) : undefined,
           right: this.plusOnLeft ? undefined : this.scaledSize(20)
         })

@@ -20,6 +20,8 @@ const FAVORITES_FOLDER_ID: string = '__favorites__'
 export struct PlaylistContent {
   topContentPadding: number = 0
   bottomContentPadding: number = 0
+  // 加号底边位置：由 Index 计算为「紧贴播控条上沿」，跨断点自适应
+  plusButtonBottom: number = 0
   onNavigateToHome: () => void = (): void => {}
   private context: common.UIAbilityContext | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
   @State folders: FolderInfo[] = []
@@ -416,7 +418,7 @@ export struct PlaylistContent {
             .width(this.scaledSize(40)).height(this.scaledSize(40))
             .fillColor(this.primaryColor)
         }
-        .position({ bottom: this.bottomContentPadding, right: this.scaledSize(20) })
+        .position({ bottom: this.plusButtonBottom, right: this.scaledSize(20) })
         .transition({ type: TransitionType.Insert, opacity: 0, scale: { x: 0.5, y: 0.5 } })
         .transition({ type: TransitionType.Delete, opacity: 0, scale: { x: 0.5, y: 0.5 } })
         .onClick(() => { this.onPlusClick() })

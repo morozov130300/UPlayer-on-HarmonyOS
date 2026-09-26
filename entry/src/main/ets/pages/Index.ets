@@ -732,6 +732,7 @@ struct MainPage {
             HomeContent({
               topContentPadding: this.homeHeaderHeight(),
               bottomContentPadding: this.bottomOverlayInset(),
+              plusButtonBottom: this.plusButtonBottomInset(),
               greetingBandTop: this.topContentInset(),
               greetingBandHeight: this.homeHeaderHeight() - this.topContentInset()
             }).width('100%').height('100%')
@@ -791,6 +792,7 @@ struct MainPage {
           PlaylistContent({
             topContentPadding: this.topContentInset(),
             bottomContentPadding: this.bottomOverlayInset(),
+            plusButtonBottom: this.plusButtonBottomInset(),
             onNavigateToHome: (): void => {
               this.onFolderClick()
             }
@@ -904,6 +906,17 @@ struct MainPage {
   // TabBar 悬浮于底部：barBottomMargin(28) + barHeight(scaled 44) 到屏幕底；再加 4vp 间距。
   private controlBarBottomMargin(): number {
     return 28 + this.scaledSize(44) + this.scaledSize(4)
+  }
+
+  // 加号组件底边位置：紧贴播控条（迷你栏）上沿。
+  // sm/md：自建 playerControl 叠在 TabBar 上方，上沿 = controlBarBottomMargin + 迷你栏高(40vp)；
+  // lg/xl：系统 miniBar 与 TabBar 左右并排，上沿 ≈ TabBar 上沿(barBottomMargin 28 + barHeight 44)。
+  // 与 HomeContent/PlaylistContent 加号处于同一全屏坐标系（底部均对齐屏幕底），传下去即可精确贴住
+  private plusButtonBottomInset(): number {
+    if (this.breakpoint === 'sm' || this.breakpoint === 'md') {
+      return this.controlBarBottomMargin() + this.scaledSize(40)
+    }
+    return 28 + this.scaledSize(44)
   }
 
   private glassBlurRadius(): number {

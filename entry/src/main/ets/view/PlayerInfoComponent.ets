@@ -153,12 +153,12 @@ export struct PlayerInfoComponent {
               MusicInfoComponent({ mainWindowInfo: this.mainWindowInfo })
             }
             .padding(this.mainWindowInfo.widthBp === WidthBreakpoint.WIDTH_MD ? 24 : 80)
-            .width('50%')
+            .layoutWeight(1)
             .height('100%')
             Column() {
               LyricsComponent({ isShowControl: this.isShowControlLg, mainWindowInfo: this.mainWindowInfo })
             }
-            .width('50%')
+            .layoutWeight(1)
             .height('100%')
             .padding(this.mainWindowInfo.widthBp === WidthBreakpoint.WIDTH_MD ? 24 : 80)
           }
@@ -229,6 +229,8 @@ export struct PlayerInfoComponent {
           })
         }
       }
+      .width('100%')
+      .height('100%')
       .padding({
         bottom: this.bottomHeight,
         top: this.topHeight

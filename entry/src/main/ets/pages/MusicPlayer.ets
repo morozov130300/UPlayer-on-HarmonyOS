@@ -121,6 +121,8 @@ struct MusicPlayer {
             mainWindowInfo: this.windowUtil?.mainWindowInfo,
             showBackButton: false
           })
+          .width('100%')
+          .height('100%')
         }
       }
       .height('100%')
@@ -138,6 +140,7 @@ struct MusicPlayer {
     })
     .hideBackButton(true)
     .hideTitleBar(false)
+    .mode(NavigationMode.Stack)
     .width('100%')
     .height('100%')
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP])
