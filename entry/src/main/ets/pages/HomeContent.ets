@@ -900,7 +900,7 @@ export struct HomeContent {
           Row()
             .width(this.scaledSize(40)).height(this.scaledSize(40))
             .borderRadius(this.scaledSize(20))
-            .backgroundEffect({ radius: 6 })
+            .backgroundEffect({ radius: 1 })
           Image($r('app.media.ic_public_add_norm_filled'))
             .width(this.scaledSize(40)).height(this.scaledSize(40))
             .fillColor(this.primaryColor)
@@ -908,7 +908,7 @@ export struct HomeContent {
         // 智感握姿：只切换贴边方向，不改变与底部的间距，避免握姿切换时按钮上下跳动。
         // 读 plusOnLeft（动画态）而不是 holdingHandLeft，切换才会走滑动动画
         .position({
-          bottom: this.bottomContentPadding + this.scaledSize(4),
+          bottom: this.bottomContentPadding,
           left: this.plusOnLeft ? this.scaledSize(20) : undefined,
           right: this.plusOnLeft ? undefined : this.scaledSize(20)
         })
