@@ -18,6 +18,7 @@ import {
   createBarGlassMaterial,
   createTabImmersiveMaterial,
   DEFAULT_GLASS_STYLE,
+  getDeviceMaterialLevel,
   isLiquidGlassAvailable
 } from '../common/utils/GlassUtil'
 import Logger from '../common/utils/Logger'
@@ -111,6 +112,7 @@ struct MainPage {
     ColorConversion.setSysBarLightBackground(this.isDarkTheme())
     this.updateGreeting()
     this.loadPoetryLine()
+    this.logGlassGate() // 玻璃能力诊断（一次性）
     this.loadCurrentLyrics() // 白色蒙版开关按鼠标/触控板检测结果显隐：刷新状态并监听热插拔
     refreshPointerDeviceState()
     startPointerDeviceListener()
@@ -192,20 +194,54 @@ struct MainPage {
     }
   }
 
+  // 玻璃能力诊断：一次性把两套材质体系的判定值都打出来，定位"该出玻璃却出模糊"的原因
+  private logGlassGate(): void {
+    let api26: boolean = false
+    let uiImmersive: boolean = false
+    let hdsTypes: string = 'n/a'
+    try {
+      api26 = deviceInfo.apiAvailable('26.0.0')
+    } catch (e) {
+    }
+    try {
+      uiImmersive = uiMaterial.isImmersiveMaterialSupported()
+    } catch (e) {
+    }
+    try {
+      const types: Array<hdsMaterial.MaterialType> = hdsMaterial.getSystemMaterialTypes()
+      const names: string[] = []
+      for (const t of types) {
+        if (t === hdsMaterial.MaterialType.IMMERSIVE) {
+          names.push('IMMERSIVE')
+        } else if (t === hdsMaterial.MaterialType.ADAPTIVE) {
+          names.push('ADAPTIVE')
+        } else if (t === hdsMaterial.MaterialType.NONE) {
+          names.push('NONE')
+        } else {
+          names.push(String(t))
+        }
+      }
+      hdsTypes = names.join(',')
+    } catch (e) {
+    }
+    Logger.info(TAG,
+      `glassGate api26=${api26} uiImmersive=${uiImmersive} hdsTypes=[${hdsTypes}] ` +
+        `matLevel=${String(getDeviceMaterialLevel())} liquidGlass=${isLiquidGlassAvailable()} ` +
+        `tabStyle=${this.tabStyle} glassTh=${this.glassThickness}`)
+  }
+
   private getHdsBarFloatingStyle(): HdsTabsFloatingStyle | undefined {
     if (this.tabStyle !== 'immersive' || !isLiquidGlassAvailable()
       || this.glassThickness <= 0) {
       return undefined
     }
-    // glassThickness 映射到 hdsMaterial MaterialLevel
-    let level: hdsMaterial.MaterialLevel = hdsMaterial.MaterialLevel.ADAPTIVE
-    if (this.glassThickness <= 30) {
-      level = hdsMaterial.MaterialLevel.SMOOTH
-    } else if (this.glassThickness <= 65) {
-      level = hdsMaterial.MaterialLevel.GENTLE
-    } else {
-      level = hdsMaterial.MaterialLevel.EXQUISITE
-    }
+    // Hds 材质档位（MaterialLevel）是「算力/性能档」，不是视觉厚薄档：
+    // 官方 FAQ 明确 hdsMaterial 不提供与 uiMaterial.ImmersiveStyle 对等的厚薄配置，
+    // 组件最终效果由 materialType + materialLevel 共同决定，且 SMOOTH 档在低算力下
+    // 会退化为纯色/边框/阴影（观感≈磨砂模糊）。若把「玻璃厚度滑轨」映射到该档位，
+    // 厚度调到较低档（如 20）就会在高端芯片上强制走低算力 SMOOTH，玻璃失效。
+    // 故页签栏统一用 ADAPTIVE：由系统按设备实际算力出最高质量玻璃，低算力设备自动降档兜底。
+    const level: hdsMaterial.MaterialLevel = hdsMaterial.MaterialLevel.ADAPTIVE
     const useLight: boolean = this.tabTouchIndicator === 'light'
     const lightColor: ResourceColor | undefined = useLight
       ? (this.lightColorMode === 'white' ? '#FFFFFF' : this.primaryColor)
