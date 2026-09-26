@@ -895,10 +895,9 @@ export struct HomeContent {
 
       if (!this.isMultiSelectMode && (this.isPlusVisible || !this.settings.plusButtonScrollHide)) {
         Row() {
-          Text('+')
-            .fontSize(this.scaledSize(32))
-            .fontColor('#FFFFFF')
-            .fontWeight(FontWeight.Bold)
+          Image($r('app.media.ic_public_add_norm_filled'))
+          .width(this.scaledSize(28)).height(this.scaledSize(28))
+          .fillColor('#FFFFFF')
         }
         .width(this.scaledSize(40)).height(this.scaledSize(40))
         .borderRadius(this.scaledSize(20))
