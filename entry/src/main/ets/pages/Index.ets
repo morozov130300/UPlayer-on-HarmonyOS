@@ -909,11 +909,11 @@ struct MainPage {
     return 28 + this.scaledSize(44) + this.scaledSize(4)
   }
 
-  // 加号组件底边位置：紧贴播控条（迷你栏）上沿。
-  // 72 偏浮、9 偏低（跑到播控条下方），取中间值 40 作初值，待真机精调
+  // 加号组件底边位置：紧贴播控条（迷你栏）上沿。真机实测（vp）：
+  // sm/md 窄屏叠放态：播控条上沿较高，需 146；lg/xl 大屏并排态：需 40（后续精调）
   private plusButtonBottomInset(): number {
     if (this.breakpoint === 'sm' || this.breakpoint === 'md') {
-      return 48
+      return 146
     }
     return 40
   }

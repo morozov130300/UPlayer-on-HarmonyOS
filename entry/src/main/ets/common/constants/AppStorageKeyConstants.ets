@@ -63,4 +63,6 @@ export class AppStorageKeyConstants {
   // 输出设备列表/首选设备变化计数器：AudioRoutingService 在 availableDeviceChange 时 +1，
   // 「更多」面板的「输出设备」行 @StorageProp @Watch 到变化后刷新设备名与列表
   public static readonly KEY_OUTPUT_DEVICE_REVISION: string = BaseConstants.KEY_PREFIX + 'OutputDeviceRevision'
+  // 系统媒体音量最大格数（getMaxVolumeByStream 结果，AVVolumePanel.volumeLevel 换算用）
+  public static readonly KEY_VOL_PANEL_MAX: string = BaseConstants.KEY_PREFIX + 'VolPanelMax'
 }

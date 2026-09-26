@@ -1,5 +1,6 @@
 import { BusinessError } from '@kit.BasicServicesKit';
 import { curves } from '@kit.ArkUI';
+import { AVVolumePanel } from '@kit.AudioKit';
 import { effectKit } from '@kit.ArkGraphics2D';
 import { image } from '@kit.ImageKit';
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
@@ -35,6 +36,10 @@ export struct PlayerInfoComponent {
   @StorageLink(AppStorageKeyConstants.KEY_PAGE_SHOW_TIME) pageShowTime: number = 0;
   @StorageLink('uplayer_theme_mode') themeMode: string = 'system';
   @State intervalID: number = 0;
+  // 系统音量写通道：底栏音量 Slider 弹层经 KEY_CURRENT_VOLUME 联动驱动 volumeLevel，
+  // AVVolumePanel 常驻挂载，不做显隐切换
+  @StorageProp(AppStorageKeyConstants.KEY_VOL_PANEL_MAX) volPanelMax: number = 15;
+  @StorageProp(AppStorageKeyConstants.KEY_CURRENT_VOLUME) volPanelNorm: number = 0;
   @Link isShowPlay: boolean;
   @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) isPlay: boolean = false;
   // 返回按钮玻璃材质只在「Navigation 标题栏」生效区渲染；播放器页把返回键交给
@@ -251,6 +256,15 @@ export struct PlayerInfoComponent {
         .position({ x: 8, y: this.topHeight })
         .zIndex(2)
       }
+
+      // 系统音量面板常驻挂载：它只在音量真正变化（音量键 / volumeLevel 写入）时显示系统音量条，
+      // 无法靠 visibility 主动弹出（官方 FAQ faqs-audio-37/52）。
+      // position 负值 = 屏幕外 = 隐藏系统音量条，音量 UI 由底栏自定义 Slider 弹层承担；
+      // volumeLevel 是应用写系统音量的唯一合法通道，单位为格（0~volPanelMax）
+      AVVolumePanel({
+        volumeLevel: Math.round(this.volPanelNorm * this.volPanelMax),
+        volumeParameter: { position: { x: -100, y: -100 } }
+      })
     }
     .height(StyleConstants.FULL_HEIGHT)
     .width(StyleConstants.FULL_WIDTH)

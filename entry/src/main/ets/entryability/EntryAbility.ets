@@ -99,6 +99,11 @@ export default class EntryAbility extends UIAbility {
       Logger.error(TAG, 'applyThemeMode failed: ' + JSON.stringify(e));
     }
 
+    // 预置 AppStorage 键：@StorageProp/@StorageLink 要求键在组件创建前已存在，
+    // 否则绑定静默失败（音量联动 KEY_CURRENT_VOLUME / KEY_VOL_PANEL_MAX 同理）
+    AppStorage.setOrCreate<number>(AppStorageKeyConstants.KEY_VOL_PANEL_MAX, 15);
+    AppStorage.setOrCreate<number>(AppStorageKeyConstants.KEY_CURRENT_VOLUME, 1);
+
     windowStage.loadContent('pages/Index', (err) => {
       if (err.code) {
         hilog.error(DOMAIN, 'testTag', 'Failed to load the content. Cause: %{public}s', JSON.stringify(err));

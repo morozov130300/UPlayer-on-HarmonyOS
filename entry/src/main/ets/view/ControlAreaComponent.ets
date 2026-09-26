@@ -1,9 +1,8 @@
 // ArkUI 26 Beta1: 接口定义变更（误报，本项目已是Stage模型）+ UX视觉布局变更（Text默认开启沉浸式材质，系统行为）
 import {
-  curves, LengthMetrics, PromptAction, uiMaterial, uiAppearance, window
+  curves, LengthMetrics, PromptAction, uiMaterial, uiAppearance
 } from '@kit.ArkUI';
 import { DatePickerComponent, DisplayMode, TimeFormat, DatePickerComponentResult } from '@ohos.arkui.advanced.DatePickerComponent';
-import { AVVolumePanel } from '@kit.AudioKit';
 
 import { MusicPlayMode, PlayerConstants, PlayModeSwitchList } from '../common/constants/PlayerConstants';
 import { StyleConstants } from '../common/constants/StyleConstants';
@@ -79,6 +78,8 @@ export struct ControlAreaComponent {
   @State playModeScale: number = 1.0;
   @State speedScale: number = 1.0;
   @State volumeScale: number = 1.0;
+  // 喇叭（音量面板）按钮独立缩放状态，避免与「更多」按钮共享 volumeScale 导致同时出动效
+  @State soundScale: number = 1.0;
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance();
   private songDataSource: SongDataSource = new SongDataSource([]);
   private volumeManager: audio.AudioVolumeManager | undefined = undefined;
@@ -87,7 +88,6 @@ export struct ControlAreaComponent {
   // 系统媒体音量最大格数（getMaxVolumeByStream，API 20+）：手机常见 15，PC 可能是 20/100，
   // 归一化显示与 AVVolumePanel 档位映射都必须用它，不能硬编码
   @State maxVolumeLevel: number = 15;
-  private volumeHideTimer: number = -1;
   // 「更多」面板：输出设备选择（AudioRoutingManager + AudioDeviceEnhanceManager 系统接口）
   @State isShowOutputDevicePanel: boolean = false;
   @State outputDeviceList: audio.AudioDeviceDescriptors = [];
@@ -180,10 +180,6 @@ export struct ControlAreaComponent {
       clearInterval(this.timerIntervalID);
       this.timerIntervalID = -1;
     }
-    if (this.volumeHideTimer !== -1) {
-      clearTimeout(this.volumeHideTimer);
-      this.volumeHideTimer = -1;
-    }
     if (this.volumeManager !== undefined && this.isVolumeListenerRegistered) {
       this.volumeManager.off('streamVolumeChange', this.streamVolumeChangeCallback);
       this.isVolumeListenerRegistered = false;
@@ -213,6 +209,7 @@ export struct ControlAreaComponent {
         const maxVol: number = this.volumeManager.getMaxVolumeByStream(audio.StreamUsage.STREAM_USAGE_MUSIC);
         if (maxVol > 0) {
           this.maxVolumeLevel = maxVol;
+          AppStorage.setOrCreate<number>(AppStorageKeyConstants.KEY_VOL_PANEL_MAX, maxVol);
         }
       } catch (err) {
         Logger.warn(TAG, `getMaxVolumeByStream failed: ${JSON.stringify(err)}`);
@@ -223,49 +220,12 @@ export struct ControlAreaComponent {
     }
   }
 
-  // ─── 音量面板：系统 AVVolumePanel 显隐（点击音量按钮唤起，4 秒后自动收起） ───
-
+  // ─── 音量弹层：AVVolumePanel 只在音量真正变化时显示系统音量条，无法被 visibility 主动弹出，
+  // 官方 FAQ faqs-audio-52 做法：自定义 Slider 弹层驱动 volumeLevel 写系统音量；
+  // 系统音量条已由 PlayerInfoComponent 常驻 AVVolumePanel 的负 position 隐藏，
+  // 音量键变化经 streamVolumeChange 同步进 Slider
   toggleVolumePanel(): void {
-    if (this.isShowVolumeBuild) {
-      this.hideVolumePanel();
-      return;
-    }
-    this.isShowVolumeBuild = true;
-    if (this.volumeHideTimer !== -1) {
-      clearTimeout(this.volumeHideTimer);
-      this.volumeHideTimer = -1;
-    }
-    this.volumeHideTimer = setTimeout((): void => {
-      this.volumeHideTimer = -1;
-      this.hideVolumePanel();
-    }, 4000);
-  }
-
-  private hideVolumePanel(): void {
-    if (this.volumeHideTimer !== -1) {
-      clearTimeout(this.volumeHideTimer);
-      this.volumeHideTimer = -1;
-    }
-    this.isShowVolumeBuild = false;
-  }
-
-  // 音量面板位置：position 参照系是窗口左上角（px 绝对偏移，官方示例 y=1000 即此量纲）。
-  // 面板定位在窗口左侧、底部控制栏上方一带；窗口高度取不到时给保守兜底值
-  private volumePanelPosition(): Position {
-    try {
-      const win: window.Window | undefined = AppStorage.get<window.Window>(AppStorageKeyConstants.KEY_WINDOW)
-      if (win !== undefined) {
-        const rect: window.Rect = win.getWindowProperties().windowRect
-        const hPx: number = rect.height
-        if (hPx > 0) {
-          const yPx: number = Math.max(240, hPx - 460)
-          return { x: 48, y: yPx }
-        }
-      }
-    } catch (err) {
-      Logger.warn(TAG, `volumePanelPosition failed: ${JSON.stringify(err)}`)
-    }
-    return { x: 48, y: 400 }
+    this.isShowVolumeBuild = !this.isShowVolumeBuild;
   }
 
   // ─── 输出设备（系统接口：AudioRoutingManager + AudioDeviceEnhanceManager） ───
@@ -662,24 +622,34 @@ export struct ControlAreaComponent {
             }
           })
 
-        // 音量入口：点击唤起系统 AVVolumePanel（系统音量面板，可在面板内微调系统音量），4 秒自动收起
+        // 音量入口：自定义 Slider 弹层（AVVolumePanel 无法被点击主动弹出，见 toggleVolumePanel 注释）
         Image($r('app.media.ic_public_sound'))
           .width(26)
           .height(26)
           .fillColor(Color.White)
           .opacity(0.86)
-          .scale({ x: this.volumeScale, y: this.volumeScale })
+          .scale({ x: this.soundScale, y: this.soundScale })
           .hoverEffect(HoverEffect.Scale)
           .onClick(() => {
             this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_PRESS_DURATION_SHORT, curve: Curve.EaseInOut }, () => {
-              this.volumeScale = 0.8;
+              this.soundScale = 0.8;
             });
             setTimeout(() => {
               this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_RELEASE_DURATION_SHORT, curve: curves.springMotion() }, () => {
-                this.volumeScale = 1.0;
+                this.soundScale = 1.0;
               });
             }, StyleConstants.ANIMATION_PRESS_DELAY_MEDIUM);
             this.toggleVolumePanel();
+          })
+          .bindPopup(this.isShowVolumeBuild, {
+            builder: this.volumePopupBuilder,
+            placement: Placement.Top,
+            showInSubWindow: false,
+            onStateChange: (e) => {
+              if (!e.isVisible) {
+                this.isShowVolumeBuild = false;
+              }
+            }
           })
 
         Image($r('app.media.ic_public_more'))
@@ -714,23 +684,6 @@ export struct ControlAreaComponent {
       .width(StyleConstants.FULL_WIDTH)
       .justifyContent(FlexAlign.SpaceEvenly)
       .margin({ top: 28 })
-
-      // 系统音量面板：官方示例模式——visibility 控制显隐，position 用窗口绝对坐标(px)。
-      // 之前用 x=-1 藏面板没有依据（官方示例固定 position 靠 visibility 切换），
-      // 改为跟随窗口实际高度把面板定位在底部控制栏上方左侧，保证各分辨率/窗口尺寸下都可见
-      Column() {
-        AVVolumePanel({
-          volumeLevel: Math.round(this.volume * (this.maxVolumeLevel > 0 ? this.maxVolumeLevel : 15)),
-          volumeParameter: {
-            position: this.volumePanelPosition()
-          }
-        })
-          .width(10)
-      }
-      .width(10)
-      .height(1)
-      .zIndex(99)
-      .visibility(this.isShowVolumeBuild ? Visibility.Visible : Visibility.Hidden)
     }
   }
 
@@ -1307,6 +1260,47 @@ export struct ControlAreaComponent {
       .width('100%')
       .justifyContent(FlexAlign.SpaceBetween)
       .padding({ left: 4, right: 4 })
+    }
+    .padding(16)
+    .width(260)
+  }
+
+  // 音量弹层：Slider 档位（0~maxVolumeLevel）→ 归一化 volume → KEY_CURRENT_VOLUME →
+  // PlayerInfoComponent 常驻 AVVolumePanel.volumeLevel 写入系统音量（应用侧唯一合法写通道）
+  @Builder
+  volumePopupBuilder() {
+    Column() {
+      Row() {
+        Text('音量')
+          .fontSize(14)
+          .fontColor($r('app.color.text_primary'))
+          .fontWeight(FontWeight.Bold)
+        Text(`${Math.round(this.volume * 100)}%`)
+          .fontSize(14)
+          .fontColor(this.primaryColor)
+          .fontWeight(FontWeight.Bold)
+          .margin({ left: 8 })
+      }
+      .width('100%')
+      .margin({ bottom: 8 })
+
+      Slider({
+        min: 0, max: this.maxVolumeLevel, step: 1, style: SliderStyle.OutSet,
+        value: Math.round(this.volume * this.maxVolumeLevel)
+      })
+        .showSteps(false)
+        .showTips(false)
+        .width('100%')
+        .selectedColor(this.primaryColor)
+        .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+        .blockColor('#FFFFFF')
+        .blockSize({ width: 20, height: 20 })
+        .blockBorderColor(this.primaryColor)
+        .blockBorderWidth(3)
+        .onChange((value: number, mode: SliderChangeMode) => {
+          const level: number = Math.round(value);
+          this.volume = this.maxVolumeLevel > 0 ? level / this.maxVolumeLevel : 0;
+        })
     }
     .padding(16)
     .width(260)
