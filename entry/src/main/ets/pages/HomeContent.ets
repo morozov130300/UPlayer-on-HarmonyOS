@@ -817,7 +817,7 @@ export struct HomeContent {
       .height(this.listTopPadding())
       .position({ top: 0 })
       .clip(true)
-      .hitTestBehavior(HitTestMode.Transparent)
+      .hitTestBehavior(HitTestMode.Block)
       .zIndex(2)
 
       // 多选菜单栏：落在问候语内容带内（替换问候语的位置），
