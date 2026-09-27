@@ -70,8 +70,6 @@ export class AppSettingsData {
   // 底部栏点击/拖动指示器风格：light=跟手光效，mask=白色蒙版，off=关闭
   // mask 仅在有鼠标/触控板的设备上提供（设置页按检测结果显隐开关，无鼠标时降级为 off）
   tabTouchIndicator: string = 'light'
-  // Tab 指示器：当前选中 Tab 下方指示条的显隐，独立于其他全部设置
-  tabIndicatorVisible: boolean = true
   }
 
 export class DataService {
@@ -594,8 +592,6 @@ return result
       s.holdingHandEnabled = rawHoldingHandEnabled !== undefined ? rawHoldingHandEnabled as boolean : true
       let rawTabTouchIndicator: Object | undefined = r['tabTouchIndicator']
       s.tabTouchIndicator = rawTabTouchIndicator !== undefined ? rawTabTouchIndicator as string : 'light'
-      let rawTabIndicatorVisible: Object | undefined = r['tabIndicatorVisible']
-      s.tabIndicatorVisible = rawTabIndicatorVisible !== undefined ? rawTabIndicatorVisible as boolean : true
       let rawContinuePlayOnHeadsetUnplug: Object | undefined = r['continuePlayOnHeadsetUnplug']
       s.continuePlayOnHeadsetUnplug = rawContinuePlayOnHeadsetUnplug !== undefined ? rawContinuePlayOnHeadsetUnplug as boolean : false
       if (eqBandsMigrated) {
@@ -632,7 +628,6 @@ return result
 
     r['holdingHandEnabled'] = settings.holdingHandEnabled
     r['tabTouchIndicator'] = settings.tabTouchIndicator
-    r['tabIndicatorVisible'] = settings.tabIndicatorVisible
     r['continuePlayOnHeadsetUnplug'] = settings.continuePlayOnHeadsetUnplug
     this.getPref().preferencesPut(KEY_SETTINGS, JSON.stringify(r))
     AppStorage.setOrCreate(KEY_SETTINGS, settings)
@@ -859,7 +854,6 @@ return result
 
     AppStorage.setOrCreate('uplayer_holding_hand_enabled', settings.holdingHandEnabled)
     AppStorage.setOrCreate('uplayer_tab_touch_indicator', settings.tabTouchIndicator)
-    AppStorage.setOrCreate('uplayer_tab_indicator_visible', settings.tabIndicatorVisible)
     this.activatePersistedUris()
     return settings
   }

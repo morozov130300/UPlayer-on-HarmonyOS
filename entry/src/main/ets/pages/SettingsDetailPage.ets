@@ -359,8 +359,8 @@ struct SettingsDetailPage {
   @Builder
   previewImmersiveTabBar(): void {
     Stack({ alignContent: Alignment.BottomStart }) {
-      // 指示器显隐与 Index.immersiveTabBar 一致：由「Tab 指示器」开关掌管
-      if (this.tabIndicatorVisible) {
+      // 指示器固定显示：由 tabIndicatorOpacity 控制深浅
+      {
         Row()
           .width(this.scaledSize(this.previewTabWidth - 2 * this.previewIndicatorInset))
           .height(this.scaledSize(36))

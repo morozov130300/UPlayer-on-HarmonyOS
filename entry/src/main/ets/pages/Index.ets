@@ -287,7 +287,7 @@ struct MainPage {
   private tabLabelBuilder(index: number, name: string, icon: Resource) {
     Stack() {
       // 指示器光晕：选中 tab 时渲染径向渐变 + 蓝色光晕
-      if (this.tabIndicatorVisible && this.currentIndex === index) {
+      if (this.currentIndex === index) {
         Row()
           .width(this.scaledSize(this.tabWidth - 2 * this.indicatorInset))
           .height(this.scaledSize(36))
