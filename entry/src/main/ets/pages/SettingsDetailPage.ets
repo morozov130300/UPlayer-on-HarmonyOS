@@ -1157,7 +1157,7 @@ struct SettingsDetailPage {
 
           Column({ space: this.scaledSize(6) }) {
             Row() {
-              this.subTitleRow('经典 Tab 指示器')
+              this.subTitleRow('Tab 指示器不透明度')
               Blank()
             }
             .width('100%')
