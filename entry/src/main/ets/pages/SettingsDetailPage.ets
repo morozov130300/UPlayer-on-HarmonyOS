@@ -71,7 +71,6 @@ struct SettingsDetailPage {
   @StorageLink('uplayer_glass_blur_strength') glassBlurStrength: number = 25
   @StorageLink('uplayer_home_top_blur_strength') homeTopBlurStrength: number = 25
   @StorageLink('uplayer_tab_indicator_opacity') tabIndicatorOpacity: number = 50
-  @StorageLink('uplayer_tab_indicator_visible') tabIndicatorVisible: boolean = true
   // 是否存在鼠标/触控板设备（决定「白色蒙版」开关是否显示）
   @StorageLink(KEY_HAS_POINTER_DEVICE) hasPointerDevice: boolean = false
   @State pageTitle: string = ''
@@ -315,8 +314,8 @@ struct SettingsDetailPage {
         .shadow({ radius: 18, color: ColorHelper.hexWithAlpha(this.primaryColor, '44'), offsetY: 5 })
         .zIndex(0)
 
-      // 指示器显隐与 Index.customTabBar 一致：由「Tab 指示器」开关掌管
-      if (this.tabIndicatorVisible) {
+      // 指示器固定显示：由 tabIndicatorOpacity 控制深浅
+      {
         Row()
           .width(this.scaledSize(this.previewTabWidth - 2 * this.previewIndicatorInset))
           .height(this.scaledSize(36))
@@ -1161,7 +1160,7 @@ struct SettingsDetailPage {
 
           Column({ space: this.scaledSize(6) }) {
             Row() {
-              this.subTitleRow('经典 Tab 指示器')
+              this.subTitleRow('tab指示器不透明度')
               Blank()
             }
             .width('100%')
@@ -1211,32 +1210,6 @@ struct SettingsDetailPage {
         .borderRadius(this.scaledSize(10))
 
         // 自动反色/材质阴影/磨砂层叠加/系统组件液态玻璃等档位设置已删除：消费点固定默认开启
-        Column({ space: this.scaledSize(10) }) {
-          Row() {
-            Column({ space: this.scaledSize(6) }) {
-              Text('Tab 指示器')
-                .fontSize(this.scaledFont(14))
-                .fontColor(this.settingTextColor())
-                .fontWeight(FontWeight.Medium)
-              Text('显示或隐藏当前选中 Tab 下方的指示条。对经典与玻璃两种 Tab 样式同时生效，独立于深浅、厚度等全部其他设置。')
-                .fontSize(this.scaledFont(12))
-                .fontColor(this.settingSubTextColor())
-            }
-            .layoutWeight(1)
-            .justifyContent(FlexAlign.Center)
-            .alignItems(HorizontalAlign.Start)
-            Toggle({ type: ToggleType.Switch, isOn: this.settings.tabIndicatorVisible })
-              .selectedColor(this.primaryColor)
-              .alignSelf(ItemAlign.Center)
-              .onChange((isOn: boolean) => {
-                this.settings.tabIndicatorVisible = isOn
-                this.tabIndicatorVisible = isOn
-                this.updateSetting()
-              })
-          }
-          .width('100%')
-          .height(this.scaledSize(52))
-          .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
         }
         .width('100%')
         .padding({ top: this.scaledSize(10) })

@@ -72,7 +72,6 @@ struct MainPage {
   @StorageLink('uplayer_glass_blur_strength') glassBlurStrength: number = 25
   @StorageLink('uplayer_tab_touch_indicator') tabTouchIndicator: string = 'light'
   @StorageLink('uplayer_tab_indicator_opacity') tabIndicatorOpacity: number = 50
-  @StorageLink('uplayer_tab_indicator_visible') tabIndicatorVisible: boolean = true
   // 是否存在鼠标/触控板设备（决定「白色蒙版」功能是否存在：无鼠标时 mask 降级为 off）
   @StorageLink(KEY_HAS_POINTER_DEVICE) hasPointerDevice: boolean = false
   @State albumArtFailed: boolean = false
