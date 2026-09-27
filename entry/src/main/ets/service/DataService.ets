@@ -8,7 +8,6 @@ import { SongDatabase } from './SongDatabase'
 import Logger from '../common/utils/Logger'
 import { BusinessError } from '@kit.BasicServicesKit'
 import { MusicPlayMode } from '../common/constants/PlayerConstants'
-import { normalizeGlassThickness } from '../common/utils/GlassUtil'
 import { AudioMetadataService } from './AudioMetadataService'
 
 const TAG = 'DataService'
@@ -66,28 +65,12 @@ export class AppSettingsData {
   glassBlurStrength: number = 25
   homeTopBlurStrength: number = 25
   tabIndicatorOpacity: number = 50
-  // 玻璃风格细节：厚度（0-100，独立控制 ImmersiveStyle 档位）
-  // 厚度与模糊强度完全独立：thickness 控系统材质档位，blurStrength 控 backgroundEffect 半径
-  glassThickness: number = 50
   // 质感握姿：开启后系统根据单手握持方向自动让首页顶部模糊预览/控件靠左或靠右
   holdingHandEnabled: boolean = true
-  // 底部栏跟手光效颜色：white=纯白光，theme=跟随主题色（暗黑默认白光，明亮默认主题色，由 SettingsDetailPage 按明暗模式初始化）
-  lightColorMode: string = 'white'
   // 底部栏点击/拖动指示器风格：light=跟手光效，mask=白色蒙版，off=关闭
   // mask 仅在有鼠标/触控板的设备上提供（设置页按检测结果显隐开关，无鼠标时降级为 off）
   tabTouchIndicator: string = 'light'
-  // 液态玻璃交互形变：按压/拖动时产生 Q 弹反馈
-  interactive: boolean = true
-  // 自动反色：子树文字/图标根据材质背景色自动适配
-  colorInvert: boolean = false
-  // 材质阴影：启用时材质自带阴影效果，优先于 shadow 通用属性
-  applyShadow: boolean = true
-  // 系统组件液态玻璃：Toast 等调用级 systemMaterial 的总开关（API 26+ 且设备支持才实际生效）
-  systemComponentGlass: boolean = true
-  // 磨砂层叠加：液态玻璃材质激活时，是否把 backgroundEffect 磨砂层叠加在材质之上
-  // 默认关：明亮模式下双层叠加会使 Tab 指示器呈雾状；开则回到「磨砂 + 材质」观感
-  glassFrostOverlay: boolean = false
-  // Tab 指示器：当前选中 Tab 下方指示条的显隐，独立于其他全部设置（深浅/厚度/磨砂层等）
+  // Tab 指示器：当前选中 Tab 下方指示条的显隐，独立于其他全部设置
   tabIndicatorVisible: boolean = true
   }
 
@@ -607,40 +590,10 @@ return result
       s.homeTopBlurStrength = rawHomeTopBlurStrength !== undefined ? rawHomeTopBlurStrength as number : 25
       let rawTabIndicatorOpacity: Object | undefined = r['tabIndicatorOpacity']
       s.tabIndicatorOpacity = rawTabIndicatorOpacity !== undefined ? rawTabIndicatorOpacity as number : 50
-      // 玻璃风格细节（带迁移默认值，老数据走默认值不会破坏既有体验）
-      // glassThickness：固定 6 档（0=关闭 + 官方五档 20/40/60/80/100），非档位旧值归一到最近档
-      // glassStyle：旧字段（已废弃），兼容老数据时迁移到 glassThickness
-      let rawGlassThickness: Object | undefined = r['glassThickness']
-      s.glassThickness = rawGlassThickness !== undefined
-        ? normalizeGlassThickness(rawGlassThickness as number) : 60
-      if (rawGlassThickness === undefined && r['glassStyle'] !== undefined) {
-        // 老数据无 glassThickness，从旧 glassStyle 迁移
-        const raw: Object = r['glassStyle']
-        if (typeof raw === 'number') {
-          s.glassThickness = normalizeGlassThickness(raw as number)
-        } else if (typeof raw === 'string') {
-          const legacy: string = raw as string
-          if (legacy === 'thin') s.glassThickness = 20
-          else if (legacy === 'thick') s.glassThickness = 80
-          else s.glassThickness = 60
-        }
-      }
       let rawHoldingHandEnabled: Object | undefined = r['holdingHandEnabled']
       s.holdingHandEnabled = rawHoldingHandEnabled !== undefined ? rawHoldingHandEnabled as boolean : true
-      let rawLightColorMode: Object | undefined = r['lightColorMode']
-      s.lightColorMode = rawLightColorMode !== undefined ? rawLightColorMode as string : 'white'
       let rawTabTouchIndicator: Object | undefined = r['tabTouchIndicator']
       s.tabTouchIndicator = rawTabTouchIndicator !== undefined ? rawTabTouchIndicator as string : 'light'
-      let rawInteractive: Object | undefined = r['interactive']
-      s.interactive = rawInteractive !== undefined ? rawInteractive as boolean : true
-      let rawColorInvert: Object | undefined = r['colorInvert']
-      s.colorInvert = rawColorInvert !== undefined ? rawColorInvert as boolean : false
-      let rawApplyShadow: Object | undefined = r['applyShadow']
-      s.applyShadow = rawApplyShadow !== undefined ? rawApplyShadow as boolean : true
-      let rawSystemComponentGlass: Object | undefined = r['systemComponentGlass']
-      s.systemComponentGlass = rawSystemComponentGlass !== undefined ? rawSystemComponentGlass as boolean : true
-      let rawGlassFrostOverlay: Object | undefined = r['glassFrostOverlay']
-      s.glassFrostOverlay = rawGlassFrostOverlay !== undefined ? rawGlassFrostOverlay as boolean : false
       let rawTabIndicatorVisible: Object | undefined = r['tabIndicatorVisible']
       s.tabIndicatorVisible = rawTabIndicatorVisible !== undefined ? rawTabIndicatorVisible as boolean : true
       let rawContinuePlayOnHeadsetUnplug: Object | undefined = r['continuePlayOnHeadsetUnplug']
@@ -676,16 +629,9 @@ return result
     r['glassBlurStrength'] = settings.glassBlurStrength
     r['homeTopBlurStrength'] = settings.homeTopBlurStrength
     r['tabIndicatorOpacity'] = settings.tabIndicatorOpacity
-    r['glassThickness'] = settings.glassThickness
 
     r['holdingHandEnabled'] = settings.holdingHandEnabled
-    r['lightColorMode'] = settings.lightColorMode
     r['tabTouchIndicator'] = settings.tabTouchIndicator
-    r['interactive'] = settings.interactive
-    r['colorInvert'] = settings.colorInvert
-    r['applyShadow'] = settings.applyShadow
-    r['systemComponentGlass'] = settings.systemComponentGlass
-    r['glassFrostOverlay'] = settings.glassFrostOverlay
     r['tabIndicatorVisible'] = settings.tabIndicatorVisible
     r['continuePlayOnHeadsetUnplug'] = settings.continuePlayOnHeadsetUnplug
     this.getPref().preferencesPut(KEY_SETTINGS, JSON.stringify(r))

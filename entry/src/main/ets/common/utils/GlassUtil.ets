@@ -1,38 +1,9 @@
 import { PromptAction, uiMaterial } from '@kit.ArkUI'
 import { deviceInfo } from '@kit.BasicServicesKit'
 
-// 玻璃风格强度：固定 6 档滑轨（0=关闭玻璃 + 官方 ImmersiveStyle 五档）。
-// 0=完全关闭玻璃；20/40/60/80/100 依次对应
-// ULTRA_THIN / THIN / REGULAR / THICK / ULTRA_THICK。
+// 玻璃风格强度：固定默认档（官方 ImmersiveStyle 五档中的 REGULAR，玻璃厚度档位设置已删除，
+// 消费点固定使用此默认值）
 export const DEFAULT_GLASS_STYLE: number = 50
-
-// 玻璃厚度滑轨的全部固定档位（步长 20）
-export const GLASS_THICKNESS_STEPS: number[] = [0, 20, 40, 60, 80, 100]
-
-// 旧数据归一化：clamp 0-100 后四舍五入到最近档位（50 等距时统一取 60）
-export function normalizeGlassThickness(value: number): number {
-  return Math.max(0, Math.min(100, Math.round(value / 20) * 20))
-}
-
-// 档位显示名：0=关闭，其余对应官方五档
-export function glassThicknessLabel(value: number): string {
-  if (value <= 0) {
-    return '关闭'
-  }
-  if (value <= 20) {
-    return '极薄'
-  }
-  if (value <= 40) {
-    return '薄'
-  }
-  if (value <= 60) {
-    return '常规'
-  }
-  if (value <= 80) {
-    return '厚'
-  }
-  return '极厚'
-}
 
 // 0=完全关闭玻璃（不挂 systemMaterial，无兜底模糊）
 export function isGlassOff(value: number): boolean {
