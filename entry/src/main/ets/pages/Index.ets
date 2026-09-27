@@ -922,9 +922,12 @@ struct MainPage {
     return !this.isDarkTheme() && this.glassBlurStrength > 0
   }
 
-  // 底部播放信息栏的液态玻璃材质：与磨砂层一致，不区分 Tab 风格，两种样式统一挂载。
-  // 玻璃厚度档位/交互形变设置已删除：固定默认档 + 默认开启形变（消费点默认开启策略）
+  // 底部播放信息栏的液态玻璃材质：仅沉浸(immersive)样式下挂载；
+  // 经典样式下返回 undefined，让 backgroundEffect（高斯模糊）生效
   private bottomBarGlassMaterial(): uiMaterial.Material | undefined {
+    if (this.tabStyle !== 'immersive') {
+      return undefined
+    }
     return createBarGlassMaterial(DEFAULT_GLASS_STYLE, true)
   }
 

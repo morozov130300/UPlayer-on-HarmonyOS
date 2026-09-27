@@ -14,7 +14,6 @@ import {
 } from '../service/HoldingHandService'
 import { ColorConversion } from '../common/utils/ColorConversion'
 import {
-  createBarGlassMaterial,
   createTabGlassMaterial,
   DEFAULT_GLASS_STYLE,
   isLiquidGlassAvailable,
@@ -224,11 +223,9 @@ struct SettingsDetailPage {
   // 仅把页面级状态（currentIndex/indicatorOffset/hoverTabIndex）替换为预览态，
   // 玻璃厚度、模糊强度、指示器深浅三个滑块调节时可实时看到真实透视与磨砂效果。
 
-  // 预览用 Tab 材质：经典样式走 createBarGlassMaterial（与 Index.classicTabBarMaterial 同参），
-  // 玻璃样式走 createTabGlassMaterial 全参工厂（与 Index.liquidGlassMaterial 同参）
+  // 预览用 Tab 材质：经典样式不挂任何材质（仅磨砂层），玻璃样式走 createTabGlassMaterial 全参工厂
   private previewClassicBarMaterial(): uiMaterial.Material | undefined {
-    // 玻璃厚度/交互形变等档位设置已删除：消费点固定默认开启（DEFAULT_GLASS_STYLE + 形变开）
-    return createBarGlassMaterial(DEFAULT_GLASS_STYLE, true)
+    return undefined
   }
 
   // 解析「底部栏触摸指示」实际生效值：

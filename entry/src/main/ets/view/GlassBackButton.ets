@@ -2,7 +2,7 @@ import { common, ConfigurationConstant } from '@kit.AbilityKit'
 import { uiMaterial } from '@kit.ArkUI'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { ColorHelper } from '../common/utils/ColorHelper'
-import { createBarGlassMaterial, createTabGlassMaterial, DEFAULT_GLASS_STYLE, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
+import { createTabGlassMaterial, DEFAULT_GLASS_STYLE, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
 import { KEY_HAS_POINTER_DEVICE } from '../common/utils/InputDeviceUtil'
 
 // 返回按钮统一组件：可点击区域维持原尺寸，内部套一层「可点击区域 × 0.6」的内切圆形，
@@ -60,7 +60,7 @@ export struct GlassBackButton {
 
   // 与底部 Tab 栏同源的材质选择（返回按钮固定不跟手形变，观感考量）：
   // 玻璃风格(immersive) → createTabGlassMaterial 全参工厂（含 lightEffect/colorInvert/applyShadow）；
-  // 经典风格(classic) → createBarGlassMaterial。能力不足返回 undefined，由磨砂兜底。
+  // 经典风格(classic) → 不挂任何材质（systemMaterial=undefined），仅由 backgroundEffect（高斯模糊）提供背景。
   // 玻璃厚度/交互形变/自动反色/材质阴影等档位设置已删除：消费点固定默认开启
   private backMaterial(): uiMaterial.Material | undefined {
     if (this.tabStyle === 'immersive') {
@@ -74,9 +74,7 @@ export struct GlassBackButton {
         : undefined
       return createTabGlassMaterial(DEFAULT_GLASS_STYLE, false, lightColor, true, true)
     }
-    if (this.tabStyle === 'classic') {
-      return createBarGlassMaterial(DEFAULT_GLASS_STYLE, false)
-    }
+    // 经典样式：不挂任何玻璃材质，仅靠磨砂层（backgroundEffect）
     return undefined
   }
 

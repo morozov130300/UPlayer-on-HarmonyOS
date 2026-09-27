@@ -901,7 +901,7 @@ export struct HomeContent {
             .width(this.scaledSize(44)).height(this.scaledSize(44))
             .borderRadius(this.scaledSize(22))
             .backgroundColor(Color.Transparent)
-            .backgroundEffect({ radius: 1, saturation: 1.0, brightness: 1.0 })
+            .backgroundEffect({ radius: 4, saturation: 1.0, brightness: 1.0 })
             .border({ width: 1, color: 'rgba(255,255,255,0.35)' })
           Image($r('app.media.ic_public_add_filled'))
             .width(this.scaledSize(24)).height(this.scaledSize(24))
