@@ -895,22 +895,13 @@ export struct HomeContent {
 
       if (!this.isMultiSelectMode && (this.isPlusVisible || !this.settings.plusButtonScrollHide)) {
         // 加号组件：通透玻璃盘 + 加号字形。不做磨砂模糊（背后内容清晰透出，通透）；玻璃盘用
-        // 「极淡玻璃底 + 清亮玻璃描边 + 顶部高光（specular）」呈现玻璃质感，加号字形用粗加号
-        // ic_public_add_filled（主题色）。位置/交互不变。
+        // 「极淡玻璃底 + 清亮玻璃描边」，加号字形用粗加号 ic_public_add_filled（主题色）。位置/交互不变。
         Stack({ alignContent: Alignment.Center }) {
           Row()
             .width(this.scaledSize(44)).height(this.scaledSize(44))
             .borderRadius(this.scaledSize(22))
             .backgroundColor('rgba(255,255,255,0.10)')
             .border({ width: 1, color: 'rgba(255,255,255,0.5)' })
-          Row()
-            .width(this.scaledSize(44)).height(this.scaledSize(44))
-            .borderRadius(this.scaledSize(22))
-            .linearGradient({
-              direction: GradientDirection.Bottom,
-              colors: [['rgba(255,255,255,0.35)', 0.0], ['rgba(255,255,255,0.0)', 0.5]]
-            })
-            .hitTestBehavior(HitTestMode.Transparent)
           Image($r('app.media.ic_public_add_filled'))
             .width(this.scaledSize(24)).height(this.scaledSize(24))
             .fillColor(this.primaryColor)
