@@ -265,6 +265,12 @@ export struct PlayerInfoComponent {
         volumeLevel: Math.round(this.volPanelNorm * this.volPanelMax),
         volumeParameter: { position: { x: -100, y: -100 } }
       })
+        // 远程视图裸挂会吞掉底栏点击（播放/暂停失灵）：限制为 1vp 占位且不参与命中测试，
+        // 面板 UI 隐藏语义仍由 volumeParameter 负坐标保证
+        .position({ x: 0, y: 0 })
+        .width(1)
+        .height(1)
+        .hitTestBehavior(HitTestMode.None)
     }
     .height(StyleConstants.FULL_HEIGHT)
     .width(StyleConstants.FULL_WIDTH)
