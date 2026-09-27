@@ -332,6 +332,7 @@ struct MainPage {
           .fontColor(this.currentIndex === index ? this.selectedTabContentColor() : $r('app.color.tab_content_secondary'))
           .margin({ top: this.scaledSize(3) })
       }.width(this.scaledSize(this.tabWidth)).height(this.scaledSize(36)).justifyContent(FlexAlign.Center)
+        .offset({ y: 2 })
     }
     .width(this.scaledSize(this.tabWidth))
     .height(this.scaledSize(36))
