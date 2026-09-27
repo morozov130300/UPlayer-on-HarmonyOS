@@ -22,7 +22,7 @@ import { BusinessError, SuppressWarnings, SuppressWarningsType } from '@kit.Basi
 import { AlbumCover } from '../component/AlbumCover';
 import { AVSessionController } from '../common/utils/mediautils/AVSessionController';
 import { DataService } from '../service/DataService';
-import { createToastGlassMaterial } from '../common/utils/GlassUtil';
+import { createToastGlassMaterial, DEFAULT_GLASS_STYLE } from '../common/utils/GlassUtil';
 
 const TAG = 'ControlAreaComponent';
 const SEEK_SETTLE_MS: number = 2000;
@@ -143,8 +143,6 @@ export struct ControlAreaComponent {
   };
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF';
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0;
-  @StorageLink('uplayer_system_component_glass') systemComponentGlass: boolean = true;
-  @StorageLink('uplayer_glass_thickness') glassThickness: number = 50;
 
   private scaledFont(size: number): number {
     return Math.round(size * this.fontSizeScale)
@@ -155,12 +153,9 @@ export struct ControlAreaComponent {
   }
 
   // Toast 液态玻璃材质（API 26+ 调用级 systemMaterial）：
-  // 「系统组件液态玻璃」开关关闭或能力不足时返回 undefined，走系统默认 Toast 样式
+  // 「系统组件液态玻璃」开关已删除，设备支持时固定挂材质；能力不足返回 undefined，走系统默认样式
   private toastGlassMaterial(): uiMaterial.Material | undefined {
-    if (!this.systemComponentGlass) {
-      return undefined
-    }
-    return createToastGlassMaterial(this.glassThickness)
+    return createToastGlassMaterial(DEFAULT_GLASS_STYLE)
   }
 
   aboutToAppear(): void {
@@ -880,9 +875,16 @@ export struct ControlAreaComponent {
         .borderRadius(this.scaledSize(10))
         .onClick(() => {
           if (!this.audioRoutingService.isEnhancedRoutingSupported()) {
-            this.getUIContext()?.getPromptAction()?.showToast({
-              message: '当前设备不支持应用级设备选择，使用系统默认路由'
-            })
+            try {
+              this.promptAction.openToast({
+                message: '当前设备不支持应用级设备选择，使用系统默认路由',
+                systemMaterial: this.toastGlassMaterial(),
+              }).catch((err: BusinessError) => {
+                Logger.error(TAG, `openToast rejected: code=${err.code}, message=${err.message}`);
+              });
+            } catch (err) {
+              Logger.error(TAG, `openToast failed: ${JSON.stringify(err)}`);
+            }
             return
           }
           this.audioRoutingService.selectOutputDevice(device)

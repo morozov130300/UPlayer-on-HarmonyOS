@@ -910,16 +910,9 @@ return result
     AppStorage.setOrCreate('uplayer_glass_blur_strength', settings.glassBlurStrength)
     AppStorage.setOrCreate('uplayer_home_top_blur_strength', settings.homeTopBlurStrength)
     AppStorage.setOrCreate('uplayer_tab_indicator_opacity', settings.tabIndicatorOpacity)
-    AppStorage.setOrCreate('uplayer_glass_thickness', settings.glassThickness)
 
     AppStorage.setOrCreate('uplayer_holding_hand_enabled', settings.holdingHandEnabled)
-    AppStorage.setOrCreate('uplayer_light_color_mode', settings.lightColorMode)
     AppStorage.setOrCreate('uplayer_tab_touch_indicator', settings.tabTouchIndicator)
-    AppStorage.setOrCreate('uplayer_interactive', settings.interactive)
-    AppStorage.setOrCreate('uplayer_color_invert', settings.colorInvert)
-    AppStorage.setOrCreate('uplayer_apply_shadow', settings.applyShadow)
-    AppStorage.setOrCreate('uplayer_system_component_glass', settings.systemComponentGlass)
-    AppStorage.setOrCreate('uplayer_glass_frost_overlay', settings.glassFrostOverlay)
     AppStorage.setOrCreate('uplayer_tab_indicator_visible', settings.tabIndicatorVisible)
     this.activatePersistedUris()
     return settings

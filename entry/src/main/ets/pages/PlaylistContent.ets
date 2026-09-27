@@ -8,6 +8,7 @@ import { AVPlayerService } from '../service/AVPlayerService'
 import { AVSessionController } from '../common/utils/mediautils/AVSessionController'
 import { LiveViewService } from '../service/LiveViewService'
 import { ColorHelper } from '../common/utils/ColorHelper'
+import { showToastGlassMaterial } from '../common/utils/GlassUtil'
 import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { display } from '@kit.ArkUI'
@@ -286,9 +287,8 @@ export struct PlaylistContent {
       const result: ImportResult = this.dataService.addSongs(newSongs)
       this.loadData()
       try {
-        this.getUIContext()?.getPromptAction().showToast({
-          message: `新增 ${result.newCount} 首` + (result.dupCount > 0 ? `，${result.dupCount} 首已存在` : ''),
-        })
+        showToastGlassMaterial(this.getUIContext()?.getPromptAction(),
+          `新增 ${result.newCount} 首` + (result.dupCount > 0 ? `，${result.dupCount} 首已存在` : ''))
       } catch (e) {
         Logger.error(TAG, 'toast failed')
       }

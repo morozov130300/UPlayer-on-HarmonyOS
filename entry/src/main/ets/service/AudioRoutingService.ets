@@ -4,6 +4,7 @@ import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { AVPlayerService } from './AVPlayerService'
 import { WindowUtil } from '../common/utils/WindowUtil'
+import { showToastGlassMaterial } from '../common/utils/GlassUtil'
 
 const TAG = 'AudioRoutingService'
 
@@ -222,7 +223,8 @@ export class AudioRoutingService {
   private showToast(message: string): void {
     try {
       const windowUtil: WindowUtil | undefined = AppStorage.get<WindowUtil>(AppStorageKeyConstants.KEY_WINDOW_UTIL)
-      windowUtil?.getUiContext()?.getPromptAction()?.showToast({ message })
+      // 设备支持液态玻璃时自动挂材质（原「系统组件液态玻璃」开关已删除，消费点固定开启）
+      showToastGlassMaterial(windowUtil?.getUiContext()?.getPromptAction(), message)
     } catch (err) {
       Logger.warn(TAG, `showToast failed: ${JSON.stringify(err)}`)
     }

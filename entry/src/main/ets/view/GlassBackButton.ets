@@ -2,7 +2,7 @@ import { common, ConfigurationConstant } from '@kit.AbilityKit'
 import { uiMaterial } from '@kit.ArkUI'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { ColorHelper } from '../common/utils/ColorHelper'
-import { createBarGlassMaterial, createTabGlassMaterial, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
+import { createBarGlassMaterial, createTabGlassMaterial, DEFAULT_GLASS_STYLE, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
 import { KEY_HAS_POINTER_DEVICE } from '../common/utils/InputDeviceUtil'
 
 // 返回按钮统一组件：可点击区域维持原尺寸，内部套一层「可点击区域 × 0.6」的内切圆形，
@@ -19,11 +19,7 @@ export struct GlassBackButton {
   onBack: () => void = () => {}
 
   @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
-  @StorageLink('uplayer_glass_thickness') glassThickness: number = 50
   @StorageLink('uplayer_glass_blur_strength') glassBlurStrength: number = 25
-  @StorageLink('uplayer_color_invert') colorInvert: boolean = false
-  @StorageLink('uplayer_apply_shadow') applyShadow: boolean = true
-  @StorageLink('uplayer_light_color_mode') lightColorMode: string = 'theme'
   @StorageLink('uplayer_tab_touch_indicator') tabTouchIndicator: string = 'light'
   @StorageLink(KEY_HAS_POINTER_DEVICE) hasPointerDevice: boolean = false
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
@@ -62,24 +58,24 @@ export struct GlassBackButton {
     return this.tabTouchIndicator
   }
 
-  // 与底部 Tab 栏同源的材质选择（除跟手形变：返回按钮固定不跟随 interactive 开关）：
+  // 与底部 Tab 栏同源的材质选择（返回按钮固定不跟手形变，观感考量）：
   // 玻璃风格(immersive) → createTabGlassMaterial 全参工厂（含 lightEffect/colorInvert/applyShadow）；
-  // 经典风格(classic) → createBarGlassMaterial。能力不足/玻璃关断返回 undefined，由磨砂兜底。
+  // 经典风格(classic) → createBarGlassMaterial。能力不足返回 undefined，由磨砂兜底。
+  // 玻璃厚度/交互形变/自动反色/材质阴影等档位设置已删除：消费点固定默认开启
   private backMaterial(): uiMaterial.Material | undefined {
-    // 返回按钮是圆形小目标，跟手形变观感差：两条分支都固定 interactive=false，
-    // 不再跟随全局「交互形变」开关
     if (this.tabStyle === 'immersive') {
-      if (!isLiquidGlassAvailable() || this.glassThickness <= 0) {
+      if (!isLiquidGlassAvailable()) {
         return undefined
       }
       const useLight: boolean = this.effectiveTouchIndicator() === 'light'
+      // 跟手光效颜色设置已删除：暗黑固定白光、明亮固定主题色
       const lightColor: string | undefined = useLight
-        ? (this.lightColorMode === 'white' ? '#FFFFFF' : this.primaryColor)
+        ? (this.isDarkTheme() ? '#FFFFFF' : this.primaryColor)
         : undefined
-      return createTabGlassMaterial(this.glassThickness, false, lightColor, this.colorInvert, this.applyShadow)
+      return createTabGlassMaterial(DEFAULT_GLASS_STYLE, false, lightColor, true, true)
     }
     if (this.tabStyle === 'classic') {
-      return createBarGlassMaterial(this.glassThickness, false)
+      return createBarGlassMaterial(DEFAULT_GLASS_STYLE, false)
     }
     return undefined
   }

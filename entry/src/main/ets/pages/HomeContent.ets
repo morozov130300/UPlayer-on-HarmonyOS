@@ -12,7 +12,7 @@ import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstan
 import { AlbumCover } from '../component/AlbumCover'
 import { AlbumCoverSize, AudioMetadataService, CoverPriority } from '../service/AudioMetadataService'
 import { curves, uiMaterial } from '@kit.ArkUI'
-import { createBarGlassMaterial, topBlurRadiusFromStrength } from '../common/utils/GlassUtil'
+import { createBarGlassMaterial, DEFAULT_GLASS_STYLE, showToastGlassMaterial, topBlurRadiusFromStrength } from '../common/utils/GlassUtil'
 import { KEY_HOLDING_HAND_LEFT } from '../service/HoldingHandService'
 import { GlassBackButton } from '../view/GlassBackButton'
 import { StyleConstants } from '../common/constants/StyleConstants'
@@ -77,8 +77,6 @@ export struct HomeContent {
   // 底部栏样式：经典样式下多选菜单栏不挂任何背景效果（磨砂/液态玻璃）
   @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
   @StorageLink('uplayer_home_top_blur_strength') homeTopBlurStrength: number = 25
-  @StorageLink('uplayer_glass_thickness') glassThickness: number = 50
-  @StorageLink('uplayer_interactive') interactive: boolean = true
   // 智感握姿：左手握持 → 加号靠左；其余（右手/双手/无握持/未知即默认）→ 靠右。
   // 滤波与订阅由 HoldingHandService 统一持有，本组件只订阅它的广播结果
   @StorageLink(KEY_HOLDING_HAND_LEFT) @Watch('onHoldingHandLeftChange') holdingHandLeft: boolean = false
@@ -106,11 +104,12 @@ export struct HomeContent {
   // 多选底栏液态玻璃材质（API 26+）：能力不足/玻璃关断/低算力返回 undefined，
   // 调用处保留 backgroundEffect 兜底，保证老设备仍有磨砂。
   // 经典底部栏样式下整条不应用任何背景效果（避免压出一层灰突突的色块）
+  // 玻璃厚度/交互形变等档位设置已删除：消费点固定默认开启
   private multiSelectBarMaterial(): uiMaterial.Material | undefined {
     if (this.tabStyle === 'classic') {
       return undefined
     }
-    return createBarGlassMaterial(this.glassThickness, this.interactive)
+    return createBarGlassMaterial(DEFAULT_GLASS_STYLE, true)
   }
 
   // 经典样式下同样不挂磨砂层（与材质一起关断）
@@ -388,9 +387,8 @@ export struct HomeContent {
       this.failedArtIds = new Set<string>()
       this.loadData()
       try {
-        this.getUIContext()?.getPromptAction().showToast({
-          message: `新增 ${result.newCount} 首` + (result.dupCount > 0 ? `，${result.dupCount} 首已存在` : ''),
-        })
+        showToastGlassMaterial(this.getUIContext()?.getPromptAction(),
+          `新增 ${result.newCount} 首` + (result.dupCount > 0 ? `，${result.dupCount} 首已存在` : ''))
       } catch (e) {
         Logger.error(TAG, 'toast failed')
       }
@@ -1027,9 +1025,7 @@ export struct HomeContent {
             .onClick(() => {
               this.dataService.addToPlayNext(item.id)
               try {
-                this.getUIContext()?.getPromptAction().showToast({
-                  message: '已添加到下一首播放',
-                })
+                showToastGlassMaterial(this.getUIContext()?.getPromptAction(), '已添加到下一首播放')
               } catch (e) {
                 Logger.error(TAG, 'toast failed')
               }
@@ -1062,9 +1058,7 @@ export struct HomeContent {
           .onAction(() => {
             if (!item.isAvailable && !this.isMultiSelectMode) {
               try {
-                this.getUIContext()?.getPromptAction().showToast({
-                  message: '歌曲可能已被删除或移动'
-                })
+                showToastGlassMaterial(this.getUIContext()?.getPromptAction(), '歌曲可能已被删除或移动')
               } catch (e) {
                 Logger.error(TAG, 'unavailable toast failed')
               }

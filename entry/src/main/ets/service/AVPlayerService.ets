@@ -14,6 +14,7 @@ import { AlbumCoverSize, AudioMetadataService, CoverPriority } from './AudioMeta
 import { DataService } from './DataService'
 import { MusicPlayMode } from '../common/constants/PlayerConstants'
 import { WindowUtil } from '../common/utils/WindowUtil'
+import { showToastGlassMaterial } from '../common/utils/GlassUtil'
 
 const TAG = 'AVPlayerService'
 
@@ -204,9 +205,8 @@ export class AVPlayerService {
       try {
         const windowUtil: WindowUtil | undefined = AppStorage.get<WindowUtil>(AppStorageKeyConstants.KEY_WINDOW_UTIL)
         if (windowUtil !== undefined) {
-          windowUtil.getUiContext()?.getPromptAction()?.showToast({
-            message: '播放失败: ' + (err.message?.length > 0 ? err.message.substring(0, 50) : '未知错误')
-          })
+          showToastGlassMaterial(windowUtil.getUiContext()?.getPromptAction(),
+            '播放失败: ' + (err.message?.length > 0 ? err.message.substring(0, 50) : '未知错误'))
         }
       } catch (e) {
         Logger.warn(TAG, `showToast failed: ${JSON.stringify(e)}`)

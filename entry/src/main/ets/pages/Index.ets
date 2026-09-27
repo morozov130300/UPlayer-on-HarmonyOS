@@ -16,7 +16,6 @@ import { PoetryService } from '../service/PoetryService'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import {
   createBarGlassMaterial,
-  createTabImmersiveMaterial,
   DEFAULT_GLASS_STYLE,
   getDeviceMaterialLevel,
   isLiquidGlassAvailable
@@ -257,13 +256,14 @@ struct MainPage {
     }
     return {
       adaptToHandedness: true,
-      systemMaterialEffect: this.glassThickness > 0 ? {
+      // 玻璃厚度档位设置已删除：设备支持时固定挂沉浸材质（默认开启）
+      systemMaterialEffect: {
         materialType: hdsMaterial.MaterialType.IMMERSIVE,
         materialLevel: level,
-      } : undefined,
+      },
       barBottomMargin: this.bottomSafeHeight > 0 ? 28 : 28,
       lightColor: lightColor,
-      barWidth: (smallScreen || !hasBarWidth || this.glassThickness <= 0) ? undefined :
+      barWidth: (smallScreen || !hasBarWidth) ? undefined :
         { smallWidth: barWidthVp, mediumWidth: barWidthVp, largeWidth: barWidthVp },
       miniBar: miniBar,
     } as HdsTabsFloatingStyle
@@ -574,8 +574,6 @@ struct MainPage {
     })
   }
 
-  // 颜色由 lightColorMode 控制（白/主题），仅在 tabTouchIndicator='light' 时开启，
-
   openPlayer(): void {
     if (this.currentSongTitle.length === 0) {
       return
@@ -583,7 +581,7 @@ struct MainPage {
     this.getUIContext().getRouter().pushUrl({ url: 'pages/MusicPlayer' })
   }
 
-  // 仅当「玻璃样式 + 设备系统达到 API 26 + 厚度未关断」时启用真·液态玻璃；
+  // 仅当「玻璃样式 + 设备系统达到 API 26」时启用真·液态玻璃（厚度档位设置已删除，默认开启）；
 
   onAlbumArtChange(): void {
     this.albumArtFailed = false
@@ -819,7 +817,7 @@ struct MainPage {
 
       // 小屏（sm/md）：系统迷你栏无法纵向堆叠，改用自建播控条叠放在 TabBar 上方。
       // 大屏（lg/xl）：系统 miniBar 左右并排展示播控，不渲染自建 playerControl。
-      // 布局完全由断点决定，与 glassThickness 无关。
+      // 布局完全由断点决定。
       if (this.breakpoint === 'sm' || this.breakpoint === 'md') {
         Column() {
           this.playerControl()
@@ -919,20 +917,16 @@ struct MainPage {
 
   // 否则传 undefined 让 lightEffect 完全关闭，便于外层使用系统自带的按压白色蒙版。
 
-  // 磨砂层挂载条件（播控条使用，与 Tab 风格解耦；新设备由「磨砂层叠加」开关控制）
+  // 磨砂层挂载条件（播控条使用，与 Tab 风格解耦）：「磨砂层叠加」设置项已删除，
+  // 明亮模式默认开启磨砂层（由模糊强度控制，0=关），暗黑模式不启用
   private frostLayerEnabled(): boolean {
-    if (this.isDarkTheme() || this.glassBlurStrength <= 0) {
-      return false
-    }
-    if (!isLiquidGlassAvailable()) {
-      return true
-    }
-    return this.glassFrostOverlay
+    return !this.isDarkTheme() && this.glassBlurStrength > 0
   }
 
-  // 底部播放信息栏的液态玻璃材质：与磨砂层一致，不区分 Tab 风格，两种样式统一挂载
+  // 底部播放信息栏的液态玻璃材质：与磨砂层一致，不区分 Tab 风格，两种样式统一挂载。
+  // 玻璃厚度档位/交互形变设置已删除：固定默认档 + 默认开启形变（消费点默认开启策略）
   private bottomBarGlassMaterial(): uiMaterial.Material | undefined {
-    return createBarGlassMaterial(this.glassThickness, this.interactive)
+    return createBarGlassMaterial(DEFAULT_GLASS_STYLE, true)
   }
 
   private isSongInfoShort(): boolean {
