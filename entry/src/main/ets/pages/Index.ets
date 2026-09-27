@@ -71,17 +71,11 @@ struct MainPage {
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
   @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
   @StorageLink('uplayer_glass_blur_strength') glassBlurStrength: number = 25
-  @StorageLink('uplayer_glass_thickness') glassThickness: number = DEFAULT_GLASS_STYLE
-  @StorageLink('uplayer_light_color_mode') lightColorMode: string = 'theme'
   @StorageLink('uplayer_tab_touch_indicator') tabTouchIndicator: string = 'light'
   @StorageLink('uplayer_tab_indicator_opacity') tabIndicatorOpacity: number = 50
   @StorageLink('uplayer_tab_indicator_visible') tabIndicatorVisible: boolean = true
   // 是否存在鼠标/触控板设备（决定「白色蒙版」功能是否存在：无鼠标时 mask 降级为 off）
   @StorageLink(KEY_HAS_POINTER_DEVICE) hasPointerDevice: boolean = false
-  @StorageLink('uplayer_interactive') interactive: boolean = true
-  @StorageLink('uplayer_color_invert') colorInvert: boolean = false
-  @StorageLink('uplayer_apply_shadow') applyShadow: boolean = true
-  @StorageLink('uplayer_glass_frost_overlay') glassFrostOverlay: boolean = false
   @State albumArtFailed: boolean = false
   @State isTitleMarqueeRunning: boolean = true
   @State isArtistMarqueeRunning: boolean = true
@@ -227,20 +221,20 @@ struct MainPage {
     Logger.info(TAG,
       `glassGate api26=${api26} uiImmersive=${uiImmersive} hdsTypes=[${hdsTypes}] ` +
         `matLevel=${String(getDeviceMaterialLevel())} liquidGlass=${isLiquidGlassAvailable()} ` +
-        `tabStyle=${this.tabStyle} glassTh=${this.glassThickness}`)
+        `tabStyle=${this.tabStyle} glassTh=${DEFAULT_GLASS_STYLE}`)
   }
 
   private getHdsBarFloatingStyle(): HdsTabsFloatingStyle | undefined {
     if (this.tabStyle !== 'immersive' || !isLiquidGlassAvailable()) {
       return undefined
     }
-    // glassThickness <= 0 时仍返回 pill 配置（与开启时布局完全一致），
-    // 仅 systemMaterialEffect 为 undefined（无玻璃材质效果）。
+    // 玻璃厚度档位设置已删除，材质在沉浸样式 + 设备支持时固定开启（默认常规档 DEFAULT_GLASS_STYLE）。
     // 布局由断点决定：小屏 sm/md 上下叠，大屏 lg/xl 左右分栏。
     const level: hdsMaterial.MaterialLevel = hdsMaterial.MaterialLevel.ADAPTIVE
     const useLight: boolean = this.tabTouchIndicator === 'light'
+    // 跟手光效颜色设置已删除：暗黑固定白光，明亮固定主题色
     const lightColor: ResourceColor | undefined = useLight
-      ? (this.lightColorMode === 'white' ? '#FFFFFF' : this.primaryColor)
+      ? (this.isDarkTheme() ? '#FFFFFF' : this.primaryColor)
       : undefined
     const smallScreen: boolean = this.breakpoint === 'sm' || this.breakpoint === 'md'
     const barWidthVp: number = Math.round(this.mainWidthVp * 0.4)
@@ -570,7 +564,7 @@ struct MainPage {
           this.playNext()
         })
     }
-    .height(this.scaledSize(40))
+    .height(this.scaledSize(44))
     .alignSelf(ItemAlign.Center)
     .padding({
       left: this.scaledSize(10),

@@ -175,6 +175,16 @@ export function createToastGlassMaterial(strength: number): uiMaterial.Material 
   })
 }
 
+// 统一 Toast：设备支持液态玻璃时自动挂材质（原「系统组件液态玻璃」设置项已删除，
+// 消费点固定开启）；能力不足返回 undefined → 系统默认样式
+export function showToastGlassMaterial(promptAction: PromptAction | undefined, message: string): void {
+  try {
+    promptAction?.showToast({ message: message, systemMaterial: createToastGlassMaterial(DEFAULT_GLASS_STYLE) })
+  } catch (e) {
+    // showToast 失败时静默忽略
+  }
+}
+
 // 设备能力不足时显示简短 Toast，说明缺失能力与对应后果
 export function showCapabilityToast(promptAction: PromptAction | undefined, message: string): void {
   try {
