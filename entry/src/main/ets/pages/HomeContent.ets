@@ -117,6 +117,13 @@ export struct HomeContent {
     return this.tabStyle !== 'classic'
   }
 
+  // 加号玻璃盘材质：与多选栏/播控条同源（条状组件工厂，applyShadow=false 保留手写投影）。
+  // 设备支持液态玻璃且玻璃未关断时返回 ImmersiveMaterial；低算力/关断返回 undefined，
+  // 调用处保留 backgroundEffect 磨砂兜底，保证任何设备都有玻璃观感。
+  private plusBarMaterial(): uiMaterial.Material | undefined {
+    return createBarGlassMaterial(DEFAULT_GLASS_STYLE, true)
+  }
+
   @State headerRowHeight: number = 0
 
   private headerOverlayHeight(): number {
@@ -894,15 +901,19 @@ export struct HomeContent {
       }
 
       if (!this.isMultiSelectMode && (this.isPlusVisible || !this.settings.plusButtonScrollHide)) {
-        // 加号组件：ic_public_add_norm_filled 是「实心圆 + 加号镂空」，镂空处会漏背景光；
-        // 下方垫一个同尺寸（44vp）玻璃盘，小模糊半径、不压暗，镂空透出玻璃而非背景光
+        // 加号组件：玻璃盘 + 加号字形。玻璃盘用「磨砂 backgroundEffect（与多选栏同源）+ 描边 +
+        // systemMaterial（设备支持液态玻璃时自动出真玻璃，内容区不渲染则磨砂兜底）」，加号字形用
+        // 纯加号 ic_public_add（主题色）叠在盘上 —— 保留蓝色主操作身份，同时呈玻璃观感。位置/交互不变。
         Stack({ alignContent: Alignment.Center }) {
           Row()
             .width(this.scaledSize(44)).height(this.scaledSize(44))
             .borderRadius(this.scaledSize(22))
-            .backgroundEffect({ radius: 1 })
-          Image($r('app.media.ic_public_add_norm_filled'))
-            .width(this.scaledSize(44)).height(this.scaledSize(44))
+            .backgroundColor(Color.Transparent)
+            .backgroundEffect({ radius: 20, saturation: 1.0, brightness: 1.0 })
+            .border({ width: 1, color: 'rgba(255,255,255,0.22)' })
+            .systemMaterial(this.plusBarMaterial())
+          Image($r('app.media.ic_public_add'))
+            .width(this.scaledSize(24)).height(this.scaledSize(24))
             .fillColor(this.primaryColor)
         }
         // 智感握姿：只切换贴边方向，不改变与底部的间距，避免握姿切换时按钮上下跳动。
