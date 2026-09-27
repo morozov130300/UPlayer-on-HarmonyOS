@@ -146,6 +146,9 @@ export struct MusicInfoComponent {
     }
     .justifyContent(FlexAlign.Center)
     .width('100%')
+    // 顶部留白：让「专辑封面 + 歌曲信息」整体下移，避开左上玻璃返回键（返回键 56vp 高，
+    // 宽态内容上边距 24vp 时封面顶会顶进返回键区域），下移 48vp 后封面顶低于返回键底并留缝
+    .margin({ top: 48 })
   }
 
   @Builder
