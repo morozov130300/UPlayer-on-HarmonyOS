@@ -223,14 +223,13 @@ struct MainPage {
   }
 
   private getHdsBarFloatingStyle(): HdsTabsFloatingStyle | undefined {
-    if (this.tabStyle !== 'immersive' || !isLiquidGlassAvailable()) {
-      return undefined
+    // 经典样式与玻璃样式：除了底色（磨砂 vs 液态玻璃）外，整体布局（悬浮 TabBar + 并排 miniBar + barWidth + barBottomMargin）必须完全一致
+    // 因此本方法在两种样式下都返回有效 barFloatingStyle，仅 systemMaterialEffect 在经典下不设置
+    if (!isLiquidGlassAvailable()) {
+      // 设备不支持液态玻璃：仍可走悬浮布局（只是没有玻璃材质），布局不降级
     }
-    // 玻璃厚度档位设置已删除，材质在沉浸样式 + 设备支持时固定开启（默认常规档 DEFAULT_GLASS_STYLE）。
-    // 布局由断点决定：小屏 sm/md 上下叠，大屏 lg/xl 左右分栏。
     const level: hdsMaterial.MaterialLevel = hdsMaterial.MaterialLevel.ADAPTIVE
     const useLight: boolean = this.tabTouchIndicator === 'light'
-    // 跟手光效颜色设置已删除：暗黑固定白光，明亮固定主题色
     const lightColor: ResourceColor | undefined = useLight
       ? (this.isDarkTheme() ? '#FFFFFF' : this.primaryColor)
       : undefined
@@ -253,13 +252,25 @@ struct MainPage {
           { smallWidth: miniBarWidthVp, mediumWidth: miniBarWidthVp, largeWidth: miniBarWidthVp } : undefined,
       }
     }
+    // 仅沉浸式样式下发液态玻璃材质；经典样式 systemMaterialEffect 保持 undefined（不挂玻璃），
+    // 由 barBackgroundBlurStyle 走磨砂兜底。这样两种样式的布局与组件完全一致，只差底色。
+    if (this.tabStyle === 'immersive' && isLiquidGlassAvailable()) {
+      return {
+        adaptToHandedness: true,
+        systemMaterialEffect: {
+          materialType: hdsMaterial.MaterialType.IMMERSIVE,
+          materialLevel: level,
+        },
+        barBottomMargin: this.bottomSafeHeight > 0 ? 28 : 28,
+        lightColor: lightColor,
+        barWidth: (smallScreen || !hasBarWidth) ? undefined :
+          { smallWidth: barWidthVp, mediumWidth: barWidthVp, largeWidth: barWidthVp },
+        miniBar: miniBar,
+      } as HdsTabsFloatingStyle
+    }
+    // 经典样式（或设备无液态玻璃）：同布局结构，仅不挂玻璃材质，底色由 barBackgroundBlurStyle 磨砂兜底
     return {
       adaptToHandedness: true,
-      // 玻璃厚度档位设置已删除：设备支持时固定挂沉浸材质（默认开启）
-      systemMaterialEffect: {
-        materialType: hdsMaterial.MaterialType.IMMERSIVE,
-        materialLevel: level,
-      },
       barBottomMargin: this.bottomSafeHeight > 0 ? 28 : 28,
       lightColor: lightColor,
       barWidth: (smallScreen || !hasBarWidth) ? undefined :
@@ -571,6 +582,11 @@ struct MainPage {
       top: this.scaledSize(2),
       bottom: this.scaledSize(2)
     })
+    // miniBar 兜底磨砂层：经典样式下没有液态玻璃材质，靠 backgroundEffect 出磨砂效果；
+    // 玻璃样式下 HdsTabs 会给 miniBar 挂 systemMaterialEffect（沉浸式），此时磨砂层与玻璃材质叠加，观感一致
+    .backgroundEffect(this.tabStyle !== 'immersive' && this.frostLayerEnabled() ? {
+      radius: this.glassBlurRadius()
+    } : undefined)
   }
 
   openPlayer(): void {
@@ -805,7 +821,9 @@ struct MainPage {
       .barWidth(this.scaledSize(228))
       .scrollable(true)
       .barFloatingStyle(this.getHdsBarFloatingStyle())
-      .barBackgroundBlurStyle(this.tabStyle !== 'immersive' || this.getHdsBarFloatingStyle() === undefined
+      // 经典模式：barFloatingStyle 不含 systemMaterialEffect → TabBar 走磨砂兜底（与玻璃模式布局完全一致，仅底色不同）
+      // 玻璃模式：barFloatingStyle 含 systemMaterialEffect（液态玻璃）→ 磨砂关闭
+      .barBackgroundBlurStyle((this.tabStyle !== 'immersive' || !isLiquidGlassAvailable())
         ? this.getBarBackgroundBlur() : BlurStyle.NONE)
       .animationDuration(StyleConstants.ANIMATION_SWIPER_DURATION)
       .onChange((index: number) => {
