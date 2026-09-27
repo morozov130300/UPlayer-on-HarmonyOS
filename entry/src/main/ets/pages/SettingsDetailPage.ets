@@ -16,11 +16,9 @@ import { ColorConversion } from '../common/utils/ColorConversion'
 import {
   createBarGlassMaterial,
   createTabGlassMaterial,
-  GLASS_THICKNESS_STEPS,
-  glassThicknessLabel,
+  DEFAULT_GLASS_STYLE,
   isLiquidGlassAvailable,
-  isLowPowerGlassDevice,
-  showCapabilityToast,
+  showToastGlassMaterial,
   topBlurRadiusFromStrength
 } from '../common/utils/GlassUtil'
 import { StyleConstants } from '../common/constants/StyleConstants'
@@ -73,13 +71,6 @@ struct SettingsDetailPage {
   @StorageLink('uplayer_glass_blur_strength') glassBlurStrength: number = 25
   @StorageLink('uplayer_home_top_blur_strength') homeTopBlurStrength: number = 25
   @StorageLink('uplayer_tab_indicator_opacity') tabIndicatorOpacity: number = 50
-  @StorageLink('uplayer_interactive') interactive: boolean = true
-  @StorageLink('uplayer_glass_thickness') glassThickness: number = 50
-  @StorageLink('uplayer_color_invert') colorInvert: boolean = false
-  @StorageLink('uplayer_apply_shadow') applyShadow: boolean = true
-  @StorageLink('uplayer_system_component_glass') systemComponentGlass: boolean = true
-  @StorageLink('uplayer_glass_frost_overlay') glassFrostOverlay: boolean = false
-  @StorageLink('uplayer_tab_indicator_visible') tabIndicatorVisible: boolean = true
   // 是否存在鼠标/触控板设备（决定「白色蒙版」开关是否显示）
   @StorageLink(KEY_HAS_POINTER_DEVICE) hasPointerDevice: boolean = false
   @State pageTitle: string = ''
@@ -177,17 +168,6 @@ struct SettingsDetailPage {
       this.settings.holdingHandEnabled = true
       AppStorage.setOrCreate(KEY_HOLDING_HAND_ENABLED, true)
     }
-    // 按明暗模式初始化 lightColorMode：未手动设置过时，暗黑默认白光，明亮默认主题色
-    const existingLightMode: string = this.settings.lightColorMode
-    if (existingLightMode === undefined || existingLightMode === '') {
-      if (this.isDark()) {
-        this.settings.lightColorMode = 'white'
-      } else {
-        this.settings.lightColorMode = 'theme'
-        AppStorage.setOrCreate('uplayer_light_color_mode', 'theme')
-      }
-      this.updateSetting()
-    }
   }
 
   aboutToDisappear(): void {
@@ -247,7 +227,8 @@ struct SettingsDetailPage {
   // 预览用 Tab 材质：经典样式走 createBarGlassMaterial（与 Index.classicTabBarMaterial 同参），
   // 玻璃样式走 createTabGlassMaterial 全参工厂（与 Index.liquidGlassMaterial 同参）
   private previewClassicBarMaterial(): uiMaterial.Material | undefined {
-    return createBarGlassMaterial(this.glassThickness, this.interactive)
+    // 玻璃厚度/交互形变等档位设置已删除：消费点固定默认开启（DEFAULT_GLASS_STYLE + 形变开）
+    return createBarGlassMaterial(DEFAULT_GLASS_STYLE, true)
   }
 
   // 解析「底部栏触摸指示」实际生效值：
@@ -261,38 +242,19 @@ struct SettingsDetailPage {
 
   private previewImmersiveBarMaterial(): uiMaterial.Material | undefined {
     const useLight: boolean = this.effectiveTouchIndicator() === 'light'
+    // 跟手光效颜色设置已删除：暗黑固定白光、明亮固定主题色
     const lightColor: string | undefined = useLight
-      ? (this.settings.lightColorMode === 'white' ? '#FFFFFF' : this.primaryColor)
+      ? (this.isDark() ? '#FFFFFF' : this.primaryColor)
       : undefined
-    return createTabGlassMaterial(this.glassThickness, this.interactive, lightColor, this.colorInvert, this.applyShadow)
+    // 玻璃厚度/交互形变/自动反色/材质阴影设置已删除：消费点固定默认开启
+    return createTabGlassMaterial(DEFAULT_GLASS_STYLE, true, lightColor, true, true)
   }
 
   // 磨砂层挂载条件（预览两栏共用，与 Index.frostLayerEnabled 完全一致）：
   // - 暗黑模式或模糊强度 0：从不挂载
-  // - 无液态玻璃能力的老设备（本页开关已隐藏）：保留兜底磨砂层，由模糊强度控制
-  // - 新设备：磨砂层与玻璃厚度/材质状态完全解耦，唯一判据是「磨砂层叠加」开关——
-  //   开关开 = 挂磨砂层（厚度 0、材质关断时同样生效）；开关关 = 不挂（纯材质观感）
+  // - 「磨砂层叠加」设置项已删除：明亮模式默认挂磨砂层（由模糊强度控制半径）
   private frostLayerEnabled(): boolean {
-    if (this.isDark() || this.glassBlurStrength <= 0) {
-      return false
-    }
-    if (!isLiquidGlassAvailable()) {
-      return true
-    }
-    return this.glassFrostOverlay
-  }
-
-  // 开关依赖液态玻璃能力的设置项时的能力提示：设备不支持液态玻璃（或低算力设备上
-  // Toast 材质被 createToastGlassMaterial 主动禁用）时，弹简短 Toast 说明该设置在本机
-  // 不会生效；仅在打开开关时提示（关闭开关不消耗能力），能力正常时不做任何事
-  private warnGlassCapabilityUnavailable(isOn: boolean, settingName: string, requireToastMaterial: boolean): void {
-    if (!isOn) {
-      return
-    }
-    if (isLiquidGlassAvailable() && (!requireToastMaterial || !isLowPowerGlassDevice())) {
-      return
-    }
-    showCapabilityToast(this.getUIContext().getPromptAction(), `当前设备能力不足，「${settingName}」不会生效`)
+    return !this.isDark() && this.glassBlurStrength > 0
   }
 
   // 与 Index.glassBlurRadius 同公式：模糊强度 × 0.5
@@ -352,8 +314,8 @@ struct SettingsDetailPage {
         .shadow({ radius: 18, color: ColorHelper.hexWithAlpha(this.primaryColor, '44'), offsetY: 5 })
         .zIndex(0)
 
-      // 指示器显隐与 Index.customTabBar 一致：由「Tab 指示器」开关掌管
-      if (this.tabIndicatorVisible) {
+      // 指示器固定显示：由 tabIndicatorOpacity 控制深浅
+      {
         Row()
           .width(this.scaledSize(this.previewTabWidth - 2 * this.previewIndicatorInset))
           .height(this.scaledSize(36))
@@ -397,8 +359,8 @@ struct SettingsDetailPage {
   @Builder
   previewImmersiveTabBar(): void {
     Stack({ alignContent: Alignment.BottomStart }) {
-      // 指示器显隐与 Index.immersiveTabBar 一致：由「Tab 指示器」开关掌管
-      if (this.tabIndicatorVisible) {
+      // 指示器固定显示：由 tabIndicatorOpacity 控制深浅
+      {
         Row()
           .width(this.scaledSize(this.previewTabWidth - 2 * this.previewIndicatorInset))
           .height(this.scaledSize(36))
@@ -790,6 +752,9 @@ struct SettingsDetailPage {
     }, { barStyle: BarStyle.STACK })
     .hideBackButton(true)
     .hideTitleBar(false)
+    // 与播放器页一致：宽窗口（lg/xl，如 X7 展开态）默认走 Split 双栏会把内容挤进左侧窄栏、
+    // 右侧露出黑色背景，强制 Stack 模式让内容区铺满整窗
+    .mode(NavigationMode.Stack)
     .width('100%')
     .height('100%')
     .bindSheet($$this.showGlassScope, this.glassScopeSheetBuilder(), {
@@ -932,7 +897,7 @@ struct SettingsDetailPage {
       this.scopeLine('• 右下角播控条')
       this.scopeLine('• 顶部的模糊层（首页顶部标题区，覆盖首页第一屏）')
       this.scopeLine('• 首页 / 歌单 / 设置 / 设置详情 四个一级页面的顶层背景（仅档位与材质在此生效）')
-      this.scopeLine('• 操作时屏幕底部短暂弹出的文字提示浮层（如切换播放模式时的"随机播放"）——单独由「系统组件液态玻璃」开关控制')
+      this.scopeLine('• 操作时屏幕底部短暂弹出的文字提示浮层（如切换播放模式时的"随机播放"）——设备支持液态玻璃时固定使用液态玻璃材质')
 
       Text('以下位置不使用玻璃效果：')
         .fontSize(this.scaledFont(12))
@@ -1064,65 +1029,6 @@ struct SettingsDetailPage {
       }
       .width('100%')
 
-      // 跟手光效颜色：白光 / 主题色（仅暗黑模式显示，明亮模式固定主题色并隐藏此设置项）
-      if (this.isDark()) {
-        Column() {
-          Row() {
-            this.subTitleRow('跟手光效颜色')
-            Blank()
-            Column() {
-              Text('白光')
-                .fontSize(this.scaledFont(11))
-                .fontColor(this.settings.lightColorMode === 'white'
-                  ? '#FFFFFF' : this.settingInactiveTextColor())
-            }
-            .padding({
-              left: this.scaledSize(10),
-              right: this.scaledSize(10),
-              top: this.scaledSize(5),
-              bottom: this.scaledSize(5)
-            })
-            .backgroundColor(this.settings.lightColorMode === 'white'
-              ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
-            .borderRadius(this.scaledSize(14))
-            .animation({ duration: 200, curve: Curve.EaseInOut })
-            .onClick(() => {
-              this.settings.lightColorMode = 'white'
-              this.updateSetting()
-              AppStorage.setOrCreate('uplayer_light_color_mode', 'white')
-            })
-            Column() {
-              Text('主题色')
-                .fontSize(this.scaledFont(11))
-                .fontColor( this.settings.lightColorMode === 'theme'
-                  ? '#FFFFFF' : this.settingInactiveTextColor())
-            }
-            .padding({
-              left: this.scaledSize(10),
-              right: this.scaledSize(10),
-              top: this.scaledSize(5),
-              bottom: this.scaledSize(5)
-            })
-            .backgroundColor(this.settings.lightColorMode === 'theme'
-              ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
-            .borderRadius(this.scaledSize(14))
-            .animation({ duration: 200, curve: Curve.EaseInOut })
-            .onClick(() => {
-              this.settings.lightColorMode = 'theme'
-              this.updateSetting()
-              AppStorage.setOrCreate('uplayer_light_color_mode', 'theme')
-            })
-          }
-          .width('100%')
-          .constraintSize({ minWidth: 0, maxWidth: '100%' })
-          .alignItems(VerticalAlign.Center)
-          .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
-        }
-        .width('100%')
-        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-        .borderRadius(this.scaledSize(10))
-      }
-
       // 底部栏触摸指示：关 / 白色蒙版 / 跟手光效
       // 白色蒙版开关按鼠标检测结果动态显示/隐藏（见 visibleTouchIndicatorOptions）
       Column() {
@@ -1195,36 +1101,6 @@ struct SettingsDetailPage {
       .borderRadius(this.scaledSize(10))
       }
 
-      // 交互形变：液态玻璃按压/拖动 Q 弹反馈（置于「交互」分组下）
-      Row() {
-        Column({ space: this.scaledSize(6) }) {
-          Text('交互形变')
-            .fontSize(this.scaledFont(14))
-            .fontColor(this.settingTextColor())
-            .fontWeight(FontWeight.Medium)
-          Text('按压或拖动时，液态玻璃材质表面产生弹性形变反馈。')
-            .fontSize(this.scaledFont(12))
-            .fontColor(this.settingSubTextColor())
-        }
-        .layoutWeight(1)
-        .justifyContent(FlexAlign.Center)
-        .alignItems(HorizontalAlign.Start)
-        Toggle({ type: ToggleType.Switch, isOn: this.settings.interactive })
-          .selectedColor(this.primaryColor)
-          .alignSelf(ItemAlign.Center)
-          .onChange((isOn: boolean) => {
-            this.settings.interactive = isOn
-            this.interactive = isOn
-            this.warnGlassCapabilityUnavailable(isOn, '交互形变', false)
-            this.updateSetting()
-          })
-      }
-      .width('100%')
-      .height(this.scaledSize(52))
-      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(this.scaledSize(10))
-
       // ─── 一级标题「高级样式」（玻璃模式下显示） + 右上角叹号角标 ───
       // 点击叹号弹窗说明玻璃效果所影响的所有位置
       Column() {
@@ -1233,63 +1109,6 @@ struct SettingsDetailPage {
         // 顶部为真实 Tab 栏实时预览（复刻 Index，可点击/悬停），三个滑块调节时实时反映透视与磨砂效果
         Column({ space: this.scaledSize(10) }) {
           this.tabBarLivePreview()
-
-          Column({ space: this.scaledSize(6) }) {
-            Row() {
-              this.subTitleRow('玻璃厚度')
-              Blank()
-            }
-            .width('100%')
-            Text('控制玻璃材质的模糊强度，共五档（极薄/薄/常规/厚/极厚），0 为关闭玻璃。')
-              .fontSize(this.scaledFont(12))
-              .fontColor(this.settingSubTextColor())
-              .width('100%')
-            Row() {
-              Slider({
-                value: this.settings.glassThickness,
-                min: 0,
-                max: 100,
-                step: 20,
-                style: SliderStyle.OutSet
-              })
-                .layoutWeight(1)
-                .selectedColor(this.primaryColor)
-                .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-                .blockColor('#FFFFFF')
-                .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
-                .blockBorderColor(this.primaryColor)
-                .blockBorderWidth(3)
-                .onChange((value: number, mode: SliderChangeMode) => {
-                  this.settings.glassThickness = value
-                  this.glassThickness = value
-                  if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-                    this.updateSetting()
-                  }
-                })
-            }
-            .width('100%')
-            .alignItems(VerticalAlign.Center)
-            .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
-            // 滑轨下方 6 档位刻度标注：按档位点定位（0/20/40/60/80/100 → 轨道 0%~100%），
-            // 与 OutSet 滑块中心两端内缩半个滑块宽（scaledSize(10)）对齐；当前档主题色高亮
-            Row() {
-              Stack() {
-                ForEach(GLASS_THICKNESS_STEPS, (step: number, idx: number) => {
-                  Text(glassThicknessLabel(step))
-                    .fontSize(this.scaledFont(10))
-                    .fontColor(this.settings.glassThickness === step ? this.primaryColor : this.settingSubTextColor())
-                    .position({ x: `${idx * 20}%`, y: 0 })
-                    .markAnchor({ x: '50%', y: 0 })
-                }, (step: number, idx: number) => `${idx}_${step}`)
-              }
-              .layoutWeight(1)
-              .height(this.scaledSize(14))
-              .alignContent(Alignment.TopStart)
-            }
-            .width('100%')
-            .padding({ left: this.scaledSize(10), right: this.scaledSize(10) })
-          }
-          .width('100%')
 
           // 磨砂兜底模糊强度：仅在不支持液态玻璃的老设备上显示（新设备材质接管背景，该项无可见效果）
           if (!isLiquidGlassAvailable()) {
@@ -1390,149 +1209,7 @@ struct SettingsDetailPage {
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
         .borderRadius(this.scaledSize(10))
 
-        // 交互形变已移至「交互」分组
-        Column({ space: this.scaledSize(10) }) {
-          Row() {
-            Column({ space: this.scaledSize(6) }) {
-              Text('自动反色')
-                .fontSize(this.scaledFont(14))
-                .fontColor(this.settingTextColor())
-                .fontWeight(FontWeight.Medium)
-              Text('材质足够薄时，子元素文字/图标颜色自动适配背景，确保可读性。')
-                .fontSize(this.scaledFont(12))
-                .fontColor(this.settingSubTextColor())
-            }
-            .layoutWeight(1)
-            .justifyContent(FlexAlign.Center)
-            .alignItems(HorizontalAlign.Start)
-            Toggle({ type: ToggleType.Switch, isOn: this.settings.colorInvert })
-              .selectedColor(this.primaryColor)
-              .alignSelf(ItemAlign.Center)
-              .onChange((isOn: boolean) => {
-                this.settings.colorInvert = isOn
-                this.colorInvert = isOn
-                this.warnGlassCapabilityUnavailable(isOn, '自动反色', false)
-                this.updateSetting()
-              })
-          }
-          .width('100%')
-          .height(this.scaledSize(52))
-          .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-
-          Row() {
-            Column({ space: this.scaledSize(6) }) {
-              Text('材质阴影')
-                .fontSize(this.scaledFont(14))
-                .fontColor(this.settingTextColor())
-                .fontWeight(FontWeight.Medium)
-              Text('材质自带阴影效果，优先于手动设置的 shadow 属性。')
-                .fontSize(this.scaledFont(12))
-                .fontColor(this.settingSubTextColor())
-            }
-            .layoutWeight(1)
-            .justifyContent(FlexAlign.Center)
-            .alignItems(HorizontalAlign.Start)
-            Toggle({ type: ToggleType.Switch, isOn: this.settings.applyShadow })
-              .selectedColor(this.primaryColor)
-              .alignSelf(ItemAlign.Center)
-              .onChange((isOn: boolean) => {
-                this.settings.applyShadow = isOn
-                this.applyShadow = isOn
-                this.warnGlassCapabilityUnavailable(isOn, '材质阴影', false)
-                this.updateSetting()
-              })
-          }
-          .width('100%')
-          .height(this.scaledSize(52))
-          .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-
-          // 磨砂层叠加：与其他开关行同款结构；仅液态玻璃可用时显示（老设备下磨砂层是唯一兜底手段，
-          // 由本页「Tab栏与播控条模糊强度」滑块控制，该开关无效果故隐藏）
-          if (isLiquidGlassAvailable()) {
-            Row() {
-              Column({ space: this.scaledSize(6) }) {
-                Text('磨砂层叠加')
-                  .fontSize(this.scaledFont(14))
-                  .fontColor(this.settingTextColor())
-                  .fontWeight(FontWeight.Medium)
-                Text('在液态玻璃材质之上叠加一层磨砂模糊层（明亮模式生效，暗黑模式不启用）。建议保持关闭，以获得通透的材质观感。')
-                  .fontSize(this.scaledFont(12))
-                  .fontColor(this.settingSubTextColor())
-              }
-              .layoutWeight(1)
-              .justifyContent(FlexAlign.Center)
-              .alignItems(HorizontalAlign.Start)
-              Toggle({ type: ToggleType.Switch, isOn: this.settings.glassFrostOverlay })
-                .selectedColor(this.primaryColor)
-                .alignSelf(ItemAlign.Center)
-                .onChange((isOn: boolean) => {
-                  this.settings.glassFrostOverlay = isOn
-                  this.glassFrostOverlay = isOn
-                  this.updateSetting()
-                })
-            }
-            .width('100%')
-            .height(this.scaledSize(52))
-            .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-          }
-
-          Row() {
-            Column({ space: this.scaledSize(6) }) {
-              Text('Tab 指示器')
-                .fontSize(this.scaledFont(14))
-                .fontColor(this.settingTextColor())
-                .fontWeight(FontWeight.Medium)
-              Text('显示或隐藏当前选中 Tab 下方的指示条。对经典与玻璃两种 Tab 样式同时生效，独立于深浅、厚度等全部其他设置。')
-                .fontSize(this.scaledFont(12))
-                .fontColor(this.settingSubTextColor())
-            }
-            .layoutWeight(1)
-            .justifyContent(FlexAlign.Center)
-            .alignItems(HorizontalAlign.Start)
-            Toggle({ type: ToggleType.Switch, isOn: this.settings.tabIndicatorVisible })
-              .selectedColor(this.primaryColor)
-              .alignSelf(ItemAlign.Center)
-              .onChange((isOn: boolean) => {
-                this.settings.tabIndicatorVisible = isOn
-                this.tabIndicatorVisible = isOn
-                this.updateSetting()
-              })
-          }
-          .width('100%')
-          .height(this.scaledSize(52))
-          .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-
-          Row() {
-            Column({ space: this.scaledSize(6) }) {
-              Text('系统组件液态玻璃')
-                .fontSize(this.scaledFont(14))
-                .fontColor(this.settingTextColor())
-                .fontWeight(FontWeight.Medium)
-              Text('切换播放模式等操作时，屏幕底部短暂弹出的文字提示浮层（如"随机播放"）使用液态玻璃材质；需设备支持（API 26+）。')
-                .fontSize(this.scaledFont(12))
-                .fontColor(this.settingSubTextColor())
-            }
-            .layoutWeight(1)
-            .justifyContent(FlexAlign.Center)
-            .alignItems(HorizontalAlign.Start)
-            Toggle({ type: ToggleType.Switch, isOn: this.settings.systemComponentGlass })
-              .selectedColor(this.primaryColor)
-              .alignSelf(ItemAlign.Center)
-              .onChange((isOn: boolean) => {
-                this.settings.systemComponentGlass = isOn
-                this.systemComponentGlass = isOn
-                this.warnGlassCapabilityUnavailable(isOn, '系统组件液态玻璃', true)
-                this.updateSetting()
-              })
-          }
-          .width('100%')
-          .height(this.scaledSize(52))
-          .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-        }
-        .width('100%')
-        .padding({ top: this.scaledSize(10) })
-        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-        .borderRadius(this.scaledSize(10))
+        // 自动反色/材质阴影/磨砂层叠加/系统组件液态玻璃等档位设置已删除：消费点固定默认开启
 
         // 玻璃效果生效范围：已通过一级标题右上角的小叹号引出弹窗说明
       }
@@ -1963,6 +1640,22 @@ struct SettingsDetailPage {
       .borderRadius(this.scaledSize(10))
 
       Column() {
+        this.toggleRow('耳机断开时继续播放', this.settings.continuePlayOnHeadsetUnplug, (val: boolean) => {
+          this.settings.continuePlayOnHeadsetUnplug = val
+          this.updateSetting()
+        })
+        Text('关闭时：拔出耳机/断开蓝牙会自动暂停播放并提示；开启时：系统默认切回扬声器继续播放')
+          .fontSize(this.scaledFont(11))
+          .fontColor(this.settingSubTextColor())
+          .width('100%')
+          .margin({ top: this.scaledSize(2) })
+      }
+      .width('100%')
+      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
+
+      Column() {
         Row() {
           this.subTitleRow('播放速度')
           Blank()
@@ -2210,7 +1903,7 @@ struct SettingsDetailPage {
       const pasteData: pasteboard.PasteData = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, content)
       const systemPasteboard: pasteboard.SystemPasteboard = pasteboard.getSystemPasteboard()
       systemPasteboard.setDataSync(pasteData)
-      this.getUIContext()?.getPromptAction().showToast({ message: label + '已复制' })
+      showToastGlassMaterial(this.getUIContext()?.getPromptAction(), label + '已复制')
     } catch (e) {
       Logger.error(TAG, 'copyToClipboard failed: ' + JSON.stringify(e))
     }
