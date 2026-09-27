@@ -790,6 +790,9 @@ struct SettingsDetailPage {
     }, { barStyle: BarStyle.STACK })
     .hideBackButton(true)
     .hideTitleBar(false)
+    // 与播放器页一致：宽窗口（lg/xl，如 X7 展开态）默认走 Split 双栏会把内容挤进左侧窄栏、
+    // 右侧露出黑色背景，强制 Stack 模式让内容区铺满整窗
+    .mode(NavigationMode.Stack)
     .width('100%')
     .height('100%')
     .bindSheet($$this.showGlassScope, this.glassScopeSheetBuilder(), {

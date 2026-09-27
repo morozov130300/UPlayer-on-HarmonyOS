@@ -1,0 +1,104 @@
+﻿[0,0,1080,2444]
+  Tabs#hdsTabs [0,620,1080,2444]
+    Swiper [0,620,1080,2444] scrollable
+      List [0,620,1080,2444] scrollable
+        Row [0,122,1080,137] clickable longClickable
+        Row [0,137,1080,304] clickable longClickable
+          Text [198,178,848,225] "9月10日 雄楚大道"
+          Text [198,225,262,262] "你好"
+          Text [262,225,397,262] " · Sounds"
+          SymbolGlyph [848,191,907,249] clickable
+          Image [954,187,1020,253] clickable
+        Row [0,304,1080,464] clickable longClickable
+          Text [198,345,848,392] "9月10日 雄楚大道 2"
+          Text [198,392,326,429] "未知歌手"
+          Text [326,392,461,429] " · Sounds"
+          SymbolGlyph [848,358,907,416] clickable
+          Image [954,354,1020,420] clickable
+        Row [234,470,1080,637] clickable longClickable
+          Text [234,511,848,558] "Little Flickering"
+          Text [234,558,252,595] "vivo"
+          Text [252,558,387,595] " · Sounds"
+          SymbolGlyph [848,524,907,582] clickable
+          Image [954,520,1020,586] clickable
+        Row [0,637,1080,804] clickable longClickable
+          Text [198,678,848,725] "Morning"
+          Text [198,725,252,762] "vivo"
+          Text [252,725,387,762] " · Sounds"
+          SymbolGlyph [848,691,907,749] clickable
+          Image [954,687,1020,753] clickable
+        Row [0,804,1080,971] clickable longClickable
+          Text [198,845,848,892] "SaveTik.io_7665618647057993000"
+          Text [198,892,326,929] "未知歌手"
+          Text [326,892,723,929] " · com.huawei.hmos.browser"
+          SymbolGlyph [848,858,907,916] clickable
+          Image [954,854,1020,920] clickable
+        Row [0,970,1080,1137] clickable longClickable
+          Text [198,1011,848,1058] "大东北我的家乡 (DJ何鹏版)"
+          Text [198,1058,262,1095] "何玉"
+          Text [262,1058,481,1095] " · Huawei Share"
+          SymbolGlyph [848,1024,907,1082] clickable
+          Image [954,1020,1020,1086] clickable
+        Row [0,1137,1080,1304] clickable longClickable
+          Text [198,1178,848,1225] "Dream It Possible"
+          Text [198,1225,305,1262] "Delacey"
+          Text [305,1225,477,1262] " · Ringtones"
+          SymbolGlyph [848,1191,907,1249] clickable
+          Image [954,1187,1020,1253] clickable
+        Row [0,1304,1080,1471] clickable longClickable
+          Text [198,1345,848,1392] "我的楼兰"
+          Text [198,1392,262,1429] "云朵"
+          Text [262,1392,481,1429] " · Huawei Share"
+          SymbolGlyph [848,1358,907,1416] clickable
+          Image [954,1354,1020,1420] clickable
+        Row [0,1470,1080,1637] clickable longClickable
+          Text [198,1511,848,1558] "Flourish"
+          Text [198,1558,308,1595] "HUAWEI"
+          Text [308,1558,435,1595] " · Alarms"
+          SymbolGlyph [848,1524,907,1582] clickable
+          Image [954,1520,1020,1586] clickable
+        Row [0,1637,1080,1804] clickable longClickable
+          Text [198,1678,848,1725] "Bongo"
+          Text [198,1725,308,1762] "HUAWEI"
+          Text [308,1725,522,1762] " · Notifications"
+          SymbolGlyph [848,1691,907,1749] clickable
+          Image [954,1687,1020,1753] clickable
+        Row [0,1803,1080,1970] clickable longClickable
+          Text [198,1844,848,1891] "非凡"
+          Text [198,1891,294,1928] "刘德华"
+          Text [294,1891,513,1928] " · Huawei Share"
+          SymbolGlyph [848,1857,907,1915] clickable
+          Image [954,1853,1020,1919] clickable
+      ScrollBar [1067,400,1080,2444] scrollable
+      Row [42,303,253,376] clickable
+        Text [73,318,222,361] "全部歌曲"
+      Row [690,303,922,376] clickable
+        Text [768,321,896,358] "名称排序"
+      Row [922,306,1038,373] clickable
+        Text [948,321,1012,358] "平铺"
+      Stack [887,1925,1020,2058] clickable
+      Text [42,179,265,253] "上午好"
+      Text [291,221,716,253] "昔有华阳真逸，今惟员峤老仙。"
+    Column [226,2246,435,2359] clickable
+      Text [309,2324,352,2349] "首页"
+    Column [435,2246,644,2359] clickable
+      Text [518,2324,561,2349] "歌单"
+    Column [644,2246,853,2359] clickable
+      Text [727,2324,770,2349] "设置"
+    Stack [195,2236,884,2369] clickable
+  __Common__ [172,2101,242,2217] clickable
+  Column [339,2124,527,2195] clickable
+    Marquee [339,2124,526,2164] "非凡"
+      Text [339,2124,408,2164] "非凡"
+    Marquee [339,2164,526,2195] "刘德华"
+      Text [339,2164,419,2195] "刘德华"
+  Image [611,2131,667,2187] clickable
+  Image [727,2126,794,2192] clickable
+  Image [854,2131,910,2187] clickable
+devecocli : - Dumping layout…
+所在位置 行:2 字符: 16
++ ... D:/UPlayer; devecocli ui layout --mode simplified --device "HUAWEI Ma ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (- Dumping layout…:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 

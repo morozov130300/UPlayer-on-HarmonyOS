@@ -904,9 +904,10 @@ struct MainPage {
   }
 
   // 小屏态自建播控条的底部偏移：压在 TabBar 顶部正上方。
-  // TabBar 悬浮于底部：barBottomMargin(28) + barHeight(scaled 44) 到屏幕底；再加 4vp 间距。
+  // 28(tab barBottomMargin) + 44(tab 高) 到 tab 顶；再加 4vp 基础间距，最后 +4.5vp 把播控条上移到
+  // 「加号底」与「tab 顶」的垂直中点，使播控条到加号与到 tab 的垂直距离相等（窄态真机实测）。
   private controlBarBottomMargin(): number {
-    return 28 + this.scaledSize(44) + this.scaledSize(4)
+    return 28 + this.scaledSize(44) + this.scaledSize(4) + 4.5
   }
 
   // 加号组件底边位置：紧贴播控条（迷你栏）上沿。真机实测（vp）：
