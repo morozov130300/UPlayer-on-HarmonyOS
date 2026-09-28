@@ -16,6 +16,7 @@ import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstan
 import { AlbumCoverLease, AlbumCoverSize, AudioMetadataService } from '../service/AudioMetadataService';
 import { DataService } from '../service/DataService';
 import { GlassBackButton } from './GlassBackButton';
+import { MediaTools } from '../common/utils/mediautils/MediaTools';
 
 const TAG = 'PlayerInfoComponent'
 
@@ -53,6 +54,7 @@ export struct PlayerInfoComponent {
   private backgroundCoverLease: AlbumCoverLease | undefined = undefined;
   private currentBackgroundMap: image.PixelMap | undefined = undefined;
   private previousBackgroundMap: image.PixelMap | undefined = undefined;
+  @State fallbackBackgroundMap: image.PixelMap | undefined = undefined;
 
   onImageColorChange(): void {
     ColorConversion.setSysBarLightBackground(this.isBackgroundDark(this.imageColor));
@@ -77,6 +79,8 @@ export struct PlayerInfoComponent {
     this.currentBackgroundMap = undefined;
     this.previousBackgroundMap?.release();
     this.previousBackgroundMap = undefined;
+    this.fallbackBackgroundMap?.release();
+    this.fallbackBackgroundMap = undefined;
   }
 
   build() {
@@ -89,13 +93,23 @@ export struct PlayerInfoComponent {
           .objectFit(ImageFit.Cover)
           .opacity(this.prevImageOpacity)
 
-        Image(this.imageLabel)
-          .size(this.mainWindowInfo.heightBp !== HeightBreakpoint.HEIGHT_LG ?
-            { width: PlayerConstants.BACK_IMAGE, height: '100%' } :
-            { width: '100%', height: PlayerConstants.BACK_IMAGE })
-          .objectFit(ImageFit.Cover)
-          .fillColor(this.imageLabelIsFallback ? $r('app.color.player_icon_color') : Color.Black)
-          .opacity(0.5)
+        if (this.imageLabelIsFallback && this.fallbackBackgroundMap !== undefined) {
+          // 无专辑封面时：模糊音符图标作为背景，与有封面时的模糊效果一致
+          Image(this.fallbackBackgroundMap)
+            .size(this.mainWindowInfo.heightBp !== HeightBreakpoint.HEIGHT_LG ?
+              { width: PlayerConstants.BACK_IMAGE, height: '100%' } :
+              { width: '100%', height: PlayerConstants.BACK_IMAGE })
+            .objectFit(ImageFit.Cover)
+            .opacity(0.5)
+        } else {
+          Image(this.imageLabel)
+            .size(this.mainWindowInfo.heightBp !== HeightBreakpoint.HEIGHT_LG ?
+              { width: PlayerConstants.BACK_IMAGE, height: '100%' } :
+              { width: '100%', height: PlayerConstants.BACK_IMAGE })
+            .objectFit(ImageFit.Cover)
+            .fillColor(this.imageLabelIsFallback ? $r('app.color.player_icon_color') : Color.Black)
+            .opacity(0.5)
+        }
       }
 
       Column()
@@ -318,7 +332,7 @@ export struct PlayerInfoComponent {
     this.loadAlbumArt(song);
   }
 
-  private setDefaultBackground() {
+  private async setDefaultBackground() {
     this.imageLoadRequestId++;
     let isDark: boolean = this.themeMode === 'dark';
     if (!isDark && this.themeMode === 'system' && this.context) {
@@ -332,7 +346,31 @@ export struct PlayerInfoComponent {
     } else {
       this.imageColor = 'rgba(228, 236, 247, 1.00)';
     }
-    this.isBackgroundReady = true;
+    try {
+      const srcImg = await MediaTools.getPixelMapFromResource(this.context!, $r('app.media.ic_public_music'));
+      if (srcImg === null) {
+        this.isBackgroundReady = true;
+        return;
+      }
+      const effect = effectKit.createEffect(srcImg);
+      if (effect === null) {
+        srcImg.release();
+        this.isBackgroundReady = true;
+        return;
+      }
+      effect.blur(PlayerConstants.IMAGE_BLUR);
+      const blurred = await effect.getEffectPixelMap();
+      srcImg.release();
+      if (blurred === null) {
+        this.isBackgroundReady = true;
+        return;
+      }
+      this.fallbackBackgroundMap?.release();
+      this.fallbackBackgroundMap = blurred;
+      this.isBackgroundReady = true;
+    } catch (_) {
+      this.isBackgroundReady = true;
+    }
   }
 
   private async loadAlbumArt(song: SongInfo): Promise<void> {
@@ -342,7 +380,7 @@ export struct PlayerInfoComponent {
       coverLease = await AudioMetadataService.getInstance().acquireAlbumCover(song, AlbumCoverSize.LARGE);
       if (coverLease === undefined) {
         if (requestId === this.imageLoadRequestId) {
-          this.setDefaultBackground();
+          await this.setDefaultBackground();
         }
         return;
       }
