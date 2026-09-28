@@ -898,8 +898,8 @@ export struct HomeContent {
         // + 清亮玻璃描边」，加号字形用 ic_public_add_norm_filled（主题色，带圆圈）。位置/交互不变。
         Stack({ alignContent: Alignment.Center }) {
           Row()
-            .width(this.scaledSize(44)).height(this.scaledSize(44))
-            .borderRadius(this.scaledSize(22))
+            .width(this.scaledSize(48)).height(this.scaledSize(48))
+            .borderRadius(this.scaledSize(24))
             .backgroundColor(Color.Transparent)
             .backgroundEffect({ radius: 2, saturation: 1.0, brightness: 1.0 })
             .border({ width: 1, color: 'rgba(255,255,255,0.35)' })
