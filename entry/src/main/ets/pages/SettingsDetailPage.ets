@@ -70,6 +70,8 @@ struct SettingsDetailPage {
   @StorageLink('uplayer_glass_blur_strength') glassBlurStrength: number = 25
   @StorageLink('uplayer_home_top_blur_strength') homeTopBlurStrength: number = 25
   @StorageLink('uplayer_tab_indicator_opacity') tabIndicatorOpacity: number = 50
+  // 经典样式下隐藏"Tab栏与播控条模糊强度"：用动画过渡避免突兀
+  @State showClassicBlurStrength: boolean = true
   // 是否存在鼠标/触控板设备（决定「白色蒙版」开关是否显示）
   @StorageLink(KEY_HAS_POINTER_DEVICE) hasPointerDevice: boolean = false
   @State pageTitle: string = ''
@@ -586,6 +588,9 @@ struct SettingsDetailPage {
   }
 
   setTabStyle(style: string): void {
+    const isSwitchingToClassic: boolean = style === 'classic' && isLiquidGlassAvailable()
+    // 切换样式时同步更新经典样式专属设置项的可见性
+    this.showClassicBlurStrength = !isSwitchingToClassic
     this.getUIContext()?.animateTo({ curve: curves.springMotion(0.4, 0.8) }, () => {
       this.settings.tabStyle = style
       this.settings = this.settings
@@ -1108,7 +1113,8 @@ struct SettingsDetailPage {
           this.tabBarLivePreview()
 
           // 磨砂兜底模糊强度：仅在不支持液态玻璃的老设备上显示（新设备材质接管背景，该项无可见效果）
-          if (!isLiquidGlassAvailable()) {
+          // 经典样式切换时动画隐藏：避免突兀消失
+          if (!isLiquidGlassAvailable() || this.showClassicBlurStrength) {
             Column({ space: this.scaledSize(6) }) {
               Row() {
                 this.subTitleRow('Tab栏与播控条模糊强度')
@@ -1153,6 +1159,11 @@ struct SettingsDetailPage {
               .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
             }
             .width('100%')
+            .transition({
+              type: TransitionType.Delete,
+              opacity: 0,
+              scale: { x: 0.95, y: 0.95 }
+            })
           }
 
           Column({ space: this.scaledSize(6) }) {
