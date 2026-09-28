@@ -1,5 +1,6 @@
 // ArkUI 26 Beta1: 接口定义变更（误报，本项目已是Stage模型）+ UX视觉布局变更（Text默认开启沉浸式材质，系统行为）
 import { curves, uiAppearance, uiMaterial } from '@kit.ArkUI'
+import { HdsTabs, HdsTabsController, HdsTabsFloatingStyle, hdsMaterial } from '@kit.UIDesignKit'
 import { common, ConfigurationConstant } from '@kit.AbilityKit'
 import { DataService, AppSettingsData } from '../service/DataService'
 import { AVPlayerService } from '../service/AVPlayerService'
@@ -73,18 +74,16 @@ struct SettingsDetailPage {
   // 经典样式下隐藏"Tab栏与播控条模糊强度"：用动画过渡避免突兀
   // 初始值根据当前样式和设备能力计算：新设备玻璃样式隐藏，其他情况显示
   @State showClassicBlurStrength: boolean = !(isLiquidGlassAvailable() && this.settings.tabStyle === 'immersive')
+  // Tab 栏实时预览：直接使用 HdsTabs 系统组件，与 Index 完全一致的渲染管线
+  private previewTabsController: HdsTabsController = new HdsTabsController()
   // 是否存在鼠标/触控板设备（决定「白色蒙版」开关是否显示）
   @StorageLink(KEY_HAS_POINTER_DEVICE) hasPointerDevice: boolean = false
   @State pageTitle: string = ''
   // 顶部模糊预览的靠边方向：左手握持 → 靠右（沿用原有映射，由 HoldingHandService 统一滤波后广播）
   @StorageLink(KEY_HOLDING_HAND_LEFT) previewOnRight: boolean = false
-  // Tab 栏实时预览态：复刻 Index 真实 Tab 栏（可点击切换、悬停高亮、指示器弹簧动画）
+  // Tab 栏实时预览：直接使用 HdsTabs 系统组件，与 Index 完全一致的渲染管线
   @State previewTabIndex: number = 0
-  @State previewIndicatorOffset: number = 4
   @State previewHoverTabIndex: number = -1
-  private previewTabWidth: number = 72
-  private previewTabGap: number = 6
-  private previewIndicatorInset: number = 4
   @State showColorPicker: boolean = false
   @State showGlassScope: boolean = false
   @State pickerHue: number = 210
@@ -283,50 +282,87 @@ struct SettingsDetailPage {
     return this.effectiveTouchIndicator() === 'mask' ? HoverEffect.Highlight : HoverEffect.None
   }
 
-  // 预览内点击 Tab：与 Index.switchPage/updateIndicatorOffset 一致的弹簧动画
+  // 预览内点击 Tab：联动 previewTabIndex
   private switchPreviewTab(index: number): void {
-    if (index === this.previewTabIndex) {
-      return
-    }
-    this.getUIContext()?.animateTo({ curve: curves.springMotion(0.4, 0.8) }, () => {
-      this.previewTabIndex = index
-      this.previewIndicatorOffset =
-        this.scaledSize(this.previewIndicatorInset + index * (this.previewTabWidth + this.previewTabGap))
-    })
+    this.previewTabIndex = index
   }
 
   @Builder
-  previewClassicTabBar(): void {
+  previewTabBar(): void {
     Stack({ alignContent: Alignment.BottomStart }) {
-      Row()
-        .width(this.scaledSize(this.previewTabWidth * 3 + this.previewTabGap * 2))
-        .height(this.scaledSize(40))
-        .margin({ bottom: this.scaledSize(10) })
-        .borderRadius(this.scaledSize(20))
-        .backgroundColor(Color.Transparent)
-        // 磨砂层与玻璃厚度/材质状态解耦，统一走 frostLayerEnabled（与 Index.customTabBar 一致，
-        // 新设备由「磨砂层叠加」开关控制）
-        .backgroundEffect(this.frostLayerEnabled() ? {
-          radius: this.previewGlassBlurRadius()
-        } : undefined)
-        .systemMaterial(this.previewClassicBarMaterial())
-        .border({ width: 1, color: 'rgba(255,255,255,0.22)' })
-        .shadow({ radius: 18, color: ColorHelper.hexWithAlpha(this.primaryColor, '44'), offsetY: 5 })
-        .zIndex(0)
+      HdsTabs({ controller: this.previewTabsController, index: this.previewTabIndex }) {
+        TabContent()
+          .tabBar(this.previewTabLabelBuilder(0, '首页', $r('app.media.ic_public_home')))
+        TabContent()
+          .tabBar(this.previewTabLabelBuilder(1, '歌单', $r('app.media.ic_public_view_list')))
+        TabContent()
+          .tabBar(this.previewTabLabelBuilder(2, '设置', $r('app.media.ic_public_settings')))
+      }
+      .barPosition(BarPosition.End)
+      .barOverlap(true)
+      .barHeight(this.scaledSize(44))
+      .barWidth(this.scaledSize(228))
+      .scrollable(true)
+      .barFloatingStyle(this.getPreviewBarFloatingStyle())
+      .barBackgroundBlurStyle(this.getPreviewBarBackgroundBlur())
+      .onChange((index: number) => {
+        this.switchPreviewTab(index)
+      })
+    }
+    .height(this.scaledSize(56))
+    .alignSelf(ItemAlign.Center)
+  }
 
-      // 指示器固定显示：由 tabIndicatorOpacity 控制深浅
-      {
+  private getPreviewBarFloatingStyle(): HdsTabsFloatingStyle {
+    const useLight: boolean = this.effectiveTouchIndicator() === 'light'
+    const lightColor: ResourceColor | undefined = useLight
+      ? (this.isDark() ? '#FFFFFF' : this.primaryColor)
+      : undefined
+    if (this.settings.tabStyle === 'immersive' && isLiquidGlassAvailable()) {
+      return {
+        adaptToHandedness: true,
+        systemMaterialEffect: {
+          materialType: hdsMaterial.MaterialType.IMMERSIVE,
+          materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE,
+        },
+        barBottomMargin: 28,
+        lightColor: lightColor,
+      } as HdsTabsFloatingStyle
+    }
+    return {
+      adaptToHandedness: true,
+      barBottomMargin: 28,
+      lightColor: lightColor,
+    } as HdsTabsFloatingStyle
+  }
+
+  private getPreviewBarBackgroundBlur(): BlurStyle {
+    if (this.settings.tabStyle !== 'immersive' || !isLiquidGlassAvailable()) {
+      if (this.glassBlurStrength <= 0) {
+        return BlurStyle.NONE
+      }
+      if (this.glassBlurStrength <= 30) {
+        return BlurStyle.Thin
+      }
+      if (this.glassBlurStrength <= 50) {
+        return BlurStyle.Regular
+      }
+      return BlurStyle.Thick
+    }
+    return BlurStyle.NONE
+  }
+
+  @Builder
+  previewTabLabelBuilder(index: number, name: string, icon: Resource) {
+    Stack() {
+      if (this.previewTabIndex === index) {
         Row()
-          .width(this.scaledSize(this.previewTabWidth - 2 * this.previewIndicatorInset))
+          .width(this.scaledSize(64))
           .height(this.scaledSize(36))
           .borderRadius(this.scaledSize(18))
-          .alignItems(VerticalAlign.Center)
-          .margin({ left: this.previewIndicatorOffset, bottom: this.scaledSize(12) })
           .shadow({
             radius: 14,
-            color: ColorHelper.hexWithAlpha(this.primaryColor, this.indicatorAlpha(0.8)
-              .toString(16)
-              .padStart(2, '0')),
+            color: this.indicatorGradientColor(0.8),
             offsetX: 0,
             offsetY: 0
           })
@@ -339,147 +375,26 @@ struct SettingsDetailPage {
               [this.indicatorGradientColor(0.55), 1.0],
             ]
           })
-          .zIndex(1)
       }
-
-      Row({ space: this.scaledSize(this.previewTabGap) }) {
-        this.previewTabItem(0, '首页', $r('app.media.ic_public_home'))
-        this.previewTabItem(1, '歌单', $r('app.media.ic_public_view_list'))
-        this.previewTabItem(2, '设置', $r('app.media.ic_public_settings'))
-      }
-      .margin({ bottom: this.scaledSize(10) })
-      .height(this.scaledSize(40))
-      .borderRadius(this.scaledSize(20))
-      .zIndex(2)
-    }
-    .alignSelf(ItemAlign.Center)
-    .height(this.scaledSize(60))
-  }
-
-  @Builder
-  previewImmersiveTabBar(): void {
-    Stack({ alignContent: Alignment.BottomStart }) {
-      // 指示器固定显示：由 tabIndicatorOpacity 控制深浅
-      {
-        Row()
-          .width(this.scaledSize(this.previewTabWidth - 2 * this.previewIndicatorInset))
-          .height(this.scaledSize(36))
-          .borderRadius(this.scaledSize(18))
-          .alignItems(VerticalAlign.Center)
-          .margin({ left: this.previewIndicatorOffset, bottom: this.scaledSize(12) })
-          // 与 Index.immersiveTabBar 指示器一致：径向渐变 + 蓝色光晕（深浅接入 indicatorAlpha(0.8)），
-          // 浅色玻璃下边缘更锐利
-          .shadow({
-            radius: 14,
-            color: ColorHelper.hexWithAlpha(this.primaryColor, this.indicatorAlpha(0.8)
-              .toString(16)
-              .padStart(2, '0')),
-            offsetX: 0,
-            offsetY: 0
+      Column() {
+        Image(icon)
+          .height(this.scaledSize(20))
+          .fillColor(this.previewTabIndex === index ? this.previewTabContentColor() :
+            $r('app.color.tab_content_secondary'))
+          .scale({
+            x: this.previewTabIndex === index ? 1.25 : 1.0,
+            y: this.previewTabIndex === index ? 1.25 : 1.0
           })
-          .radialGradient({
-            center: ['50%', '50%'],
-            radius: '75%',
-            colors: [
-              [this.indicatorGradientColor(0.95), 0.0],
-              [this.indicatorGradientColor(0.75), 0.58],
-              [this.indicatorGradientColor(0.55), 1.0],
-            ]
-          })
-      }
-
-      Row({ space: this.scaledSize(this.previewTabGap) }) {
-        this.previewImmersiveTabItem(0, '首页', $r('app.media.ic_public_home'))
-        this.previewImmersiveTabItem(1, '歌单', $r('app.media.ic_public_view_list'))
-        this.previewImmersiveTabItem(2, '设置', $r('app.media.ic_public_settings'))
-      }
-      .margin({ bottom: this.scaledSize(10) })
-      .height(this.scaledSize(40))
-      .borderRadius(this.scaledSize(20))
-      .backgroundColor(Color.Transparent)
-      // 磨砂层与玻璃厚度/材质状态解耦，统一走 frostLayerEnabled（与 Index.immersiveTabBar 一致，
-      // 新设备由「磨砂层叠加」开关控制）
-      .backgroundEffect(this.frostLayerEnabled() ? {
-        radius: this.previewGlassBlurRadius()
-      } : undefined)
-      .systemMaterial(this.previewImmersiveBarMaterial())
-      .border({ width: 1, color: 'rgba(255,255,255,0.22)' })
-      .shadow({ radius: 18, color: ColorHelper.hexWithAlpha(this.primaryColor, '44'), offsetY: 5 })
+        Text(name)
+          .fontSize(8)
+          .fontColor(this.previewTabIndex === index ? this.previewTabContentColor() :
+            $r('app.color.tab_content_secondary'))
+          .margin({ top: this.scaledSize(3) })
+      }.width(this.scaledSize(72)).height(this.scaledSize(36)).justifyContent(FlexAlign.Center)
+        .offset({ y: 2 })
     }
-    .alignSelf(ItemAlign.Center)
-    .height(this.scaledSize(60))
-  }
-
-  @Builder
-  previewTabItem(index: number, name: string, icon: Resource) {
-    Column() {
-      Image(icon)
-        .height(this.scaledSize(20))
-        .fillColor(this.previewTabIndex === index ? this.previewTabContentColor() :
-          $r('app.color.tab_content_secondary'))
-        .scale({
-          x: this.previewTabIndex === index ? 1.25 : 1.0,
-          y: this.previewTabIndex === index ? 1.25 : 1.0
-        })
-      Text(name)
-        .fontSize(8)
-        .fontColor(this.previewTabIndex === index ? this.previewTabContentColor() :
-          $r('app.color.tab_content_secondary'))
-        .margin({ top: this.scaledSize(3) })
-    }
-    .width(this.scaledSize(this.previewTabWidth))
+    .width(this.scaledSize(72))
     .height(this.scaledSize(36))
-    .justifyContent(FlexAlign.Center)
-    .offset({ y: 2 })
-    .backgroundColor(this.previewHoverTabIndex === index && this.effectiveTouchIndicator() === 'mask'
-      ? 'rgba(255,255,255,0.16)' : Color.Transparent)
-    .borderRadius(this.scaledSize(18))
-    .shadow({
-      radius: this.previewHoverTabIndex === index && this.effectiveTouchIndicator() === 'mask' ? 14 : 0,
-      color: this.previewHoverTabIndex === index && this.effectiveTouchIndicator() === 'mask'
-        ? ColorHelper.hexWithAlpha(this.primaryColor, '66') : Color.Transparent
-    })
-    .hoverEffect(this.previewBottomHoverEffect())
-    .onHover((isHover: boolean) => { this.previewHoverTabIndex = isHover ? index : -1 })
-    .onClick(() => {
-      this.switchPreviewTab(index)
-    })
-  }
-
-  @Builder
-  previewImmersiveTabItem(index: number, name: string, icon: Resource) {
-    Column() {
-      Image(icon)
-        .height(this.scaledSize(20))
-        .fillColor(this.previewTabIndex === index ? this.previewTabContentColor() :
-          $r('app.color.tab_content_secondary'))
-        .scale({
-          x: this.previewTabIndex === index ? 1.25 : 1.0,
-          y: this.previewTabIndex === index ? 1.25 : 1.0
-        })
-      Text(name)
-        .fontSize(8)
-        .fontColor(this.previewTabIndex === index ? this.previewTabContentColor() :
-          $r('app.color.tab_content_secondary'))
-        .margin({ top: this.scaledSize(3) })
-    }
-    .width(this.scaledSize(this.previewTabWidth))
-    .height(this.scaledSize(36))
-    .justifyContent(FlexAlign.Center)
-    .offset({ y: 2 })
-    .backgroundColor(this.previewHoverTabIndex === index && this.effectiveTouchIndicator() === 'mask'
-      ? 'rgba(255,255,255,0.18)' : Color.Transparent)
-    .borderRadius(this.scaledSize(18))
-    .shadow({
-      radius: this.previewHoverTabIndex === index && this.effectiveTouchIndicator() === 'mask' ? 16 : 0,
-      color: this.previewHoverTabIndex === index && this.effectiveTouchIndicator() === 'mask'
-        ? ColorHelper.hexWithAlpha(this.primaryColor, '77') : Color.Transparent
-    })
-    .hoverEffect(this.previewBottomHoverEffect())
-    .onHover((isHover: boolean) => { this.previewHoverTabIndex = isHover ? index : -1 })
-    .onClick(() => {
-      this.switchPreviewTab(index)
-    })
   }
 
   // 预览容器：彩色渐变底衬 + 示例文字（模拟页面内容，让磨砂/液态玻璃的透视效果可见），
@@ -499,11 +414,7 @@ struct SettingsDetailPage {
       }
       .alignItems(HorizontalAlign.Center)
 
-      if (this.settings.tabStyle === 'immersive') {
-        this.previewImmersiveTabBar()
-      } else {
-        this.previewClassicTabBar()
-      }
+      this.previewTabBar()
     }
     .width('100%')
     .height(this.scaledSize(104))
