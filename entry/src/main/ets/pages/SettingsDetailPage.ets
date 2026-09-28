@@ -303,13 +303,16 @@ struct SettingsDetailPage {
       .barHeight(this.scaledSize(44))
       .barWidth(this.scaledSize(228))
       .scrollable(true)
+      .barBackgroundColor(Color.Transparent)
       .barFloatingStyle(this.getPreviewBarFloatingStyle())
       .barBackgroundBlurStyle(this.getPreviewBarBackgroundBlur())
+      .animationDuration(StyleConstants.ANIMATION_SWIPER_DURATION)
       .onChange((index: number) => {
         this.switchPreviewTab(index)
       })
+      .width('100%')
     }
-    .height(this.scaledSize(56))
+    .height(this.scaledSize(72))
     .alignSelf(ItemAlign.Center)
   }
 
@@ -318,6 +321,8 @@ struct SettingsDetailPage {
     const lightColor: ResourceColor | undefined = useLight
       ? (this.isDark() ? '#FFFFFF' : this.primaryColor)
       : undefined
+    // 预览器使用固定 barWidth（模拟大屏布局）
+    const previewBarWidth: number = 228
     if (this.settings.tabStyle === 'immersive' && isLiquidGlassAvailable()) {
       return {
         adaptToHandedness: true,
@@ -327,12 +332,14 @@ struct SettingsDetailPage {
         },
         barBottomMargin: 28,
         lightColor: lightColor,
+        barWidth: { smallWidth: previewBarWidth, mediumWidth: previewBarWidth, largeWidth: previewBarWidth },
       } as HdsTabsFloatingStyle
     }
     return {
       adaptToHandedness: true,
       barBottomMargin: 28,
       lightColor: lightColor,
+      barWidth: { smallWidth: previewBarWidth, mediumWidth: previewBarWidth, largeWidth: previewBarWidth },
     } as HdsTabsFloatingStyle
   }
 

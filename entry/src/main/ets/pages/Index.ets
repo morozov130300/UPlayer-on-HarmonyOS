@@ -809,6 +809,7 @@ struct MainPage {
       .barHeight(this.scaledSize(44))
       .barWidth(this.scaledSize(228))
       .scrollable(true)
+      .barBackgroundColor(Color.Transparent)
       .barFloatingStyle(this.getHdsBarFloatingStyle())
       // 经典模式：barFloatingStyle 不含 systemMaterialEffect → TabBar 走磨砂兜底（与玻璃模式布局完全一致，仅底色不同）
       // 玻璃模式：barFloatingStyle 含 systemMaterialEffect（液态玻璃）→ 磨砂关闭
