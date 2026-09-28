@@ -71,7 +71,7 @@ struct SettingsDetailPage {
   @StorageLink('uplayer_home_top_blur_strength') homeTopBlurStrength: number = 25
   @StorageLink('uplayer_tab_indicator_opacity') tabIndicatorOpacity: number = 50
   // 经典样式下隐藏"Tab栏与播控条模糊强度"：用动画过渡避免突兀
-  @State showClassicBlurStrength: boolean = true
+  @State showClassicBlurStrength: boolean = isLiquidGlassAvailable()
   // 是否存在鼠标/触控板设备（决定「白色蒙版」开关是否显示）
   @StorageLink(KEY_HAS_POINTER_DEVICE) hasPointerDevice: boolean = false
   @State pageTitle: string = ''
@@ -588,9 +588,12 @@ struct SettingsDetailPage {
   }
 
   setTabStyle(style: string): void {
-    const isSwitchingToClassic: boolean = style === 'classic' && isLiquidGlassAvailable()
-    // 切换样式时同步更新经典样式专属设置项的可见性
-    this.showClassicBlurStrength = !isSwitchingToClassic
+    // 切换样式时同步更新经典样式专属设置项的可见性：
+    // 新设备上玻璃样式不需要磨砂兜底（液态玻璃接管），经典样式需要
+    // 老设备两种样式都用磨砂兜底，始终显示
+    if (isLiquidGlassAvailable()) {
+      this.showClassicBlurStrength = style === 'classic'
+    }
     this.getUIContext()?.animateTo({ curve: curves.springMotion(0.4, 0.8) }, () => {
       this.settings.tabStyle = style
       this.settings = this.settings
@@ -1112,8 +1115,10 @@ struct SettingsDetailPage {
         Column({ space: this.scaledSize(10) }) {
           this.tabBarLivePreview()
 
-          // 磨砂兜底模糊强度：仅在不支持液态玻璃的老设备上显示（新设备材质接管背景，该项无可见效果）
-          // 经典样式切换时动画隐藏：避免突兀消失
+          // 磨砂兜底模糊强度：
+          // - 老设备：两种样式都显示（磨砂兜底始终生效）
+          // - 新设备：仅经典样式显示（玻璃样式液态玻璃接管，磨砂层关闭）
+          // 切换样式时带动画收起/展开
           if (!isLiquidGlassAvailable() || this.showClassicBlurStrength) {
             Column({ space: this.scaledSize(6) }) {
               Row() {
