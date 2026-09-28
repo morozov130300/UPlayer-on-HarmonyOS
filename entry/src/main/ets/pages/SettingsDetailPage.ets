@@ -414,22 +414,23 @@ struct SettingsDetailPage {
   previewTabItem(index: number, name: string, icon: Resource) {
     Column() {
       Image(icon)
-        .height(this.scaledSize(18))
+        .height(this.scaledSize(20))
         .fillColor(this.previewTabIndex === index ? this.previewTabContentColor() :
           $r('app.color.tab_content_secondary'))
         .scale({
-          x: this.previewTabIndex === index ? 1.15 : 1.0,
-          y: this.previewTabIndex === index ? 1.15 : 1.0
+          x: this.previewTabIndex === index ? 1.25 : 1.0,
+          y: this.previewTabIndex === index ? 1.25 : 1.0
         })
       Text(name)
-        .fontSize(9)
+        .fontSize(8)
         .fontColor(this.previewTabIndex === index ? this.previewTabContentColor() :
           $r('app.color.tab_content_secondary'))
-        .margin({ top: this.scaledSize(2) })
+        .margin({ top: this.scaledSize(3) })
     }
     .width(this.scaledSize(this.previewTabWidth))
-    .height(this.scaledSize(40))
+    .height(this.scaledSize(36))
     .justifyContent(FlexAlign.Center)
+    .offset({ y: 2 })
     .backgroundColor(this.previewHoverTabIndex === index && this.effectiveTouchIndicator() === 'mask'
       ? 'rgba(255,255,255,0.16)' : Color.Transparent)
     .borderRadius(this.scaledSize(18))
@@ -438,11 +439,6 @@ struct SettingsDetailPage {
       color: this.previewHoverTabIndex === index && this.effectiveTouchIndicator() === 'mask'
         ? ColorHelper.hexWithAlpha(this.primaryColor, '66') : Color.Transparent
     })
-    .scale({
-      x: this.previewHoverTabIndex === index ? 1.06 : 1,
-      y: this.previewHoverTabIndex === index ? 1.06 : 1
-    })
-    .animation({ duration: StyleConstants.ANIMATION_HOVER_DURATION, curve: Curve.EaseOut })
     .hoverEffect(this.previewBottomHoverEffect())
     .onHover((isHover: boolean) => { this.previewHoverTabIndex = isHover ? index : -1 })
     .onClick(() => {
@@ -454,22 +450,23 @@ struct SettingsDetailPage {
   previewImmersiveTabItem(index: number, name: string, icon: Resource) {
     Column() {
       Image(icon)
-        .height(this.scaledSize(18))
+        .height(this.scaledSize(20))
         .fillColor(this.previewTabIndex === index ? this.previewTabContentColor() :
           $r('app.color.tab_content_secondary'))
         .scale({
-          x: this.previewTabIndex === index ? 1.15 : 1.0,
-          y: this.previewTabIndex === index ? 1.15 : 1.0
+          x: this.previewTabIndex === index ? 1.25 : 1.0,
+          y: this.previewTabIndex === index ? 1.25 : 1.0
         })
       Text(name)
-        .fontSize(9)
+        .fontSize(8)
         .fontColor(this.previewTabIndex === index ? this.previewTabContentColor() :
           $r('app.color.tab_content_secondary'))
-        .margin({ top: this.scaledSize(2) })
+        .margin({ top: this.scaledSize(3) })
     }
     .width(this.scaledSize(this.previewTabWidth))
-    .height(this.scaledSize(40))
+    .height(this.scaledSize(36))
     .justifyContent(FlexAlign.Center)
+    .offset({ y: 2 })
     .backgroundColor(this.previewHoverTabIndex === index && this.effectiveTouchIndicator() === 'mask'
       ? 'rgba(255,255,255,0.18)' : Color.Transparent)
     .borderRadius(this.scaledSize(18))
@@ -478,11 +475,6 @@ struct SettingsDetailPage {
       color: this.previewHoverTabIndex === index && this.effectiveTouchIndicator() === 'mask'
         ? ColorHelper.hexWithAlpha(this.primaryColor, '77') : Color.Transparent
     })
-    .scale({
-      x: this.previewHoverTabIndex === index ? 1.06 : 1,
-      y: this.previewHoverTabIndex === index ? 1.06 : 1
-    })
-    .animation({ duration: StyleConstants.ANIMATION_HOVER_DURATION, curve: Curve.EaseOut })
     .hoverEffect(this.previewBottomHoverEffect())
     .onHover((isHover: boolean) => { this.previewHoverTabIndex = isHover ? index : -1 })
     .onClick(() => {
