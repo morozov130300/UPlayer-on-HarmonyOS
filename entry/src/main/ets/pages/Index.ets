@@ -747,18 +747,6 @@ struct MainPage {
             }).width('100%').height('100%')
 
             Stack() {
-              Column()
-                .width('140%')
-                .aspectRatio(1)
-                .borderRadius('50%')
-                .position({ top: -80, left: -60 })
-                .radialGradient({
-                  center: ['50%', '50%'],
-                  radius: '80%',
-                  colors: [[ColorHelper.hexToRgba(this.primaryColor, 0.04), 0.0],
-                    [ColorHelper.hexToRgba(this.primaryColor, 0.01), 0.6],
-                    [ColorHelper.hexToRgba(this.primaryColor, 0), 1.0],]
-                })
               Row() {
                 Row() {
                   Text(this.greetingTitle)
