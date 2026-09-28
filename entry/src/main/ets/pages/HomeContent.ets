@@ -904,7 +904,7 @@ export struct HomeContent {
             .backgroundEffect({ radius: 4, saturation: 1.0, brightness: 1.0 })
             .border({ width: 1, color: 'rgba(255,255,255,0.35)' })
           Image($r('app.media.ic_public_add_norm_filled'))
-            .width(this.scaledSize(24)).height(this.scaledSize(24))
+            .width(this.scaledSize(48)).height(this.scaledSize(48))
             .fillColor(this.primaryColor)
         }
         // 智感握姿：只切换贴边方向，不改变与底部的间距，避免握姿切换时按钮上下跳动。
