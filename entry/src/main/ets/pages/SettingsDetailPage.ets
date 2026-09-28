@@ -71,7 +71,8 @@ struct SettingsDetailPage {
   @StorageLink('uplayer_home_top_blur_strength') homeTopBlurStrength: number = 25
   @StorageLink('uplayer_tab_indicator_opacity') tabIndicatorOpacity: number = 50
   // 经典样式下隐藏"Tab栏与播控条模糊强度"：用动画过渡避免突兀
-  @State showClassicBlurStrength: boolean = isLiquidGlassAvailable()
+  // 初始值根据当前样式和设备能力计算：新设备玻璃样式隐藏，其他情况显示
+  @State showClassicBlurStrength: boolean = !(isLiquidGlassAvailable() && this.settings.tabStyle === 'immersive')
   // 是否存在鼠标/触控板设备（决定「白色蒙版」开关是否显示）
   @StorageLink(KEY_HAS_POINTER_DEVICE) hasPointerDevice: boolean = false
   @State pageTitle: string = ''
