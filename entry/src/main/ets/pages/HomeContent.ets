@@ -897,9 +897,20 @@ export struct HomeContent {
         // 加号组件：磨砂玻璃盘 + 加号字形。玻璃盘用「磨砂 backgroundEffect（背后内容模糊透出）
         // + 清亮玻璃描边」，加号字形用 ic_public_add_norm_filled（主题色，带圆圈）。位置/交互不变。
         Stack({ alignContent: Alignment.Center }) {
+          // 阴影层：独立圆形，比底板略小避免阴影溢出
           Row()
-            .width(this.scaledSize(48)).height(this.scaledSize(48))
-            .borderRadius(this.scaledSize(24))
+            .width(this.scaledSize(46)).height(this.scaledSize(46))
+            .borderRadius(this.scaledSize(23))
+            .backgroundColor(Color.Transparent)
+            .shadow({
+              radius: this.scaledSize(20),
+              color: ColorHelper.hexWithAlpha(this.primaryColor, 'AA'),
+              offsetX: 0,
+              offsetY: this.scaledSize(6)
+            })
+          Row()
+            .width(this.scaledSize(46)).height(this.scaledSize(46))
+            .borderRadius(this.scaledSize(23))
             .backgroundColor(Color.Transparent)
             .backgroundEffect({ radius: 2, saturation: 1.0, brightness: 1.0 })
             .border({ width: 1, color: 'rgba(255,255,255,0.35)' })
