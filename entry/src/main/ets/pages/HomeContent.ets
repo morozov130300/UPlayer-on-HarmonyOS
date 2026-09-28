@@ -83,6 +83,7 @@ export struct HomeContent {
   // 真正参与布局的贴边状态：只在 animateTo 闭包里跟随 holdingHandLeft 变化，
   // 握姿切换时加号才会「滑」到另一侧（position 支持属性动画），而不是瞬移
   @State plusOnLeft: boolean = false
+  @State plusBtnScale: number = 1.0
   // 握姿切换的滑动曲线：弹簧跟手，与设置页主题切换等动效保持一致的手感
   private readonly PLUS_SIDE_SPRING_RESPONSE: number = 0.4
   private readonly PLUS_SIDE_SPRING_DAMPING: number = 0.8
@@ -918,6 +919,7 @@ export struct HomeContent {
             .width(this.scaledSize(48)).height(this.scaledSize(48))
             .fillColor(this.primaryColor)
         }
+        .scale({ x: this.plusBtnScale, y: this.plusBtnScale })
         // 智感握姿：只切换贴边方向，不改变与底部的间距，避免握姿切换时按钮上下跳动。
         // 读 plusOnLeft（动画态）而不是 holdingHandLeft，切换才会走滑动动画
         .position({
@@ -927,7 +929,13 @@ export struct HomeContent {
         })
         .transition({ type: TransitionType.Insert, opacity: 0, scale: { x: 0.5, y: 0.5 } })
         .transition({ type: TransitionType.Delete, opacity: 0, scale: { x: 0.5, y: 0.5 } })
-        .onClick(() => { this.onPlusClick() })
+        .onClick(() => {
+          this.plusBtnScale = 0.85
+          setTimeout(() => {
+            this.plusBtnScale = 1.0
+          }, StyleConstants.ANIMATION_PRESS_DELAY_SHORT)
+          this.onPlusClick()
+        })
       }
     }
     .width('100%')
