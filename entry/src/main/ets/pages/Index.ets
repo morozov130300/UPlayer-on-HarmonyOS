@@ -851,14 +851,16 @@ struct MainPage {
       }
 
       // 全局悬浮加号：挂在 Index 根 Stack（Tabs 之上）的单实例，首页↔歌单切换时不随
-      // 页面内容滑动、不重建；设置页隐藏（进入/退出走组件自带 Insert/Delete 过渡）。
-      // 可见性跟随当前激活页上报的状态（滚动隐藏设置 + 多选/编辑态）
-      if (this.plusVisibleOnActiveTab()) {
+      // 页面内容滑动、不重建；仅首页/歌单两个 Tab 挂载，Tab 级挂载/卸载瞬时完成
+      // （切设置页立即消失，不走 Insert/Delete 过渡）。
+      // 页面上报的可见性（滚动隐藏设置 + 多选/编辑态）经 visible 参数在组件内部淡入淡出
+      if (this.currentTabSupportsPlus()) {
         GlassPlusButton({
           bottomInset: this.plusButtonBottomInset(),
           onPlusClick: (): void => {
             this.onPlusClick()
-          }
+          },
+          visible: this.plusVisibleOnActiveTab()
         })
       }
 
@@ -946,6 +948,11 @@ struct MainPage {
   // 加号现挂在 Index 根 Stack（单实例），不存在页面懒加载时各页捕获值不一致的问题。
   private plusButtonBottomInset(): number {
     return 146
+  }
+
+  // 加号仅挂载在首页/歌单两个 Tab：Tab 级卸载无过渡动画，切到设置页立即消失、不慢半拍
+  private currentTabSupportsPlus(): boolean {
+    return this.currentIndex === 0 || this.currentIndex === 1
   }
 
   // 全局加号可见性：首页/歌单读对应页上报的状态，设置页恒为隐藏

@@ -1,5 +1,5 @@
 // 共用加号按钮：磨砂玻璃盘 + 加号字形 + 阴影层，带按压缩放动画与智感握姿贴边滑动。
-// 首页与歌单页共同调用；样式与行为以首页原实现为准（HomeContent 平移而来）。
+// 由 Index 全局悬浮调用：Tab 级挂载/卸载瞬时完成；页面级可见性（滚动隐藏等）经 visible 淡入淡出。
 import { curves } from '@kit.ArkUI'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import { StyleConstants } from '../common/constants/StyleConstants'
@@ -10,6 +10,10 @@ export struct GlassPlusButton {
   // 加号底边位置：由页面传入（Index 计算为「紧贴播控条上沿」，跨断点自适应）
   bottomInset: number = 0
   onPlusClick: () => void = (): void => {}
+  // 页面上报的可见性（滚动隐藏设置/多选/编辑态）：只在组件内部做淡入淡出，不参与挂载/卸载
+  @Prop @Watch('onVisibleChange') visible: boolean = true
+  // 淡入淡出透明度：只在动画闭包内跟随 visible 变化
+  @State plusOpacity: number = 1
   // 智感握姿：左手握持 → 靠左；其余（右手/双手/无握持/未知即默认）→ 靠右。
   // 滤波与订阅由 HoldingHandService 统一持有，本组件只订阅它的广播结果
   @StorageLink(KEY_HOLDING_HAND_LEFT) @Watch('onHoldingHandLeftChange') holdingHandLeft: boolean = false
@@ -30,6 +34,15 @@ export struct GlassPlusButton {
   aboutToAppear(): void {
     // 首次进入按当前握姿直接落位，不做动画（避免首帧从默认侧滑过来）
     this.plusOnLeft = this.holdingHandLeft
+    // 若挂载时页面就处于隐藏态（如歌单滚动中切回），直接透明，不放淡出动画
+    this.plusOpacity = this.visible ? 1 : 0
+  }
+
+  // 页面级可见性变化：透明度放进动画闭包做淡入淡出；隐藏期间不响应点击
+  onVisibleChange(): void {
+    this.getUIContext()?.animateTo({ duration: 250, curve: Curve.EaseOut }, () => {
+      this.plusOpacity = this.visible ? 1 : 0
+    })
   }
 
   // 智感握姿切换：把贴边状态放进动画闭包，让加号从一侧滑到另一侧
@@ -71,6 +84,9 @@ export struct GlassPlusButton {
         .fillColor(this.primaryColor)
     }
     .scale({ x: this.plusBtnScale, y: this.plusBtnScale })
+    .opacity(this.plusOpacity)
+    // 隐藏（含淡出过程中）不拦截触摸，点击穿透到下层列表
+    .hitTestBehavior(this.visible ? HitTestMode.Default : HitTestMode.None)
     // 智感握姿：只切换贴边方向，不改变与底部的间距，避免握姿切换时按钮上下跳动。
     // 读 plusOnLeft（动画态）而不是 holdingHandLeft，切换才会走滑动动画
     .position({
@@ -78,8 +94,7 @@ export struct GlassPlusButton {
       left: this.plusOnLeft ? this.scaledSize(20) : undefined,
       right: this.plusOnLeft ? undefined : this.scaledSize(20)
     })
-    .transition({ type: TransitionType.Insert, opacity: 0, scale: { x: 0.5, y: 0.5 } })
-    .transition({ type: TransitionType.Delete, opacity: 0, scale: { x: 0.5, y: 0.5 } })
+    .transition(TransitionEffect.IDENTITY)
     .onClick(() => {
       this.plusBtnScale = 0.85
       setTimeout(() => {
