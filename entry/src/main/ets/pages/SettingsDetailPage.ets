@@ -74,8 +74,11 @@ struct SettingsDetailPage {
   @State showClassicBlurStrength: boolean = !(isLiquidGlassAvailable() && this.settings.tabStyle === 'immersive')
   // Tab 栏实时预览：直接使用 HdsTabs 系统组件，与 Index 完全一致的渲染管线
   private previewTabsController: HdsTabsController = new HdsTabsController()
-  // 是否存在鼠标/触控板设备（决定「白色蒙版」开关是否显示）
-  @StorageLink(KEY_HAS_POINTER_DEVICE) hasPointerDevice: boolean = false
+  // 是否存在鼠标/触控板设备（决定「白色蒙版」开关是否显示）。
+  // 检测结果由 InputDeviceUtil 写入 AppStorage（无动画作用域），芯片显隐改读镜像值，
+  // 由 @Watch 包进统一触发动画后翻转，芯片增删才会播放统一显隐过渡
+  @StorageLink(KEY_HAS_POINTER_DEVICE) @Watch('onPointerDeviceChange') hasPointerDevice: boolean = false
+  @State maskChipVisible: boolean = false
   @State pageTitle: string = ''
   // 顶部模糊预览的靠边方向：左手握持 → 靠右（沿用原有映射，由 HoldingHandService 统一滤波后广播）
   @StorageLink(KEY_HOLDING_HAND_LEFT) previewOnRight: boolean = false
@@ -119,9 +122,31 @@ struct SettingsDetailPage {
     { label: '跟手光效', value: 'light' }
   ]
 
-  // 根据鼠标检测结果过滤选项：无鼠标/触控板设备时隐藏「白色蒙版」
+  // ═══ 设置项显隐统一动画（所有条件显隐的设置卡片/选项必须完全一致，禁止各自定义）═══
+  // 过渡规格：出现/消失对称的「淡入淡出 + 缩放 0.95」
+  private settingCardTransition(): TransitionEffect {
+    return TransitionEffect.OPACITY.combine(TransitionEffect.scale({ x: 0.95, y: 0.95 }))
+  }
+
+  // 触发动画：与本页其他交互动画同一条弹簧曲线；
+  // 任何驱动设置项增删的状态变化都必须包进本方法，否则过渡不会播放
+  private animateSettingChange(change: () => void): void {
+    this.getUIContext()?.animateTo({ curve: curves.springMotion(0.4, 0.8) }, change)
+  }
+
+  // 指针设备检测结果变化：包进统一触发动画后翻转「白色蒙版」芯片显隐镜像值
+  onPointerDeviceChange(): void {
+    if (this.maskChipVisible === this.hasPointerDevice) {
+      return
+    }
+    this.animateSettingChange(() => {
+      this.maskChipVisible = this.hasPointerDevice
+    })
+  }
+
+  // 根据鼠标检测结果过滤选项：无鼠标/触控板设备时隐藏「白色蒙版」（镜像值翻转带统一显隐动画）
   private visibleTouchIndicatorOptions(): TouchIndicatorOption[] {
-    if (this.hasPointerDevice) {
+    if (this.maskChipVisible) {
       return this.touchIndicatorOptions
     }
     return [this.touchIndicatorOptions[0], this.touchIndicatorOptions[2]]
@@ -154,7 +179,9 @@ struct SettingsDetailPage {
     // 声明处初始值读取的是默认 AppSettingsData（tabStyle 恒为 classic），并非已保存设置；
     // 必须在加载真实设置后重算磨砂强度滑块可见性，否则新设备 + 玻璃样式进页时滑块会错误显示
     this.showClassicBlurStrength = !isLiquidGlassAvailable() || this.settings.tabStyle !== 'immersive'
-    // 进入设置页时刷新鼠标/触控板状态，决定「白色蒙版」开关是否显示
+    // 进入设置页时刷新鼠标/触控板状态，决定「白色蒙版」开关是否显示；
+    // 镜像初值在刷新前直接取当前检测结果（首帧渲染不播过渡），之后热插拔变化经 @Watch 带动画翻转
+    this.maskChipVisible = this.hasPointerDevice
     refreshPointerDeviceState()
     const params = this.getUIContext()?.getRouter()
       .getParams() as Record<string, string>
@@ -486,13 +513,13 @@ struct SettingsDetailPage {
   }
 
   setTabStyle(style: string): void {
-    // 切换样式时同步更新经典样式专属设置项的可见性：
-    // 新设备上玻璃样式不需要磨砂兜底（液态玻璃接管），经典样式需要
-    // 老设备两种样式都用磨砂兜底，始终显示
-    if (isLiquidGlassAvailable()) {
-      this.showClassicBlurStrength = style === 'classic'
-    }
-    this.getUIContext()?.animateTo({ curve: curves.springMotion(0.4, 0.8) }, () => {
+    // 切换样式时同步更新与样式挂钩的设置项可见性（磨砂强度卡片/底部栏触摸指示行）：
+    // 新设备上玻璃样式不需要磨砂兜底（液态玻璃接管），经典样式需要；老设备两种样式都用磨砂兜底，始终显示。
+    // 可见性翻转必须与样式切换同处一个统一触发动画，卡片显隐过渡才会播放
+    this.animateSettingChange(() => {
+      if (isLiquidGlassAvailable()) {
+        this.showClassicBlurStrength = style === 'classic'
+      }
       this.settings.tabStyle = style
       this.settings = this.settings
     })
@@ -1222,11 +1249,7 @@ struct SettingsDetailPage {
           })
           .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
           .borderRadius(this.scaledSize(10))
-          .transition({
-            type: TransitionType.Delete,
-            opacity: 0,
-            scale: { x: 0.95, y: 0.95 }
-          })
+          .transition(this.settingCardTransition())
         }
 
         // Tab 指示器不透明度（独立设置项卡片）
@@ -1321,8 +1344,10 @@ struct SettingsDetailPage {
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(this.scaledSize(10))
 
-      // 底部栏触摸指示：关 / 白色蒙版 / 跟手光效
+      // 底部栏触摸指示：关 / 白色蒙版 / 跟手光效。
+      // 仅玻璃样式且设备支持液态玻璃时显示：触摸指示依赖液态玻璃材质，经典样式下不生效；
       // 白色蒙版开关按鼠标检测结果动态显示/隐藏（见 visibleTouchIndicatorOptions）
+      if (isLiquidGlassAvailable() && this.settings.tabStyle === 'immersive') {
       Column() {
         Row() {
           this.subTitleRow('底部栏触摸指示')
@@ -1349,6 +1374,7 @@ struct SettingsDetailPage {
               this.updateSetting()
               AppStorage.setOrCreate('uplayer_tab_touch_indicator', opt.value)
             })
+            .transition(this.settingCardTransition())
           }, (opt: TouchIndicatorOption) => opt.value)
         }
         .width('100%')
@@ -1359,6 +1385,8 @@ struct SettingsDetailPage {
       .width('100%')
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(this.scaledSize(10))
+      .transition(this.settingCardTransition())
+      }
 
       // 智感握姿（设备不支持时隐藏）
       if (this.holdingHandSupported) {
@@ -1391,6 +1419,7 @@ struct SettingsDetailPage {
       .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(this.scaledSize(10))
+      .transition(this.settingCardTransition())
       }
     }
     .width('100%')
@@ -1621,7 +1650,10 @@ struct SettingsDetailPage {
     Column({ space: 10 }) {
       Column() {
         this.toggleRow('均衡器', this.settings.eqEnabled, (val: boolean) => {
-          this.settings.eqEnabled = val
+          // 面板显隐翻转必须包进统一触发动画，过渡才会播放
+          this.animateSettingChange(() => {
+            this.settings.eqEnabled = val
+          })
           this.updateSetting()
           this.avPlayerService.applyEqualizer(val, this.settings.eqBands)
         })
@@ -1718,6 +1750,7 @@ struct SettingsDetailPage {
         .height(this.scaledSize(230))
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
         .borderRadius(this.scaledSize(10))
+        .transition(this.settingCardTransition())
       }
     }
     .width('100%')
