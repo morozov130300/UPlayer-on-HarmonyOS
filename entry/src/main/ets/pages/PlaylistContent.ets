@@ -458,7 +458,7 @@ export struct PlaylistContent {
     }
     .width('100%')
     .height(80)
-    .justifyContent(FlexAlign.Center)
+    .justifyContent(FlexAlign.Start)
     .alignItems(HorizontalAlign.Center)
     .backgroundColor(this.isFolderSelected(item) ?
       ColorHelper.hexWithAlpha(this.primaryColor, '22') : 'rgba(0,0,0,0.03)')

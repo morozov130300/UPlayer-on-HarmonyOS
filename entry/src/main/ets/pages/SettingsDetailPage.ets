@@ -1,5 +1,5 @@
 // ArkUI 26 Beta1: 接口定义变更（误报，本项目已是Stage模型）+ UX视觉布局变更（Text默认开启沉浸式材质，系统行为）
-import { curves, uiAppearance, uiMaterial } from '@kit.ArkUI'
+import { curves, uiAppearance } from '@kit.ArkUI'
 import { HdsTabs, HdsTabsController, HdsTabsFloatingStyle, hdsMaterial } from '@kit.UIDesignKit'
 import { common, ConfigurationConstant } from '@kit.AbilityKit'
 import { DataService, AppSettingsData } from '../service/DataService'
@@ -15,8 +15,6 @@ import {
 } from '../service/HoldingHandService'
 import { ColorConversion } from '../common/utils/ColorConversion'
 import {
-  createTabGlassMaterial,
-  DEFAULT_GLASS_STYLE,
   isLiquidGlassAvailable,
   showToastGlassMaterial,
   topBlurRadiusFromStrength
@@ -83,7 +81,6 @@ struct SettingsDetailPage {
   @StorageLink(KEY_HOLDING_HAND_LEFT) previewOnRight: boolean = false
   // Tab 栏实时预览：直接使用 HdsTabs 系统组件，与 Index 完全一致的渲染管线
   @State previewTabIndex: number = 0
-  @State previewHoverTabIndex: number = -1
   @State showColorPicker: boolean = false
   @State showGlassScope: boolean = false
   @State pickerHue: number = 210
@@ -225,14 +222,9 @@ struct SettingsDetailPage {
   }
 
   // ═══ 底部 Tab 栏实时预览：原封不动复刻 Index 真实 Tab 栏 ═══
-  // 结构/尺寸/材质/指示器/悬停/点击行为与 Index.customTabBar、Index.immersiveTabBar 完全一致，
-  // 仅把页面级状态（currentIndex/indicatorOffset/hoverTabIndex）替换为预览态，
+  // 结构/尺寸/材质/磨砂兜底/指示器/点击行为与 Index.build 中的 HdsTabs 完全一致，
+  // 仅把页面级状态（currentIndex）替换为预览态（previewTabIndex），
   // 预览卡片内禁止放置任何设置项（滑块均已拆为独立设置项卡片），调节任一相关设置时实时反映效果。
-
-  // 预览用 Tab 材质：经典样式不挂任何材质（仅磨砂层），玻璃样式走 createTabGlassMaterial 全参工厂
-  private previewClassicBarMaterial(): uiMaterial.Material | undefined {
-    return undefined
-  }
 
   // 解析「底部栏触摸指示」实际生效值：
   // 设备无鼠标/触控板时「白色蒙版」功能不存在，mask 值降级为 off（开关本身已隐藏）
@@ -241,28 +233,6 @@ struct SettingsDetailPage {
       return 'off'
     }
     return this.settings.tabTouchIndicator
-  }
-
-  private previewImmersiveBarMaterial(): uiMaterial.Material | undefined {
-    const useLight: boolean = this.effectiveTouchIndicator() === 'light'
-    // 跟手光效颜色设置已删除：暗黑固定白光、明亮固定主题色
-    const lightColor: string | undefined = useLight
-      ? (this.isDark() ? '#FFFFFF' : this.primaryColor)
-      : undefined
-    // 玻璃厚度/交互形变/自动反色/材质阴影设置已删除：消费点固定默认开启
-    return createTabGlassMaterial(DEFAULT_GLASS_STYLE, true, lightColor, true, true)
-  }
-
-  // 磨砂层挂载条件（预览两栏共用，与 Index.frostLayerEnabled 完全一致）：
-  // - 暗黑模式或模糊强度 0：从不挂载
-  // - 「磨砂层叠加」设置项已删除：明亮模式默认挂磨砂层（由模糊强度控制半径）
-  private frostLayerEnabled(): boolean {
-    return !this.isDark() && this.glassBlurStrength > 0
-  }
-
-  // 与 Index.glassBlurRadius 同公式：模糊强度 × 0.5
-  private previewGlassBlurRadius(): number {
-    return this.glassBlurStrength * 0.5
   }
 
   // 设置页顶部带模糊半径：统一走 GlassUtil 的分段函数（先正比例、到 60 后恒定，临界处无缝相接），
@@ -279,11 +249,6 @@ struct SettingsDetailPage {
   // 与 Index.selectedTabContentColor 同逻辑
   private previewTabContentColor(): ResourceColor {
     return this.isDark() ? '#FFFFFF' : ColorHelper.darken(this.primaryColor, 0.35)
-  }
-
-  // 与 Index.bottomHoverEffect 同逻辑：白色蒙版模式下才有按压高亮
-  private previewBottomHoverEffect(): HoverEffect {
-    return this.effectiveTouchIndicator() === 'mask' ? HoverEffect.Highlight : HoverEffect.None
   }
 
   // 预览内点击 Tab：联动 previewTabIndex（与 Index.onChange 同一弹簧动画，保持预览与真机行为一致）
@@ -311,6 +276,9 @@ struct SettingsDetailPage {
       .scrollable(true)
       .barBackgroundColor(Color.Transparent)
       .barFloatingStyle(this.getPreviewBarFloatingStyle())
+      // 经典模式：barFloatingStyle 不含 systemMaterialEffect → TabBar 走磨砂兜底（与 Index 完全一致）
+      // 玻璃模式：barFloatingStyle 含 systemMaterialEffect（液态玻璃）→ 磨砂关闭
+      .barBackgroundBlurStyle(this.getPreviewBarBackgroundBlur())
       .animationDuration(StyleConstants.ANIMATION_SWIPER_DURATION)
       .onChange((index: number) => {
         this.switchPreviewTab(index)
