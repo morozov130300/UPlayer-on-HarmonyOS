@@ -969,6 +969,40 @@ struct SettingsDetailPage {
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(this.scaledSize(10))
 
+      // 智感握姿（设备不支持时隐藏）
+      if (this.holdingHandSupported) {
+      Row() {
+        Column({ space: this.scaledSize(6) }) {
+          Text('智感握姿')
+            .fontSize(this.scaledFont(14))
+            .fontColor(this.settingTextColor())
+            .fontWeight(FontWeight.Medium)
+          Text('根据单手握持方向自动调整首页顶部预览与控件靠左/靠右。')
+            .fontSize(this.scaledFont(12))
+            .fontColor(this.settingSubTextColor())
+        }
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Start)
+        Toggle({ type: ToggleType.Switch, isOn: this.settings.holdingHandEnabled })
+          .selectedColor(this.primaryColor)
+          .alignSelf(ItemAlign.Center)
+          .onChange((isOn: boolean) => {
+            this.settings.holdingHandEnabled = isOn
+            // 写穿到 AppStorage 后由共享服务按新开关重新订阅/退订
+            this.holdingHandEnabled = isOn
+            this.updateSetting()
+            HoldingHandService.getInstance().syncWithSetting()
+          })
+      }
+      .width('100%')
+      .height(this.scaledSize(52))
+      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
+      .transition(this.settingCardTransition())
+      }
+
       Column() {
         Row() {
           Text('主题模式')
@@ -1476,39 +1510,6 @@ struct SettingsDetailPage {
       .transition(this.settingCardTransition())
       }
 
-      // 智感握姿（设备不支持时隐藏）
-      if (this.holdingHandSupported) {
-      Row() {
-        Column({ space: this.scaledSize(6) }) {
-          Text('智感握姿')
-            .fontSize(this.scaledFont(14))
-            .fontColor(this.settingTextColor())
-            .fontWeight(FontWeight.Medium)
-          Text('根据单手握持方向自动调整首页顶部预览与控件靠左/靠右。')
-            .fontSize(this.scaledFont(12))
-            .fontColor(this.settingSubTextColor())
-        }
-        .layoutWeight(1)
-        .justifyContent(FlexAlign.Center)
-        .alignItems(HorizontalAlign.Start)
-        Toggle({ type: ToggleType.Switch, isOn: this.settings.holdingHandEnabled })
-          .selectedColor(this.primaryColor)
-          .alignSelf(ItemAlign.Center)
-          .onChange((isOn: boolean) => {
-            this.settings.holdingHandEnabled = isOn
-            // 写穿到 AppStorage 后由共享服务按新开关重新订阅/退订
-            this.holdingHandEnabled = isOn
-            this.updateSetting()
-            HoldingHandService.getInstance().syncWithSetting()
-          })
-      }
-      .width('100%')
-      .height(this.scaledSize(52))
-      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(this.scaledSize(10))
-      .transition(this.settingCardTransition())
-      }
     }
     .width('100%')
     .constraintSize({ minWidth: 0, maxWidth: '100%' })
