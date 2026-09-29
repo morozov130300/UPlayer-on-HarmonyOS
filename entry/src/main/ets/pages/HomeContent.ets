@@ -801,7 +801,9 @@ export struct HomeContent {
       .height(this.listTopPadding())
       .position({ top: 0 })
       .clip(true)
-      .hitTestBehavior(HitTestMode.Block)
+      // BLOCK_HIERARCHY：自身+子节点（筛选/排序/视图按钮）响应，同时阻止下方歌曲列表穿透响应；
+      // 不能用 Block——Block 会连子节点的触摸测试一起阻塞，导致这一行按钮全部点不了
+      .hitTestBehavior(HitTestMode.BLOCK_HIERARCHY)
       .zIndex(2)
 
       // 多选菜单栏：落在问候语内容带内（替换问候语的位置），
