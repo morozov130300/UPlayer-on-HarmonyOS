@@ -257,6 +257,7 @@ struct MainPage {
     if (this.tabStyle === 'immersive' && isLiquidGlassAvailable()) {
       return {
         adaptToHandedness: true,
+        gradientMask: { maskColor: 'rgba(0,0,0,0)', maskHeight: 0 },
         systemMaterialEffect: {
           materialType: hdsMaterial.MaterialType.IMMERSIVE,
           materialLevel: level,
@@ -271,6 +272,7 @@ struct MainPage {
     // 经典样式（或设备无液态玻璃）：同布局结构，仅不挂玻璃材质，底色由 barBackgroundBlurStyle 磨砂兜底
     return {
       adaptToHandedness: true,
+      gradientMask: { maskColor: 'rgba(0,0,0,0)', maskHeight: 0 },
       barBottomMargin: this.bottomSafeHeight > 0 ? 28 : 28,
       lightColor: lightColor,
       barWidth: (smallScreen || !hasBarWidth) ? undefined :
