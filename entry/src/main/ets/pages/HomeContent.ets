@@ -13,8 +13,8 @@ import { AlbumCover } from '../component/AlbumCover'
 import { AlbumCoverSize, AudioMetadataService, CoverPriority } from '../service/AudioMetadataService'
 import { curves, uiMaterial } from '@kit.ArkUI'
 import { createBarGlassMaterial, DEFAULT_GLASS_STYLE, showToastGlassMaterial, topBlurRadiusFromStrength } from '../common/utils/GlassUtil'
-import { KEY_HOLDING_HAND_LEFT } from '../service/HoldingHandService'
 import { GlassBackButton } from '../view/GlassBackButton'
+import { GlassPlusButton } from '../view/GlassPlusButton'
 import { StyleConstants } from '../common/constants/StyleConstants'
 
 const TAG = 'HomeContent'
@@ -77,16 +77,6 @@ export struct HomeContent {
   // 底部栏样式：经典样式下多选菜单栏不挂任何背景效果（磨砂/液态玻璃）
   @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
   @StorageLink('uplayer_home_top_blur_strength') homeTopBlurStrength: number = 25
-  // 智感握姿：左手握持 → 加号靠左；其余（右手/双手/无握持/未知即默认）→ 靠右。
-  // 滤波与订阅由 HoldingHandService 统一持有，本组件只订阅它的广播结果
-  @StorageLink(KEY_HOLDING_HAND_LEFT) @Watch('onHoldingHandLeftChange') holdingHandLeft: boolean = false
-  // 真正参与布局的贴边状态：只在 animateTo 闭包里跟随 holdingHandLeft 变化，
-  // 握姿切换时加号才会「滑」到另一侧（position 支持属性动画），而不是瞬移
-  @State plusOnLeft: boolean = false
-  @State plusBtnScale: number = 1.0
-  // 握姿切换的滑动曲线：弹簧跟手，与设置页主题切换等动效保持一致的手感
-  private readonly PLUS_SIDE_SPRING_RESPONSE: number = 0.4
-  private readonly PLUS_SIDE_SPRING_DAMPING: number = 0.8
   private dataService: DataService = DataService.getInstance()
   private songScanner: SongScanner = SongScanner.getInstance()
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
@@ -155,24 +145,9 @@ export struct HomeContent {
     return 'calc(100% - ' + this.listTopPadding() + 'vp)'
   }
 
-  // 智感握姿切换：把贴边状态放进动画闭包，让加号从一侧滑到另一侧
-  onHoldingHandLeftChange(): void {
-    const isLeft: boolean = this.holdingHandLeft
-    if (isLeft === this.plusOnLeft) {
-      return
-    }
-    this.getUIContext()?.animateTo({
-      curve: curves.springMotion(this.PLUS_SIDE_SPRING_RESPONSE, this.PLUS_SIDE_SPRING_DAMPING)
-    }, () => {
-      this.plusOnLeft = isLeft
-    })
-  }
-
   aboutToAppear(): void {
     this.loadData()
     this.refreshFilterLabel()
-    // 首次进入按当前握姿直接落位，不做动画（避免首帧从默认侧滑过来）
-    this.plusOnLeft = this.holdingHandLeft
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_HOME_MULTI_SELECT, false)
   }
 
@@ -895,46 +870,11 @@ export struct HomeContent {
       }
 
       if (!this.isMultiSelectMode && (this.isPlusVisible || !this.settings.plusButtonScrollHide)) {
-        // 加号组件：磨砂玻璃盘 + 加号字形。玻璃盘用「磨砂 backgroundEffect（背后内容模糊透出）
-        // + 清亮玻璃描边」，加号字形用 ic_public_add_norm_filled（主题色，带圆圈）。位置/交互不变。
-        Stack({ alignContent: Alignment.Center }) {
-          // 阴影层：独立圆形，比底板略小避免阴影溢出
-          Row()
-            .width(this.scaledSize(44)).height(this.scaledSize(44))
-            .borderRadius(this.scaledSize(22))
-            .backgroundColor(Color.Transparent)
-            .shadow({
-              radius: this.scaledSize(20),
-              color: ColorHelper.hexWithAlpha(this.primaryColor, 'AA'),
-              offsetX: 0,
-              offsetY: this.scaledSize(6)
-            })
-          Row()
-            .width(this.scaledSize(44)).height(this.scaledSize(44))
-            .borderRadius(this.scaledSize(22))
-            .backgroundColor(Color.Transparent)
-            .backgroundEffect({ radius: 2, saturation: 1.0, brightness: 1.0 })
-            .border({ width: 1, color: 'rgba(255,255,255,0.35)' })
-          Image($r('app.media.ic_public_add_norm_filled'))
-            .width(this.scaledSize(48)).height(this.scaledSize(48))
-            .fillColor(this.primaryColor)
-        }
-        .scale({ x: this.plusBtnScale, y: this.plusBtnScale })
-        // 智感握姿：只切换贴边方向，不改变与底部的间距，避免握姿切换时按钮上下跳动。
-        // 读 plusOnLeft（动画态）而不是 holdingHandLeft，切换才会走滑动动画
-        .position({
-          bottom: this.plusButtonBottom,
-          left: this.plusOnLeft ? this.scaledSize(20) : undefined,
-          right: this.plusOnLeft ? undefined : this.scaledSize(20)
-        })
-        .transition({ type: TransitionType.Insert, opacity: 0, scale: { x: 0.5, y: 0.5 } })
-        .transition({ type: TransitionType.Delete, opacity: 0, scale: { x: 0.5, y: 0.5 } })
-        .onClick(() => {
-          this.plusBtnScale = 0.85
-          setTimeout(() => {
-            this.plusBtnScale = 1.0
-          }, StyleConstants.ANIMATION_PRESS_DELAY_SHORT)
-          this.onPlusClick()
+        GlassPlusButton({
+          bottomInset: this.plusButtonBottom,
+          onPlusClick: (): void => {
+            this.onPlusClick()
+          }
         })
       }
     }

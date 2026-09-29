@@ -19,8 +19,8 @@ export const KEY_HOLDING_HAND_LEFT: string = 'uplayer_holding_hand_left'
 @SuppressWarnings({ rules: [SuppressWarningsType.SYSCAP] })
 export class HoldingHandService {
   private static readonly instance: HoldingHandService = new HoldingHandService()
-  // 置信度滤波：连续 HOLD_STREAK_REQUIRED 帧同向才允许翻转（经验值：原值 1 太敏感，3 较稳）
-  private static readonly HOLD_STREAK_REQUIRED: number = 3
+  // 置信度滤波：连续 HOLD_STREAK_REQUIRED 帧同向才允许翻转（历史：1 太敏感→3 较稳；用户反馈 3 太迟钝，按要求调回 1）
+  private static readonly HOLD_STREAK_REQUIRED: number = 1
   private readonly isPC: boolean = deviceInfo.deviceType === '2in1'
   private lastStatus: motion.HoldingHandStatus | undefined = undefined
   private streakCount: number = 0

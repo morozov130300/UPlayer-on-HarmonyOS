@@ -320,6 +320,11 @@ struct MainPage {
               [this.indicatorGradientColor(0.55), 1.0],
             ]
           })
+          .transition(
+            TransitionEffect.OPACITY
+              .combine(TransitionEffect.scale({ x: 0.6, y: 0.6 }))
+              .animation({ curve: curves.springMotion(0.4, 0.8) })
+          )
       }
 
       Column() {
@@ -819,7 +824,10 @@ struct MainPage {
         ? this.getBarBackgroundBlur() : BlurStyle.NONE)
       .animationDuration(StyleConstants.ANIMATION_SWIPER_DURATION)
       .onChange((index: number) => {
-        this.currentIndex = index
+        // tab 切换：弹簧曲线驱动指示器光晕过渡 + 图标缩放/变色
+        this.getUIContext()?.animateTo({ curve: curves.springMotion(0.4, 0.8) }, () => {
+          this.currentIndex = index
+        })
       })
       .width('100%')
       .height('100%')

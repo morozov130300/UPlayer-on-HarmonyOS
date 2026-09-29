@@ -282,14 +282,16 @@ struct SettingsDetailPage {
     return this.effectiveTouchIndicator() === 'mask' ? HoverEffect.Highlight : HoverEffect.None
   }
 
-  // 预览内点击 Tab：联动 previewTabIndex
+  // 预览内点击 Tab：联动 previewTabIndex（与 Index.onChange 同一弹簧动画，保持预览与真机行为一致）
   private switchPreviewTab(index: number): void {
-    this.previewTabIndex = index
+    this.getUIContext()?.animateTo({ curve: curves.springMotion(0.4, 0.8) }, () => {
+      this.previewTabIndex = index
+    })
   }
 
   @Builder
   previewTabBar(): void {
-    Stack({ alignContent: Alignment.BottomStart }) {
+    Stack({ alignContent: Alignment.Center }) {
       HdsTabs({ controller: this.previewTabsController, index: this.previewTabIndex }) {
         TabContent()
           .tabBar(this.previewTabLabelBuilder(0, '首页', $r('app.media.ic_public_home')))
@@ -309,8 +311,10 @@ struct SettingsDetailPage {
       .onChange((index: number) => {
         this.switchPreviewTab(index)
       })
-      .width('100%')
+      .width(this.scaledSize(228))
+      .height(this.scaledSize(72))
     }
+    .width('100%')
     .height(this.scaledSize(72))
     .alignSelf(ItemAlign.Center)
   }
@@ -321,23 +325,27 @@ struct SettingsDetailPage {
       ? (this.isDark() ? '#FFFFFF' : this.primaryColor)
       : undefined
     const previewBarWidth: number = 228
+    // 预览器垂直居中：栏在 72vp 预览带内上下居中，边距随显示大小缩放（栏高 scaledSize(44)）
+    const previewBarBottomMargin: number = (this.scaledSize(72) - this.scaledSize(44)) / 2
     if (this.settings.tabStyle === 'immersive' && isLiquidGlassAvailable()) {
       return {
-        adaptToHandedness: true,
+        adaptToHandedness: false,
         gradientMask: { maskColor: 'rgba(0,0,0,0)', maskHeight: 0 },
         systemMaterialEffect: {
           materialType: hdsMaterial.MaterialType.IMMERSIVE,
           materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE,
         },
-        barBottomMargin: 28,
+        barBottomMargin: previewBarBottomMargin,
+        barSideMargin: 0,
         lightColor: lightColor,
         barWidth: { smallWidth: previewBarWidth, mediumWidth: previewBarWidth, largeWidth: previewBarWidth },
       } as HdsTabsFloatingStyle
     }
     return {
-      adaptToHandedness: true,
+      adaptToHandedness: false,
       gradientMask: { maskColor: 'rgba(0,0,0,0)', maskHeight: 0 },
-      barBottomMargin: 28,
+      barBottomMargin: previewBarBottomMargin,
+      barSideMargin: 0,
       lightColor: lightColor,
       barWidth: { smallWidth: previewBarWidth, mediumWidth: previewBarWidth, largeWidth: previewBarWidth },
     } as HdsTabsFloatingStyle
@@ -382,6 +390,11 @@ struct SettingsDetailPage {
               [this.indicatorGradientColor(0.55), 1.0],
             ]
           })
+          .transition(
+            TransitionEffect.OPACITY
+              .combine(TransitionEffect.scale({ x: 0.6, y: 0.6 }))
+              .animation({ curve: curves.springMotion(0.4, 0.8) })
+          )
       }
       Column() {
         Image(icon)
