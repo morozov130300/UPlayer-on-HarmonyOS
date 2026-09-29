@@ -11,14 +11,16 @@ import { AVPlayerService } from '../service/AVPlayerService'
 import { HomeContent } from './HomeContent'
 import { PlaylistContent } from './PlaylistContent'
 import { SettingsContent } from './SettingsContent'
-import { DataService } from '../service/DataService'
+import { DataService, ImportResult } from '../service/DataService'
+import { SongScanner } from '../service/SongScanner'
 import { PoetryService } from '../service/PoetryService'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import {
   createBarGlassMaterial,
   DEFAULT_GLASS_STYLE,
   getDeviceMaterialLevel,
-  isLiquidGlassAvailable
+  isLiquidGlassAvailable,
+  showToastGlassMaterial
 } from '../common/utils/GlassUtil'
 import Logger from '../common/utils/Logger'
 import { LrcEntry } from '../viewmodel/LrcEntry'
@@ -27,6 +29,7 @@ import { AlbumCover } from '../component/AlbumCover'
 import { ColorConversion } from '../common/utils/ColorConversion'
 import { StyleConstants } from '../common/constants/StyleConstants'
 import { ImportProgressOverlay } from '../view/ImportProgressOverlay'
+import { GlassPlusButton } from '../view/GlassPlusButton'
 import {
   KEY_HAS_POINTER_DEVICE,
   refreshPointerDeviceState,
@@ -46,6 +49,10 @@ struct MainPage {
   // 主页多选状态（由 HomeContent 写入）：进入多选时问候语整体上滑淡出，退出时回落淡入
   @StorageLink(AppStorageKeyConstants.KEY_HOME_MULTI_SELECT) @Watch(
     'onHomeMultiSelectChange') homeMultiSelect: boolean = false
+  // 全局悬浮加号可见性（由各内容页上报）：滚动隐藏、多选/编辑态变化时写入，
+  // 首页/歌单共用 Index 上的一颗加号，切页不重建不位移，设置页隐藏
+  @StorageLink(AppStorageKeyConstants.KEY_HOME_PLUS_VISIBLE) homePlusVisible: boolean = true
+  @StorageLink(AppStorageKeyConstants.KEY_PLAYLIST_PLUS_VISIBLE) playlistPlusVisible: boolean = true
   @State greetingShiftY: number = 0
   @State greetingVisible: number = 1
   @State poetryLine: string = ''
@@ -91,6 +98,7 @@ struct MainPage {
   private indicatorInset: number = 4
   private rotationTimer: number = -1
   private dataService: DataService = DataService.getInstance()
+  private songScanner: SongScanner = SongScanner.getInstance()
   private poetryService: PoetryService = PoetryService.getInstance()
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
   private isPC: boolean = deviceInfo.deviceType === '2in1'
@@ -746,7 +754,6 @@ struct MainPage {
             HomeContent({
               topContentPadding: this.homeHeaderHeight(),
               bottomContentPadding: this.bottomOverlayInset(),
-              plusButtonBottom: this.plusButtonBottomInset(),
               greetingBandTop: this.topContentInset(),
               greetingBandHeight: this.homeHeaderHeight() - this.topContentInset()
             }).width('100%').height('100%')
@@ -794,7 +801,6 @@ struct MainPage {
           PlaylistContent({
             topContentPadding: this.topContentInset(),
             bottomContentPadding: this.bottomOverlayInset(),
-            plusButtonBottom: this.plusButtonBottomInset(),
             onNavigateToHome: (): void => {
               this.onFolderClick()
             }
@@ -842,6 +848,18 @@ struct MainPage {
         .padding({ left: this.scaledSize(16), right: this.scaledSize(16) })
         .margin({ bottom: this.controlBarBottomMargin() })
         .hitTestBehavior(HitTestMode.Default)
+      }
+
+      // 全局悬浮加号：挂在 Index 根 Stack（Tabs 之上）的单实例，首页↔歌单切换时不随
+      // 页面内容滑动、不重建；设置页隐藏（进入/退出走组件自带 Insert/Delete 过渡）。
+      // 可见性跟随当前激活页上报的状态（滚动隐藏设置 + 多选/编辑态）
+      if (this.plusVisibleOnActiveTab()) {
+        GlassPlusButton({
+          bottomInset: this.plusButtonBottomInset(),
+          onPlusClick: (): void => {
+            this.onPlusClick()
+          }
+        })
       }
 
       // 导入进度浮层：置顶显示，未导入时不拦截触摸
@@ -923,12 +941,41 @@ struct MainPage {
   }
 
   // 加号组件底边位置：紧贴播控条（迷你栏）上沿。真机实测（vp）：
-  // sm/md 窄屏叠放态：播控条上沿较高，需 146；lg/xl 大屏并排态：需 40（后续精调）
+  // sm/md 窄屏叠放态与大屏并排态统一取 146。lg/xl 曾取 40，会使加号沉入
+  // TabBar/迷你栏区域（真机实测沉底），已统一按首页效果对齐。
+  // 加号现挂在 Index 根 Stack（单实例），不存在页面懒加载时各页捕获值不一致的问题。
   private plusButtonBottomInset(): number {
-    if (this.breakpoint === 'sm' || this.breakpoint === 'md') {
-      return 146
+    return 146
+  }
+
+  // 全局加号可见性：首页/歌单读对应页上报的状态，设置页恒为隐藏
+  private plusVisibleOnActiveTab(): boolean {
+    if (this.currentIndex === 0) {
+      return this.homePlusVisible
     }
-    return 40
+    if (this.currentIndex === 1) {
+      return this.playlistPlusVisible
+    }
+    return false
+  }
+
+  // 全局加号点击：选歌 → 入库 → toast。两页列表经 KEY_LIBRARY_REVISION 的 @Watch 自动刷新
+  async onPlusClick(): Promise<void> {
+    const context: common.UIAbilityContext | undefined =
+      AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
+    if (context === undefined) {
+      return
+    }
+    const newSongs: SongInfo[] = await this.songScanner.pickAudioFiles(context)
+    if (newSongs.length > 0) {
+      const result: ImportResult = this.dataService.addSongs(newSongs)
+      try {
+        showToastGlassMaterial(this.getUIContext()?.getPromptAction(),
+          `新增 ${result.newCount} 首` + (result.dupCount > 0 ? `，${result.dupCount} 首已存在` : ''))
+      } catch (e) {
+        Logger.error(TAG, 'toast failed')
+      }
+    }
   }
 
   private glassBlurRadius(): number {

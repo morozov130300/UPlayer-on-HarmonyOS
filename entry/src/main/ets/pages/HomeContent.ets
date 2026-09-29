@@ -14,7 +14,6 @@ import { AlbumCoverSize, AudioMetadataService, CoverPriority } from '../service/
 import { curves, uiMaterial } from '@kit.ArkUI'
 import { createBarGlassMaterial, DEFAULT_GLASS_STYLE, showToastGlassMaterial, topBlurRadiusFromStrength } from '../common/utils/GlassUtil'
 import { GlassBackButton } from '../view/GlassBackButton'
-import { GlassPlusButton } from '../view/GlassPlusButton'
 import { StyleConstants } from '../common/constants/StyleConstants'
 
 const TAG = 'HomeContent'
@@ -35,8 +34,6 @@ class DisplayItem {
 export struct HomeContent {
   topContentPadding: number = 0
   bottomContentPadding: number = 0
-  // 加号底边位置：由 Index 计算为「紧贴播控条上沿」，跨断点自适应
-  plusButtonBottom: number = 0
   // 问候语内容带（由 Index 传入）：多选菜单栏进入多选时落在该带内，替换问候语的位置
   greetingBandTop: number = 0
   greetingBandHeight: number = 0
@@ -148,6 +145,7 @@ export struct HomeContent {
   aboutToAppear(): void {
     this.loadData()
     this.refreshFilterLabel()
+    this.publishPlusVisible()
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_HOME_MULTI_SELECT, false)
   }
 
@@ -163,6 +161,7 @@ export struct HomeContent {
     if (!this.isMultiSelectMode) {
       this.selectedIds = []
     }
+    this.publishPlusVisible()
   }
 
   // Ctrl+A：只做全选，不做取消全选；非多选态一律忽略（普通浏览时不响应，避免误触）
@@ -351,6 +350,13 @@ export struct HomeContent {
     }
     this.dataService.setSortMode(this.sortMode)
     this.applyFilters()
+  }
+
+  // 全局悬浮加号已上提到 Index：本页只上报「加号是否应显示」
+  // （多选态隐藏 + 滚动隐藏设置 + 滚动方向），由 Index 读取渲染
+  private publishPlusVisible(): void {
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_HOME_PLUS_VISIBLE,
+      !this.isMultiSelectMode && (this.isPlusVisible || !this.settings.plusButtonScrollHide))
   }
 
   async onPlusClick(): Promise<void> {
@@ -691,9 +697,11 @@ export struct HomeContent {
             const yOffset: number = offset.yOffset
             if (yOffset > this.lastScrollY && (yOffset - this.lastScrollY) > 10) {
               this.isPlusVisible = false
+              this.publishPlusVisible()
               this.prefetchInScrollDirection(yOffset, true)
             } else if (yOffset < this.lastScrollY) {
               this.isPlusVisible = true
+              this.publishPlusVisible()
               this.prefetchInScrollDirection(yOffset, false)
             }
             this.lastScrollY = yOffset
@@ -869,14 +877,8 @@ export struct HomeContent {
         ))
       }
 
-      if (!this.isMultiSelectMode && (this.isPlusVisible || !this.settings.plusButtonScrollHide)) {
-        GlassPlusButton({
-          bottomInset: this.plusButtonBottom,
-          onPlusClick: (): void => {
-            this.onPlusClick()
-          }
-        })
-      }
+      // 全局悬浮加号由 Index 统一渲染（首页/歌单共用，切页不位移，设置页隐藏），
+      // 可见性由 publishPlusVisible 上报，本页不再挂按钮
     }
     .width('100%')
     .height('100%')

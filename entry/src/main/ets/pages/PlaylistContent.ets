@@ -11,7 +11,6 @@ import { ColorHelper } from '../common/utils/ColorHelper'
 import { showToastGlassMaterial } from '../common/utils/GlassUtil'
 import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
-import { GlassPlusButton } from '../view/GlassPlusButton'
 import { display } from '@kit.ArkUI'
 import { deviceInfo } from '@kit.BasicServicesKit'
 
@@ -22,8 +21,6 @@ const FAVORITES_FOLDER_ID: string = '__favorites__'
 export struct PlaylistContent {
   topContentPadding: number = 0
   bottomContentPadding: number = 0
-  // 加号底边位置：由 Index 计算为「紧贴播控条上沿」，跨断点自适应
-  plusButtonBottom: number = 0
   onNavigateToHome: () => void = (): void => {}
   private context: common.UIAbilityContext | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
   @State folders: FolderInfo[] = []
@@ -50,6 +47,7 @@ export struct PlaylistContent {
   aboutToAppear(): void {
     this.loadData()
     this.updateGridColumns()
+    this.publishPlusVisible()
   }
 
   private scaledSize(size: number): number {
@@ -224,6 +222,7 @@ export struct PlaylistContent {
   enterEditMode(folderId: string): void {
     this.isEditMode = true
     this.editSelectedFolderIds = [folderId]
+    this.publishPlusVisible()
   }
 
   toggleEditSelect(folderId: string): void {
@@ -240,6 +239,7 @@ export struct PlaylistContent {
   exitEditMode(): void {
     this.isEditMode = false
     this.editSelectedFolderIds = []
+    this.publishPlusVisible()
   }
 
   async deleteEditSelected(): Promise<void> {
@@ -277,6 +277,13 @@ export struct PlaylistContent {
 
   isEditSelected(folderId: string): boolean {
     return this.editSelectedFolderIds.indexOf(folderId) >= 0
+  }
+
+  // 全局悬浮加号已上提到 Index：本页只上报「加号是否应显示」
+  // （编辑态隐藏 + 滚动隐藏设置 + 滚动方向），由 Index 读取渲染
+  private publishPlusVisible(): void {
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PLAYLIST_PLUS_VISIBLE,
+      !this.isEditMode && (this.isPlusVisible || !this.settings.plusButtonScrollHide))
   }
 
   async onPlusClick(): Promise<void> {
@@ -370,8 +377,10 @@ export struct PlaylistContent {
           const yOffset: number = offset.yOffset
           if (yOffset > this.lastScrollY && (yOffset - this.lastScrollY) > 10) {
             this.isPlusVisible = false
+            this.publishPlusVisible()
           } else if (yOffset < this.lastScrollY) {
             this.isPlusVisible = true
+            this.publishPlusVisible()
           }
           this.lastScrollY = yOffset
         })
@@ -407,14 +416,8 @@ export struct PlaylistContent {
       .width('100%')
       .height('100%')
 
-      if (!this.isEditMode && (this.isPlusVisible || !this.settings.plusButtonScrollHide)) {
-        GlassPlusButton({
-          bottomInset: this.plusButtonBottom,
-          onPlusClick: (): void => {
-            this.onPlusClick()
-          }
-        })
-      }
+      // 全局悬浮加号由 Index 统一渲染（首页/歌单共用，切页不位移，设置页隐藏），
+      // 可见性由 publishPlusVisible 上报，本页不再挂按钮
     }
     .width('100%')
     .height('100%')
