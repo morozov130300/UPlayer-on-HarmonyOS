@@ -185,7 +185,8 @@ struct SettingsDetailPage {
 
   // 预览器说明：
   //   - homeTopBlurPreview：渐变模糊 (linearGradientBlur) 方块，随「首页上端模糊强度」变化
-  //   - tabBarLivePreview：真实 Tab 栏实时预览（复刻 Index），随玻璃厚度/模糊强度/指示器深浅变化
+  //   - tabBarLivePreview：真实 Tab 栏实时预览（复刻 Index），只负责预览效果、不携带任何设置项，
+  //     随各独立设置项（Tab栏与播控条模糊强度 / Tab 指示器不透明度 / 组件风格等）实时变化
   @Builder
   homeTopBlurPreview(): void {
     Stack({ alignContent: Alignment.Center }) {
@@ -226,7 +227,7 @@ struct SettingsDetailPage {
   // ═══ 底部 Tab 栏实时预览：原封不动复刻 Index 真实 Tab 栏 ═══
   // 结构/尺寸/材质/指示器/悬停/点击行为与 Index.customTabBar、Index.immersiveTabBar 完全一致，
   // 仅把页面级状态（currentIndex/indicatorOffset/hoverTabIndex）替换为预览态，
-  // 玻璃厚度、模糊强度、指示器深浅三个滑块调节时可实时看到真实透视与磨砂效果。
+  // 预览卡片内禁止放置任何设置项（滑块均已拆为独立设置项卡片），调节任一相关设置时实时反映效果。
 
   // 预览用 Tab 材质：经典样式不挂任何材质（仅磨砂层），玻璃样式走 createTabGlassMaterial 全参工厂
   private previewClassicBarMaterial(): uiMaterial.Material | undefined {
@@ -987,7 +988,8 @@ struct SettingsDetailPage {
         })
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
         .borderRadius(this.scaledSize(10))
-        // 「Tab栏与播控条模糊强度」「经典 Tab 指示器」已并入「高级样式」组的 Tab 实时预览卡片
+        // 「Tab栏与播控条模糊强度」「Tab 指示器不透明度」是「高级样式」组的独立设置项卡片，
+        // Tab 实时预览卡片只负责预览效果、不携带任何设置项
       }
       .width('100%')
 
@@ -1178,81 +1180,44 @@ struct SettingsDetailPage {
 
       // ─── 一级标题「高级样式」 + 右上角叹号角标 ───
       // 点击叹号弹窗说明玻璃效果所影响的所有位置
-      Column() {
+      Column({ space: this.scaledSize(10) }) {
         this.groupTitle('高级样式', 'glass')
-        // 玻璃厚度 / 模糊强度 / 指示器深浅三合一卡片：
-        // 顶部为真实 Tab 栏实时预览（复刻 Index，可点击/悬停），三个滑块调节时实时反映透视与磨砂效果
-        Column({ space: this.scaledSize(10) }) {
+        // Tab 栏实时预览卡片：只负责预览效果，禁止携带任何设置项，
+        // 各独立设置项卡片调节时实时反映透视与磨砂效果
+        Column() {
           this.tabBarLivePreview()
+        }
+        .width('100%')
+        .padding({
+          top: this.scaledSize(10),
+          left: this.scaledSize(14),
+          right: this.scaledSize(14),
+          bottom: this.scaledSize(10)
+        })
+        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+        .borderRadius(this.scaledSize(10))
 
-          // 磨砂兜底模糊强度：
-          // - 老设备：两种样式都显示（磨砂兜底始终生效）
-          // - 新设备：仅经典样式显示（玻璃样式液态玻璃接管，磨砂层关闭）
-          // 切换样式时带动画收起/展开
-          if (!isLiquidGlassAvailable() || this.showClassicBlurStrength) {
-            Column({ space: this.scaledSize(6) }) {
-              Row() {
-                this.subTitleRow('Tab栏与播控条模糊强度')
-                Blank()
-              }
-              .width('100%')
-              Text('控制底部 Tab 栏与迷你播控条的磨砂模糊半径；暗黑模式下磨砂层不启用。')
-                .fontSize(this.scaledFont(12))
-                .fontColor(this.settingSubTextColor())
-                .width('100%')
-              Row({ space: this.scaledSize(12) }) {
-                Text('弱')
-                  .fontSize(this.scaledFont(11))
-                  .fontColor(this.settingTextColor())
-                Slider({
-                  value: this.settings.glassBlurStrength,
-                  min: 0,
-                  max: 100,
-                  step: 1,
-                  style: SliderStyle.OutSet
-                })
-                  .layoutWeight(1)
-                  .selectedColor(this.primaryColor)
-                  .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-                  .blockColor('#FFFFFF')
-                  .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
-                  .blockBorderColor(this.primaryColor)
-                  .blockBorderWidth(3)
-                  .onChange((value: number, mode: SliderChangeMode) => {
-                    this.settings.glassBlurStrength = value
-                    this.glassBlurStrength = value
-                    if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-                      this.updateSetting()
-                    }
-                  })
-                Text('强')
-                  .fontSize(this.scaledFont(11))
-                  .fontColor(this.settingTextColor())
-              }
-              .width('100%')
-              .alignItems(VerticalAlign.Center)
-              .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
-            }
-            .width('100%')
-            .transition({
-              type: TransitionType.Delete,
-              opacity: 0,
-              scale: { x: 0.95, y: 0.95 }
-            })
-          }
-
+        // 磨砂兜底模糊强度（独立设置项卡片）：
+        // - 老设备：两种样式都显示（磨砂兜底始终生效）
+        // - 新设备：仅经典样式显示（玻璃样式液态玻璃接管，磨砂层关闭）
+        // 切换样式时带动画收起/展开
+        if (!isLiquidGlassAvailable() || this.showClassicBlurStrength) {
           Column({ space: this.scaledSize(6) }) {
             Row() {
-              this.subTitleRow('Tab 指示器不透明度')
+              this.subTitleRow('Tab栏与播控条模糊强度')
               Blank()
             }
             .width('100%')
+            Text('控制底部 Tab 栏与迷你播控条的磨砂模糊半径；暗黑模式下磨砂层不启用。')
+              .fontSize(this.scaledFont(12))
+              .fontColor(this.settingSubTextColor())
+              .width('100%')
             Row({ space: this.scaledSize(12) }) {
-              Text('浅')
+              Text('弱')
                 .fontSize(this.scaledFont(11))
                 .fontColor(this.settingTextColor())
               Slider({
-                value: this.settings.tabIndicatorOpacity,
+                value: this.settings.glassBlurStrength,
                 min: 0,
                 max: 100,
                 step: 1,
@@ -1266,13 +1231,13 @@ struct SettingsDetailPage {
                 .blockBorderColor(this.primaryColor)
                 .blockBorderWidth(3)
                 .onChange((value: number, mode: SliderChangeMode) => {
-                  this.settings.tabIndicatorOpacity = value
-                  this.tabIndicatorOpacity = value
+                  this.settings.glassBlurStrength = value
+                  this.glassBlurStrength = value
                   if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
                     this.updateSetting()
                   }
                 })
-              Text('深')
+              Text('强')
                 .fontSize(this.scaledFont(11))
                 .fontColor(this.settingTextColor())
             }
@@ -1281,6 +1246,60 @@ struct SettingsDetailPage {
             .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
           }
           .width('100%')
+          .padding({
+            top: this.scaledSize(10),
+            left: this.scaledSize(14),
+            right: this.scaledSize(14),
+            bottom: this.scaledSize(10)
+          })
+          .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+          .borderRadius(this.scaledSize(10))
+          .transition({
+            type: TransitionType.Delete,
+            opacity: 0,
+            scale: { x: 0.95, y: 0.95 }
+          })
+        }
+
+        // Tab 指示器不透明度（独立设置项卡片）
+        Column({ space: this.scaledSize(6) }) {
+          Row() {
+            this.subTitleRow('Tab 指示器不透明度')
+            Blank()
+          }
+          .width('100%')
+          Row({ space: this.scaledSize(12) }) {
+            Text('浅')
+              .fontSize(this.scaledFont(11))
+              .fontColor(this.settingTextColor())
+            Slider({
+              value: this.settings.tabIndicatorOpacity,
+              min: 0,
+              max: 100,
+              step: 1,
+              style: SliderStyle.OutSet
+            })
+              .layoutWeight(1)
+              .selectedColor(this.primaryColor)
+              .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+              .blockColor('#FFFFFF')
+              .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
+              .blockBorderColor(this.primaryColor)
+              .blockBorderWidth(3)
+              .onChange((value: number, mode: SliderChangeMode) => {
+                this.settings.tabIndicatorOpacity = value
+                this.tabIndicatorOpacity = value
+                if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+                  this.updateSetting()
+                }
+              })
+            Text('深')
+              .fontSize(this.scaledFont(11))
+              .fontColor(this.settingTextColor())
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
+          .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
         }
         .width('100%')
         .padding({

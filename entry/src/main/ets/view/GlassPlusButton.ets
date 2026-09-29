@@ -1,5 +1,6 @@
 // 共用加号按钮：磨砂玻璃盘 + 加号字形 + 阴影层，带按压缩放动画与智感握姿贴边滑动。
-// 由 Index 全局悬浮调用：Tab 级挂载/卸载瞬时完成；页面级可见性（滚动隐藏等）经 visible 淡入淡出。
+// 由 Index 全局悬浮调用：Tab 级挂载/卸载走 Insert/Delete 过渡（由 Index 经 onSelected 提前触发，
+// 与页面切换动画并行）；页面级可见性（滚动隐藏等）经 visible 在组件内部淡入淡出。
 import { curves } from '@kit.ArkUI'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import { StyleConstants } from '../common/constants/StyleConstants'
@@ -94,7 +95,8 @@ export struct GlassPlusButton {
       left: this.plusOnLeft ? this.scaledSize(20) : undefined,
       right: this.plusOnLeft ? undefined : this.scaledSize(20)
     })
-    .transition(TransitionEffect.IDENTITY)
+    .transition({ type: TransitionType.Insert, opacity: 0, scale: { x: 0.5, y: 0.5 } })
+    .transition({ type: TransitionType.Delete, opacity: 0, scale: { x: 0.5, y: 0.5 } })
     .onClick(() => {
       this.plusBtnScale = 0.85
       setTimeout(() => {

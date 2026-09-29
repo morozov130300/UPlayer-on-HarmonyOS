@@ -43,6 +43,9 @@ const TAG = 'Index'
 @Component
 struct MainPage {
   @State currentIndex: number = 0
+  // 加号 Tab 级挂载开关：由 HdsTabs onSelected 在点击/滑动切换动画开始的瞬间提前翻转
+  // （onChange 要等切换动画结束才回调），保证切设置页的隐藏动画与页面切换动画同时启动
+  @State plusTabMounted: boolean = true
   @State greetingTitle: string = '加载中……'
   @State greetingOpacity: number = 0
   @State greetingOffset: number = 20
@@ -833,6 +836,11 @@ struct MainPage {
           this.currentIndex = index
         })
       })
+      .onSelected((index: number) => {
+        // onSelected 在点击/滑动切换动画开始的瞬间触发（比 onChange 早一个动画周期）：
+        // 点击设置页的那一刻加号的隐藏过渡立即启动，与页面切换动画并行，不再慢半拍
+        this.plusTabMounted = index === 0 || index === 1
+      })
       .width('100%')
       .height('100%')
 
@@ -851,10 +859,10 @@ struct MainPage {
       }
 
       // 全局悬浮加号：挂在 Index 根 Stack（Tabs 之上）的单实例，首页↔歌单切换时不随
-      // 页面内容滑动、不重建；仅首页/歌单两个 Tab 挂载，Tab 级挂载/卸载瞬时完成
-      // （切设置页立即消失，不走 Insert/Delete 过渡）。
+      // 页面内容滑动、不重建；挂载开关由 onSelected 在点击瞬间提前翻转（比 onChange 早
+      // 一个切换动画周期），切到/切离设置页的 Insert/Delete 过渡与页面切换动画同时启停。
       // 页面上报的可见性（滚动隐藏设置 + 多选/编辑态）经 visible 参数在组件内部淡入淡出
-      if (this.currentTabSupportsPlus()) {
+      if (this.plusTabMounted) {
         GlassPlusButton({
           bottomInset: this.plusButtonBottomInset(),
           onPlusClick: (): void => {
@@ -948,11 +956,6 @@ struct MainPage {
   // 加号现挂在 Index 根 Stack（单实例），不存在页面懒加载时各页捕获值不一致的问题。
   private plusButtonBottomInset(): number {
     return 146
-  }
-
-  // 加号仅挂载在首页/歌单两个 Tab：Tab 级卸载无过渡动画，切到设置页立即消失、不慢半拍
-  private currentTabSupportsPlus(): boolean {
-    return this.currentIndex === 0 || this.currentIndex === 1
   }
 
   // 全局加号可见性：首页/歌单读对应页上报的状态，设置页恒为隐藏
