@@ -836,10 +836,15 @@ struct MainPage {
           this.currentIndex = index
         })
       })
+      .onTabBarClick((index: number) => {
+        this.updatePlusTabMounted(index)
+      })
       .onSelected((index: number) => {
-        // onSelected 在点击/滑动切换动画开始的瞬间触发（比 onChange 早一个动画周期）：
-        // 点击设置页的那一刻加号的隐藏过渡立即启动，与页面切换动画并行，不再慢半拍
-        this.plusTabMounted = index === 0 || index === 1
+        this.updatePlusTabMounted(index)
+      })
+      .onContentWillChange((current: number, coming: number) => {
+        this.updatePlusTabMounted(coming)
+        return true
       })
       .width('100%')
       .height('100%')
@@ -859,8 +864,9 @@ struct MainPage {
       }
 
       // 全局悬浮加号：挂在 Index 根 Stack（Tabs 之上）的单实例，首页↔歌单切换时不随
-      // 页面内容滑动、不重建；挂载开关由 onSelected 在点击瞬间提前翻转（比 onChange 早
-      // 一个切换动画周期），切到/切离设置页的 Insert/Delete 过渡与页面切换动画同时启停。
+      // 页面内容滑动、不重建；挂载开关由 onTabBarClick/onSelected/onContentWillChange
+      // 在点击/切换开始的瞬间提前翻转（比 onChange 早一个切换动画周期），切到/切离
+      // 设置页的 Insert/Delete 过渡与页面切换动画同时启停。
       // 页面上报的可见性（滚动隐藏设置 + 多选/编辑态）经 visible 参数在组件内部淡入淡出
       if (this.plusTabMounted) {
         GlassPlusButton({
@@ -956,6 +962,21 @@ struct MainPage {
   // 加号现挂在 Index 根 Stack（单实例），不存在页面懒加载时各页捕获值不一致的问题。
   private plusButtonBottomInset(): number {
     return 146
+  }
+
+  // 加号 Tab 级挂载开关的提前翻转：三个前置回调（onTabBarClick 点击 / onSelected 切换动画开始 /
+  // onContentWillChange 切换前）任一命中即更新，谁先到谁触发，保证点击设置页的那一刻
+  // 隐藏动画就与页面切换动画同时启动。翻转必须放进 animateTo 闭包（与 onChange 驱动
+  // 指示器光晕的写法一致），否则挂载/卸载的 Insert/Delete 过渡不播放、加号会瞬移消失。
+  // 值未变化时直接返回，首页↔歌单互切不产生任何动画
+  private updatePlusTabMounted(index: number): void {
+    const mounted: boolean = index === 0 || index === 1
+    if (this.plusTabMounted === mounted) {
+      return
+    }
+    this.getUIContext()?.animateTo({ curve: curves.springMotion(0.4, 0.8) }, () => {
+      this.plusTabMounted = mounted
+    })
   }
 
   // 全局加号可见性：首页/歌单读对应页上报的状态，设置页恒为隐藏
