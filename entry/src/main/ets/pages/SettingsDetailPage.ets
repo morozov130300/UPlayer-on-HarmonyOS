@@ -154,6 +154,9 @@ struct SettingsDetailPage {
 
   aboutToAppear(): void {
     this.settings = this.dataService.getSettings()
+    // 声明处初始值读取的是默认 AppSettingsData（tabStyle 恒为 classic），并非已保存设置；
+    // 必须在加载真实设置后重算磨砂强度滑块可见性，否则新设备 + 玻璃样式进页时滑块会错误显示
+    this.showClassicBlurStrength = !isLiquidGlassAvailable() || this.settings.tabStyle !== 'immersive'
     // 进入设置页时刷新鼠标/触控板状态，决定「白色蒙版」开关是否显示
     refreshPointerDeviceState()
     const params = this.getUIContext()?.getRouter()
@@ -370,32 +373,29 @@ struct SettingsDetailPage {
   @Builder
   previewTabLabelBuilder(index: number, name: string, icon: Resource) {
     Stack() {
-      if (this.previewTabIndex === index) {
-        Row()
-          .width(this.scaledSize(64))
-          .height(this.scaledSize(36))
-          .borderRadius(this.scaledSize(18))
-          .shadow({
-            radius: 14,
-            color: this.indicatorGradientColor(0.8),
-            offsetX: 0,
-            offsetY: 0
-          })
-          .radialGradient({
-            center: ['50%', '50%'],
-            radius: '75%',
-            colors: [
-              [this.indicatorGradientColor(0.95), 0.0],
-              [this.indicatorGradientColor(0.75), 0.58],
-              [this.indicatorGradientColor(0.55), 1.0],
-            ]
-          })
-          .transition(
-            TransitionEffect.OPACITY
-              .combine(TransitionEffect.scale({ x: 0.6, y: 0.6 }))
-              .animation({ curve: curves.springMotion(0.4, 0.8) })
-          )
-      }
+      // 指示器光晕：恒定渲染 + translate 锚定选中 tab（与 Index.tabLabelBuilder 同一滑移方案）
+      Row()
+        .width(this.scaledSize(64))
+        .height(this.scaledSize(36))
+        .borderRadius(this.scaledSize(18))
+        .shadow({
+          radius: 14,
+          color: this.indicatorGradientColor(0.8),
+          offsetX: 0,
+          offsetY: 0
+        })
+        .radialGradient({
+          center: ['50%', '50%'],
+          radius: '75%',
+          colors: [
+            [this.indicatorGradientColor(0.95), 0.0],
+            [this.indicatorGradientColor(0.75), 0.58],
+            [this.indicatorGradientColor(0.55), 1.0],
+          ]
+        })
+        .opacity(this.previewTabIndex === index ? 1 : 0)
+        .translate({ x: (this.previewTabIndex - index) * this.previewTabSlotWidth() })
+        .hitTestBehavior(HitTestMode.None)
       Column() {
         Image(icon)
           .height(this.scaledSize(20))
@@ -460,6 +460,11 @@ struct SettingsDetailPage {
     return ColorHelper.hexWithAlpha(this.primaryColor, this.indicatorAlpha(base)
       .toString(16)
       .padStart(2, '0'))
+  }
+
+  // 与 Index.tabSlotWidth 同逻辑：barWidth(228vp) 均分 3 个页签
+  private previewTabSlotWidth(): number {
+    return this.scaledSize(228) / 3
   }
 
   private isDark(): boolean {

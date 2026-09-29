@@ -299,33 +299,31 @@ struct MainPage {
   @Builder
   private tabLabelBuilder(index: number, name: string, icon: Resource) {
     Stack() {
-      // 指示器光晕：选中 tab 时渲染径向渐变 + 蓝色光晕
-      if (this.currentIndex === index) {
-        Row()
-          .width(this.scaledSize(this.tabWidth - 2 * this.indicatorInset))
-          .height(this.scaledSize(36))
-          .borderRadius(this.scaledSize(18))
-          .shadow({
-            radius: 14,
-            color: this.indicatorGradientColor(0.8),
-            offsetX: 0,
-            offsetY: 0
-          })
-          .radialGradient({
-            center: ['50%', '50%'],
-            radius: '75%',
-            colors: [
-              [this.indicatorGradientColor(0.95), 0.0],
-              [this.indicatorGradientColor(0.75), 0.58],
-              [this.indicatorGradientColor(0.55), 1.0],
-            ]
-          })
-          .transition(
-            TransitionEffect.OPACITY
-              .combine(TransitionEffect.scale({ x: 0.6, y: 0.6 }))
-              .animation({ curve: curves.springMotion(0.4, 0.8) })
-          )
-      }
+      // 指示器光晕：径向渐变 + 主题色光晕，恒定渲染。
+      // translate 恒锚定选中 tab：切换时三个光晕同帧整体平移，旧光晕淡出、新光晕淡入且像素重合，
+      // 视觉等效于一枚指示器从 A 滑到 B，而非原地淡入淡出
+      Row()
+        .width(this.scaledSize(this.tabWidth - 2 * this.indicatorInset))
+        .height(this.scaledSize(36))
+        .borderRadius(this.scaledSize(18))
+        .shadow({
+          radius: 14,
+          color: this.indicatorGradientColor(0.8),
+          offsetX: 0,
+          offsetY: 0
+        })
+        .radialGradient({
+          center: ['50%', '50%'],
+          radius: '75%',
+          colors: [
+            [this.indicatorGradientColor(0.95), 0.0],
+            [this.indicatorGradientColor(0.75), 0.58],
+            [this.indicatorGradientColor(0.55), 1.0],
+          ]
+        })
+        .opacity(this.currentIndex === index ? 1 : 0)
+        .translate({ x: (this.currentIndex - index) * this.tabSlotWidth() })
+        .hitTestBehavior(HitTestMode.None)
 
       Column() {
         Image(icon)
@@ -824,7 +822,7 @@ struct MainPage {
         ? this.getBarBackgroundBlur() : BlurStyle.NONE)
       .animationDuration(StyleConstants.ANIMATION_SWIPER_DURATION)
       .onChange((index: number) => {
-        // tab 切换：弹簧曲线驱动指示器光晕过渡 + 图标缩放/变色
+        // tab 切换：弹簧曲线驱动指示器光晕从旧 tab 滑向新 tab，图标缩放/变色同帧过渡
         this.getUIContext()?.animateTo({ curve: curves.springMotion(0.4, 0.8) }, () => {
           this.currentIndex = index
         })
@@ -884,6 +882,11 @@ struct MainPage {
     return ColorHelper.hexWithAlpha(this.primaryColor, this.indicatorAlpha(base)
       .toString(16)
       .padStart(2, '0'))
+  }
+
+  // Tab 槽位间距：barWidth(228vp) 均分 3 个页签，指示器滑移按此步长平移
+  private tabSlotWidth(): number {
+    return this.scaledSize(228) / 3
   }
 
   private selectedTabContentColor(): ResourceColor {
