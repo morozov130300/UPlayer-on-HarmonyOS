@@ -367,6 +367,7 @@ export struct PlaylistContent {
         }
         .width('100%')
         .layoutWeight(1)
+        .align(Alignment.Top)
         .edgeEffect(EdgeEffect.Spring)
         .nestedScroll({
           scrollForward: NestedScrollMode.SELF_FIRST,
