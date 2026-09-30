@@ -165,8 +165,9 @@ export default class EntryAbility extends UIAbility {
     PreferencesUtil.getInstance().flushNow();
     // 退到后台时收敛一次数据库 WAL，避免 wal 文件长期只增不减撑大本地数据
     void SongDatabase.getInstance().checkpoint();
-    // 退到后台即退订握姿监听，避免后台持续占用传感器；回到前台由 onForeground 重新订阅
-    HoldingHandService.getInstance().stop();
+    // 退到后台即退订握姿监听，避免后台持续占用传感器；回到前台由 onForeground 重新订阅。
+    // 用 suspend 而非 stop：保留当前贴边结果，避免回前台时「先跳右再滑回左」抽动
+    HoldingHandService.getInstance().suspend();
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onBackground');
   }
 }

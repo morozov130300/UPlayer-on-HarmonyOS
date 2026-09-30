@@ -1,5 +1,5 @@
 // ArkUI 26 Beta1: 接口定义变更（误报，本项目已是Stage模型）+ UX视觉布局变更（Text默认开启沉浸式材质，系统行为）
-import { curves, uiAppearance, uiMaterial } from '@kit.ArkUI'
+import { curves, uiAppearance } from '@kit.ArkUI'
 import { HdsTabs, HdsTabsController, HdsTabsFloatingStyle, hdsMaterial } from '@kit.UIDesignKit'
 import { common, ConfigurationConstant } from '@kit.AbilityKit'
 import { DataService, AppSettingsData } from '../service/DataService'
@@ -15,8 +15,6 @@ import {
 } from '../service/HoldingHandService'
 import { ColorConversion } from '../common/utils/ColorConversion'
 import {
-  createBarGlassMaterial,
-  DEFAULT_GLASS_STYLE,
   isLiquidGlassAvailable,
   showToastGlassMaterial,
   topBlurRadiusFromStrength
@@ -250,12 +248,11 @@ struct SettingsDetailPage {
     .clip(true)
   }
 
-  // ═══ 底部栏实时预览：原封不动复刻 Index 真实底部栏（播控条 + Tab 栏） ═══
-  // Tab 栏：结构/尺寸/材质/磨砂兜底/指示器/点击行为与 Index.build 中的 HdsTabs 完全一致，
+  // ═══ 底部栏实时预览：复刻 Index 真实底部栏的 Tab 栏 ═══
+  // Tab 栏：结构/尺寸/材质/指示器/点击行为与 Index.build 中的 HdsTabs 完全一致，
   //   仅把页面级状态（currentIndex）替换为预览态（previewTabIndex）；
-  //   磨砂走 barBackgroundBlurStyle 系统档位（0/30/50 分档跳变，与真机一致，无法连续）
-  // 播控条：复刻 Index.playerControl 空播状态的完整材质链（backgroundEffect 连续磨砂，
-  //   半径 = 强度 × 0.5，与真机同公式），滑杆拖动时由它提供连续实时反馈
+  //   磨砂走 barBackgroundEffect 连续半径（半径 = 强度 × 0.5，与 Index 磨砂层同公式），
+  //   「模糊强度」滑杆拖动时预览 Tab 栏磨砂实时连续变化
   // 预览卡片内禁止放置任何设置项（滑块均已拆为独立设置项卡片），调节任一相关设置时实时反映效果。
 
   // 解析「底部栏触摸指示」实际生效值：
@@ -308,9 +305,10 @@ struct SettingsDetailPage {
       .scrollable(true)
       .barBackgroundColor(Color.Transparent)
       .barFloatingStyle(this.getPreviewBarFloatingStyle())
-      // 经典模式：barFloatingStyle 不含 systemMaterialEffect → TabBar 走磨砂兜底（与 Index 完全一致）
-      // 玻璃模式：barFloatingStyle 含 systemMaterialEffect（液态玻璃）→ 磨砂关闭
-      .barBackgroundBlurStyle(this.getPreviewBarBackgroundBlur())
+      // 经典模式：barFloatingStyle 不含 systemMaterialEffect → TabBar 走 barBackgroundEffect 连续磨砂，
+      //   半径随「模糊强度」滑杆实时变化（拖动即反馈）
+      // 玻璃模式：barFloatingStyle 含 systemMaterialEffect（液态玻璃）→ 磨砂关闭（radius 0，与真机一致）
+      .barBackgroundEffect(this.getPreviewBarBackgroundEffect())
       .animationDuration(StyleConstants.ANIMATION_SWIPER_DURATION)
       .onChange((index: number) => {
         this.switchPreviewTab(index)
@@ -355,100 +353,13 @@ struct SettingsDetailPage {
     } as HdsTabsFloatingStyle
   }
 
-  private getPreviewBarBackgroundBlur(): BlurStyle {
-    if (this.settings.tabStyle !== 'immersive' || !isLiquidGlassAvailable()) {
-      if (this.glassBlurStrength <= 0) {
-        return BlurStyle.NONE
-      }
-      if (this.glassBlurStrength <= 30) {
-        return BlurStyle.Thin
-      }
-      if (this.glassBlurStrength <= 50) {
-        return BlurStyle.Regular
-      }
-      return BlurStyle.Thick
+  // Tab 栏磨砂半径：与 Index 磨砂层同公式（模糊强度 × 0.5），连续值，滑杆拖动时实时变化；
+  // 玻璃样式且设备支持液态玻璃时磨砂关闭（液态玻璃材质接管，与真机一致），radius 0 即无磨砂
+  private getPreviewBarBackgroundEffect(): BackgroundEffectOptions {
+    if (this.settings.tabStyle === 'immersive' && isLiquidGlassAvailable()) {
+      return { radius: 0 }
     }
-    return BlurStyle.NONE
-  }
-
-  // 播控条磨砂层挂载条件（与 Index.frostLayerEnabled 完全一致）：暗黑模式或模糊强度 0 时不挂载
-  private frostLayerEnabled(): boolean {
-    return !this.isDark() && this.glassBlurStrength > 0
-  }
-
-  // 与 Index.glassBlurRadius 同公式：模糊强度 × 0.5（连续值，滑杆拖动时实时变化）
-  private previewGlassBlurRadius(): number {
-    return this.glassBlurStrength * 0.5
-  }
-
-  // 与 Index.bottomBarGlassMaterial 同逻辑：经典样式返回 undefined（走 backgroundEffect 磨砂），
-  // 玻璃样式挂液态玻璃材质
-  private previewBottomBarMaterial(): uiMaterial.Material | undefined {
-    if (this.settings.tabStyle !== 'immersive') {
-      return undefined
-    }
-    return createBarGlassMaterial(DEFAULT_GLASS_STYLE, true)
-  }
-
-  // 播控条预览：复刻 Index.playerControl 未播放空态的完整材质链
-  // （backgroundEffect 连续磨砂 + systemMaterial 玻璃 + 圆角/边框/阴影），
-  // 「Tab栏与播控条模糊强度」滑杆拖动时磨砂半径连续变化，提供实时反馈
-  @Builder
-  previewMiniBar(): void {
-    Row({ space: this.scaledSize(20) }) {
-      Stack() {
-        Image($r('app.media.ic_public_music'))
-          .width(this.scaledSize(20))
-          .height(this.scaledSize(20))
-          .fillColor($r('app.color.player_icon_inactive_color'))
-      }
-      .width(this.scaledSize(32))
-      .height(this.scaledSize(32))
-      .borderRadius(this.scaledSize(16))
-
-      Column() {
-        Text('未播放')
-          .fontSize(this.scaledFont(11))
-          .fontColor($r('app.color.text_twenty_color'))
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-      }
-      .layoutWeight(1)
-      .margin({ left: this.scaledSize(8), right: this.scaledSize(8) })
-
-      Image($r('app.media.ic_public_play_last'))
-        .height(this.scaledSize(18))
-        .fillColor($r('app.color.player_icon_inactive_color'))
-      Image($r('app.media.ic_public_pause'))
-        .height(this.scaledSize(22))
-        .fillColor($r('app.color.player_icon_inactive_color'))
-      Image($r('app.media.ic_public_play_next'))
-        .height(this.scaledSize(18))
-        .fillColor($r('app.color.player_icon_inactive_color'))
-    }
-    .constraintSize({ maxWidth: '80%' })
-    .height(this.scaledSize(44))
-    .alignSelf(ItemAlign.Center)
-    .padding({
-      left: this.scaledSize(12),
-      right: this.scaledSize(16),
-      top: this.scaledSize(2),
-      bottom: this.scaledSize(2)
-    })
-    .backgroundColor(Color.Transparent)
-    .backgroundEffect(this.frostLayerEnabled() ? {
-      radius: this.previewGlassBlurRadius()
-    } : undefined)
-    .systemMaterial(this.previewBottomBarMaterial())
-    .border({
-      width: 1, color: 'rgba(255,255,255,0.22)'
-    })
-    .borderRadius(this.scaledSize(22))
-    .shadow({
-      radius: 50,
-      color: $r('app.color.shadow_color'),
-      offsetY: 5
-    })
+    return { radius: this.glassBlurStrength * 0.5 }
   }
 
   @Builder
@@ -499,7 +410,7 @@ struct SettingsDetailPage {
   }
 
   // 预览容器：彩色渐变底衬 + 示例文字（模拟页面内容，让磨砂/液态玻璃的透视效果可见），
-  // 播控条 + Tab 栏自上而下叠放悬浮其上（对应真机小屏底部布局）；随底部栏样式设置切换经典/玻璃两种真实形态
+  // Tab 栏悬浮其上；随底部栏样式设置切换经典/玻璃两种真实形态
   @Builder
   tabBarLivePreview(): void {
     Stack({ alignContent: Alignment.Center }) {
@@ -515,13 +426,10 @@ struct SettingsDetailPage {
       }
       .alignItems(HorizontalAlign.Center)
 
-      Column({ space: this.scaledSize(6) }) {
-        this.previewMiniBar()
-        this.previewTabBar()
-      }
+      this.previewTabBar()
     }
     .width('100%')
-    .height(this.scaledSize(136))
+    .height(this.scaledSize(104))
     .borderRadius(this.scaledSize(12))
     .linearGradient({
       angle: 135,
@@ -1325,7 +1233,7 @@ struct SettingsDetailPage {
               Blank()
             }
             .width('100%')
-            Text('控制底部 Tab 栏与播控条的磨砂模糊半径：播控条随滑杆连续变化，Tab 栏按系统档位在 30/50 处跳变；暗黑模式下磨砂层不启用。')
+            Text('控制底部 Tab 栏与迷你播控条的磨砂模糊半径；暗黑模式下磨砂层不启用。')
               .fontSize(this.scaledFont(12))
               .fontColor(this.settingSubTextColor())
               .width('100%')
