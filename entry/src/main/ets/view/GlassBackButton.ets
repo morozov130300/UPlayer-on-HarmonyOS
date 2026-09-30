@@ -95,8 +95,8 @@ export struct GlassBackButton {
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
       .backgroundColor(Color.Transparent)
-      // 磨砂层只由「模糊强度」控制（0 关闭），暗黑模式不挂，与 Tab 栏策略一致
-      .backgroundEffect(this.isDarkTheme() || this.glassBlurStrength <= 0
+      // 磨砂层只由「模糊强度」控制（0 关闭），明暗模式均挂载，与 Tab 栏策略一致
+      .backgroundEffect(this.glassBlurStrength <= 0
         ? undefined : { radius: this.glassBlurStrength * 0.5 })
       .systemMaterial(this.backMaterial())
       .border({ width: 1, color: 'rgba(255,255,255,0.22)' })

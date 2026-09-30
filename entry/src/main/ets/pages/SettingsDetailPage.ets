@@ -1,24 +1,16 @@
 // ArkUI 26 Beta1: 接口定义变更（误报，本项目已是Stage模型）+ UX视觉布局变更（Text默认开启沉浸式材质，系统行为）
 import { curves, uiAppearance } from '@kit.ArkUI'
-import { HdsTabs, HdsTabsController, HdsTabsFloatingStyle, hdsMaterial } from '@kit.UIDesignKit'
+import { hdsMaterial, HdsTabs, HdsTabsController, HdsTabsFloatingStyle } from '@kit.UIDesignKit'
 import { common, ConfigurationConstant } from '@kit.AbilityKit'
-import { DataService, AppSettingsData } from '../service/DataService'
+import { AppSettingsData, DataService } from '../service/DataService'
 import { AVPlayerService } from '../service/AVPlayerService'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import Logger from '../common/utils/Logger'
-import { deviceInfo, SuppressWarnings, SuppressWarningsType, pasteboard } from '@kit.BasicServicesKit'
-import {
-  HoldingHandService,
-  KEY_HOLDING_HAND_ENABLED,
-  KEY_HOLDING_HAND_LEFT
-} from '../service/HoldingHandService'
+import { deviceInfo, pasteboard, SuppressWarnings, SuppressWarningsType } from '@kit.BasicServicesKit'
+import { HoldingHandService, KEY_HOLDING_HAND_ENABLED, KEY_HOLDING_HAND_LEFT } from '../service/HoldingHandService'
 import { ColorConversion } from '../common/utils/ColorConversion'
-import {
-  isLiquidGlassAvailable,
-  showToastGlassMaterial,
-  topBlurRadiusFromStrength
-} from '../common/utils/GlassUtil'
+import { isLiquidGlassAvailable, showToastGlassMaterial, topBlurRadiusFromStrength } from '../common/utils/GlassUtil'
 import { StyleConstants } from '../common/constants/StyleConstants'
 import { KEY_HAS_POINTER_DEVICE, refreshPointerDeviceState } from '../common/utils/InputDeviceUtil'
 import { GlassBackButton } from '../view/GlassBackButton'
@@ -54,11 +46,11 @@ interface TouchIndicatorOption {
 
 @Entry
 @Component
-@SuppressWarnings({rules: [SuppressWarningsType.SYSCAP]})
+@SuppressWarnings({ rules: [SuppressWarningsType.SYSCAP] })
 struct SettingsDetailPage {
-  private context: common.UIAbilityContext
-    | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
   @State settings: AppSettingsData = new AppSettingsData()
+  // 初始值根据当前样式和设备能力计算：新设备玻璃样式隐藏，其他情况显示
+  @State showClassicBlurStrength: boolean = !(isLiquidGlassAvailable() && this.settings.tabStyle === 'immersive')
   @StorageLink(KEY_PRIMARY_COLOR) primaryColor: string = '#007DFF'
   @StorageLink('uplayer_theme_mode') themeMode: string = 'system'
   @StorageLink(AppStorageKeyConstants.KEY_TITLE_BUTTON_WIDTH) titleButtonWidth: number = 0
@@ -70,15 +62,11 @@ struct SettingsDetailPage {
   @StorageLink('uplayer_home_top_blur_strength') homeTopBlurStrength: number = 25
   @StorageLink('uplayer_tab_indicator_opacity') tabIndicatorOpacity: number = 50
   // 经典样式下隐藏"Tab栏与播控条模糊强度"：用动画过渡避免突兀
-  // 初始值根据当前样式和设备能力计算：新设备玻璃样式隐藏，其他情况显示
-  @State showClassicBlurStrength: boolean = !(isLiquidGlassAvailable() && this.settings.tabStyle === 'immersive')
-  // Tab 栏实时预览：直接使用 HdsTabs 系统组件，与 Index 完全一致的渲染管线
-  private previewTabsController: HdsTabsController = new HdsTabsController()
-  // 是否存在鼠标/触控板设备（决定「白色蒙版」开关是否显示）。
-  // 检测结果由 InputDeviceUtil 写入 AppStorage（无动画作用域），芯片显隐改读镜像值，
   // 由 @Watch 包进统一触发动画后翻转，芯片增删才会播放统一显隐过渡
   @StorageLink(KEY_HAS_POINTER_DEVICE) @Watch('onPointerDeviceChange') hasPointerDevice: boolean = false
   @State maskChipVisible: boolean = false
+  // 是否存在鼠标/触控板设备（决定「白色蒙版」开关是否显示）。
+  // 检测结果由 InputDeviceUtil 写入 AppStorage（无动画作用域），芯片显隐改读镜像值，
   @State pageTitle: string = ''
   // 顶部模糊预览的靠边方向：左手握持 → 靠右（沿用原有映射，由 HoldingHandService 统一滤波后广播）
   @StorageLink(KEY_HOLDING_HAND_LEFT) previewOnRight: boolean = false
@@ -90,21 +78,25 @@ struct SettingsDetailPage {
   @State pickerSaturation: number = 1
   @State pickerValue: number = 1
   @State pickerOriginalColor: string = '#007DFF'
-  private eqCurveSettings: RenderingContextSettings = new RenderingContextSettings(true)
-  private eqCurveCtx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.eqCurveSettings)
-  private eqCanvasWidth: number = 0
-  private eqCanvasHeight: number = 0
-  private dataService: DataService = DataService.getInstance()
-  private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
-  // 返回按钮玻璃材质只在「Navigation 标题栏」生效区渲染；用一个空路由栈把本页套进
-  // Navigation 仅为取得玻璃生效区，实际返回仍走 router（GlassBackButton.onBack）
-  private navStack: NavPathStack = new NavPathStack()
-  private isPC: boolean = deviceInfo.deviceType === '2in1'
-  // 智感握姿开关：写穿到 AppStorage（HoldingHandService 在页面外也要读开关），
   // 滤波与订阅统一交给 HoldingHandService，本页不再自行订阅 holdingHandChanged
   @StorageLink(KEY_HOLDING_HAND_ENABLED) holdingHandEnabled: boolean = true
   // 设备是否支持智感握姿能力（检测失败时隐藏该设置项）
   @State holdingHandSupported: boolean = true
+  private context: common.UIAbilityContext
+    | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
+  // Tab 栏实时预览：直接使用 HdsTabs 系统组件，与 Index 完全一致的渲染管线
+  private previewTabsController: HdsTabsController = new HdsTabsController()
+  private eqCurveSettings: RenderingContextSettings = new RenderingContextSettings(true)
+  private eqCurveCtx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.eqCurveSettings)
+  private eqCanvasWidth: number = 0
+  private eqCanvasHeight: number = 0
+  // 返回按钮玻璃材质只在「Navigation 标题栏」生效区渲染；用一个空路由栈把本页套进
+  private dataService: DataService = DataService.getInstance()
+  private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
+  // 智感握姿开关：写穿到 AppStorage（HoldingHandService 在页面外也要读开关），
+  // Navigation 仅为取得玻璃生效区，实际返回仍走 router（GlassBackButton.onBack）
+  private navStack: NavPathStack = new NavPathStack()
+  private isPC: boolean = deviceInfo.deviceType === '2in1'
   private themeOptions: ThemeOption[] = [
     { label: '跟随系统', value: 'system' },
     { label: '深色模式', value: 'dark' },
@@ -121,36 +113,7 @@ struct SettingsDetailPage {
     { label: '白色蒙版', value: 'mask' },
     { label: '跟手光效', value: 'light' }
   ]
-
   // ═══ 设置项显隐统一动画（所有条件显隐的设置卡片/选项必须完全一致，禁止各自定义）═══
-  // 过渡规格：出现/消失对称的「淡入淡出 + 缩放 0.95」
-  private settingCardTransition(): TransitionEffect {
-    return TransitionEffect.OPACITY.combine(TransitionEffect.scale({ x: 0.95, y: 0.95 }))
-  }
-
-  // 触发动画：与本页其他交互动画同一条弹簧曲线；
-  // 任何驱动设置项增删的状态变化都必须包进本方法，否则过渡不会播放
-  private animateSettingChange(change: () => void): void {
-    this.getUIContext()?.animateTo({ curve: curves.springMotion(0.4, 0.8) }, change)
-  }
-
-  // 指针设备检测结果变化：包进统一触发动画后翻转「白色蒙版」芯片显隐镜像值
-  onPointerDeviceChange(): void {
-    if (this.maskChipVisible === this.hasPointerDevice) {
-      return
-    }
-    this.animateSettingChange(() => {
-      this.maskChipVisible = this.hasPointerDevice
-    })
-  }
-
-  // 根据鼠标检测结果过滤选项：无鼠标/触控板设备时隐藏「白色蒙版」（镜像值翻转带统一显隐动画）
-  private visibleTouchIndicatorOptions(): TouchIndicatorOption[] {
-    if (this.maskChipVisible) {
-      return this.touchIndicatorOptions
-    }
-    return [this.touchIndicatorOptions[0], this.touchIndicatorOptions[2]]
-  }
   private colorOptions: ThemeColorOption[] = [
     { name: '鸿蒙蓝', value: '#007DFF' },
     { name: '绯霞红', value: '#FF3B30' },
@@ -161,6 +124,7 @@ struct SettingsDetailPage {
     { name: '沉浸靛', value: '#5856D6' },
     { name: '紫罗兰', value: '#AF52DE' }
   ]
+  // 触发动画：与本页其他交互动画同一条弹簧曲线；
   private eqBands: EqBandInfo[] = [
     { freq: '32', index: 0 }, { freq: '64', index: 1 }, { freq: '125', index: 2 },
     { freq: '250', index: 3 }, { freq: '500', index: 4 }, { freq: '1k', index: 5 },
@@ -172,6 +136,21 @@ struct SettingsDetailPage {
     'playback': '播放',
     'audio': '音效',
     'about': '关于'
+  }
+  // 仓库地址由 SSH 地址 git@github.com:morozov130300/UPlayer-on-HarmonyOS.git 转出的 HTTPS 网址
+  private aboutRepoUrl: string = 'https://github.com/morozov130300/UPlayer-on-HarmonyOS'
+  private aboutEmail: string = 'jhy130300@126.com'
+  private aboutQq: string = '3500873394'
+  private aboutVersionName: string = '0.0.1'
+
+  // 指针设备检测结果变化：包进统一触发动画后翻转「白色蒙版」芯片显隐镜像值
+  onPointerDeviceChange(): void {
+    if (this.maskChipVisible === this.hasPointerDevice) {
+      return
+    }
+    this.animateSettingChange(() => {
+      this.maskChipVisible = this.hasPointerDevice
+    })
   }
 
   aboutToAppear(): void {
@@ -198,6 +177,10 @@ struct SettingsDetailPage {
     }
   }
 
+  // 预览器说明：
+  //   - homeTopBlurPreview：渐变模糊 (linearGradientBlur) 方块，随「首页上端模糊强度」变化
+  //   - tabBarLivePreview：真实 Tab 栏实时预览（复刻 Index），只负责预览效果、不携带任何设置项，
+
   aboutToDisappear(): void {
     if (this.showColorPicker) {
       this.settings.primaryColor = this.pickerOriginalColor
@@ -207,9 +190,15 @@ struct SettingsDetailPage {
     // 监听不随本页销毁而退订：首页加号仍在用同一份握姿结果（由 EntryAbility 按前后台与开关同步订阅）
   }
 
-  // 预览器说明：
-  //   - homeTopBlurPreview：渐变模糊 (linearGradientBlur) 方块，随「首页上端模糊强度」变化
-  //   - tabBarLivePreview：真实 Tab 栏实时预览（复刻 Index），只负责预览效果、不携带任何设置项，
+  // ═══ 底部栏实时预览：复刻 Index 真实底部栏的 Tab 栏 ═══
+  // Tab 栏：结构/尺寸/材质/指示器/点击行为与 Index.build 中的 HdsTabs 完全一致，
+  //   仅把页面级状态（currentIndex）替换为预览态（previewTabIndex）；
+  //   磨砂走 barBackgroundEffect 连续半径（半径 = 强度 × 0.5，与 Index 磨砂层同公式），
+  //   「模糊强度」滑杆拖动时预览 Tab 栏磨砂实时连续变化
+  // 预览卡片内禁止放置任何设置项（滑块均已拆为独立设置项卡片），调节任一相关设置时实时反映效果。
+
+  // 解析「底部栏触摸指示」实际生效值：
+
   //     随各独立设置项（Tab栏与播控条模糊强度 / Tab 指示器不透明度 / 组件风格等）实时变化
   @Builder
   homeTopBlurPreview(): void {
@@ -248,44 +237,7 @@ struct SettingsDetailPage {
     .clip(true)
   }
 
-  // ═══ 底部栏实时预览：复刻 Index 真实底部栏的 Tab 栏 ═══
-  // Tab 栏：结构/尺寸/材质/指示器/点击行为与 Index.build 中的 HdsTabs 完全一致，
-  //   仅把页面级状态（currentIndex）替换为预览态（previewTabIndex）；
-  //   磨砂走 barBackgroundEffect 连续半径（半径 = 强度 × 0.5，与 Index 磨砂层同公式），
-  //   「模糊强度」滑杆拖动时预览 Tab 栏磨砂实时连续变化
-  // 预览卡片内禁止放置任何设置项（滑块均已拆为独立设置项卡片），调节任一相关设置时实时反映效果。
-
-  // 解析「底部栏触摸指示」实际生效值：
-  // 设备无鼠标/触控板时「白色蒙版」功能不存在，mask 值降级为 off（开关本身已隐藏）
-  private effectiveTouchIndicator(): string {
-    if (this.settings.tabTouchIndicator === 'mask' && !this.hasPointerDevice) {
-      return 'off'
-    }
-    return this.settings.tabTouchIndicator
-  }
-
   // 设置页顶部带模糊半径：统一走 GlassUtil 的分段函数（先正比例、到 60 后恒定，临界处无缝相接），
-  // 与首页上端 glassBlurRadius 是同一个函数、同一份取值，禁止在本文件重写公式
-  private topBlurRadius(): number {
-    return topBlurRadiusFromStrength(this.homeTopBlurStrength)
-  }
-
-  // 顶部标题带高度：与本页标题栏（返回按钮 + 页面标题）等高
-  private titleBandHeight(): number {
-    return Math.max(56, this.titleButtonHeight) + (this.isPC ? 0 : this.topSafeHeight)
-  }
-
-  // 与 Index.selectedTabContentColor 同逻辑
-  private previewTabContentColor(): ResourceColor {
-    return this.isDark() ? '#FFFFFF' : ColorHelper.darken(this.primaryColor, 0.35)
-  }
-
-  // 预览内点击 Tab：联动 previewTabIndex（与 Index.onChange 同一弹簧动画，保持预览与真机行为一致）
-  private switchPreviewTab(index: number): void {
-    this.getUIContext()?.animateTo({ curve: curves.springMotion(0.4, 0.8) }, () => {
-      this.previewTabIndex = index
-    })
-  }
 
   @Builder
   previewTabBar(): void {
@@ -319,47 +271,6 @@ struct SettingsDetailPage {
     .width('100%')
     .height(this.scaledSize(72))
     .alignSelf(ItemAlign.Center)
-  }
-
-  private getPreviewBarFloatingStyle(): HdsTabsFloatingStyle {
-    const useLight: boolean = this.effectiveTouchIndicator() === 'light'
-    const lightColor: ResourceColor | undefined = useLight
-      ? (this.isDark() ? '#FFFFFF' : this.primaryColor)
-      : undefined
-    const previewBarWidth: number = 228
-    // 预览器垂直居中：栏在 72vp 预览带内上下居中，边距随显示大小缩放（栏高 scaledSize(44)）
-    const previewBarBottomMargin: number = (this.scaledSize(72) - this.scaledSize(44)) / 2
-    if (this.settings.tabStyle === 'immersive' && isLiquidGlassAvailable()) {
-      return {
-        adaptToHandedness: false,
-        gradientMask: { maskColor: 'rgba(0,0,0,0)', maskHeight: 0 },
-        systemMaterialEffect: {
-          materialType: hdsMaterial.MaterialType.IMMERSIVE,
-          materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE,
-        },
-        barBottomMargin: previewBarBottomMargin,
-        barSideMargin: 0,
-        lightColor: lightColor,
-        barWidth: { smallWidth: previewBarWidth, mediumWidth: previewBarWidth, largeWidth: previewBarWidth },
-      } as HdsTabsFloatingStyle
-    }
-    return {
-      adaptToHandedness: false,
-      gradientMask: { maskColor: 'rgba(0,0,0,0)', maskHeight: 0 },
-      barBottomMargin: previewBarBottomMargin,
-      barSideMargin: 0,
-      lightColor: lightColor,
-      barWidth: { smallWidth: previewBarWidth, mediumWidth: previewBarWidth, largeWidth: previewBarWidth },
-    } as HdsTabsFloatingStyle
-  }
-
-  // Tab 栏磨砂半径：与 Index 磨砂层同公式（模糊强度 × 0.5），连续值，滑杆拖动时实时变化；
-  // 玻璃样式且设备支持液态玻璃时磨砂关闭（液态玻璃材质接管，与真机一致），radius 0 即无磨砂
-  private getPreviewBarBackgroundEffect(): BackgroundEffectOptions {
-    if (this.settings.tabStyle === 'immersive' && isLiquidGlassAvailable()) {
-      return { radius: 0 }
-    }
-    return { radius: this.glassBlurStrength * 0.5 }
   }
 
   @Builder
@@ -403,13 +314,12 @@ struct SettingsDetailPage {
             $r('app.color.tab_content_secondary'))
           .margin({ top: this.scaledSize(3) })
       }.width(this.scaledSize(72)).height(this.scaledSize(36)).justifyContent(FlexAlign.Center)
-        .offset({ y: 2 })
+      .offset({ y: 2 })
     }
     .width(this.scaledSize(72))
     .height(this.scaledSize(36))
   }
 
-  // 预览容器：彩色渐变底衬 + 示例文字（模拟页面内容，让磨砂/液态玻璃的透视效果可见），
   // Tab 栏悬浮其上；随底部栏样式设置切换经典/玻璃两种真实形态
   @Builder
   tabBarLivePreview(): void {
@@ -443,56 +353,6 @@ struct SettingsDetailPage {
     .clip(true)
   }
 
-  private indicatorAlpha(base: number): number {
-    const opacity: number = this.tabIndicatorOpacity / 100
-    return Math.round(base * opacity * 255)
-  }
-
-  private indicatorGradientColor(base: number): ResourceColor {
-    return ColorHelper.hexWithAlpha(this.primaryColor, this.indicatorAlpha(base)
-      .toString(16)
-      .padStart(2, '0'))
-  }
-
-  // 与 Index.tabSlotWidth 同逻辑：barWidth(228vp) 均分 3 个页签
-  private previewTabSlotWidth(): number {
-    return this.scaledSize(228) / 3
-  }
-
-  private isDark(): boolean {
-    if (this.themeMode === 'dark') {
-      return true
-    }
-    if (this.themeMode === 'system') {
-      try {
-        return uiAppearance.getDarkMode() === uiAppearance.DarkMode.ALWAYS_DARK
-      } catch (e) {
-        return false
-      }
-    }
-    return false
-  }
-
-  private settingTextColor(): ResourceColor {
-    return this.isDark() ? '#FFFFFF' : ColorHelper.darken(this.primaryColor, 0.35)
-  }
-
-  private settingSubTextColor(): ResourceColor {
-    return this.isDark() ? ColorHelper.hexWithAlpha('#FFFFFF', '88') : ColorHelper.darken(this.primaryColor, 0.3)
-  }
-
-  private settingInactiveTextColor(): ResourceColor {
-    return this.isDark() ? ColorHelper.hexWithAlpha('#FFFFFF', '99') : ColorHelper.darken(this.primaryColor, 0.4)
-  }
-
-  private scaledFont(size: number): number {
-    return Math.round(size * this.fontSizeScale)
-  }
-
-  private scaledSize(size: number): number {
-    return Math.round(size * this.displaySizeScale)
-  }
-
   updateSetting(): void {
     this.dataService.saveSettings(this.settings)
   }
@@ -523,6 +383,8 @@ struct SettingsDetailPage {
     AppStorage.setOrCreate('uplayer_tab_style', style)
   }
 
+  // Tab 栏磨砂半径：与 Index 磨砂层同公式（模糊强度 × 0.5），连续值，滑杆拖动时实时变化；
+
   applyThemeMode(mode: string): void {
     if (this.context === undefined) {
       return
@@ -547,38 +409,7 @@ struct SettingsDetailPage {
     AppStorage.setOrCreate(KEY_PRIMARY_COLOR, color)
   }
 
-  private currentPickerColor(): string {
-    return ColorHelper.hsvToHex(this.pickerHue, this.pickerSaturation, this.pickerValue)
-  }
-
-  private hueColor(): string {
-    return ColorHelper.hsvToHex(this.pickerHue, 1, 1)
-  }
-
-  private openColorPicker(): void {
-    const hsv = ColorHelper.hexToHsv(this.settings.primaryColor)
-    this.pickerOriginalColor = this.settings.primaryColor
-    this.pickerHue = hsv.h
-    this.pickerSaturation = hsv.s
-    this.pickerValue = hsv.v
-    this.showColorPicker = true
-  }
-
-  private updatePickerColor(): void {
-    this.settings.primaryColor = this.currentPickerColor()
-    this.primaryColor = this.currentPickerColor()
-  }
-
-  private cancelColorPicker(): void {
-    this.settings.primaryColor = this.pickerOriginalColor
-    this.primaryColor = this.pickerOriginalColor
-    this.showColorPicker = false
-  }
-
-  private confirmColorPicker(): void {
-    this.setPrimaryColor(this.currentPickerColor())
-    this.showColorPicker = false
-  }
+  // 预览容器：彩色渐变底衬 + 示例文字（模拟页面内容，让磨砂/液态玻璃的透视效果可见），
 
   onSpeedChange(value: number, mode: SliderChangeMode): void {
     this.settings.playSpeed = 0.5 + value / 100
@@ -616,7 +447,7 @@ struct SettingsDetailPage {
       .opacity(0)
   }
 
-    build() {
+  build() {
     // 套一层 Navigation：返回按钮的玻璃材质只在「Navigation 标题栏」生效区渲染。
     // BarStyle.STACK 让内容区延伸到标题栏底下（保持原有全屏/沉浸式布局），
     // 标题栏用自定义构建器放 GlassBackButton（自带 systemMaterial，进生效区即出玻璃）+ 标题。
@@ -642,8 +473,10 @@ struct SettingsDetailPage {
                 .width('100%')
                 .constraintSize({ minWidth: 0, maxWidth: '100%' })
                 .padding({
-                  left: this.scaledSize(12), right: this.scaledSize(12),
-                  top: this.scaledSize(5) + this.titleBandHeight(), bottom: this.scaledSize(40)
+                  left: this.scaledSize(12),
+                  right: this.scaledSize(12),
+                  top: this.scaledSize(5) + this.titleBandHeight(),
+                  bottom: this.scaledSize(40)
                 })
               }
               .width('100%')
@@ -692,7 +525,6 @@ struct SettingsDetailPage {
     })
   }
 
-  // 玻璃标题栏：返回按钮（自带 systemMaterial，处于 Navigation 标题栏生效区内 → 出真玻璃）+ 标题。
   // 右侧预留 PC 窗口标题按钮区（titleButtonWidth + 12），沿用原 titleBand 的避让逻辑。
   @Builder
   glassTitleBar() {
@@ -726,7 +558,6 @@ struct SettingsDetailPage {
     .backgroundColor(Color.Transparent)
   }
 
-  // 顶部标题带：与首页上端完全同款的渐变模糊层（先正比例后恒定）+ 主题色渐变着色层，
   // 标题带浮在滚动内容之上，内容滚动到其下方时被模糊；经典/玻璃两种 Tab 风格下均启用
   @Builder
   titleBand(): void {
@@ -760,7 +591,6 @@ struct SettingsDetailPage {
     .zIndex(2)
   }
 
-  // 一级标题（用于把同类设置项聚合在一起，可选带右上角「问号」角标以引出说明弹窗）
   // helpIconLabel 非空时，问号图标紧跟文字
   @Builder
   groupTitle(title: string, helpIconLabel?: string): void {
@@ -823,7 +653,8 @@ struct SettingsDetailPage {
       this.scopeLine('• 右下角播控条')
       this.scopeLine('• 顶部的模糊层（首页顶部标题区，覆盖首页第一屏）')
       this.scopeLine('• 首页 / 歌单 / 设置 / 设置详情 四个一级页面的顶层背景（仅档位与材质在此生效）')
-      this.scopeLine('• 操作时屏幕底部短暂弹出的文字提示浮层（如切换播放模式时的"随机播放"）——设备支持液态玻璃时固定使用液态玻璃材质')
+      this.scopeLine(
+        '• 操作时屏幕底部短暂弹出的文字提示浮层（如切换播放模式时的"随机播放"）——设备支持液态玻璃时固定使用液态玻璃材质')
 
       Text('以下位置不使用玻璃效果：')
         .fontSize(this.scaledFont(12))
@@ -863,9 +694,10 @@ struct SettingsDetailPage {
   @Builder
   buildCustomizeSection(): void {
     Column({ space: this.scaledSize(10) }) {
-      Row(){
+      Row() {
         this.groupTitle('全局')
       }
+
       Column() {
         this.toggleRow('向下滑动时隐藏加号按钮', this.settings.plusButtonScrollHide, (val: boolean) => {
           this.settings.plusButtonScrollHide = val
@@ -879,36 +711,37 @@ struct SettingsDetailPage {
 
       // 智感握姿（设备不支持时隐藏）
       if (this.holdingHandSupported) {
-      Row() {
-        Column({ space: this.scaledSize(6) }) {
-          Text('智感握姿')
-            .fontSize(this.scaledFont(14))
-            .fontColor(this.settingTextColor())
-            .fontWeight(FontWeight.Medium)
-          Text('根据单手握持方向自动调整首页顶部预览与控件靠左/靠右。')
-            .fontSize(this.scaledFont(12))
-            .fontColor(this.settingSubTextColor())
+        Row() {
+          Column({ space: this.scaledSize(6) }) {
+            Text('智感握姿')
+              .fontSize(this.scaledFont(14))
+              .fontColor(this.settingTextColor())
+              .fontWeight(FontWeight.Medium)
+            Text('根据单手握持方向自动调整首页顶部预览与控件靠左/靠右。')
+              .fontSize(this.scaledFont(12))
+              .fontColor(this.settingSubTextColor())
+          }
+          .layoutWeight(1)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Start)
+
+          Toggle({ type: ToggleType.Switch, isOn: this.settings.holdingHandEnabled })
+            .selectedColor(this.primaryColor)
+            .alignSelf(ItemAlign.Center)
+            .onChange((isOn: boolean) => {
+              this.settings.holdingHandEnabled = isOn
+              // 写穿到 AppStorage 后由共享服务按新开关重新订阅/退订
+              this.holdingHandEnabled = isOn
+              this.updateSetting()
+              HoldingHandService.getInstance().syncWithSetting()
+            })
         }
-        .layoutWeight(1)
-        .justifyContent(FlexAlign.Center)
-        .alignItems(HorizontalAlign.Start)
-        Toggle({ type: ToggleType.Switch, isOn: this.settings.holdingHandEnabled })
-          .selectedColor(this.primaryColor)
-          .alignSelf(ItemAlign.Center)
-          .onChange((isOn: boolean) => {
-            this.settings.holdingHandEnabled = isOn
-            // 写穿到 AppStorage 后由共享服务按新开关重新订阅/退订
-            this.holdingHandEnabled = isOn
-            this.updateSetting()
-            HoldingHandService.getInstance().syncWithSetting()
-          })
-      }
-      .width('100%')
-      .height(this.scaledSize(52))
-      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(this.scaledSize(10))
-      .transition(this.settingCardTransition())
+        .width('100%')
+        .height(this.scaledSize(52))
+        .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+        .borderRadius(this.scaledSize(10))
+        .transition(this.settingCardTransition())
       }
 
       Column() {
@@ -930,7 +763,8 @@ struct SettingsDetailPage {
               top: this.scaledSize(5),
               bottom: this.scaledSize(5)
             })
-            .backgroundColor(this.settings.themeMode === opt.value ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+            .backgroundColor(this.settings.themeMode === opt.value ? this.primaryColor :
+              ColorHelper.hexToRgba(this.primaryColor, 0.08))
             .borderRadius(this.scaledSize(14))
             .animation({ duration: 200, curve: Curve.EaseInOut })
             .onClick(() => {
@@ -955,6 +789,7 @@ struct SettingsDetailPage {
             Blank()
           }
           .width('100%')
+
           Text('控制首页顶部标题区玻璃模糊的渐变强度。')
             .fontSize(this.scaledFont(12))
             .fontColor(this.settingSubTextColor())
@@ -1013,6 +848,7 @@ struct SettingsDetailPage {
         })
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
         .borderRadius(this.scaledSize(10))
+
         // 「Tab栏与播控条模糊强度」「Tab 指示器不透明度」是「高级样式」组的独立设置项卡片，
         // Tab 实时预览卡片只负责预览效果、不携带任何设置项
       }
@@ -1024,6 +860,7 @@ struct SettingsDetailPage {
           Blank()
         }
         .width('100%')
+
         Grid() {
           ForEach(this.colorOptions, (option: ThemeColorOption) => {
             GridItem() {
@@ -1044,7 +881,12 @@ struct SettingsDetailPage {
               }
               .width('100%')
               .height(this.scaledSize(42))
-              .padding({ left: this.scaledSize(8), right: this.scaledSize(8), top: this.scaledSize(4), bottom: this.scaledSize(4) })
+              .padding({
+                left: this.scaledSize(8),
+                right: this.scaledSize(8),
+                top: this.scaledSize(4),
+                bottom: this.scaledSize(4)
+              })
               .margin({ bottom: this.scaledSize(4) })
               .borderRadius(this.scaledSize(10))
               .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
@@ -1066,7 +908,8 @@ struct SettingsDetailPage {
             .borderRadius(this.scaledSize(12))
             .backgroundColor(this.settings.primaryColor)
             .border({
-              width: !this.colorOptions.some((opt: ThemeColorOption) => opt.value === this.settings.primaryColor) ? 3 : 0,
+              width: !this.colorOptions.some((opt: ThemeColorOption) => opt.value === this.settings.primaryColor) ? 3 :
+                0,
               color: '#FFFFFF'
             })
           Text('自定义颜色')
@@ -1105,6 +948,7 @@ struct SettingsDetailPage {
           Blank()
         }
         .width('100%')
+
         Row() {
           Text('A')
             .fontSize(this.scaledFont(11))
@@ -1134,6 +978,7 @@ struct SettingsDetailPage {
           }
           .layoutWeight(1)
           .height(this.scaledSize(36))
+
           Text('A')
             .fontSize(this.scaledFont(20))
             .fontColor(this.settingTextColor())
@@ -1157,6 +1002,7 @@ struct SettingsDetailPage {
           Blank()
         }
         .width('100%')
+
         Row() {
           Text('小')
             .fontSize(this.scaledFont(11))
@@ -1186,6 +1032,7 @@ struct SettingsDetailPage {
           }
           .layoutWeight(1)
           .height(this.scaledSize(36))
+
           Text('大')
             .fontSize(this.scaledFont(14))
             .fontColor(this.settingTextColor())
@@ -1222,6 +1069,92 @@ struct SettingsDetailPage {
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
         .borderRadius(this.scaledSize(10))
 
+        Column() {
+          Row() {
+            Text('组件风格')
+              .fontSize(this.scaledFont(14))
+              .fontColor(this.settingTextColor())
+              .fontWeight(FontWeight.Medium)
+            Blank()
+            ForEach(this.tabStyleOptions, (opt: TabStyleOption) => {
+              Column() {
+                Text(opt.label)
+                  .fontSize(this.scaledFont(11))
+                  .fontColor(this.settings.tabStyle === opt.value ? '#FFFFFF' : this.settingInactiveTextColor())
+              }
+              .padding({
+                left: this.scaledSize(10),
+                right: this.scaledSize(10),
+                top: this.scaledSize(5),
+                bottom: this.scaledSize(5)
+              })
+              .backgroundColor(this.settings.tabStyle === opt.value ? this.primaryColor :
+                ColorHelper.hexToRgba(this.primaryColor, 0.08))
+              .borderRadius(this.scaledSize(14))
+              .animation({ duration: 200, curve: Curve.EaseInOut })
+              .onClick(() => {
+                this.setTabStyle(opt.value)
+              })
+            }, (opt: TabStyleOption) => opt.value)
+          }
+          .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+          .width('100%')
+          .height(this.scaledSize(44))
+          .alignItems(VerticalAlign.Center)
+        }
+        .width('100%')
+        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+        .borderRadius(this.scaledSize(10))
+
+        // 底部栏触摸指示：关 / 白色蒙版 / 跟手光效。
+        // 仅玻璃样式且设备支持液态玻璃时显示：触摸指示依赖液态玻璃材质，经典样式下不生效；
+        // 白色蒙版开关按鼠标检测结果动态显示/隐藏（见 visibleTouchIndicatorOptions）
+        if (isLiquidGlassAvailable() && this.settings.tabStyle === 'immersive') {
+          Column() {
+            Row() {
+              this.subTitleRow('底部栏触摸指示')
+              Blank()
+              ForEach(this.visibleTouchIndicatorOptions(), (opt: TouchIndicatorOption) => {
+                Column() {
+                  Text(opt.label)
+                    .fontSize(this.scaledFont(11))
+                    .fontColor(this.settings.tabTouchIndicator === opt.value
+                      ? '#FFFFFF' : this.settingInactiveTextColor())
+                }
+                .padding({
+                  left: this.scaledSize(10),
+                  right: this.scaledSize(10),
+                  top: this.scaledSize(5),
+                  bottom: this.scaledSize(5)
+                })
+                .backgroundColor(this.settings.tabTouchIndicator === opt.value
+                  ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+                .borderRadius(this.scaledSize(14))
+                .animation({ duration: 200, curve: Curve.EaseInOut })
+                .onClick(() => {
+                  this.settings.tabTouchIndicator = opt.value
+                  this.updateSetting()
+                  AppStorage.setOrCreate('uplayer_tab_touch_indicator', opt.value)
+                })
+                .transition(this.settingCardTransition())
+              }, (opt: TouchIndicatorOption) => opt.value)
+            }
+            .width('100%')
+            .constraintSize({ minWidth: 0, maxWidth: '100%' })
+            .alignItems(VerticalAlign.Center)
+            .padding({
+              left: this.scaledSize(14),
+              right: this.scaledSize(14),
+              top: this.scaledSize(10),
+              bottom: this.scaledSize(10)
+            })
+          }
+          .width('100%')
+          .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+          .borderRadius(this.scaledSize(10))
+          .transition(this.settingCardTransition())
+        }
+
         // 磨砂兜底模糊强度（独立设置项卡片）：
         // - 老设备：两种样式都显示（磨砂兜底始终生效）
         // - 新设备：仅经典样式显示（玻璃样式液态玻璃接管，磨砂层关闭）
@@ -1233,7 +1166,8 @@ struct SettingsDetailPage {
               Blank()
             }
             .width('100%')
-            Text('控制底部 Tab 栏与迷你播控条的磨砂模糊半径；暗黑模式下磨砂层不启用。')
+
+            Text('控制底部 Tab 栏与迷你播控条的磨砂模糊半径；明暗模式均生效，0 为关闭。')
               .fontSize(this.scaledFont(12))
               .fontColor(this.settingSubTextColor())
               .width('100%')
@@ -1289,6 +1223,7 @@ struct SettingsDetailPage {
             Blank()
           }
           .width('100%')
+
           Row({ space: this.scaledSize(12) }) {
             Text('浅')
               .fontSize(this.scaledFont(11))
@@ -1337,86 +1272,6 @@ struct SettingsDetailPage {
         // 玻璃效果生效范围：已通过一级标题右上角的小叹号引出弹窗说明
       }
       .width('100%')
-
-      Column() {
-        Row() {
-          Text('组件风格')
-            .fontSize(this.scaledFont(14))
-            .fontColor(this.settingTextColor())
-            .fontWeight(FontWeight.Medium)
-          Blank()
-          ForEach(this.tabStyleOptions, (opt: TabStyleOption) => {
-            Column() {
-              Text(opt.label)
-                .fontSize(this.scaledFont(11))
-                .fontColor(this.settings.tabStyle === opt.value ? '#FFFFFF' : this.settingInactiveTextColor())
-            }
-            .padding({
-              left: this.scaledSize(10),
-              right: this.scaledSize(10),
-              top: this.scaledSize(5),
-              bottom: this.scaledSize(5)
-            })
-            .backgroundColor(this.settings.tabStyle === opt.value ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
-            .borderRadius(this.scaledSize(14))
-            .animation({ duration: 200, curve: Curve.EaseInOut })
-            .onClick(() => {
-              this.setTabStyle(opt.value)
-            })
-          }, (opt: TabStyleOption) => opt.value)
-        }
-        .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-        .width('100%')
-        .height(this.scaledSize(44))
-        .alignItems(VerticalAlign.Center)
-      }
-      .width('100%')
-      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(this.scaledSize(10))
-
-      // 底部栏触摸指示：关 / 白色蒙版 / 跟手光效。
-      // 仅玻璃样式且设备支持液态玻璃时显示：触摸指示依赖液态玻璃材质，经典样式下不生效；
-      // 白色蒙版开关按鼠标检测结果动态显示/隐藏（见 visibleTouchIndicatorOptions）
-      if (isLiquidGlassAvailable() && this.settings.tabStyle === 'immersive') {
-      Column() {
-        Row() {
-          this.subTitleRow('底部栏触摸指示')
-          Blank()
-          ForEach(this.visibleTouchIndicatorOptions(), (opt: TouchIndicatorOption) => {
-            Column() {
-              Text(opt.label)
-                .fontSize(this.scaledFont(11))
-                .fontColor(this.settings.tabTouchIndicator === opt.value
-                  ? '#FFFFFF' : this.settingInactiveTextColor())
-            }
-            .padding({
-              left: this.scaledSize(10),
-              right: this.scaledSize(10),
-              top: this.scaledSize(5),
-              bottom: this.scaledSize(5)
-            })
-            .backgroundColor(this.settings.tabTouchIndicator === opt.value
-              ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
-            .borderRadius(this.scaledSize(14))
-            .animation({ duration: 200, curve: Curve.EaseInOut })
-            .onClick(() => {
-              this.settings.tabTouchIndicator = opt.value
-              this.updateSetting()
-              AppStorage.setOrCreate('uplayer_tab_touch_indicator', opt.value)
-            })
-            .transition(this.settingCardTransition())
-          }, (opt: TouchIndicatorOption) => opt.value)
-        }
-        .width('100%')
-        .constraintSize({ minWidth: 0, maxWidth: '100%' })
-        .alignItems(VerticalAlign.Center)
-        .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
-      }
-      .width('100%')
-      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(this.scaledSize(10))
-      .transition(this.settingCardTransition())
-      }
 
     }
     .width('100%')
@@ -1559,14 +1414,6 @@ struct SettingsDetailPage {
     .zIndex(50)
   }
 
-  private updateColorBoard(localX: number, localY: number): void {
-    const width: number = this.scaledSize(264)
-    const height: number = this.scaledSize(150)
-    this.pickerSaturation = Math.max(0, Math.min(1, localX / width))
-    this.pickerValue = 1 - Math.max(0, Math.min(1, localY / height))
-    this.updatePickerColor()
-  }
-
   @Builder
   buildPlaybackSection(): void {
     Column({ space: 10 }) {
@@ -1604,6 +1451,7 @@ struct SettingsDetailPage {
           Blank()
         }
         .width('100%')
+
         Row() {
           Text(this.settings.playSpeed.toFixed(1) + 'x')
             .fontSize(this.scaledFont(12))
@@ -1611,6 +1459,7 @@ struct SettingsDetailPage {
         }
         .width('100%')
         .padding({ left: this.scaledSize(12), right: this.scaledSize(12), top: this.scaledSize(2) })
+
         Stack() {
           Slider({
             value: (this.settings.playSpeed - 0.5) * 100,
@@ -1741,7 +1590,12 @@ struct SettingsDetailPage {
             .width('100%')
             .justifyContent(FlexAlign.Center)
           }
-          .padding({ left: 8, right: 8, top: 12, bottom: 12 })
+          .padding({
+            left: 8,
+            right: 8,
+            top: 12,
+            bottom: 12
+          })
         }
         .width('100%')
         .height(this.scaledSize(230))
@@ -1752,108 +1606,6 @@ struct SettingsDetailPage {
     }
     .width('100%')
     .constraintSize({ minWidth: 0, maxWidth: '100%' })
-  }
-
-  private drawEqCurve(): void {
-    const ctx: CanvasRenderingContext2D = this.eqCurveCtx
-    if (!ctx) {
-      return
-    }
-    // 优先使用 onAreaChange 提供的 vp 尺寸，后备使用 ctx.width/ctx.height（物理像素，除以 2 估算 vp）
-    const dpr: number = 2
-    const canvasW: number = this.eqCanvasWidth > 0 ? this.eqCanvasWidth : ctx.width / dpr
-    const canvasH: number = this.eqCanvasHeight > 0 ? this.eqCanvasHeight : ctx.height / dpr
-    if (canvasW <= 0 || canvasH <= 0) {
-      return
-    }
-    const bands: number[] = this.settings.eqBands
-    const color: string = this.primaryColor
-    ctx.clearRect(0, 0, ctx.width, ctx.height)
-    // Canvas 与滑轨 Row 同处内层 Stack：
-    // Canvas 从 x=0 到 x=canvasW 填充整个 Stack
-    // 滑轨 Row 使用 width('100%') + justifyContent(Center)，内容在 Stack 中居中
-    // bandW 为每个频段 Column 的宽度，Slider(40) 在 Column(44) 中居中
-    const bandW: number = this.scaledSize(44)
-    const bandGap: number = this.scaledSize(4)
-    const sliderH: number = canvasH
-    const sliderMidY: number = sliderH / 2
-    const bandCount: number = bands.length
-    // Row 内容总宽度 = 所有 Column 宽度 + 间距总和
-    const totalRowWidth: number = bandCount * bandW + (bandCount - 1) * bandGap
-    // Row 内容在 Stack 中居中，起始 x 偏移
-    const rowOffset: number = Math.max(0, (canvasW - totalRowWidth) / 2)
-    // 每个频段滑块的中心 x 坐标
-    const bandXs: number[] = []
-    for (let i = 0; i < bandCount; i++) {
-      bandXs.push(rowOffset + i * (bandW + bandGap) + bandW / 2)
-    }
-    // 构建数据点：左端点(0 db) + 10 个频段 + 右端点(0 db)
-    const points: number[] = []
-    points.push(0)
-    for (let i = 0; i < bandCount; i++) {
-      points.push(bands[i])
-    }
-    points.push(0)
-    // 对应的 x 坐标：左端点在第一个滑块左侧，右端点在最后一个滑块右侧
-    const xs: number[] = []
-    xs.push(bandXs[0] - bandW / 2)
-    for (let i = 0; i < bandCount; i++) {
-      xs.push(bandXs[i])
-    }
-    xs.push(bandXs[bandCount - 1] + bandW / 2)
-    const total: number = points.length
-    // db → y：+10dB → 0(顶)，-10dB → sliderH(底)，0dB → sliderMidY
-    const ys: number[] = []
-    for (let i = 0; i < total; i++) {
-      ys.push(sliderMidY - (points[i] / 10) * (sliderH / 2))
-    }
-    // 逐段独立平滑曲线（分段三次 Hermite，两端切线斜率恒为 0）：
-    // 每两个相邻点之间单独生成一条平滑曲线，且在点的两侧斜率均为 0，
-    // 保证曲线精确穿过每个数据点，且不会因相邻点差异产生过冲。
-    // 控制点取水平方向 1/3 处，即 CP1=(x0+dx/3, y0)、CP2=(x1-dx/3, y1)
-    ctx.beginPath()
-    ctx.moveTo(xs[0], ys[0])
-    for (let i = 0; i < total - 1; i++) {
-      const p0x: number = xs[i]
-      const p0y: number = ys[i]
-      const p1x: number = xs[i + 1]
-      const p1y: number = ys[i + 1]
-      const dx: number = p1x - p0x
-      const cp1x: number = p0x + dx / 3
-      const cp1y: number = p0y
-      const cp2x: number = p1x - dx / 3
-      const cp2y: number = p1y
-      ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p1x, p1y)
-    }
-    ctx.strokeStyle = color
-    ctx.lineWidth = 2
-    ctx.lineJoin = 'round'
-    ctx.lineCap = 'round'
-    ctx.stroke()
-    // 曲线下方半透明填充
-    ctx.lineTo(xs[total - 1], sliderH)
-    ctx.lineTo(xs[0], sliderH)
-    ctx.closePath()
-    ctx.fillStyle = ColorHelper.hexToRgba(color, 0.1)
-    ctx.fill()
-  }
-
-  // ═══ 关于页面：居中的软件图标 + 软件名/版本 + 仓库地址 + 联系方式，点击复制 ═══
-  // 仓库地址由 SSH 地址 git@github.com:morozov130300/UPlayer-on-HarmonyOS.git 转出的 HTTPS 网址
-  private aboutRepoUrl: string = 'https://github.com/morozov130300/UPlayer-on-HarmonyOS'
-  private aboutEmail: string = 'jhy130300@126.com'
-  private aboutQq: string = '3500873394'
-  private aboutVersionName: string = '0.0.1'
-
-  private copyToClipboard(label: string, content: string): void {
-    try {
-      const pasteData: pasteboard.PasteData = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, content)
-      const systemPasteboard: pasteboard.SystemPasteboard = pasteboard.getSystemPasteboard()
-      systemPasteboard.setDataSync(pasteData)
-      showToastGlassMaterial(this.getUIContext()?.getPromptAction(), label + '已复制')
-    } catch (e) {
-      Logger.error(TAG, 'copyToClipboard failed: ' + JSON.stringify(e))
-    }
   }
 
   @Builder
@@ -1958,5 +1710,287 @@ struct SettingsDetailPage {
     .width('100%')
     .height(this.scaledSize(44))
     .alignItems(VerticalAlign.Center)
+  }
+
+  // 过渡规格：出现/消失对称的「淡入淡出 + 缩放 0.95」
+  private settingCardTransition(): TransitionEffect {
+    return TransitionEffect.OPACITY.combine(TransitionEffect.scale({ x: 0.95, y: 0.95 }))
+  }
+
+  // 任何驱动设置项增删的状态变化都必须包进本方法，否则过渡不会播放
+  private animateSettingChange(change: () => void): void {
+    this.getUIContext()?.animateTo({ curve: curves.springMotion(0.4, 0.8) }, change)
+  }
+
+  // 根据鼠标检测结果过滤选项：无鼠标/触控板设备时隐藏「白色蒙版」（镜像值翻转带统一显隐动画）
+  private visibleTouchIndicatorOptions(): TouchIndicatorOption[] {
+    if (this.maskChipVisible) {
+      return this.touchIndicatorOptions
+    }
+    return [this.touchIndicatorOptions[0], this.touchIndicatorOptions[2]]
+  }
+
+  // 设备无鼠标/触控板时「白色蒙版」功能不存在，mask 值降级为 off（开关本身已隐藏）
+  private effectiveTouchIndicator(): string {
+    if (this.settings.tabTouchIndicator === 'mask' && !this.hasPointerDevice) {
+      return 'off'
+    }
+    return this.settings.tabTouchIndicator
+  }
+
+  // 与首页上端 glassBlurRadius 是同一个函数、同一份取值，禁止在本文件重写公式
+  private topBlurRadius(): number {
+    return topBlurRadiusFromStrength(this.homeTopBlurStrength)
+  }
+
+  // 顶部标题带高度：与本页标题栏（返回按钮 + 页面标题）等高
+  private titleBandHeight(): number {
+    return Math.max(56, this.titleButtonHeight) + (this.isPC ? 0 : this.topSafeHeight)
+  }
+
+  // 与 Index.selectedTabContentColor 同逻辑
+  private previewTabContentColor(): ResourceColor {
+    return this.isDark() ? '#FFFFFF' : ColorHelper.darken(this.primaryColor, 0.35)
+  }
+
+  // 预览内点击 Tab：联动 previewTabIndex（与 Index.onChange 同一弹簧动画，保持预览与真机行为一致）
+  private switchPreviewTab(index: number): void {
+    this.getUIContext()?.animateTo({ curve: curves.springMotion(0.4, 0.8) }, () => {
+      this.previewTabIndex = index
+    })
+  }
+
+  // 玻璃标题栏：返回按钮（自带 systemMaterial，处于 Navigation 标题栏生效区内 → 出真玻璃）+ 标题。
+
+  private getPreviewBarFloatingStyle(): HdsTabsFloatingStyle {
+    const useLight: boolean = this.effectiveTouchIndicator() === 'light'
+    const lightColor: ResourceColor | undefined = useLight
+      ? (this.isDark() ? '#FFFFFF' : this.primaryColor)
+      : undefined
+    const previewBarWidth: number = 228
+    // 预览器垂直居中：栏在 72vp 预览带内上下居中，边距随显示大小缩放（栏高 scaledSize(44)）
+    const previewBarBottomMargin: number = (this.scaledSize(72) - this.scaledSize(44)) / 2
+    if (this.settings.tabStyle === 'immersive' && isLiquidGlassAvailable()) {
+      return {
+        adaptToHandedness: false,
+        gradientMask: { maskColor: 'rgba(0,0,0,0)', maskHeight: 0 },
+        systemMaterialEffect: {
+          materialType: hdsMaterial.MaterialType.IMMERSIVE,
+          materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE,
+        },
+        barBottomMargin: previewBarBottomMargin,
+        barSideMargin: 0,
+        lightColor: lightColor,
+        barWidth: { smallWidth: previewBarWidth, mediumWidth: previewBarWidth, largeWidth: previewBarWidth },
+      } as HdsTabsFloatingStyle
+    }
+    return {
+      adaptToHandedness: false,
+      gradientMask: { maskColor: 'rgba(0,0,0,0)', maskHeight: 0 },
+      barBottomMargin: previewBarBottomMargin,
+      barSideMargin: 0,
+      lightColor: lightColor,
+      barWidth: { smallWidth: previewBarWidth, mediumWidth: previewBarWidth, largeWidth: previewBarWidth },
+    } as HdsTabsFloatingStyle
+  }
+
+  // 顶部标题带：与首页上端完全同款的渐变模糊层（先正比例后恒定）+ 主题色渐变着色层，
+
+  // 玻璃样式且设备支持液态玻璃时磨砂关闭（液态玻璃材质接管，与真机一致），radius 0 即无磨砂
+  private getPreviewBarBackgroundEffect(): BackgroundEffectOptions {
+    if (this.settings.tabStyle === 'immersive' && isLiquidGlassAvailable()) {
+      return { radius: 0 }
+    }
+    return { radius: this.glassBlurStrength * 0.5 }
+  }
+
+  // 一级标题（用于把同类设置项聚合在一起，可选带右上角「问号」角标以引出说明弹窗）
+
+  private indicatorAlpha(base: number): number {
+    const opacity: number = this.tabIndicatorOpacity / 100
+    return Math.round(base * opacity * 255)
+  }
+
+  private indicatorGradientColor(base: number): ResourceColor {
+    return ColorHelper.hexWithAlpha(this.primaryColor, this.indicatorAlpha(base)
+      .toString(16)
+      .padStart(2, '0'))
+  }
+
+  // 与 Index.tabSlotWidth 同逻辑：barWidth(228vp) 均分 3 个页签
+  private previewTabSlotWidth(): number {
+    return this.scaledSize(228) / 3
+  }
+
+  private isDark(): boolean {
+    if (this.themeMode === 'dark') {
+      return true
+    }
+    if (this.themeMode === 'system') {
+      try {
+        return uiAppearance.getDarkMode() === uiAppearance.DarkMode.ALWAYS_DARK
+      } catch (e) {
+        return false
+      }
+    }
+    return false
+  }
+
+  private settingTextColor(): ResourceColor {
+    return this.isDark() ? '#FFFFFF' : ColorHelper.darken(this.primaryColor, 0.35)
+  }
+
+  private settingSubTextColor(): ResourceColor {
+    return this.isDark() ? ColorHelper.hexWithAlpha('#FFFFFF', '88') : ColorHelper.darken(this.primaryColor, 0.3)
+  }
+
+  private settingInactiveTextColor(): ResourceColor {
+    return this.isDark() ? ColorHelper.hexWithAlpha('#FFFFFF', '99') : ColorHelper.darken(this.primaryColor, 0.4)
+  }
+
+  private scaledFont(size: number): number {
+    return Math.round(size * this.fontSizeScale)
+  }
+
+  private scaledSize(size: number): number {
+    return Math.round(size * this.displaySizeScale)
+  }
+
+  private currentPickerColor(): string {
+    return ColorHelper.hsvToHex(this.pickerHue, this.pickerSaturation, this.pickerValue)
+  }
+
+  // ═══ 关于页面：居中的软件图标 + 软件名/版本 + 仓库地址 + 联系方式，点击复制 ═══
+
+  private hueColor(): string {
+    return ColorHelper.hsvToHex(this.pickerHue, 1, 1)
+  }
+
+  private openColorPicker(): void {
+    const hsv = ColorHelper.hexToHsv(this.settings.primaryColor)
+    this.pickerOriginalColor = this.settings.primaryColor
+    this.pickerHue = hsv.h
+    this.pickerSaturation = hsv.s
+    this.pickerValue = hsv.v
+    this.showColorPicker = true
+  }
+
+  private updatePickerColor(): void {
+    this.settings.primaryColor = this.currentPickerColor()
+    this.primaryColor = this.currentPickerColor()
+  }
+
+  private cancelColorPicker(): void {
+    this.settings.primaryColor = this.pickerOriginalColor
+    this.primaryColor = this.pickerOriginalColor
+    this.showColorPicker = false
+  }
+
+  private confirmColorPicker(): void {
+    this.setPrimaryColor(this.currentPickerColor())
+    this.showColorPicker = false
+  }
+
+  private updateColorBoard(localX: number, localY: number): void {
+    const width: number = this.scaledSize(264)
+    const height: number = this.scaledSize(150)
+    this.pickerSaturation = Math.max(0, Math.min(1, localX / width))
+    this.pickerValue = 1 - Math.max(0, Math.min(1, localY / height))
+    this.updatePickerColor()
+  }
+
+  private drawEqCurve(): void {
+    const ctx: CanvasRenderingContext2D = this.eqCurveCtx
+    if (!ctx) {
+      return
+    }
+    // 优先使用 onAreaChange 提供的 vp 尺寸，后备使用 ctx.width/ctx.height（物理像素，除以 2 估算 vp）
+    const dpr: number = 2
+    const canvasW: number = this.eqCanvasWidth > 0 ? this.eqCanvasWidth : ctx.width / dpr
+    const canvasH: number = this.eqCanvasHeight > 0 ? this.eqCanvasHeight : ctx.height / dpr
+    if (canvasW <= 0 || canvasH <= 0) {
+      return
+    }
+    const bands: number[] = this.settings.eqBands
+    const color: string = this.primaryColor
+    ctx.clearRect(0, 0, ctx.width, ctx.height)
+    // Canvas 与滑轨 Row 同处内层 Stack：
+    // Canvas 从 x=0 到 x=canvasW 填充整个 Stack
+    // 滑轨 Row 使用 width('100%') + justifyContent(Center)，内容在 Stack 中居中
+    // bandW 为每个频段 Column 的宽度，Slider(40) 在 Column(44) 中居中
+    const bandW: number = this.scaledSize(44)
+    const bandGap: number = this.scaledSize(4)
+    const sliderH: number = canvasH
+    const sliderMidY: number = sliderH / 2
+    const bandCount: number = bands.length
+    // Row 内容总宽度 = 所有 Column 宽度 + 间距总和
+    const totalRowWidth: number = bandCount * bandW + (bandCount - 1) * bandGap
+    // Row 内容在 Stack 中居中，起始 x 偏移
+    const rowOffset: number = Math.max(0, (canvasW - totalRowWidth) / 2)
+    // 每个频段滑块的中心 x 坐标
+    const bandXs: number[] = []
+    for (let i = 0; i < bandCount; i++) {
+      bandXs.push(rowOffset + i * (bandW + bandGap) + bandW / 2)
+    }
+    // 构建数据点：左端点(0 db) + 10 个频段 + 右端点(0 db)
+    const points: number[] = []
+    points.push(0)
+    for (let i = 0; i < bandCount; i++) {
+      points.push(bands[i])
+    }
+    points.push(0)
+    // 对应的 x 坐标：左端点在第一个滑块左侧，右端点在最后一个滑块右侧
+    const xs: number[] = []
+    xs.push(bandXs[0] - bandW / 2)
+    for (let i = 0; i < bandCount; i++) {
+      xs.push(bandXs[i])
+    }
+    xs.push(bandXs[bandCount - 1] + bandW / 2)
+    const total: number = points.length
+    // db → y：+10dB → 0(顶)，-10dB → sliderH(底)，0dB → sliderMidY
+    const ys: number[] = []
+    for (let i = 0; i < total; i++) {
+      ys.push(sliderMidY - (points[i] / 10) * (sliderH / 2))
+    }
+    // 逐段独立平滑曲线（分段三次 Hermite，两端切线斜率恒为 0）：
+    // 每两个相邻点之间单独生成一条平滑曲线，且在点的两侧斜率均为 0，
+    // 保证曲线精确穿过每个数据点，且不会因相邻点差异产生过冲。
+    // 控制点取水平方向 1/3 处，即 CP1=(x0+dx/3, y0)、CP2=(x1-dx/3, y1)
+    ctx.beginPath()
+    ctx.moveTo(xs[0], ys[0])
+    for (let i = 0; i < total - 1; i++) {
+      const p0x: number = xs[i]
+      const p0y: number = ys[i]
+      const p1x: number = xs[i + 1]
+      const p1y: number = ys[i + 1]
+      const dx: number = p1x - p0x
+      const cp1x: number = p0x + dx / 3
+      const cp1y: number = p0y
+      const cp2x: number = p1x - dx / 3
+      const cp2y: number = p1y
+      ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p1x, p1y)
+    }
+    ctx.strokeStyle = color
+    ctx.lineWidth = 2
+    ctx.lineJoin = 'round'
+    ctx.lineCap = 'round'
+    ctx.stroke()
+    // 曲线下方半透明填充
+    ctx.lineTo(xs[total - 1], sliderH)
+    ctx.lineTo(xs[0], sliderH)
+    ctx.closePath()
+    ctx.fillStyle = ColorHelper.hexToRgba(color, 0.1)
+    ctx.fill()
+  }
+
+  private copyToClipboard(label: string, content: string): void {
+    try {
+      const pasteData: pasteboard.PasteData = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, content)
+      const systemPasteboard: pasteboard.SystemPasteboard = pasteboard.getSystemPasteboard()
+      systemPasteboard.setDataSync(pasteData)
+      showToastGlassMaterial(this.getUIContext()?.getPromptAction(), label + '已复制')
+    } catch (e) {
+      Logger.error(TAG, 'copyToClipboard failed: ' + JSON.stringify(e))
+    }
   }
 }
