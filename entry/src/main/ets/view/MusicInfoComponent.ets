@@ -12,22 +12,18 @@ import { AlbumCover } from '../component/AlbumCover';
 
 @Component
 export struct MusicInfoComponent {
-  @State currentTabIndex: number = 0;
   @Prop mainWindowInfo: WindowInfo;
   @StorageLink(AppStorageKeyConstants.KEY_SONG_LIST) songList: SongInfo[] = [];
   @StorageProp(AppStorageKeyConstants.KEY_SELECT_INDEX) @Watch('onSongChange') selectIndex: number = 0;
   // 当前播放歌曲 id：显示信息一律按 id 从全量曲库解析，不依赖队列下标，
   // 避免队列被全量列表覆盖/过滤后下标指向另一首歌导致与播控条不一致
   @StorageProp('uplayer_current_song_id') @Watch('onSongChange') currentSongId: string = '';
-  @State isShowControl: boolean = false;
   @State isFavorite: boolean = false;
   @State favoriteScale: number = 1.0;
   @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) isPlay: boolean = false;
-  @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF';
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0;
   @State glowRotation: number = 0;
   @State glowTimer: number = -1;
-  @State coverArtFailed: boolean = false;
   private dataService: DataService = DataService.getInstance()
 
   aboutToAppear() {
@@ -42,7 +38,6 @@ export struct MusicInfoComponent {
   }
 
   onSongChange(): void {
-    this.coverArtFailed = false
     this.updateFavoriteState()
   }
 

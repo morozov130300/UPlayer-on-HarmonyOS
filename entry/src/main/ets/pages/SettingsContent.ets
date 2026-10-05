@@ -1,9 +1,7 @@
 import { uiAppearance } from '@kit.ArkUI'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { ColorHelper } from '../common/utils/ColorHelper'
-import Logger from '../common/utils/Logger'
 
-const TAG = 'SettingsContent'
 const KEY_PRIMARY_COLOR = 'uplayer_primary_color'
 
 interface SettingCategory {

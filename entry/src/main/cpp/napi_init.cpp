@@ -52,12 +52,6 @@ struct PlayAsyncContext {
     bool result = false;
 };
 
-struct PcmCallbackData {
-    std::vector<uint8_t> pcm;
-    int32_t sampleRate = 0;
-    int32_t channelCount = 0;
-};
-
 struct CoverCacheEntry {
     std::vector<uint8_t> data;
     std::list<std::string>::iterator position;
@@ -578,35 +572,6 @@ public:
         return requestedEqEnabled_;
     }
 
-    bool SetPcmCaptureCallback(napi_env env, napi_value callback)
-    {
-        ClearPcmCaptureCallback();
-        napi_valuetype valueType = napi_undefined;
-        if (napi_typeof(env, callback, &valueType) != napi_ok || valueType != napi_function) {
-            return false;
-        }
-        napi_value resourceName = nullptr;
-        napi_create_string_utf8(env, "UPlayerRawPcmCapture", NAPI_AUTO_LENGTH, &resourceName);
-        napi_threadsafe_function function = nullptr;
-        napi_status status = napi_create_threadsafe_function(env, callback, nullptr, resourceName, 4, 1,
-            nullptr, nullptr, nullptr, CallPcmCapture, &function);
-        if (status != napi_ok) {
-            return false;
-        }
-        std::lock_guard<std::mutex> lock(pcmCallbackMutex_);
-        pcmCaptureFunction_ = function;
-        return true;
-    }
-
-    void ClearPcmCaptureCallback()
-    {
-        std::lock_guard<std::mutex> lock(pcmCallbackMutex_);
-        if (pcmCaptureFunction_ != nullptr) {
-            napi_release_threadsafe_function(pcmCaptureFunction_, napi_tsfn_abort);
-            pcmCaptureFunction_ = nullptr;
-        }
-    }
-
     bool SetSpeed(float speed)
     {
         playbackSpeed_ = speed;
@@ -708,7 +673,6 @@ private:
     NativeAudioPlayer() = default;
     ~NativeAudioPlayer()
     {
-        ClearPcmCaptureCallback();
         Stop();
     }
 
@@ -1028,7 +992,6 @@ private:
                     uint8_t* address = OH_AVBuffer_GetAddr(outputBuffer);
                     if (address != nullptr && attr.size > 0) {
                         uint8_t* begin = address + attr.offset;
-                        PublishRawPcm(begin, attr.size);
                         std::unique_lock<std::mutex> lock(queueMutex_);
                         queueCondition_.wait(lock, [this]() {
                             return stopRequested_.load() || seekRequested_.load() || pcmQueue_.size() < maxQueueBytes_;
@@ -1347,56 +1310,6 @@ private:
         }
     }
 
-    void PublishRawPcm(const uint8_t* pcm, int32_t size)
-    {
-        napi_threadsafe_function function = nullptr;
-        {
-            std::lock_guard<std::mutex> lock(pcmCallbackMutex_);
-            function = pcmCaptureFunction_;
-            if (function != nullptr) {
-                napi_acquire_threadsafe_function(function);
-            }
-        }
-        if (function == nullptr || pcm == nullptr || size <= 0) {
-            return;
-        }
-        PcmCallbackData* callbackData = new PcmCallbackData();
-        callbackData->pcm.assign(pcm, pcm + size);
-        callbackData->sampleRate = sampleRate_;
-        callbackData->channelCount = channelCount_;
-        napi_status status = napi_call_threadsafe_function(
-            function, callbackData, napi_tsfn_nonblocking);
-        if (status != napi_ok) {
-            delete callbackData;
-        }
-        napi_release_threadsafe_function(function, napi_tsfn_release);
-    }
-
-    static void CallPcmCapture(napi_env env, napi_value callback, void*, void* data)
-    {
-        PcmCallbackData* callbackData = static_cast<PcmCallbackData*>(data);
-        if (callbackData == nullptr) {
-            return;
-        }
-        if (env != nullptr && callback != nullptr) {
-            napi_value arrayBuffer = nullptr;
-            void* destination = nullptr;
-            napi_create_arraybuffer(env, callbackData->pcm.size(), &destination, &arrayBuffer);
-            if (destination != nullptr && !callbackData->pcm.empty()) {
-                std::memcpy(destination, callbackData->pcm.data(), callbackData->pcm.size());
-            }
-            napi_value sampleRate = nullptr;
-            napi_value channelCount = nullptr;
-            napi_create_int32(env, callbackData->sampleRate, &sampleRate);
-            napi_create_int32(env, callbackData->channelCount, &channelCount);
-            napi_value undefinedValue = nullptr;
-            napi_get_undefined(env, &undefinedValue);
-            napi_value args[3] = { arrayBuffer, sampleRate, channelCount };
-            napi_call_function(env, undefinedValue, callback, 3, args, nullptr);
-        }
-        delete callbackData;
-    }
-
     enum class DecoderLifecycle : int32_t {
         STOPPED = 0,
         STARTED = 1,
@@ -1460,9 +1373,7 @@ private:
     std::atomic<double> targetHeadroomDb_ = 0.0;
     std::atomic<double> headroomDb_ = 0.0;
     std::array<int32_t, EQUALIZER_BAND_NUM> bands_ = {};
-    std::mutex pcmCallbackMutex_;
     std::mutex effectMutex_;
-    napi_threadsafe_function pcmCaptureFunction_ = nullptr;
     // 重采样状态：解码器输出源采样率 PCM，均衡器管线固定 48000
     double resamplePos_ = 0.0;
     int32_t resampleInputRate_ = 44100;
@@ -1598,28 +1509,6 @@ napi_value SetEnabled(napi_env env, napi_callback_info info)
         return BooleanValue(env, false);
     }
     return BooleanValue(env, NativeAudioPlayer::Instance().SetEnabled(enabled));
-}
-
-napi_value IsEnabled(napi_env env, napi_callback_info)
-{
-    return BooleanValue(env, NativeAudioPlayer::Instance().IsEqualizerEnabled());
-}
-
-napi_value SetPcmCaptureCallback(napi_env env, napi_callback_info info)
-{
-    size_t argc = 1;
-    napi_value args[1] = { nullptr };
-    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
-    if (argc != 1) {
-        return BooleanValue(env, false);
-    }
-    return BooleanValue(env, NativeAudioPlayer::Instance().SetPcmCaptureCallback(env, args[0]));
-}
-
-napi_value ClearPcmCaptureCallback(napi_env env, napi_callback_info)
-{
-    NativeAudioPlayer::Instance().ClearPcmCaptureCallback();
-    return BooleanValue(env, true);
 }
 
 napi_value SetBands(napi_env env, napi_callback_info info)
@@ -1798,12 +1687,8 @@ napi_value Init(napi_env env, napi_value exports)
         { "stop", nullptr, Stop, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "seek", nullptr, Seek, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "setEqualizerEnable", nullptr, SetEnabled, nullptr, nullptr, nullptr, napi_default, nullptr },
-        { "setEqualizerEnabled", nullptr, SetEnabled, nullptr, nullptr, nullptr, napi_default, nullptr },
-        { "isEqualizerEnabled", nullptr, IsEnabled, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "setEqualizerBands", nullptr, SetBands, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "getEqualizerBands", nullptr, GetBands, nullptr, nullptr, nullptr, napi_default, nullptr },
-        { "setPcmCaptureCallback", nullptr, SetPcmCaptureCallback, nullptr, nullptr, nullptr, napi_default, nullptr },
-        { "clearPcmCaptureCallback", nullptr, ClearPcmCaptureCallback, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "setSpeed", nullptr, SetSpeed, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "setVolume", nullptr, SetVolume, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "isEqualizerSupported", nullptr, IsSupported, nullptr, nullptr, nullptr, napi_default, nullptr },

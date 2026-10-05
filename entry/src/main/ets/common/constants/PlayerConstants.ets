@@ -17,10 +17,6 @@
  * Constants for player area.
  */
 export class PlayerConstants {
-  /**
-   * The animation duration is 3000.
-   */
-  static readonly ANIMATION_DURATION: number = 3000;
   static readonly ENCODING: string = 'utf-8';
   static readonly BACK_IMAGE: string = '120%';
   static readonly IMAGE_BLUR: number = 15;

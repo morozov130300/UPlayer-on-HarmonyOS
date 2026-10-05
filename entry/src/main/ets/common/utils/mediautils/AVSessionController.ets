@@ -8,7 +8,6 @@ import { MusicPlayMode } from '../../constants/PlayerConstants';
 import { DataService } from '../../../service/DataService';
 import { AppStorageKeyConstants } from '../../constants/AppStorageKeyConstants';
 import { BusinessError } from '@kit.BasicServicesKit';
-import WantAgent from '@ohos.app.ability.wantAgent';
 import { image } from '@kit.ImageKit';
 import { MediaTools } from './MediaTools';
 
@@ -554,24 +553,6 @@ export class AVSessionController {
     Logger.info(TAG, `on toggleFavorite , do toggleFavorite task`);
     const isFavorite: boolean | undefined = AppStorage.get(AppStorageKeyConstants.KEY_IS_FAVORITE);
     this.updateFavoriteState(assetId, isFavorite ? !isFavorite : true);
-  }
-
-  public setPlayModeToAVSession(currentPlayMode: MusicPlayMode): void {
-    let AVSessionLoopMode: avSession.LoopMode = avSession.LoopMode.LOOP_MODE_SEQUENCE;
-    switch (currentPlayMode) {
-      case MusicPlayMode.SINGLE_CYCLE:
-        AVSessionLoopMode = avSession.LoopMode.LOOP_MODE_SINGLE;
-        break;
-      case MusicPlayMode.ORDER:
-        AVSessionLoopMode = avSession.LoopMode.LOOP_MODE_SEQUENCE;
-        break;
-      case MusicPlayMode.RANDOM:
-        AVSessionLoopMode = avSession.LoopMode.LOOP_MODE_SHUFFLE;
-        break;
-      default:
-        break;
-    }
-    this.setLoopModeState(AVSessionLoopMode);
   }
 
   private setFavoriteState(isFavorite: boolean): void {

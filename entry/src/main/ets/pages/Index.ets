@@ -84,7 +84,6 @@ struct MainPage {
   @StorageLink('uplayer_tab_indicator_opacity') tabIndicatorOpacity: number = 50
   // 是否存在鼠标/触控板设备（决定「白色蒙版」功能是否存在：无鼠标时 mask 降级为 off）
   @StorageLink(KEY_HAS_POINTER_DEVICE) hasPointerDevice: boolean = false
-  @State albumArtFailed: boolean = false
   @State isTitleMarqueeRunning: boolean = true
   @State isArtistMarqueeRunning: boolean = true
   @State currentLyricLine: string = ''
@@ -616,7 +615,7 @@ struct MainPage {
   // 仅当「玻璃样式 + 设备系统达到 API 26」时启用真·液态玻璃（厚度档位设置已删除，默认开启）；
 
   onAlbumArtChange(): void {
-    this.albumArtFailed = false
+    // uplayer_current_album_art 变化无 UI 直接消费点（封面走 AudioMetadataService 缓存），保留空回调
   }
 
   // 磨砂层挂载条件（经典 Tab 栏 / 玻璃 Tab 栏 / 播控条三处统一）：

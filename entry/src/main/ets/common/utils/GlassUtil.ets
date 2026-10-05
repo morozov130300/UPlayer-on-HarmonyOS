@@ -103,22 +103,6 @@ export function createTabGlassMaterial(strength: number, interactive: boolean,
   })
 }
 
-// Tab 栏液态玻璃材质（返回类型收窄为 ImmersiveMaterial，供 barFloatingStyle.systemMaterial 直接使用）：
-// 与 createTabGlassMaterial 参数完全一致，仅返回类型更精确
-export function createTabImmersiveMaterial(strength: number, interactive: boolean,
-  lightColor: string | undefined, colorInvert: boolean, applyShadow: boolean): uiMaterial.ImmersiveMaterial | undefined {
-  if (!isLiquidGlassAvailable() || isGlassOff(strength)) {
-    return undefined
-  }
-  return new uiMaterial.ImmersiveMaterial({
-    style: glassImmersiveStyleFromStrength(strength),
-    interactive: interactive,
-    lightEffect: lightColor !== undefined ? { color: lightColor } : undefined,
-    colorInvert: colorInvert,
-    applyShadow: applyShadow
-  })
-}
-
 // 底部栏/多选操作栏等横向条状组件的液态玻璃材质工厂（API 26+）：
 // - interactive 复用全局「交互形变」开关控制 Q 弹形变
 // - applyShadow 固定关闭：这些组件均有手写 shadow 投影设计，避免材质阴影覆盖
@@ -156,11 +140,3 @@ export function showToastGlassMaterial(promptAction: PromptAction | undefined, m
   }
 }
 
-// 设备能力不足时显示简短 Toast，说明缺失能力与对应后果
-export function showCapabilityToast(promptAction: PromptAction | undefined, message: string): void {
-  try {
-    promptAction?.showToast({ message })
-  } catch (e) {
-    // showToast 失败时静默忽略
-  }
-}

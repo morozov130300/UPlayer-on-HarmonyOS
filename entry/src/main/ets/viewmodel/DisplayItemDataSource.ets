@@ -33,16 +33,6 @@ export class DisplayItemDataSource implements IDataSource {
     this.notifyDataReload()
   }
 
-  addData(index: number, data: DisplayItem): void {
-    this.dataArray.splice(index, 0, data)
-    this.notifyDataAdd(index)
-  }
-
-  pushData(data: DisplayItem): void {
-    this.dataArray.push(data)
-    this.notifyDataAdd(this.dataArray.length - 1)
-  }
-
   registerDataChangeListener(listener: DataChangeListener): void {
     if (this.listeners.indexOf(listener) < 0) {
       this.listeners.push(listener)
@@ -62,21 +52,9 @@ export class DisplayItemDataSource implements IDataSource {
     }
   }
 
-  notifyDataAdd(index: number): void {
-    for (let i = 0; i < this.listeners.length; i++) {
-      this.listeners[i].onDataAdd(index)
-    }
-  }
-
   notifyDataChange(index: number): void {
     for (let i = 0; i < this.listeners.length; i++) {
       this.listeners[i].onDataChange(index)
-    }
-  }
-
-  notifyDataDelete(index: number): void {
-    for (let i = 0; i < this.listeners.length; i++) {
-      this.listeners[i].onDataDelete(index)
     }
   }
 

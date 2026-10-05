@@ -1,10 +1,8 @@
 // ArkUI 26 Beta1: 接口定义变更（误报，本项目已是Stage模型）+ UX视觉布局变更（Text默认开启沉浸式材质，系统行为）
-import { common } from '@kit.AbilityKit';
 import { curves } from '@kit.ArkUI';
 import { ControlAreaComponent } from './ControlAreaComponent';
 import { PlayerConstants } from '../common/constants/PlayerConstants';
 import { StyleConstants } from '../common/constants/StyleConstants';
-import { LyricScrollEffect } from '../common/constants/LyricConst';
 import { LrcEntry } from '../viewmodel/LrcEntry';
 import { SongInfo } from '../model/SongInfo';
 import { loadLyricEntries } from '../service/LyricLoader';
@@ -19,9 +17,6 @@ import { AlbumCover } from '../component/AlbumCover';
 export struct LyricsComponent {
   @Prop mainWindowInfo: WindowInfo;
   @StorageLink(AppStorageKeyConstants.KEY_PROGRESS) time: number = 0;
-  @State progress: number = 0.01;
-  @State progressText: string = '';
-  @State lyricScrollEffect: LyricScrollEffect = LyricScrollEffect.Line;
   @State mLrcEntryList: Array<LrcEntry> = [];
   @StorageLink(AppStorageKeyConstants.KEY_SONG_LIST) songList: SongInfo[] = [];
   @StorageProp(AppStorageKeyConstants.KEY_SELECT_INDEX) @Watch('getLrcEntryList') selectIndex: number = 0;
@@ -30,11 +25,9 @@ export struct LyricsComponent {
   // 歌词引用发生集合级变化（重新导入覆盖）时重新加载，
   // 保证已经打开的播放页无需切歌或重启即可显示歌词
   @StorageProp(AppStorageKeyConstants.KEY_LYRIC_REVISION) @Watch('getLrcEntryList') lyricRevision: number = 0;
-  @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) isPlay: boolean = false;
   @Link isShowControl: boolean;
   @StorageLink(AppStorageKeyConstants.KEY_PAGE_SHOW_TIME) pageShowTime: number = 0;
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0;
-  private context: common.UIAbilityContext | undefined = AppStorage.get(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT);
   private lyricLoadRequestId: number = 0;
 
   aboutToAppear() {

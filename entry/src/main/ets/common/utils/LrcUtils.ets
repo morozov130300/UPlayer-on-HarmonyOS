@@ -14,7 +14,6 @@
  */
 
 import { LrcEntry, Word } from '../../viewmodel/LrcEntry';
-import Logger from './Logger';
 
 /**
  * LRC format lyrics.

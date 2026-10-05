@@ -16,7 +16,6 @@
 import { image } from '@kit.ImageKit';
 import { common } from '@kit.AbilityKit';
 import { resourceManager } from '@kit.LocalizationKit';
-import { util } from '@kit.ArkTS';
 import Logger from '../Logger';
 
 
@@ -33,11 +32,6 @@ export class MediaTools {
       Logger.error(TAG, `getPixelMapFromResource failed: ${JSON.stringify(err)}`);
       throw new Error(`getPixelMapFromResource failed: ${JSON.stringify(err)}`);
     }
-  }
-
-  static async getPixelMapFromFile(id: string, path: string): Promise<image.PixelMap> {
-    Logger.info(TAG, 'getPixelMapFromFile id:' + id + ', path:' + path);
-    return await image.createImageSource(path).createPixelMap();
   }
 
   /**
@@ -58,20 +52,5 @@ export class MediaTools {
     const seconds = Math.floor((ms % (1000 * 60)) / 1000);
     return `${(days ? MediaTools.fill(days) + ':' : '')}${(hours ? MediaTools.fill(hours) + ':' : '')}
       ${MediaTools.fill(minutes)}:${MediaTools.fill(seconds)} `.trim();
-  }
-
-  static async getLrcFromRawFile(context: common.UIAbilityContext, filename: string): Promise<string | undefined> {
-    if (!filename) {
-      return undefined;
-    }
-    try {
-      const lyricUint8Array: Uint8Array = await context.resourceManager.getRawFileContent(filename);
-      let textDecoder = util.TextDecoder.create('utf-8', { ignoreBOM: true });
-      let resStr: string = textDecoder.decodeToString(lyricUint8Array, { stream: false });
-      return resStr;
-    } catch (err) {
-      Logger.error(TAG, `getLrcFromRawFile failed: ${JSON.stringify(err)}`);
-      return undefined;
-    }
   }
 }

@@ -30,7 +30,6 @@ export class StyleConstants {
   static readonly ANIMATION_PRESS_DELAY_SHORT: number = 100;
   static readonly ANIMATION_PRESS_DELAY_MEDIUM: number = 120;
   static readonly ANIMATION_PRESS_DELAY_LONG: number = 150;
-  static readonly ANIMATION_HOVER_DURATION: number = 180;
   static readonly ANIMATION_PRESS_DURATION_SHORT: number = 150;
   static readonly ANIMATION_PRESS_DURATION_MEDIUM: number = 200;
   static readonly ANIMATION_RELEASE_DURATION_SHORT: number = 250;

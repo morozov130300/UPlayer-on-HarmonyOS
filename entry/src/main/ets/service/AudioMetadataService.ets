@@ -1,13 +1,11 @@
 // 音频元数据提取服务，使用AVMetadataExtractor读取歌曲标题、歌手、专辑封面等
 import { fileIo as fs } from '@kit.CoreFileKit'
 import { image } from '@kit.ImageKit'
-import { common } from '@kit.AbilityKit'
 import { SuppressWarnings, SuppressWarningsType } from '@kit.BasicServicesKit'
 import { SongInfo } from '../model/SongInfo'
 import Logger from '../common/utils/Logger'
 import uplayer from 'libuplayer.so'
 import { extractCoverData, fetchFallbackCoverData, CoverDataResult } from './MetadataTask'
-import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 
 const TAG = 'AudioMetadataService'
 const COVER_MAX_EDGE: number = 640

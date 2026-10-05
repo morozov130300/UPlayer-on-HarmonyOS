@@ -13,31 +13,6 @@
  * limitations under the License.
  */
 
-/**
- * Lyrics scrolling effect.
- */
-export const enum LyricScrollEffect {
-  /**
-   * Full line scrolling
-   */
-  Line,
-
-  /**
-   * Gradient Color
-   */
-  LetterGradient,
-
-  /**
-   * Single character scaling and gradation.
-   */
-  LetterScaleGradient,
-
-  /**
-   * Star scrolling style.
-   */
-  LetterStar
-}
-
 export class LyricFile {
   static readonly KRC: string = '.krc';
   static readonly LRC: string = '.lrc';

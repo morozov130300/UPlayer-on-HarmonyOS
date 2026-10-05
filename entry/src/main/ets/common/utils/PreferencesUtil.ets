@@ -84,28 +84,6 @@ export class PreferencesUtil {
     }, 300);
   }
 
-  // Determine whether there is a certain data in the preferences
-  preferencesHas(key: string): boolean {
-    if (!this.preferences) {
-      Logger.info(TAG, 'preferences is undefined');
-      return false;
-    }
-    try {
-      return this.preferences.hasSync(key);
-    } catch (err) {
-      Logger.error(TAG, `preferencesHas failed: ${JSON.stringify(err)}`);
-      return false;
-    }
-  }
-
-  removePreferencesFromCache(): void {
-    try {
-      preferences.removePreferencesFromCache(this.context, MY_STORE);
-    } catch (err) {
-      Logger.error(TAG, `removePreferencesFromCache failed: ${JSON.stringify(err)}`);
-    }
-  }
-
   getValue(key: string): preferences.ValueType | undefined {
     if (!this.preferences) {
       Logger.info(TAG, 'preferences is undefined');
@@ -116,20 +94,6 @@ export class PreferencesUtil {
     } catch (err) {
       Logger.error(TAG, `getValue failed: ${JSON.stringify(err)}`);
       return undefined;
-    }
-  }
-
-  // Remove data by key
-  removeKey(key: string): void {
-    if (!this.preferences) {
-      Logger.info(TAG, 'preferences is undefined');
-      return;
-    }
-    try {
-      this.preferences.deleteSync(key);
-      this.flushNow();
-    } catch (err) {
-      Logger.error(TAG, `removeKey failed: ${JSON.stringify(err)}`);
     }
   }
 }
