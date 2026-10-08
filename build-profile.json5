@@ -28,20 +28,22 @@
         }
       }
     ],
-          "products": [
-            {
-              "name": "default",
-              "signingConfig": "release",
-              "targetSdkVersion": "26.0.0",
-              "compatibleSdkVersion": "26.0.0",
-              "runtimeOS": "HarmonyOS",
-              "buildOption": {
-                "strictMode": {
-                  "caseSensitiveCheck": true,
-                  "useNormalizedOHMUrl": true
-                },
-                "nativeCompiler": "BiSheng"
-              }
+    "products": [
+      {
+        "name": "default",
+        "signingConfig": "release",
+        "targetSdkVersion": "26.0.0",
+        "compatibleSdkVersion": "26.0.0",
+        "runtimeOS": "HarmonyOS",
+        "buildOption": {
+          "strictMode": {
+            "caseSensitiveCheck": true,
+            "useNormalizedOHMUrl": true
+          },
+          "packOptions": {
+            "buildAppSkipSignHap": true
+          }
+        }
       }
     ],
     "buildModeSet": [

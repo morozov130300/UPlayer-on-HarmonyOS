@@ -22,3 +22,6 @@
 # 参考样例/嵌入式仓库，不纳入主仓库
 /src/
 /audio-renderer-play-pcm/
+
+# WorkBuddy 智能体工作目录，不纳入仓库
+/.workbuddy/
