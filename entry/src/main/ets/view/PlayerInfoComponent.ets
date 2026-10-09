@@ -52,8 +52,7 @@ export struct PlayerInfoComponent {
   private context: common.UIAbilityContext | undefined = AppStorage.get(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT);
   private imageLoadRequestId: number = 0;
   private backgroundCoverLease: AlbumCoverLease | undefined = undefined;
-  private currentBackgroundMap: image.PixelMap | undefined = undefined;
-  private previousBackgroundMap: image.PixelMap | undefined = undefined;
+  private previousCoverLease: AlbumCoverLease | undefined = undefined;
   @State fallbackBackgroundMap: image.PixelMap | undefined = undefined;
 
   onImageColorChange(): void {
@@ -75,10 +74,8 @@ export struct PlayerInfoComponent {
     this.imageLoadRequestId++;
     this.backgroundCoverLease?.release();
     this.backgroundCoverLease = undefined;
-    this.currentBackgroundMap?.release();
-    this.currentBackgroundMap = undefined;
-    this.previousBackgroundMap?.release();
-    this.previousBackgroundMap = undefined;
+    this.previousCoverLease?.release();
+    this.previousCoverLease = undefined;
     this.fallbackBackgroundMap?.release();
     this.fallbackBackgroundMap = undefined;
   }
@@ -91,6 +88,7 @@ export struct PlayerInfoComponent {
             { width: PlayerConstants.BACK_IMAGE, height: '100%' } :
             { width: '100%', height: PlayerConstants.BACK_IMAGE })
           .objectFit(ImageFit.Cover)
+          .blur(PlayerConstants.IMAGE_BLUR)
           .opacity(this.prevImageOpacity)
 
         if (this.imageLabelIsFallback && this.fallbackBackgroundMap !== undefined) {
@@ -100,6 +98,7 @@ export struct PlayerInfoComponent {
               { width: PlayerConstants.BACK_IMAGE, height: '100%' } :
               { width: '100%', height: PlayerConstants.BACK_IMAGE })
             .objectFit(ImageFit.Cover)
+            .blur(PlayerConstants.IMAGE_BLUR)
             .opacity(0.5)
         } else {
           Image(this.imageLabel)
@@ -108,6 +107,8 @@ export struct PlayerInfoComponent {
               { width: '100%', height: PlayerConstants.BACK_IMAGE })
             .objectFit(ImageFit.Cover)
             .fillColor(this.imageLabelIsFallback ? $r('app.color.player_icon_color') : Color.Black)
+            // 兜底态（尚未生成模糊背景图）显示的是清晰着色图标，不能模糊；真封面走渲染期模糊
+            .blur(this.imageLabelIsFallback ? 0 : PlayerConstants.IMAGE_BLUR)
             .opacity(0.5)
         }
       }
@@ -352,21 +353,9 @@ export struct PlayerInfoComponent {
         this.isBackgroundReady = true;
         return;
       }
-      const effect = effectKit.createEffect(srcImg);
-      if (effect === null) {
-        srcImg.release();
-        this.isBackgroundReady = true;
-        return;
-      }
-      effect.blur(PlayerConstants.IMAGE_BLUR);
-      const blurred = await effect.getEffectPixelMap();
-      srcImg.release();
-      if (blurred === null) {
-        this.isBackgroundReady = true;
-        return;
-      }
+      // 保存原图，模糊交给 Image.blur 渲染期完成（GPU），不再 CPU 预生成模糊副本
       this.fallbackBackgroundMap?.release();
-      this.fallbackBackgroundMap = blurred;
+      this.fallbackBackgroundMap = srcImg;
       this.isBackgroundReady = true;
     } catch (_) {
       this.isBackgroundReady = true;
@@ -387,28 +376,17 @@ export struct PlayerInfoComponent {
       if (requestId !== this.imageLoadRequestId) {
         return;
       }
-      this.backgroundCoverLease?.release();
-      this.backgroundCoverLease = coverLease;
       const pixelMap: image.PixelMap = coverLease.pixelMap;
       await this.updateImageColor(pixelMap, requestId);
-      const headFilter = effectKit.createEffect(pixelMap);
-      if (headFilter === null) {
-        return;
-      }
-      headFilter.blur(PlayerConstants.IMAGE_BLUR);
-      const value: image.PixelMap = await headFilter.getEffectPixelMap();
-      if (requestId !== this.imageLoadRequestId) {
-        value.release();
-        return;
-      }
-this.previousBackgroundMap?.release();
-      this.previousBackgroundMap = this.currentBackgroundMap;
-      this.currentBackgroundMap = value;
+      // 换 lease：旧 lease 暂存到 previousCoverLease，淡出结束后再释放（旧图渲染期间必须保活）
+      this.previousCoverLease?.release();
+      this.previousCoverLease = this.backgroundCoverLease;
+      this.backgroundCoverLease = coverLease;
       const hasPreviousBackground: boolean = !this.imageLabelIsFallback;
       if (hasPreviousBackground) {
         this.prevImageLabel = this.imageLabel;
       }
-      this.imageLabel = value;
+      this.imageLabel = pixelMap;
       this.imageLabelIsFallback = false;
       this.isBackgroundReady = true;
       if (hasPreviousBackground) {
@@ -431,18 +409,21 @@ this.previousBackgroundMap?.release();
           setTimeout(() => {
             if (requestId === this.imageLoadRequestId) {
               this.prevImageLabel = $r('app.media.ic_public_music');
-              this.previousBackgroundMap?.release();
-              this.previousBackgroundMap = undefined;
+              this.previousCoverLease?.release();
+              this.previousCoverLease = undefined;
             }
           }, StyleConstants.ANIMATION_PLAYER_BACKGROUND_DURATION);
         }, StyleConstants.ANIMATION_PRESS_DELAY_SHORT);
+      } else {
+        this.previousCoverLease?.release();
+        this.previousCoverLease = undefined;
       }
     } catch (err) {
       Logger.error(`loadAlbumArt failed: ${JSON.stringify(err)}`);
     } finally {
-      if (this.backgroundCoverLease === coverLease) {
-        this.backgroundCoverLease = undefined;
-      } else {
+      // 接受路径下 lease 由 backgroundCoverLease 持有（渲染期直接引用其 pixelMap），
+      // 不得置空；拒绝/异常路径归还 lease
+      if (this.backgroundCoverLease !== coverLease) {
         coverLease?.release();
       }
     }

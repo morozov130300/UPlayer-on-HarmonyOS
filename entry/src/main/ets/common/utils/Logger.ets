@@ -19,27 +19,34 @@ import { BaseConstants } from '../constants/BaseConstants';
 class Logger {
   private domain: number;
   private prefix: string;
-  private format: string = '%{public}s, %{public}s';
 
   public constructor(prefix: string) {
     this.prefix = prefix;
     this.domain = 0x0000;
   }
 
+  private buildFormat(args: Object[]): string {
+    let format: string = '';
+    for (let i = 0; i < args.length; i++) {
+      format += '%{public}s ';
+    }
+    return format.trim();
+  }
+
   public debug(...args: Object[]): void {
-    hilog.debug(this.domain, this.prefix, this.format, args);
+    hilog.debug(this.domain, this.prefix, this.buildFormat(args), args);
   }
 
   public info(...args: Object[]): void {
-    hilog.info(this.domain, this.prefix, this.format, args);
+    hilog.info(this.domain, this.prefix, this.buildFormat(args), args);
   }
 
   public warn(...args: Object[]): void {
-    hilog.warn(this.domain, this.prefix, this.format, args);
+    hilog.warn(this.domain, this.prefix, this.buildFormat(args), args);
   }
 
   public error(...args: Object[]): void {
-    hilog.error(this.domain, this.prefix, this.format, args);
+    hilog.error(this.domain, this.prefix, this.buildFormat(args), args);
   }
 }
 

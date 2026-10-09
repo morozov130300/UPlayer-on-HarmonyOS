@@ -1,6 +1,7 @@
 import { relationalStore } from '@kit.ArkData'
 import { common } from '@kit.AbilityKit'
 import { SongInfo } from '../model/SongInfo'
+import { FolderInfo } from '../model/FolderInfo'
 import Logger from '../common/utils/Logger'
 
 const TAG = 'SongDatabase'
@@ -52,6 +53,18 @@ const SQL_INDEX_URI: string = 'CREATE INDEX IF NOT EXISTS idx_songs_uri ON songs
 const SQL_INDEX_FOLDER: string = 'CREATE INDEX IF NOT EXISTS idx_songs_folder ON songs(folderPath)'
 const SQL_INDEX_SORT: string = 'CREATE INDEX IF NOT EXISTS idx_songs_sort ON songs(sortOrder)'
 
+const TABLE_FOLDERS: string = 'folders'
+const SQL_CREATE_FOLDERS: string = 'CREATE TABLE IF NOT EXISTS folders (' +
+  'id TEXT PRIMARY KEY,' +
+  'name TEXT NOT NULL DEFAULT \'\',' +
+  'path TEXT NOT NULL DEFAULT \'\',' +
+  'songCount INTEGER NOT NULL DEFAULT 0,' +
+  'addedTime INTEGER NOT NULL DEFAULT 0,' +
+  'isAvailable INTEGER NOT NULL DEFAULT 1,' +
+  'isFavorite INTEGER NOT NULL DEFAULT 0,' +
+  'sortOrder INTEGER NOT NULL DEFAULT 0,' +
+  'orderIndex INTEGER NOT NULL DEFAULT 0)'
+
 // 曲库关系型数据库封装：所有写入均为增量 SQL（批量 INSERT / 单行 UPDATE / 批量 DELETE），
 // 禁止全表重写；批量插入使用 batchInsert（内部自带事务），更新走显式事务。
 export class SongDatabase {
@@ -78,6 +91,7 @@ export class SongDatabase {
         await store.executeSql(SQL_INDEX_URI)
         await store.executeSql(SQL_INDEX_FOLDER)
         await store.executeSql(SQL_INDEX_SORT)
+        await store.executeSql(SQL_CREATE_FOLDERS)
         Logger.info(TAG, 'SongDatabase initialized')
         resolve()
       }).catch((err: Error) => {
@@ -90,8 +104,9 @@ export class SongDatabase {
 
   public async queryAllSongs(): Promise<SongInfo[]> {
     const store = this.requireStore()
-    const resultSet: relationalStore.ResultSet = await store.querySql(
-      'SELECT * FROM songs ORDER BY sortOrder ASC, addedTime ASC')
+    const predicates = new relationalStore.RdbPredicates(TABLE_SONGS)
+    predicates.orderByAsc('sortOrder').orderByAsc('addedTime')
+    const resultSet: relationalStore.ResultSet = await store.query(predicates)
     const result: SongInfo[] = []
     try {
       while (resultSet.goToNextRow()) {
@@ -128,13 +143,9 @@ export class SongDatabase {
     const store = this.requireStore()
     for (let offset = 0; offset < ids.length; offset += SQL_BATCH_SIZE) {
       const chunk: string[] = ids.slice(offset, offset + SQL_BATCH_SIZE)
-      const placeholders: string[] = []
-      const args: Array<relationalStore.ValueType> = []
-      for (let i = 0; i < chunk.length; i++) {
-        placeholders.push('?')
-        args.push(chunk[i])
-      }
-      await store.executeSql(`DELETE FROM songs WHERE id IN (${placeholders.join(', ')})`, args)
+      const predicates = new relationalStore.RdbPredicates(TABLE_SONGS)
+      predicates.in('id', chunk)
+      await store.delete(predicates)
     }
     Logger.info(TAG, `deleteSongsByIds: ${ids.length} rows deleted`)
   }
@@ -173,6 +184,72 @@ export class SongDatabase {
     } catch (err) {
       Logger.warn(TAG, `wal checkpoint failed: ${JSON.stringify(err)}`)
     }
+  }
+
+  // ═══════════ folders 表：文件夹列表持久化（替代 JSON-in-Preferences） ═══════════
+
+  // 按持久化时的数组顺序（orderIndex）读回，保证与写入前的列表顺序一致
+  public async queryAllFolders(): Promise<FolderInfo[]> {
+    const store = this.requireStore()
+    const predicates = new relationalStore.RdbPredicates(TABLE_FOLDERS)
+    predicates.orderByAsc('orderIndex')
+    const resultSet: relationalStore.ResultSet = await store.query(predicates)
+    const result: FolderInfo[] = []
+    try {
+      while (resultSet.goToNextRow()) {
+        result.push(this.folderFromResultSet(resultSet))
+      }
+    } finally {
+      resultSet.close()
+    }
+    return result
+  }
+
+  // 全量替换：显式事务内先清空再批量插入，数组顺序由 orderIndex 记录
+  public async replaceFolders(folders: FolderInfo[]): Promise<void> {
+    const store = this.requireStore()
+    store.beginTransaction()
+    try {
+      await store.executeSql(`DELETE FROM ${TABLE_FOLDERS}`)
+      const buckets: relationalStore.ValuesBucket[] = []
+      for (let i = 0; i < folders.length; i++) {
+        buckets.push(this.folderToValuesBucket(folders[i], i))
+      }
+      if (buckets.length > 0) {
+        await store.batchInsert(TABLE_FOLDERS, buckets)
+      }
+      await store.commit()
+    } catch (err) {
+      store.rollBack()
+      throw new Error(`replaceFolders failed: ${JSON.stringify(err)}`)
+    }
+  }
+
+  private folderToValuesBucket(folder: FolderInfo, orderIndex: number): relationalStore.ValuesBucket {
+    const bucket: relationalStore.ValuesBucket = {}
+    bucket['id'] = folder.id
+    bucket['name'] = folder.name
+    bucket['path'] = folder.path
+    bucket['songCount'] = folder.songCount
+    bucket['addedTime'] = folder.addedTime
+    bucket['isAvailable'] = folder.isAvailable ? 1 : 0
+    bucket['isFavorite'] = folder.isFavorite ? 1 : 0
+    bucket['sortOrder'] = folder.sortOrder
+    bucket['orderIndex'] = orderIndex
+    return bucket
+  }
+
+  private folderFromResultSet(rs: relationalStore.ResultSet): FolderInfo {
+    const folder: FolderInfo = new FolderInfo()
+    folder.id = this.rsGetString(rs, 'id')
+    folder.name = this.rsGetString(rs, 'name')
+    folder.path = this.rsGetString(rs, 'path')
+    folder.songCount = this.rsGetLong(rs, 'songCount')
+    folder.addedTime = this.rsGetLong(rs, 'addedTime')
+    folder.isAvailable = this.rsGetLong(rs, 'isAvailable') !== 0
+    folder.isFavorite = this.rsGetLong(rs, 'isFavorite') !== 0
+    folder.sortOrder = this.rsGetLong(rs, 'sortOrder')
+    return folder
   }
 
   private requireStore(): relationalStore.RdbStore {

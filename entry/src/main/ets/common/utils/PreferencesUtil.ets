@@ -96,4 +96,18 @@ export class PreferencesUtil {
       return undefined;
     }
   }
+
+  // Delete the value of the key (official preferences.deleteSync)
+  preferencesDelete(key: string): void {
+    if (!this.preferences) {
+      Logger.info(TAG, 'preferences is undefined');
+      return;
+    }
+    try {
+      this.preferences.deleteSync(key);
+      this.flushNow();
+    } catch (err) {
+      Logger.error(TAG, `preferencesDelete failed: ${JSON.stringify(err)}`);
+    }
+  }
 }

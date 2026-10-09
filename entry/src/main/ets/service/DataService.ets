@@ -85,6 +85,10 @@ export class DataService {
   private flushQueued: boolean = false
   // initToAppStorage 幂等标志：EntryAbility 与页面都会调用，重复执行会重复跑可访问性检查
   private appStorageInitialized: boolean = false
+  // 文件夹列表 RDB 缓存：init() 完成前 getFolders 走旧 Preferences 读路径兜底
+  private foldersCache: FolderInfo[] | undefined = undefined
+  private foldersRdbReady: boolean = false
+  private saveFoldersChain: Promise<void> = Promise.resolve()
 
   public static getInstance(): DataService {
     return DataService.instance
@@ -101,11 +105,36 @@ export class DataService {
         snapshot.set(songs[i].id, this.cloneSong(songs[i]))
       }
       this.dbSnapshot = snapshot
+      await this.initFolders()
       Logger.info(TAG, `init: loaded ${songs.length} songs from database`)
     } catch (err) {
       this.songsCache = []
       this.dbSnapshot = new Map<string, SongInfo>()
       Logger.error(TAG, `init failed: ${JSON.stringify(err)}`)
+    }
+  }
+
+  // 文件夹列表持久化迁移：Preferences JSON → relationalStore folders 表。
+  // 表中已有数据则以表为准；首次启动把旧键迁移进表并删除旧键；
+  // 任何 RDB 异常都回退旧 Preferences 读路径，绝不丢数据。
+  private async initFolders(): Promise<void> {
+    try {
+      const stored: FolderInfo[] = await SongDatabase.getInstance().queryAllFolders()
+      if (stored.length > 0) {
+        this.foldersCache = stored
+      } else {
+        const legacy: FolderInfo[] = this.getFoldersLegacy()
+        if (legacy.length > 0) {
+          await SongDatabase.getInstance().replaceFolders(legacy)
+          PreferencesUtil.getInstance().preferencesDelete(KEY_FOLDER_LIST)
+          Logger.info(TAG, `folders migrated to rdb: ${legacy.length} rows`)
+        }
+        this.foldersCache = legacy
+      }
+      this.foldersRdbReady = true
+    } catch (err) {
+      this.foldersRdbReady = false
+      Logger.error(TAG, `initFolders failed, fallback to preferences: ${JSON.stringify(err)}`)
     }
   }
 
@@ -524,6 +553,15 @@ return result
   // ═══════════ Folder CRUD ═══════════
 
   getFolders(): FolderInfo[] {
+    // RDB 就绪后走内存缓存（init 时已从表加载）
+    if (this.foldersCache !== undefined) {
+      return this.foldersCache
+    }
+    // init 未完成 / RDB 异常时兜底：与旧实现完全一致的 Preferences 读路径
+    return this.getFoldersLegacy()
+  }
+
+  private getFoldersLegacy(): FolderInfo[] {
     const cached: object | undefined = AppStorage.get<FolderInfo[]>(KEY_FOLDER_LIST)
     if (cached !== undefined) {
       return cached as FolderInfo[]
@@ -539,6 +577,21 @@ return result
 
   saveFolders(folders: FolderInfo[]): void {
     AppStorage.setOrCreate(KEY_FOLDER_LIST, folders)
+    this.foldersCache = folders
+    if (this.foldersRdbReady) {
+      // 串行化全量替换，写失败回退旧 Preferences 键，保证数据不丢
+      this.saveFoldersChain = this.saveFoldersChain.then((): Promise<void> => {
+        return SongDatabase.getInstance().replaceFolders(folders)
+      }).catch((err: BusinessError) => {
+        Logger.error(TAG, `saveFolders to rdb failed, fallback to preferences: ${JSON.stringify(err)}`)
+        this.writeFoldersLegacy(folders)
+      })
+    } else {
+      this.writeFoldersLegacy(folders)
+    }
+  }
+
+  private writeFoldersLegacy(folders: FolderInfo[]): void {
     const records: Record<string, Object>[] = []
     for (let i = 0; i < folders.length; i++) {
       records.push(this.folderToRecord(folders[i]))

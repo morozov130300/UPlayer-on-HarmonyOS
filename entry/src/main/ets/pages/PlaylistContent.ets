@@ -27,7 +27,6 @@ export struct PlaylistContent {
   @State songs: SongInfo[] = []
   @State settings: AppSettingsData = new AppSettingsData()
   @State isPlusVisible: boolean = true
-  @State lastScrollY: number = 0
   @State selectedFolderPaths: string[] = []
   @State favoritesSelected: boolean = false
   @StorageLink(AppStorageKeyConstants.KEY_TITLE_BUTTON_WIDTH) titleButtonWidth: number = 140
@@ -70,7 +69,7 @@ export struct PlaylistContent {
     }
     try {
       const displayInfo = display.getDefaultDisplaySync()
-      const vpWidth = displayInfo.width / 160
+      const vpWidth = this.getUIContext().px2vp(displayInfo.width)
       if (vpWidth >= 600) {
         this.gridColumns = 3
       } else {
@@ -373,17 +372,15 @@ export struct PlaylistContent {
           scrollForward: NestedScrollMode.SELF_FIRST,
           scrollBackward: NestedScrollMode.SELF_FIRST
         })
-        .onDidScroll(() => {
-          const offset = this.scroller.currentOffset()
-          const yOffset: number = offset.yOffset
-          if (yOffset > this.lastScrollY && (yOffset - this.lastScrollY) > 10) {
+        .onDidScroll((scrollOffset: number) => {
+          // scrollOffset 为本帧带符号偏移：向下滚动为正、向上为负
+          if (scrollOffset > 10) {
             this.isPlusVisible = false
             this.publishPlusVisible()
-          } else if (yOffset < this.lastScrollY) {
+          } else if (scrollOffset < 0) {
             this.isPlusVisible = true
             this.publishPlusVisible()
           }
-          this.lastScrollY = yOffset
         })
 
         if (this.isEditMode) {
