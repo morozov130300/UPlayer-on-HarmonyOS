@@ -1,13 +1,14 @@
 // ArkUI 26 Beta1: 接口定义变更（误报，本项目已是Stage模型）+ UX视觉布局变更（Text默认开启沉浸式材质，系统行为）
 import { curves, uiAppearance } from '@kit.ArkUI'
 import { hdsMaterial, HdsTabs, HdsTabsController, HdsTabsFloatingStyle } from '@kit.UIDesignKit'
-import { common, ConfigurationConstant } from '@kit.AbilityKit'
+import { bundleManager, common, ConfigurationConstant } from '@kit.AbilityKit'
+import { updateManager } from '@kit.AppGalleryKit'
 import { AppSettingsData, DataService } from '../service/DataService'
 import { AVPlayerService } from '../service/AVPlayerService'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import Logger from '../common/utils/Logger'
-import { deviceInfo, pasteboard, SuppressWarnings, SuppressWarningsType } from '@kit.BasicServicesKit'
+import { BusinessError, deviceInfo, pasteboard, SuppressWarnings, SuppressWarningsType } from '@kit.BasicServicesKit'
 import { HoldingHandService, KEY_HOLDING_HAND_ENABLED, KEY_HOLDING_HAND_LEFT } from '../service/HoldingHandService'
 import { ColorConversion } from '../common/utils/ColorConversion'
 import { isLiquidGlassAvailable, showToastGlassMaterial, topBlurRadiusFromStrength } from '../common/utils/GlassUtil'
@@ -141,7 +142,8 @@ struct SettingsDetailPage {
   private aboutRepoUrl: string = 'https://github.com/morozov130300/UPlayer-on-HarmonyOS'
   private aboutEmail: string = 'jhy130300@126.com'
   private aboutQq: string = '3500873394'
-  private aboutVersionName: string = '0.0.1'
+  @State aboutVersionName: string = ''
+  @State checkingUpdate: boolean = false
 
   // 指针设备检测结果变化：包进统一触发动画后翻转「白色蒙版」芯片显隐镜像值
   onPointerDeviceChange(): void {
@@ -166,6 +168,14 @@ struct SettingsDetailPage {
       .getParams() as Record<string, string>
     const route: string = params?.category ?? 'customize'
     this.pageTitle = this.titleMap[route] ?? '设置'
+    // 版本号动态读取 app.json5 的 versionName，避免每次升版本手动同步
+    bundleManager.getBundleInfoForSelf(bundleManager.BundleFlag.GET_BUNDLE_INFO_DEFAULT)
+      .then((info: bundleManager.BundleInfo) => {
+        this.aboutVersionName = info.versionName
+      })
+      .catch((error: BusinessError) => {
+        Logger.error(TAG, 'getBundleInfoForSelf failed: ' + error.message)
+      })
     ColorConversion.setSysBarLightBackground(this.isDark())
     // 智感握姿监听由 HoldingHandService 统一持有（首页加号与本页预览共用同一份滤波结果）
     HoldingHandService.getInstance().syncWithSetting()
@@ -1681,6 +1691,17 @@ struct SettingsDetailPage {
       }
       .width('100%')
 
+      Column({ space: this.scaledSize(6) }) {
+        Text('更新')
+          .fontSize(this.scaledFont(13))
+          .fontColor(this.settingTextColor())
+          .fontWeight(FontWeight.Bold)
+          .width('100%')
+          .padding({ left: this.scaledSize(4) })
+        this.checkUpdateRow()
+      }
+      .width('100%')
+
       Text('本地音乐播放器 · 为鸿蒙打造')
         .fontSize(this.scaledFont(11))
         .fontColor(this.settingTextColor())
@@ -1690,6 +1711,69 @@ struct SettingsDetailPage {
     }
     .width('100%')
     .constraintSize({ minWidth: 0, maxWidth: '100%' })
+  }
+
+  // 检查更新行：点击调用应用市场更新服务（checkAppUpdate + showUpdateDialog）
+  @Builder
+  checkUpdateRow(): void {
+    Row() {
+      Text('检查更新')
+        .fontSize(this.scaledFont(13))
+        .fontColor(this.settingTextColor())
+        .textAlign(TextAlign.Start)
+        .flexShrink(0)
+      Blank()
+      Text(this.checkingUpdate ? '正在检查…' : '检查新版本')
+        .fontSize(this.scaledFont(13))
+        .fontColor(this.checkingUpdate ? this.settingInactiveTextColor() : this.primaryColor)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .flexShrink(1)
+        .textAlign(TextAlign.End)
+    }
+    .width('100%')
+    .constraintSize({ minWidth: 0, maxWidth: '100%' })
+    .height(this.scaledSize(40))
+    .alignItems(VerticalAlign.Center)
+    .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+    .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+    .borderRadius(this.scaledSize(10))
+    .onClick(() => {
+      this.checkForUpdate()
+    })
+  }
+
+  // 调用应用市场更新服务：有新版本弹系统升级框，无新版本 toast 提示
+  private checkForUpdate(): void {
+    if (this.checkingUpdate) {
+      return
+    }
+    const context: common.UIAbilityContext = this.getUIContext()?.getHostContext() as common.UIAbilityContext
+    this.checkingUpdate = true
+    try {
+      updateManager.checkAppUpdate(context)
+        .then((result: updateManager.CheckUpdateResult) => {
+          this.checkingUpdate = false
+          if (result.updateAvailable === updateManager.UpdateAvailableCode.LATER_VERSION_EXIST) {
+            updateManager.showUpdateDialog(context)
+              .catch((error: BusinessError) => {
+                Logger.error(TAG, 'showUpdateDialog failed: ' + error.message)
+              })
+          } else {
+            showToastGlassMaterial(this.getUIContext()?.getPromptAction(), '当前已是最新版本')
+          }
+        })
+        .catch((error: BusinessError) => {
+          this.checkingUpdate = false
+          Logger.error(TAG, 'checkAppUpdate failed: ' + error.message)
+          showToastGlassMaterial(this.getUIContext()?.getPromptAction(), '检查更新失败，请稍后重试')
+        })
+    } catch (error) {
+      this.checkingUpdate = false
+      const err = error as BusinessError
+      Logger.error(TAG, 'checkAppUpdate exception: ' + err.message)
+      showToastGlassMaterial(this.getUIContext()?.getPromptAction(), '检查更新失败，请稍后重试')
+    }
   }
 
   @Builder
