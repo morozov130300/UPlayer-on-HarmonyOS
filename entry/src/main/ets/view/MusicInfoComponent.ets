@@ -23,6 +23,7 @@ export struct MusicInfoComponent {
   @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) isPlay: boolean = false;
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0;
   @State glowRotation: number = 0;
+  @State glowTimer: number = -1;
   private dataService: DataService = DataService.getInstance()
 
   aboutToAppear() {
@@ -79,22 +80,25 @@ export struct MusicInfoComponent {
 
   startGlowAnimation() {
     this.stopGlowAnimation()
-    // 官方无限循环动画：360°/ANIMATION_AMBIENT_GLOW_DURATION 匀速旋转，
-    // 窗口隐藏时 vsync 停止即自动冻结，回前台无缝续转
-    this.getUIContext()?.animateTo({
-      duration: StyleConstants.ANIMATION_AMBIENT_GLOW_DURATION,
-      curve: Curve.Linear,
-      iterations: -1
-    }, () => {
-      this.glowRotation = this.glowRotation + 360;
-    })
+    // 回退说明：animateTo({iterations: -1}) 无限动画运行期间会干扰同窗其它 animateTo
+    // （官方 FAQ faqs-arkui-1549：被打断的动画实例叠加导致动画视觉失效），
+    // 播控条按压/加号显隐动画因此消失，按「单项不等价即回退」恢复 setInterval 实现
+    this.glowTimer = setInterval(() => {
+      // 窗口隐藏时跳过本帧灯光推进：角度是 360 循环累加，暂停期间无感知，回前台无缝续转
+      if (AppStorage.get<boolean>(AppStorageKeyConstants.KEY_UI_ACTIVE) === false) {
+        return
+      }
+      this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_AMBIENT_GLOW_DURATION, curve: Curve.Linear }, () => {
+        this.glowRotation = (this.glowRotation + 360) % 360
+      })
+    }, StyleConstants.ANIMATION_AMBIENT_GLOW_DURATION)
   }
 
   stopGlowAnimation() {
-    // 用 0 时长动画取消无限动画；渐变光晕 360° 循环对称，回到基值视觉无缝
-    this.getUIContext()?.animateTo({ duration: 0 }, () => {
-      this.glowRotation = this.glowRotation % 360;
-    })
+    if (this.glowTimer !== -1) {
+      clearInterval(this.glowTimer)
+      this.glowTimer = -1
+    }
   }
 
   build() {

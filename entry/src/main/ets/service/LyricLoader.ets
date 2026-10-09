@@ -2,6 +2,7 @@
 // 播放器（LyricsComponent）与首页迷你歌词（Index）都必须走这里，
 // 避免此前两份各自演进的加载逻辑再次分叉。
 import { fileIo as fs } from '@kit.CoreFileKit'
+import { util } from '@kit.ArkTS'
 import { SongInfo } from '../model/SongInfo'
 import { LrcEntry } from '../viewmodel/LrcEntry'
 import { LyricFile } from '../common/constants/LyricConst'
@@ -38,15 +39,50 @@ function isKrcPath(path: string): boolean {
   return path.toLowerCase().endsWith(LyricFile.KRC)
 }
 
+// 回退说明：fs.readText 不支持 file://docs URI（真机报 13900002 No such file or directory），
+// 而 fs.open 支持；两者不等价，按「单项不等价即回退」恢复原读取实现。
+// fs.read 可能短读：循环读满 stat 得到的长度，并按实际读到的字节数截断，
+// 避免尾部补零字节被解码成正文
+async function readAll(fd: number, size: number): Promise<Uint8Array> {
+  const target: Uint8Array = new Uint8Array(size)
+  let total: number = 0
+  while (total < size) {
+    const chunk: ArrayBuffer = new ArrayBuffer(size - total)
+    const readLen: number = await fs.read(fd, chunk)
+    if (readLen <= 0) {
+      break
+    }
+    target.set(new Uint8Array(chunk, 0, readLen), total)
+    total += readLen
+  }
+  return total === size ? target : target.subarray(0, total)
+}
+
 async function loadFromPath(path: string): Promise<LrcEntry[]> {
+  let file: fs.File | undefined = undefined
   try {
-    // readText 内部完成打开/读取/UTF-8 解码/关闭，短读与 fd 泄漏由系统处理；
-    // 行文本在解析时会 trim，即使保留了 BOM 也会被去掉
-    const text: string = await fs.readText(path, { encoding: PlayerConstants.ENCODING })
+    file = await fs.open(path, fs.OpenMode.READ_ONLY)
+    const size: number = (await fs.stat(file.fd)).size
+    if (size <= 0) {
+      return []
+    }
+    const bytes: Uint8Array = await readAll(file.fd, size)
+    // 行文本在解析时会 trim，因此即使解码器保留了 BOM 也会被去掉
+    const decoder = util.TextDecoder.create(PlayerConstants.ENCODING, { ignoreBOM: true })
+    const text: string = decoder.decodeToString(bytes, { stream: false })
     return isKrcPath(path) ? parseKrcLyric(text) : parseLrcLyric(text)
   } catch (err) {
     Logger.warn(TAG, `load lyric failed path=${path} err=${JSON.stringify(err)}`)
     return []
+  } finally {
+    // 无论成功失败都必须关闭 fd，否则异常路径会泄漏文件描述符
+    if (file !== undefined) {
+      try {
+        await fs.close(file)
+      } catch (e) {
+        Logger.warn(TAG, `close lyric file failed path=${path}`)
+      }
+    }
   }
 }
 
