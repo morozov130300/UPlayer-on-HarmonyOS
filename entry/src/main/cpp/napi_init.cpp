@@ -460,6 +460,22 @@ public:
             OH_AudioSuiteEngine_DestroyNode(eqNode_);
             eqNode_ = nullptr;
         }
+        if (soundFieldNode_ != nullptr) {
+            OH_AudioSuiteEngine_DestroyNode(soundFieldNode_);
+            soundFieldNode_ = nullptr;
+        }
+        if (environmentNode_ != nullptr) {
+            OH_AudioSuiteEngine_DestroyNode(environmentNode_);
+            environmentNode_ = nullptr;
+        }
+        if (beautifierNode_ != nullptr) {
+            OH_AudioSuiteEngine_DestroyNode(beautifierNode_);
+            beautifierNode_ = nullptr;
+        }
+        if (spaceRenderNode_ != nullptr) {
+            OH_AudioSuiteEngine_DestroyNode(spaceRenderNode_);
+            spaceRenderNode_ = nullptr;
+        }
         if (outputNode_ != nullptr) {
             OH_AudioSuiteEngine_DestroyNode(outputNode_);
             outputNode_ = nullptr;
@@ -538,7 +554,14 @@ public:
         } else {
             headroomDb_ = std::max(headroomDb_.load(), baseHeadroomDb_.load());
         }
-        return true;
+        // 管线可能被其他效果占用，EQ 节点旁路状态必须与开关同步，避免关闭 EQ 后残留处理
+        if (eqNode_ == nullptr) {
+            return true;
+        }
+        if (enabled) {
+            return ApplyBandsLocked(bands_, false);
+        }
+        return BypassNodeLocked(eqNode_, true);
     }
 
     bool SetBands(const std::array<int32_t, EQUALIZER_BAND_NUM>& bands)
@@ -565,6 +588,184 @@ public:
     {
         std::lock_guard<std::mutex> lock(effectMutex_);
         return bands_;
+    }
+
+    // 任一效果启用即需要走管线渲染：EQ 用 Play 时的 active 快照，
+    // 4 类新效果节点全建 + Bypass 即时切换，直接用 requested 原子量
+    bool IsPipelineActive() const
+    {
+        return activeEqEnabled_.load() || requestedSoundFieldEnabled_.load() ||
+            requestedEnvironmentEnabled_.load() || requestedBeautifierEnabled_.load() ||
+            requestedSpaceRenderEnabled_.load();
+    }
+
+    bool SetSoundFieldEnabled(bool enabled)
+    {
+        std::lock_guard<std::mutex> lock(effectMutex_);
+        requestedSoundFieldEnabled_ = enabled;
+        if (soundFieldNode_ == nullptr) {
+            return true;
+        }
+        if (enabled) {
+            return SetSoundFieldStateLocked();
+        }
+        return BypassNodeLocked(soundFieldNode_, true);
+    }
+
+    bool SetSoundFieldType(int32_t type)
+    {
+        if (type < 1 || type > 4) {
+            return false;
+        }
+        soundFieldType_ = type;
+        std::lock_guard<std::mutex> lock(effectMutex_);
+        if (soundFieldNode_ == nullptr || !requestedSoundFieldEnabled_.load()) {
+            return true;
+        }
+        OH_AudioSuite_Result result = OH_AudioSuiteEngine_SetSoundFieldType(
+            soundFieldNode_, static_cast<OH_SoundFieldType>(type));
+        if (result != AUDIOSUITE_SUCCESS) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "set sound field type failed code=%{public}d type=%{public}d",
+                static_cast<int>(result), type);
+            return false;
+        }
+        return true;
+    }
+
+    bool SetEnvironmentEnabled(bool enabled)
+    {
+        std::lock_guard<std::mutex> lock(effectMutex_);
+        requestedEnvironmentEnabled_ = enabled;
+        if (environmentNode_ == nullptr) {
+            return true;
+        }
+        if (enabled) {
+            return SetEnvironmentStateLocked();
+        }
+        return BypassNodeLocked(environmentNode_, true);
+    }
+
+    bool SetEnvironmentType(int32_t type)
+    {
+        if (type < 1 || type > 4) {
+            return false;
+        }
+        environmentType_ = type;
+        std::lock_guard<std::mutex> lock(effectMutex_);
+        if (environmentNode_ == nullptr || !requestedEnvironmentEnabled_.load()) {
+            return true;
+        }
+        OH_AudioSuite_Result result = OH_AudioSuiteEngine_SetEnvironmentType(
+            environmentNode_, static_cast<OH_EnvironmentType>(type));
+        if (result != AUDIOSUITE_SUCCESS) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "set environment type failed code=%{public}d type=%{public}d",
+                static_cast<int>(result), type);
+            return false;
+        }
+        return true;
+    }
+
+    bool SetVoiceBeautifierEnabled(bool enabled)
+    {
+        std::lock_guard<std::mutex> lock(effectMutex_);
+        requestedBeautifierEnabled_ = enabled;
+        if (beautifierNode_ == nullptr) {
+            return true;
+        }
+        if (enabled) {
+            return SetBeautifierStateLocked();
+        }
+        return BypassNodeLocked(beautifierNode_, true);
+    }
+
+    bool SetVoiceBeautifierType(int32_t type)
+    {
+        if (type < 1 || type > 4) {
+            return false;
+        }
+        beautifierType_ = type;
+        std::lock_guard<std::mutex> lock(effectMutex_);
+        if (beautifierNode_ == nullptr || !requestedBeautifierEnabled_.load()) {
+            return true;
+        }
+        OH_AudioSuite_Result result = OH_AudioSuiteEngine_SetVoiceBeautifierType(
+            beautifierNode_, static_cast<OH_VoiceBeautifierType>(type));
+        if (result != AUDIOSUITE_SUCCESS) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "set voice beautifier type failed code=%{public}d type=%{public}d",
+                static_cast<int>(result), type);
+            return false;
+        }
+        return true;
+    }
+
+    bool SetSpaceRenderEnabled(bool enabled)
+    {
+        std::lock_guard<std::mutex> lock(effectMutex_);
+        requestedSpaceRenderEnabled_ = enabled;
+        if (spaceRenderNode_ == nullptr) {
+            return true;
+        }
+        if (enabled) {
+            return SetSpaceRenderStateLocked();
+        }
+        return BypassNodeLocked(spaceRenderNode_, true);
+    }
+
+    // mode: 0=固定摆位(values={x,y,z}) 1=旋转({x,y,z,surroundTime,surroundDirection}) 2=扩展({extRadius,extAngle})
+    bool SetSpaceRenderConfig(int32_t mode, const std::vector<float>& values)
+    {
+        if (mode < 0 || mode > 2) {
+            return false;
+        }
+        std::lock_guard<std::mutex> lock(effectMutex_);
+        spaceRenderMode_ = mode;
+        switch (mode) {
+            case 0:
+                if (values.size() != 3) {
+                    return false;
+                }
+                spaceX_ = std::clamp(values[0], -5.0f, 5.0f);
+                spaceY_ = std::clamp(values[1], -5.0f, 5.0f);
+                spaceZ_ = std::clamp(values[2], -5.0f, 5.0f);
+                break;
+            case 1:
+                if (values.size() != 5) {
+                    return false;
+                }
+                spaceX_ = std::clamp(values[0], -5.0f, 5.0f);
+                spaceY_ = std::clamp(values[1], -5.0f, 5.0f);
+                spaceZ_ = std::clamp(values[2], -5.0f, 5.0f);
+                spaceSurroundTime_ = static_cast<int32_t>(
+                    std::lround(std::clamp(static_cast<double>(values[3]), 2.0, 40.0)));
+                spaceSurroundDirection_ = values[4] >= 0.5f ? 1 : 0;
+                break;
+            default:
+                if (values.size() != 2) {
+                    return false;
+                }
+                spaceExtRadius_ = std::clamp(values[0], 1.0f, 5.0f);
+                spaceExtAngle_ = static_cast<int32_t>(
+                    std::lround(std::clamp(static_cast<double>(values[1]), 1.0, 359.0)));
+                break;
+        }
+        if (spaceRenderNode_ == nullptr || !requestedSpaceRenderEnabled_.load()) {
+            return true;
+        }
+        return ApplySpaceRenderParamsLocked();
+    }
+
+    bool IsEffectNodeSupported(int32_t nodeType)
+    {
+        bool supported = false;
+        OH_AudioSuite_Result result = OH_AudioSuiteEngine_IsNodeTypeSupported(
+            static_cast<OH_AudioNode_Type>(nodeType), &supported);
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "isEffectNodeSupported type=%{public}d result=%{public}d supported=%{public}d",
+            nodeType, static_cast<int>(result), supported ? 1 : 0);
+        return result == AUDIOSUITE_SUCCESS && supported;
     }
 
     bool IsEqualizerEnabled() const
@@ -668,6 +869,225 @@ private:
             current.gains[3], current.gains[4], current.gains[5], current.gains[6], current.gains[7],
             current.gains[8], current.gains[9]);
         return matched;
+    }
+
+    bool BypassNodeLocked(OH_AudioNode* node, bool bypass)
+    {
+        OH_AudioSuite_Result result = OH_AudioSuiteEngine_BypassEffectNode(node, bypass);
+        if (result != AUDIOSUITE_SUCCESS) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "bypass effect node failed bypass=%{public}d code=%{public}d",
+                bypass ? 1 : 0, static_cast<int>(result));
+            return false;
+        }
+        return true;
+    }
+
+    bool SetSoundFieldStateLocked()
+    {
+        if (soundFieldNode_ == nullptr) {
+            return true;
+        }
+        if (!BypassNodeLocked(soundFieldNode_, false)) {
+            return false;
+        }
+        OH_AudioSuite_Result result = OH_AudioSuiteEngine_SetSoundFieldType(
+            soundFieldNode_, static_cast<OH_SoundFieldType>(soundFieldType_.load()));
+        if (result != AUDIOSUITE_SUCCESS) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "set sound field type failed code=%{public}d type=%{public}d",
+                static_cast<int>(result), soundFieldType_.load());
+            return false;
+        }
+        return true;
+    }
+
+    bool SetEnvironmentStateLocked()
+    {
+        if (environmentNode_ == nullptr) {
+            return true;
+        }
+        if (!BypassNodeLocked(environmentNode_, false)) {
+            return false;
+        }
+        OH_AudioSuite_Result result = OH_AudioSuiteEngine_SetEnvironmentType(
+            environmentNode_, static_cast<OH_EnvironmentType>(environmentType_.load()));
+        if (result != AUDIOSUITE_SUCCESS) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "set environment type failed code=%{public}d type=%{public}d",
+                static_cast<int>(result), environmentType_.load());
+            return false;
+        }
+        return true;
+    }
+
+    bool SetBeautifierStateLocked()
+    {
+        if (beautifierNode_ == nullptr) {
+            return true;
+        }
+        if (!BypassNodeLocked(beautifierNode_, false)) {
+            return false;
+        }
+        OH_AudioSuite_Result result = OH_AudioSuiteEngine_SetVoiceBeautifierType(
+            beautifierNode_, static_cast<OH_VoiceBeautifierType>(beautifierType_.load()));
+        if (result != AUDIOSUITE_SUCCESS) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "set voice beautifier type failed code=%{public}d type=%{public}d",
+                static_cast<int>(result), beautifierType_.load());
+            return false;
+        }
+        return true;
+    }
+
+    bool ApplySpaceRenderParamsLocked()
+    {
+        if (spaceRenderNode_ == nullptr) {
+            return true;
+        }
+        OH_AudioSuite_Result result = AUDIOSUITE_SUCCESS;
+        switch (spaceRenderMode_.load()) {
+            case 0: {
+                OH_AudioSuite_SpaceRenderPositionParams position = {};
+                position.x = spaceX_;
+                position.y = spaceY_;
+                position.z = spaceZ_;
+                result = OH_AudioSuiteEngine_SetSpaceRenderPositionParams(spaceRenderNode_, position);
+                break;
+            }
+            case 1: {
+                OH_AudioSuite_SpaceRenderRotationParams rotation = {};
+                rotation.x = spaceX_;
+                rotation.y = spaceY_;
+                rotation.z = spaceZ_;
+                rotation.surroundTime = spaceSurroundTime_;
+                rotation.surroundDirection =
+                    static_cast<OH_AudioSuite_SurroundDirection>(spaceSurroundDirection_);
+                result = OH_AudioSuiteEngine_SetSpaceRenderRotationParams(spaceRenderNode_, rotation);
+                break;
+            }
+            default: {
+                OH_AudioSuite_SpaceRenderExtensionParams extension = {};
+                extension.extRadius = spaceExtRadius_;
+                extension.extAngle = spaceExtAngle_;
+                result = OH_AudioSuiteEngine_SetSpaceRenderExtensionParams(spaceRenderNode_, extension);
+                break;
+            }
+        }
+        if (result != AUDIOSUITE_SUCCESS) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "set space render params failed mode=%{public}d code=%{public}d",
+                spaceRenderMode_.load(), static_cast<int>(result));
+            return false;
+        }
+        return true;
+    }
+
+    bool SetSpaceRenderStateLocked()
+    {
+        if (spaceRenderNode_ == nullptr) {
+            return true;
+        }
+        if (!BypassNodeLocked(spaceRenderNode_, false)) {
+            return false;
+        }
+        return ApplySpaceRenderParamsLocked();
+    }
+
+    // required=true 时节点创建失败视为致命错误（效果被请求），否则尽力而为跳过该节点
+    bool CreateOptionalEffectNode(OH_AudioNodeBuilder* builder, OH_AudioNode_Type type, bool required,
+        OH_AudioNode** node)
+    {
+        bool supported = false;
+        OH_AudioSuite_Result probeResult = OH_AudioSuiteEngine_IsNodeTypeSupported(type, &supported);
+        if (probeResult != AUDIOSUITE_SUCCESS || !supported) {
+            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "effect node type=%{public}d unsupported code=%{public}d",
+                static_cast<int>(type), static_cast<int>(probeResult));
+            return !required;
+        }
+        OH_AudioSuite_Result createResult = OH_AudioSuiteEngine_CreateNode(pipeline_, builder, node);
+        if (createResult != AUDIOSUITE_SUCCESS) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "create effect node type=%{public}d failed code=%{public}d",
+                static_cast<int>(type), static_cast<int>(createResult));
+            return !required;
+        }
+        return true;
+    }
+
+    // 动态串联存在的节点：input → eq → soundField → environment → beautifier → spaceRender → output
+    bool ChainNodes()
+    {
+        std::vector<OH_AudioNode*> chain;
+        chain.reserve(7);
+        chain.push_back(inputNode_);
+        OH_AudioNode* effectNodes[] = { eqNode_, soundFieldNode_, environmentNode_, beautifierNode_,
+            spaceRenderNode_ };
+        for (OH_AudioNode* node : effectNodes) {
+            if (node != nullptr) {
+                chain.push_back(node);
+            }
+        }
+        chain.push_back(outputNode_);
+        for (size_t i = 0; i + 1 < chain.size(); i++) {
+            if (OH_AudioSuiteEngine_ConnectNodes(chain[i], chain[i + 1]) != AUDIOSUITE_SUCCESS) {
+                OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                    "connect effect nodes failed index=%{public}zu", i);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool ApplyEffectStatesLocked()
+    {
+        if (eqNode_ != nullptr) {
+            if (activeEqEnabled_.load()) {
+                if (!ApplyBandsLocked(bands_, true)) {
+                    return false;
+                }
+            } else if (!BypassNodeLocked(eqNode_, true)) {
+                return false;
+            }
+        }
+        if (soundFieldNode_ != nullptr) {
+            if (requestedSoundFieldEnabled_.load()) {
+                if (!SetSoundFieldStateLocked()) {
+                    return false;
+                }
+            } else if (!BypassNodeLocked(soundFieldNode_, true)) {
+                return false;
+            }
+        }
+        if (environmentNode_ != nullptr) {
+            if (requestedEnvironmentEnabled_.load()) {
+                if (!SetEnvironmentStateLocked()) {
+                    return false;
+                }
+            } else if (!BypassNodeLocked(environmentNode_, true)) {
+                return false;
+            }
+        }
+        if (beautifierNode_ != nullptr) {
+            if (requestedBeautifierEnabled_.load()) {
+                if (!SetBeautifierStateLocked()) {
+                    return false;
+                }
+            } else if (!BypassNodeLocked(beautifierNode_, true)) {
+                return false;
+            }
+        }
+        if (spaceRenderNode_ != nullptr) {
+            if (requestedSpaceRenderEnabled_.load()) {
+                if (!SetSpaceRenderStateLocked()) {
+                    return false;
+                }
+            } else if (!BypassNodeLocked(spaceRenderNode_, true)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     NativeAudioPlayer() = default;
@@ -782,7 +1202,24 @@ private:
         bool success = OH_AudioSuiteEngine_CreateNode(pipeline_, builder, &inputNode_) == AUDIOSUITE_SUCCESS;
         OH_AudioSuiteNodeBuilder_Reset(builder);
         OH_AudioSuiteNodeBuilder_SetNodeType(builder, EFFECT_NODE_TYPE_EQUALIZER);
-        success = success && OH_AudioSuiteEngine_CreateNode(pipeline_, builder, &eqNode_) == AUDIOSUITE_SUCCESS;
+        success = success && CreateOptionalEffectNode(builder, EFFECT_NODE_TYPE_EQUALIZER,
+            activeEqEnabled_.load(), &eqNode_);
+        OH_AudioSuiteNodeBuilder_Reset(builder);
+        OH_AudioSuiteNodeBuilder_SetNodeType(builder, EFFECT_NODE_TYPE_SOUND_FIELD);
+        success = success && CreateOptionalEffectNode(builder, EFFECT_NODE_TYPE_SOUND_FIELD, false,
+            &soundFieldNode_);
+        OH_AudioSuiteNodeBuilder_Reset(builder);
+        OH_AudioSuiteNodeBuilder_SetNodeType(builder, EFFECT_NODE_TYPE_ENVIRONMENT_EFFECT);
+        success = success && CreateOptionalEffectNode(builder, EFFECT_NODE_TYPE_ENVIRONMENT_EFFECT, false,
+            &environmentNode_);
+        OH_AudioSuiteNodeBuilder_Reset(builder);
+        OH_AudioSuiteNodeBuilder_SetNodeType(builder, EFFECT_NODE_TYPE_VOICE_BEAUTIFIER);
+        success = success && CreateOptionalEffectNode(builder, EFFECT_NODE_TYPE_VOICE_BEAUTIFIER, false,
+            &beautifierNode_);
+        OH_AudioSuiteNodeBuilder_Reset(builder);
+        OH_AudioSuiteNodeBuilder_SetNodeType(builder, EFFECT_NODE_TYPE_SPACE_RENDER);
+        success = success && CreateOptionalEffectNode(builder, EFFECT_NODE_TYPE_SPACE_RENDER, false,
+            &spaceRenderNode_);
         OH_AudioSuiteNodeBuilder_Reset(builder);
         OH_AudioFormat outputFormat = {};
         outputFormat.samplingRate = SAMPLE_RATE_48000;
@@ -794,13 +1231,12 @@ private:
         OH_AudioSuiteNodeBuilder_SetFormat(builder, outputFormat);
         success = success && OH_AudioSuiteEngine_CreateNode(pipeline_, builder, &outputNode_) == AUDIOSUITE_SUCCESS;
         OH_AudioSuiteNodeBuilder_Destroy(builder);
-        if (!success || OH_AudioSuiteEngine_ConnectNodes(inputNode_, eqNode_) != AUDIOSUITE_SUCCESS ||
-            OH_AudioSuiteEngine_ConnectNodes(eqNode_, outputNode_) != AUDIOSUITE_SUCCESS) {
+        if (!success || !ChainNodes()) {
             return false;
         }
         {
             std::lock_guard<std::mutex> lock(effectMutex_);
-            if (!ApplyBandsLocked(bands_, true)) {
+            if (!ApplyEffectStatesLocked()) {
                 return false;
             }
         }
@@ -1135,8 +1571,8 @@ private:
             return AUDIO_DATA_CALLBACK_RESULT_INVALID;
         }
         NativeAudioPlayer* player = static_cast<NativeAudioPlayer*>(userData);
-        bool useEqualizer = player->activeEqEnabled_.load();
-        if (!player->RenderAudio(audioData, audioDataSize, useEqualizer)) {
+        bool usePipeline = player->IsPipelineActive();
+        if (!player->RenderAudio(audioData, audioDataSize, usePipeline)) {
             std::memset(audioData, 0, static_cast<size_t>(audioDataSize));
             player->decoderFailed_ = true;
             player->paused_ = true;
@@ -1144,13 +1580,13 @@ private:
                 "render frame failed; marked native playback failed");
             return AUDIO_DATA_CALLBACK_RESULT_VALID;
         }
-        player->MeasureOutput(audioData, audioDataSize, useEqualizer);
+        player->MeasureOutput(audioData, audioDataSize, player->activeEqEnabled_.load());
         return AUDIO_DATA_CALLBACK_RESULT_VALID;
     }
 
-    bool RenderAudio(void* audioData, int32_t audioDataSize, bool useEqualizer)
+    bool RenderAudio(void* audioData, int32_t audioDataSize, bool usePipeline)
     {
-        if (!useEqualizer) {
+        if (!usePipeline) {
             bool finished = false;
             int32_t readSize = ReadPcm(audioData, audioDataSize, &finished);
             if (readSize < audioDataSize) {
@@ -1328,6 +1764,10 @@ private:
     OH_AudioSuitePipeline* pipeline_ = nullptr;
     OH_AudioNode* inputNode_ = nullptr;
     OH_AudioNode* eqNode_ = nullptr;
+    OH_AudioNode* soundFieldNode_ = nullptr;
+    OH_AudioNode* environmentNode_ = nullptr;
+    OH_AudioNode* beautifierNode_ = nullptr;
+    OH_AudioNode* spaceRenderNode_ = nullptr;
     OH_AudioNode* outputNode_ = nullptr;
     uint32_t trackIndex_ = 0;
     int32_t sampleRate_ = 48000;
@@ -1356,6 +1796,14 @@ private:
     std::atomic<int64_t> durationMs_ = 0;
     std::atomic<bool> requestedEqEnabled_ = false;
     std::atomic<bool> activeEqEnabled_ = false;
+    std::atomic<bool> requestedSoundFieldEnabled_ = false;
+    std::atomic<bool> requestedEnvironmentEnabled_ = false;
+    std::atomic<bool> requestedBeautifierEnabled_ = false;
+    std::atomic<bool> requestedSpaceRenderEnabled_ = false;
+    std::atomic<int32_t> soundFieldType_ = 1;
+    std::atomic<int32_t> environmentType_ = 1;
+    std::atomic<int32_t> beautifierType_ = 1;
+    std::atomic<int32_t> spaceRenderMode_ = 0;
     float playbackSpeed_ = 1.0f;
     float volume_ = 1.0f;
     double measurementSquareSum_ = 0.0;
@@ -1373,6 +1821,14 @@ private:
     std::atomic<double> targetHeadroomDb_ = 0.0;
     std::atomic<double> headroomDb_ = 0.0;
     std::array<int32_t, EQUALIZER_BAND_NUM> bands_ = {};
+    // 空间渲染参数（effectMutex_ 保护）：摆位/旋转共用 x/y/z，旋转另有环绕时间/方向，扩展另有半径/角度
+    float spaceX_ = 0.0f;
+    float spaceY_ = 0.0f;
+    float spaceZ_ = 0.0f;
+    int32_t spaceSurroundTime_ = 10;
+    int32_t spaceSurroundDirection_ = 1;
+    float spaceExtRadius_ = 2.0f;
+    int32_t spaceExtAngle_ = 180;
     std::mutex effectMutex_;
     // 重采样状态：解码器输出源采样率 PCM，均衡器管线固定 48000
     double resamplePos_ = 0.0;
@@ -1555,6 +2011,128 @@ napi_value GetBands(napi_env env, napi_callback_info)
     return result;
 }
 
+napi_value SetSoundFieldEnable(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1] = { nullptr };
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    bool enabled = false;
+    if (argc != 1 || napi_get_value_bool(env, args[0], &enabled) != napi_ok) {
+        return BooleanValue(env, false);
+    }
+    return BooleanValue(env, NativeAudioPlayer::Instance().SetSoundFieldEnabled(enabled));
+}
+
+napi_value SetSoundFieldType(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1] = { nullptr };
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    int32_t type = 0;
+    if (argc != 1 || napi_get_value_int32(env, args[0], &type) != napi_ok) {
+        return BooleanValue(env, false);
+    }
+    return BooleanValue(env, NativeAudioPlayer::Instance().SetSoundFieldType(type));
+}
+
+napi_value SetEnvironmentEnable(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1] = { nullptr };
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    bool enabled = false;
+    if (argc != 1 || napi_get_value_bool(env, args[0], &enabled) != napi_ok) {
+        return BooleanValue(env, false);
+    }
+    return BooleanValue(env, NativeAudioPlayer::Instance().SetEnvironmentEnabled(enabled));
+}
+
+napi_value SetEnvironmentType(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1] = { nullptr };
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    int32_t type = 0;
+    if (argc != 1 || napi_get_value_int32(env, args[0], &type) != napi_ok) {
+        return BooleanValue(env, false);
+    }
+    return BooleanValue(env, NativeAudioPlayer::Instance().SetEnvironmentType(type));
+}
+
+napi_value SetVoiceBeautifierEnable(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1] = { nullptr };
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    bool enabled = false;
+    if (argc != 1 || napi_get_value_bool(env, args[0], &enabled) != napi_ok) {
+        return BooleanValue(env, false);
+    }
+    return BooleanValue(env, NativeAudioPlayer::Instance().SetVoiceBeautifierEnabled(enabled));
+}
+
+napi_value SetVoiceBeautifierType(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1] = { nullptr };
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    int32_t type = 0;
+    if (argc != 1 || napi_get_value_int32(env, args[0], &type) != napi_ok) {
+        return BooleanValue(env, false);
+    }
+    return BooleanValue(env, NativeAudioPlayer::Instance().SetVoiceBeautifierType(type));
+}
+
+napi_value SetSpaceRenderEnable(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1] = { nullptr };
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    bool enabled = false;
+    if (argc != 1 || napi_get_value_bool(env, args[0], &enabled) != napi_ok) {
+        return BooleanValue(env, false);
+    }
+    return BooleanValue(env, NativeAudioPlayer::Instance().SetSpaceRenderEnabled(enabled));
+}
+
+napi_value SetSpaceRenderConfig(napi_env env, napi_callback_info info)
+{
+    size_t argc = 2;
+    napi_value args[2] = { nullptr, nullptr };
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    int32_t mode = -1;
+    bool isArray = false;
+    if (argc != 2 || napi_get_value_int32(env, args[0], &mode) != napi_ok ||
+        napi_is_array(env, args[1], &isArray) != napi_ok || !isArray) {
+        return BooleanValue(env, false);
+    }
+    uint32_t length = 0;
+    napi_get_array_length(env, args[1], &length);
+    std::vector<float> values(length);
+    for (uint32_t i = 0; i < length; i++) {
+        napi_value item = nullptr;
+        double value = 0;
+        if (napi_get_element(env, args[1], i, &item) != napi_ok ||
+            napi_get_value_double(env, item, &value) != napi_ok) {
+            return BooleanValue(env, false);
+        }
+        values[i] = static_cast<float>(value);
+    }
+    return BooleanValue(env, NativeAudioPlayer::Instance().SetSpaceRenderConfig(mode, values));
+}
+
+napi_value IsEffectNodeSupported(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1] = { nullptr };
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    int32_t nodeType = 0;
+    if (argc != 1 || napi_get_value_int32(env, args[0], &nodeType) != napi_ok) {
+        return BooleanValue(env, false);
+    }
+    return BooleanValue(env, NativeAudioPlayer::Instance().IsEffectNodeSupported(nodeType));
+}
+
 napi_value SetSpeed(napi_env env, napi_callback_info info)
 {
     size_t argc = 1;
@@ -1689,6 +2267,15 @@ napi_value Init(napi_env env, napi_value exports)
         { "setEqualizerEnable", nullptr, SetEnabled, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "setEqualizerBands", nullptr, SetBands, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "getEqualizerBands", nullptr, GetBands, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "setSoundFieldEnable", nullptr, SetSoundFieldEnable, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "setSoundFieldType", nullptr, SetSoundFieldType, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "setEnvironmentEnable", nullptr, SetEnvironmentEnable, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "setEnvironmentType", nullptr, SetEnvironmentType, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "setVoiceBeautifierEnable", nullptr, SetVoiceBeautifierEnable, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "setVoiceBeautifierType", nullptr, SetVoiceBeautifierType, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "setSpaceRenderEnable", nullptr, SetSpaceRenderEnable, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "setSpaceRenderConfig", nullptr, SetSpaceRenderConfig, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "isEffectNodeSupported", nullptr, IsEffectNodeSupported, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "setSpeed", nullptr, SetSpeed, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "setVolume", nullptr, SetVolume, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "isEqualizerSupported", nullptr, IsSupported, nullptr, nullptr, nullptr, napi_default, nullptr },

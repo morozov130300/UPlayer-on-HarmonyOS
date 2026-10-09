@@ -11,7 +11,7 @@ import { LiveViewService } from '../service/LiveViewService'
 import nativeAudio from 'libuplayer.so'
 import { SongInfo } from '../model/SongInfo'
 import { AlbumCoverSize, AudioMetadataService, CoverPriority } from './AudioMetadataService'
-import { DataService } from './DataService'
+import { DataService, AppSettingsData } from './DataService'
 import { MusicPlayMode } from '../common/constants/PlayerConstants'
 import { WindowUtil } from '../common/utils/WindowUtil'
 import { showToastGlassMaterial } from '../common/utils/GlassUtil'
@@ -53,6 +53,16 @@ export class AVPlayerService {
   private nativeMode: boolean = false
   private equalizerEnabled: boolean = false
   private equalizerBands: number[] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  // OHAudioSuite 系统音效：类型 1-4；空间渲染模式 0=摆位(3值) 1=旋转(5值) 2=扩展(2值)
+  private soundFieldEnabled: boolean = false
+  private soundFieldType: number = 1
+  private environmentEnabled: boolean = false
+  private environmentType: number = 1
+  private beautifierEnabled: boolean = false
+  private beautifierType: number = 1
+  private spaceRenderEnabled: boolean = false
+  private spaceRenderMode: number = 0
+  private spaceRenderValues: number[] = [0, 0, 0]
   private nativeProgressTimer: number = -1
   private nativeStartupTimer: number = -1
   private playRequestId: number = 0
@@ -260,7 +270,7 @@ export class AVPlayerService {
     // 若当前处于播放状态，本次是切歌（播放中切到下一首），stop/reset 期间不应把播放状态置为暂停
     const wasPlaying: boolean = AppStorage.get<boolean>(AppStorageKeyConstants.KEY_IS_PLAY) ?? false
     this.isSwitchingTrack = wasPlaying
-    const useNativePlayer: boolean = this.equalizerEnabled && nativeAudio.isEqualizerSupported()
+    const useNativePlayer: boolean = this.anyEffectEnabled() && nativeAudio.isEqualizerSupported()
     Logger.error(TAG, `play useNativePlayer=${useNativePlayer} eqEnabled=${this.equalizerEnabled} nativeMode=${this.nativeMode}`)
     if (useNativePlayer) {
       if (this.nativeMode && this.currentFilePath === fileUri && !nativeAudio.isCompleted() &&
@@ -286,7 +296,7 @@ export class AVPlayerService {
       if (requestId !== this.playRequestId) {
         return
       }
-      const nativeStarted: boolean = await this.playWithEqualizer(fileUri, requestId, startPositionMs, startPaused)
+      const nativeStarted: boolean = await this.playWithEffects(fileUri, requestId, startPositionMs, startPaused)
       if (requestId !== this.playRequestId) {
         return
       }
@@ -1002,7 +1012,133 @@ export class AVPlayerService {
     await this.play(fileUri, position)
   }
 
-  private async playWithEqualizer(
+  // 任一音效启用即需要走原生链路（管线 Bypass 切换即时生效）
+  anyEffectEnabled(): boolean {
+    return this.equalizerEnabled || this.soundFieldEnabled || this.environmentEnabled ||
+      this.beautifierEnabled || this.spaceRenderEnabled
+  }
+
+  // 启动时把持久化设置同步进原生引擎与运行态（EntryAbility 调用）
+  syncEffectsFromDisk(): void {
+    const settings: AppSettingsData = DataService.getInstance().getSettings()
+    this.equalizerEnabled = settings.eqEnabled
+    this.equalizerBands = this.normalizeEqualizerBands(settings.eqBands)
+    nativeAudio.setEqualizerEnable(this.equalizerEnabled)
+    if (this.equalizerEnabled) {
+      nativeAudio.setEqualizerBands(this.equalizerBands)
+    }
+    this.soundFieldEnabled = settings.soundFieldEnabled
+    this.soundFieldType = settings.soundFieldType
+    nativeAudio.setSoundFieldEnable(this.soundFieldEnabled)
+    if (this.soundFieldEnabled) {
+      nativeAudio.setSoundFieldType(this.soundFieldType)
+    }
+    this.environmentEnabled = settings.environmentEnabled
+    this.environmentType = settings.environmentType
+    nativeAudio.setEnvironmentEnable(this.environmentEnabled)
+    if (this.environmentEnabled) {
+      nativeAudio.setEnvironmentType(this.environmentType)
+    }
+    this.beautifierEnabled = settings.beautifierEnabled
+    this.beautifierType = settings.beautifierType
+    nativeAudio.setVoiceBeautifierEnable(this.beautifierEnabled)
+    if (this.beautifierEnabled) {
+      nativeAudio.setVoiceBeautifierType(this.beautifierType)
+    }
+    this.spaceRenderEnabled = settings.spaceRenderEnabled
+    this.spaceRenderMode = settings.spaceRenderMode
+    this.spaceRenderValues = settings.spaceRenderValues
+    nativeAudio.setSpaceRenderEnable(this.spaceRenderEnabled)
+    if (this.spaceRenderEnabled) {
+      nativeAudio.setSpaceRenderConfig(this.spaceRenderMode, this.spaceRenderValues)
+    }
+  }
+
+  isSoundFieldSupported(): boolean {
+    return nativeAudio.isEffectNodeSupported(203)
+  }
+
+  isEnvironmentSupported(): boolean {
+    return nativeAudio.isEffectNodeSupported(206)
+  }
+
+  isVoiceBeautifierSupported(): boolean {
+    return nativeAudio.isEffectNodeSupported(205)
+  }
+
+  isSpaceRenderSupported(): boolean {
+    return nativeAudio.isEffectNodeSupported(208)
+  }
+
+  async applySoundField(enabled: boolean, type: number = 1): Promise<void> {
+    const previousEnabled: boolean = this.soundFieldEnabled
+    this.soundFieldEnabled = enabled
+    this.soundFieldType = type
+    nativeAudio.setSoundFieldEnable(enabled)
+    if (enabled) {
+      nativeAudio.setSoundFieldType(this.soundFieldType)
+    }
+    if (previousEnabled === enabled || this.nativeMode || !enabled) {
+      return
+    }
+    await this.reloadForNativeEffects()
+  }
+
+  async applyEnvironment(enabled: boolean, type: number = 1): Promise<void> {
+    const previousEnabled: boolean = this.environmentEnabled
+    this.environmentEnabled = enabled
+    this.environmentType = type
+    nativeAudio.setEnvironmentEnable(enabled)
+    if (enabled) {
+      nativeAudio.setEnvironmentType(this.environmentType)
+    }
+    if (previousEnabled === enabled || this.nativeMode || !enabled) {
+      return
+    }
+    await this.reloadForNativeEffects()
+  }
+
+  async applyVoiceBeautifier(enabled: boolean, type: number = 1): Promise<void> {
+    const previousEnabled: boolean = this.beautifierEnabled
+    this.beautifierEnabled = enabled
+    this.beautifierType = type
+    nativeAudio.setVoiceBeautifierEnable(enabled)
+    if (enabled) {
+      nativeAudio.setVoiceBeautifierType(this.beautifierType)
+    }
+    if (previousEnabled === enabled || this.nativeMode || !enabled) {
+      return
+    }
+    await this.reloadForNativeEffects()
+  }
+
+  async applySpaceRender(enabled: boolean, mode: number = 0, values: number[] = [0, 0, 0]): Promise<void> {
+    const previousEnabled: boolean = this.spaceRenderEnabled
+    this.spaceRenderEnabled = enabled
+    this.spaceRenderMode = mode
+    this.spaceRenderValues = values
+    nativeAudio.setSpaceRenderEnable(enabled)
+    if (enabled) {
+      nativeAudio.setSpaceRenderConfig(this.spaceRenderMode, this.spaceRenderValues)
+    }
+    if (previousEnabled === enabled || this.nativeMode || !enabled) {
+      return
+    }
+    await this.reloadForNativeEffects()
+  }
+
+  // 非原生态下从「关」切到「开」：取实时位置重载播放，切换为原生链路
+  private async reloadForNativeEffects(): Promise<void> {
+    const isPlaying: boolean = AppStorage.get<boolean>(AppStorageKeyConstants.KEY_IS_PLAY) ?? false
+    if (!isPlaying || this.currentFilePath.length === 0) {
+      return
+    }
+    const position: number = this.getCurrentPositionMs()
+    const fileUri: string = this.currentFilePath
+    await this.play(fileUri, position)
+  }
+
+  private async playWithEffects(
     fileUri: string, requestId: number, startPositionMs: number = 0,
     startPaused: boolean = false): Promise<boolean> {
     this.stopNativeProgressTimer()
@@ -1015,6 +1151,23 @@ export class AVPlayerService {
       nativeAudio.setEqualizerEnable(this.equalizerEnabled)
       if (this.equalizerEnabled) {
         nativeAudio.setEqualizerBands(this.equalizerBands)
+      }
+      // 全量下发 4 类系统音效状态，ConfigureEffects 按初始态建节点并设 Bypass
+      nativeAudio.setSoundFieldEnable(this.soundFieldEnabled)
+      if (this.soundFieldEnabled) {
+        nativeAudio.setSoundFieldType(this.soundFieldType)
+      }
+      nativeAudio.setEnvironmentEnable(this.environmentEnabled)
+      if (this.environmentEnabled) {
+        nativeAudio.setEnvironmentType(this.environmentType)
+      }
+      nativeAudio.setVoiceBeautifierEnable(this.beautifierEnabled)
+      if (this.beautifierEnabled) {
+        nativeAudio.setVoiceBeautifierType(this.beautifierType)
+      }
+      nativeAudio.setSpaceRenderEnable(this.spaceRenderEnabled)
+      if (this.spaceRenderEnabled) {
+        nativeAudio.setSpaceRenderConfig(this.spaceRenderMode, this.spaceRenderValues)
       }
       if (startPaused) {
         nativeAudio.setVolume(0)
@@ -1056,7 +1209,7 @@ export class AVPlayerService {
       this.startNativeStartupCheck(fileUri, requestId)
       return true
     } catch (err) {
-      Logger.error(TAG, `playWithEqualizer failed: ${JSON.stringify(err)}`)
+      Logger.error(TAG, `playWithEffects failed: ${JSON.stringify(err)}`)
       return false
     } finally {
       if (file !== undefined) {
