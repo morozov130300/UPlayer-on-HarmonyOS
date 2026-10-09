@@ -86,7 +86,9 @@ export default class EntryAbility extends UIAbility {
     HoldingHandService.getInstance().syncWithSetting();
     AVSessionController.getInstance().initAVSession();
 
-    AVPlayerService.getInstance().applyEqualizer(settings.eqEnabled, settings.eqBands);
+    // 恢复全部音效运行态（均衡器 + 声场/环境/美声/空间渲染）：状态推入原生引擎，
+    // 播放启动时 playWithEffects 按持久化状态全量下发
+    AVPlayerService.getInstance().syncEffectsFromDisk();
     try {
       if (settings.themeMode === 'light') {
         this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT);

@@ -54,6 +54,16 @@ export class AppSettingsData {
   primaryColor: string = '#007DFF'
   eqEnabled: boolean = false
   eqBands: number[] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  // OHAudioSuite 系统音效：声场/环境/美声/空间渲染（类型值 1-4；空间渲染模式 0=摆位 1=旋转 2=扩展）
+  soundFieldEnabled: boolean = false
+  soundFieldType: number = 1
+  environmentEnabled: boolean = false
+  environmentType: number = 1
+  beautifierEnabled: boolean = false
+  beautifierType: number = 1
+  spaceRenderEnabled: boolean = false
+  spaceRenderMode: number = 0
+  spaceRenderValues: number[] = [0, 0, 0]
   playSpeed: number = 1
   folderSortMode: string = 'name'
   fadeInOut: boolean = false
@@ -625,6 +635,26 @@ return result
         }
       }
       s.playSpeed = r['playSpeed'] as number
+      let rawSoundFieldEnabled: Object | undefined = r['soundFieldEnabled']
+      s.soundFieldEnabled = rawSoundFieldEnabled !== undefined ? rawSoundFieldEnabled as boolean : false
+      let rawSoundFieldType: Object | undefined = r['soundFieldType']
+      s.soundFieldType = rawSoundFieldType !== undefined ? rawSoundFieldType as number : 1
+      let rawEnvironmentEnabled: Object | undefined = r['environmentEnabled']
+      s.environmentEnabled = rawEnvironmentEnabled !== undefined ? rawEnvironmentEnabled as boolean : false
+      let rawEnvironmentType: Object | undefined = r['environmentType']
+      s.environmentType = rawEnvironmentType !== undefined ? rawEnvironmentType as number : 1
+      let rawBeautifierEnabled: Object | undefined = r['beautifierEnabled']
+      s.beautifierEnabled = rawBeautifierEnabled !== undefined ? rawBeautifierEnabled as boolean : false
+      let rawBeautifierType: Object | undefined = r['beautifierType']
+      s.beautifierType = rawBeautifierType !== undefined ? rawBeautifierType as number : 1
+      let rawSpaceRenderEnabled: Object | undefined = r['spaceRenderEnabled']
+      s.spaceRenderEnabled = rawSpaceRenderEnabled !== undefined ? rawSpaceRenderEnabled as boolean : false
+      let rawSpaceRenderMode: Object | undefined = r['spaceRenderMode']
+      s.spaceRenderMode = rawSpaceRenderMode !== undefined ? rawSpaceRenderMode as number : 0
+      let rawSpaceRenderValues: Object | undefined = r['spaceRenderValues']
+      if (rawSpaceRenderValues !== undefined) {
+        s.spaceRenderValues = rawSpaceRenderValues as number[]
+      }
       let rawFolderSort: Object | undefined = r['folderSortMode']
       s.folderSortMode = rawFolderSort !== undefined ? rawFolderSort as string : 'name'
       let rawFadeInOut: Object | undefined = r['fadeInOut']
@@ -669,6 +699,15 @@ return result
     r['primaryColor'] = settings.primaryColor
     r['eqEnabled'] = settings.eqEnabled
     r['eqBands'] = settings.eqBands
+    r['soundFieldEnabled'] = settings.soundFieldEnabled
+    r['soundFieldType'] = settings.soundFieldType
+    r['environmentEnabled'] = settings.environmentEnabled
+    r['environmentType'] = settings.environmentType
+    r['beautifierEnabled'] = settings.beautifierEnabled
+    r['beautifierType'] = settings.beautifierType
+    r['spaceRenderEnabled'] = settings.spaceRenderEnabled
+    r['spaceRenderMode'] = settings.spaceRenderMode
+    r['spaceRenderValues'] = settings.spaceRenderValues
     r['playSpeed'] = settings.playSpeed
     r['folderSortMode'] = settings.folderSortMode
     r['fadeInOut'] = settings.fadeInOut

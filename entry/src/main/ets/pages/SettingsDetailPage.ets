@@ -24,6 +24,32 @@ class EqBandInfo {
   index: number = 0
 }
 
+// 官方均衡器 9 预设（增益表与 OHAudioSuite 内置预设一致，10 段 [-10,10]dB）
+class EqPresetTable {
+  static readonly NAMES: string[] = ['默认', '民谣', '中国风', '古典', '舞曲', '爵士', '流行', 'R&B', '摇滚']
+  static readonly GAINS: number[][] = [
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [3, 5, 2, -4, 1, 2, -3, 1, 4, 5],
+    [0, 0, 2, 0, 0, 4, 4, 2, 2, 5],
+    [2, 3, 2, 1, 0, 0, -5, -5, -5, -6],
+    [4, 3, 2, -3, 0, 0, 5, 4, 2, 0],
+    [2, 0, 2, 3, 6, 5, -1, 3, 4, 4],
+    [5, 2, 1, -1, -5, -5, -2, 1, 2, 4],
+    [1, 4, 5, 3, -2, -2, 2, 3, 5, 5],
+    [6, 4, 4, 2, 0, 1, 3, 3, 5, 4]
+  ]
+}
+
+// 空间渲染三模式：0=固定摆位(x,y,z) 1=旋转(x,y,z,环绕时间,方向) 2=扩展(半径,角度)
+class SpaceRenderTable {
+  static readonly MODE_NAMES: string[] = ['固定摆位', '旋转', '扩展']
+  static readonly MODE_DEFAULTS: number[][] = [
+    [0, 0, 0],
+    [0, 0, 1, 10, 1],
+    [2, 180]
+  ]
+}
+
 
 interface ThemeColorOption {
   name: string
@@ -83,6 +109,11 @@ struct SettingsDetailPage {
   @StorageLink(KEY_HOLDING_HAND_ENABLED) holdingHandEnabled: boolean = true
   // 设备是否支持智感握姿能力（检测失败时隐藏该设置项）
   @State holdingHandSupported: boolean = true
+  // 系统音效节点设备支持探测（aboutToAppear 中按 OHAudioSuite 能力置位，不支持时禁用对应卡片开关）
+  @State soundFieldSupported: boolean = false
+  @State environmentSupported: boolean = false
+  @State beautifierSupported: boolean = false
+  @State spaceRenderSupported: boolean = false
   private context: common.UIAbilityContext
     | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
   // Tab 栏实时预览：直接使用 HdsTabs 系统组件，与 Index 完全一致的渲染管线
@@ -185,6 +216,11 @@ struct SettingsDetailPage {
       this.settings.holdingHandEnabled = true
       AppStorage.setOrCreate(KEY_HOLDING_HAND_ENABLED, true)
     }
+    // 设备音效节点能力探测：不支持的卡片禁用开关并提示
+    this.soundFieldSupported = this.avPlayerService.isSoundFieldSupported()
+    this.environmentSupported = this.avPlayerService.isEnvironmentSupported()
+    this.beautifierSupported = this.avPlayerService.isVoiceBeautifierSupported()
+    this.spaceRenderSupported = this.avPlayerService.isSpaceRenderSupported()
   }
 
   // 预览器说明：
@@ -446,6 +482,107 @@ struct SettingsDetailPage {
     if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
       this.updateSetting()
     }
+  }
+
+  // ═══ 均衡器预设（官方 9 预设一键切换，手动拖滑块后自动回到自定义态无高亮）═══
+  private eqPresetActive(index: number): boolean {
+    const preset: number[] = EqPresetTable.GAINS[index]
+    const current: number[] = this.settings.eqBands
+    if (preset.length !== current.length) {
+      return false
+    }
+    for (let i = 0; i < preset.length; i++) {
+      if (preset[i] !== current[i]) {
+        return false
+      }
+    }
+    return true
+  }
+
+  applyEqPreset(index: number): void {
+    const gains: number[] = EqPresetTable.GAINS[index].slice()
+    this.settings.eqBands = gains
+    this.settings = this.settings
+    this.drawEqCurve()
+    this.updateSetting()
+    this.avPlayerService.applyEqualizer(this.settings.eqEnabled, gains)
+  }
+
+  // ═══ 声场/环境/美声类型切换 ═══
+  onSoundFieldTypeChange(type: number): void {
+    this.animateSettingChange(() => {
+      this.settings.soundFieldType = type
+      this.settings = this.settings
+    })
+    this.updateSetting()
+    this.avPlayerService.applySoundField(this.settings.soundFieldEnabled, type)
+  }
+
+  onEnvironmentTypeChange(type: number): void {
+    this.animateSettingChange(() => {
+      this.settings.environmentType = type
+      this.settings = this.settings
+    })
+    this.updateSetting()
+    this.avPlayerService.applyEnvironment(this.settings.environmentEnabled, type)
+  }
+
+  onBeautifierTypeChange(type: number): void {
+    this.animateSettingChange(() => {
+      this.settings.beautifierType = type
+      this.settings = this.settings
+    })
+    this.updateSetting()
+    this.avPlayerService.applyVoiceBeautifier(this.settings.beautifierEnabled, type)
+  }
+
+  // ═══ 空间渲染：模式 / 参数 / 旋转方向 ═══
+  private spaceValue(i: number): number {
+    const values: number[] = this.settings.spaceRenderValues
+    if (i < values.length) {
+      return values[i]
+    }
+    const defaults: number[] = SpaceRenderTable.MODE_DEFAULTS[this.settings.spaceRenderMode]
+    return i < defaults.length ? defaults[i] : 0
+  }
+
+  private spaceText(i: number): string {
+    const v: number = this.spaceValue(i)
+    return Number.isInteger(v) ? String(v) : v.toFixed(1)
+  }
+
+  onSpaceModeChange(mode: number): void {
+    this.animateSettingChange(() => {
+      this.settings.spaceRenderMode = mode
+      this.settings.spaceRenderValues = SpaceRenderTable.MODE_DEFAULTS[mode].slice()
+      this.settings = this.settings
+    })
+    this.updateSetting()
+    this.avPlayerService.applySpaceRender(this.settings.spaceRenderEnabled, mode, this.settings.spaceRenderValues)
+  }
+
+  onSpaceValueChange(i: number, value: number, mode: SliderChangeMode): void {
+    const values: number[] = this.settings.spaceRenderValues.slice()
+    if (i < values.length) {
+      values[i] = value
+    }
+    this.settings.spaceRenderValues = values
+    this.settings = this.settings
+    if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+      this.updateSetting()
+      this.avPlayerService.applySpaceRender(this.settings.spaceRenderEnabled, this.settings.spaceRenderMode, values)
+    }
+  }
+
+  onSpaceDirectionChange(direction: number): void {
+    const values: number[] = this.settings.spaceRenderValues.slice()
+    if (values.length > 4) {
+      values[4] = direction
+    }
+    this.settings.spaceRenderValues = values
+    this.settings = this.settings
+    this.updateSetting()
+    this.avPlayerService.applySpaceRender(this.settings.spaceRenderEnabled, this.settings.spaceRenderMode, values)
   }
 
   pageTransition() {
@@ -1522,6 +1659,32 @@ struct SettingsDetailPage {
       if (this.settings.eqEnabled) {
         Stack({ alignContent: Alignment.Bottom }) {
           Column() {
+            // 官方 9 预设一键选择：切换后滑块与曲线联动，手动拖滑块回到自定义态（无高亮）
+            Scroll() {
+              Row({ space: this.scaledSize(6) }) {
+                ForEach(EqPresetTable.NAMES, (name: string, i: number) => {
+                  Text(name)
+                    .fontSize(this.scaledFont(11))
+                    .fontColor(this.eqPresetActive(i) ? '#FFFFFF' : this.settingTextColor())
+                    .padding({ left: this.scaledSize(10), right: this.scaledSize(10), top: this.scaledSize(4), bottom: this.scaledSize(4) })
+                    .backgroundColor(this.eqPresetActive(i) ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+                    .borderRadius(this.scaledSize(14))
+                    .onClick(() => {
+                      this.applyEqPreset(i)
+                    })
+                }, (name: string) => name)
+              }
+              .height(this.scaledSize(30))
+              .alignItems(VerticalAlign.Center)
+              .padding({ left: this.scaledSize(2), right: this.scaledSize(2) })
+            }
+            .scrollable(ScrollDirection.Horizontal)
+            .scrollBar(BarState.Off)
+            .edgeEffect(EdgeEffect.None)
+            .align(Alignment.TopStart)
+            .width('100%')
+            .margin({ bottom: this.scaledSize(6) })
+
             Row({ space: this.scaledSize(4) }) {
               ForEach(this.eqBands, (band: EqBandInfo) => {
                 Column() {
@@ -1608,7 +1771,167 @@ struct SettingsDetailPage {
           })
         }
         .width('100%')
-        .height(this.scaledSize(230))
+        .height(this.scaledSize(280))
+        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+        .borderRadius(this.scaledSize(10))
+        .transition(this.settingCardTransition())
+      }
+
+      // ═══ 声场 ═══
+      Column() {
+        this.toggleRow('声场', this.settings.soundFieldEnabled, (val: boolean) => {
+          this.animateSettingChange(() => {
+            this.settings.soundFieldEnabled = val
+          })
+          this.updateSetting()
+          this.avPlayerService.applySoundField(val, this.settings.soundFieldType)
+        })
+        if (!this.soundFieldSupported) {
+          Text('当前设备不支持声场效果')
+            .fontSize(this.scaledFont(11))
+            .fontColor(this.settingSubTextColor())
+            .width('100%')
+            .margin({ top: this.scaledSize(2) })
+        }
+      }
+      .width('100%')
+      .enabled(this.soundFieldSupported)
+      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
+
+      if (this.settings.soundFieldEnabled && this.soundFieldSupported) {
+        Column() {
+          this.typeChipRow(['前置', '宏大', '聆听', '宽广'], this.settings.soundFieldType, (t: number) => {
+            this.onSoundFieldTypeChange(t)
+          })
+        }
+        .width('100%')
+        .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+        .borderRadius(this.scaledSize(10))
+        .transition(this.settingCardTransition())
+      }
+
+      // ═══ 环境效果 ═══
+      Column() {
+        this.toggleRow('环境效果', this.settings.environmentEnabled, (val: boolean) => {
+          this.animateSettingChange(() => {
+            this.settings.environmentEnabled = val
+          })
+          this.updateSetting()
+          this.avPlayerService.applyEnvironment(val, this.settings.environmentType)
+        })
+        if (!this.environmentSupported) {
+          Text('当前设备不支持环境效果')
+            .fontSize(this.scaledFont(11))
+            .fontColor(this.settingSubTextColor())
+            .width('100%')
+            .margin({ top: this.scaledSize(2) })
+        }
+      }
+      .width('100%')
+      .enabled(this.environmentSupported)
+      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
+
+      if (this.settings.environmentEnabled && this.environmentSupported) {
+        Column() {
+          this.typeChipRow(['广播', '听筒', '水下', '留声机'], this.settings.environmentType, (t: number) => {
+            this.onEnvironmentTypeChange(t)
+          })
+        }
+        .width('100%')
+        .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+        .borderRadius(this.scaledSize(10))
+        .transition(this.settingCardTransition())
+      }
+
+      // ═══ 声音美化 ═══
+      Column() {
+        this.toggleRow('声音美化', this.settings.beautifierEnabled, (val: boolean) => {
+          this.animateSettingChange(() => {
+            this.settings.beautifierEnabled = val
+          })
+          this.updateSetting()
+          this.avPlayerService.applyVoiceBeautifier(val, this.settings.beautifierType)
+        })
+        if (!this.beautifierSupported) {
+          Text('当前设备不支持声音美化')
+            .fontSize(this.scaledFont(11))
+            .fontColor(this.settingSubTextColor())
+            .width('100%')
+            .margin({ top: this.scaledSize(2) })
+        }
+      }
+      .width('100%')
+      .enabled(this.beautifierSupported)
+      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
+
+      if (this.settings.beautifierEnabled && this.beautifierSupported) {
+        Column() {
+          this.typeChipRow(['清澈', '剧场', 'CD', '录音棚'], this.settings.beautifierType, (t: number) => {
+            this.onBeautifierTypeChange(t)
+          })
+        }
+        .width('100%')
+        .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+        .borderRadius(this.scaledSize(10))
+        .transition(this.settingCardTransition())
+      }
+
+      // ═══ 空间渲染 ═══
+      Column() {
+        this.toggleRow('空间渲染', this.settings.spaceRenderEnabled, (val: boolean) => {
+          this.animateSettingChange(() => {
+            this.settings.spaceRenderEnabled = val
+          })
+          this.updateSetting()
+          this.avPlayerService.applySpaceRender(val, this.settings.spaceRenderMode, this.settings.spaceRenderValues)
+        })
+        if (!this.spaceRenderSupported) {
+          Text('当前设备不支持空间渲染')
+            .fontSize(this.scaledFont(11))
+            .fontColor(this.settingSubTextColor())
+            .width('100%')
+            .margin({ top: this.scaledSize(2) })
+        }
+      }
+      .width('100%')
+      .enabled(this.spaceRenderSupported)
+      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
+
+      if (this.settings.spaceRenderEnabled && this.spaceRenderSupported) {
+        Column({ space: this.scaledSize(10) }) {
+          this.chipRow(SpaceRenderTable.MODE_NAMES, this.settings.spaceRenderMode, (m: number) => {
+            this.onSpaceModeChange(m)
+          })
+          if (this.settings.spaceRenderMode === 0) {
+            this.spaceSliderRow('X 位置', 0, -5, 5, 0.5, ' m')
+            this.spaceSliderRow('Y 位置', 1, -5, 5, 0.5, ' m')
+            this.spaceSliderRow('Z 位置', 2, -5, 5, 0.5, ' m')
+          } else if (this.settings.spaceRenderMode === 1) {
+            this.spaceSliderRow('X 位置', 0, -5, 5, 0.5, ' m')
+            this.spaceSliderRow('Y 位置', 1, -5, 5, 0.5, ' m')
+            this.spaceSliderRow('Z 位置', 2, -5, 5, 0.5, ' m')
+            this.spaceSliderRow('环绕时间', 3, 2, 40, 1, ' s')
+            this.chipRow(['逆时针', '顺时针'], Math.round(this.spaceValue(4)), (d: number) => {
+              this.onSpaceDirectionChange(d)
+            })
+          } else {
+            this.spaceSliderRow('扩展半径', 0, 1, 5, 0.5, ' m')
+            this.spaceSliderRow('扩展角度', 1, 1, 359, 1, '°')
+          }
+        }
+        .width('100%')
+        .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
         .borderRadius(this.scaledSize(10))
         .transition(this.settingCardTransition())
@@ -1774,6 +2097,76 @@ struct SettingsDetailPage {
       Logger.error(TAG, 'checkAppUpdate exception: ' + err.message)
       showToastGlassMaterial(this.getUIContext()?.getPromptAction(), '检查更新失败，请稍后重试')
     }
+
+  // 效果选项芯片行：labels[i] 对应值 i+1（声场/环境/美声类型），选中高亮主题色
+  @Builder
+  typeChipRow(labels: string[], current: number, onPick: (value: number) => void): void {
+    this.chipRow(labels, current, (v: number) => {
+      onPick(v + 1)
+    })
+  }
+
+  @Builder
+  chipRow(labels: string[], current: number, onPick: (value: number) => void): void {
+    Row({ space: this.scaledSize(6) }) {
+      ForEach(labels, (label: string, i: number) => {
+        Text(label)
+          .fontSize(this.scaledFont(12))
+          .fontColor(current === i ? '#FFFFFF' : this.settingTextColor())
+          .padding({
+            left: this.scaledSize(10),
+            right: this.scaledSize(10),
+            top: this.scaledSize(5),
+            bottom: this.scaledSize(5)
+          })
+          .backgroundColor(current === i ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+          .borderRadius(this.scaledSize(15))
+          .onClick(() => {
+            if (current !== i) {
+              onPick(i)
+            }
+          })
+      }, (label: string) => label)
+    }
+    .width('100%')
+    .justifyContent(FlexAlign.Start)
+  }
+
+  // 空间渲染参数滑块行：标签 + 水平滑杆 + 当前值
+  @Builder
+  spaceSliderRow(label: string, index: number, min: number, max: number, step: number, unit: string): void {
+    Row() {
+      Text(label)
+        .fontSize(this.scaledFont(12))
+        .fontColor(this.settingSubTextColor())
+        .width(this.scaledSize(72))
+        .flexShrink(0)
+      Slider({
+        value: this.spaceValue(index),
+        min: min,
+        max: max,
+        step: step,
+        style: SliderStyle.OutSet
+      })
+        .layoutWeight(1)
+        .selectedColor(this.primaryColor)
+        .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+        .blockColor('#FFFFFF')
+        .blockSize({ width: this.scaledSize(16), height: this.scaledSize(16) })
+        .blockBorderColor(this.primaryColor)
+        .blockBorderWidth(2)
+        .onChange((value: number, mode: SliderChangeMode) => {
+          this.onSpaceValueChange(index, value, mode)
+        })
+      Text(this.spaceText(index) + unit)
+        .fontSize(this.scaledFont(12))
+        .fontColor(this.settingTextColor())
+        .width(this.scaledSize(56))
+        .textAlign(TextAlign.End)
+        .flexShrink(0)
+    }
+    .width('100%')
+    .alignItems(VerticalAlign.Center)
   }
 
   @Builder
