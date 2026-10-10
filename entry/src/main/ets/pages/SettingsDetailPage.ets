@@ -2097,6 +2097,7 @@ struct SettingsDetailPage {
       Logger.error(TAG, 'checkAppUpdate exception: ' + err.message)
       showToastGlassMaterial(this.getUIContext()?.getPromptAction(), '检查更新失败，请稍后重试')
     }
+  }
 
   // 效果选项芯片行：labels[i] 对应值 i+1（声场/环境/美声类型），选中高亮主题色
   @Builder

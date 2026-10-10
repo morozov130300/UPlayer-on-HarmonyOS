@@ -62,6 +62,11 @@ struct MainPage {
   @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) @Watch('onPlayStateChange') isPlaying: boolean = false
   @State rotationAngle: number = 0
   @State isGlowing: boolean = false
+  // 首页播控条按钮按压弹簧缩放（上一首/播放/下一首，miniBar 与 playerControl 共用：
+  // 两布局互斥渲染，同一时刻只有一组按钮在屏）
+  @State barPrevScale: number = 1.0
+  @State barPlayScale: number = 1.0
+  @State barNextScale: number = 1.0
   @State breakpoint: string = 'md'
   // 主容器实测布局宽度（vp），onAreaChange 更新：悬浮样式宽度字段不支持百分比，需用具体 vp 值
   @State mainWidthVp: number = 0
@@ -448,23 +453,35 @@ struct MainPage {
       }
       Image($r('app.media.ic_public_play_last'))
         .height(this.scaledSize(18))
+        .scale({ x: this.barPrevScale, y: this.barPrevScale })
         .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
           $r('app.color.player_icon_inactive_color'))
         .onClick(() => {
+          this.barButtonPress((pressed: boolean): void => {
+            this.barPrevScale = pressed ? 0.8 : 1.0
+          })
           this.playPrevious()
         })
       Image(this.isPlaying ? $r('app.media.ic_public_play') : $r('app.media.ic_public_pause'))
         .height(this.scaledSize(22))
+        .scale({ x: this.barPlayScale, y: this.barPlayScale })
         .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
           $r('app.color.player_icon_inactive_color'))
         .onClick(() => {
+          this.barButtonPress((pressed: boolean): void => {
+            this.barPlayScale = pressed ? 0.8 : 1.0
+          })
           this.togglePlay()
         })
       Image($r('app.media.ic_public_play_next'))
         .height(this.scaledSize(18))
+        .scale({ x: this.barNextScale, y: this.barNextScale })
         .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
           $r('app.color.player_icon_inactive_color'))
         .onClick(() => {
+          this.barButtonPress((pressed: boolean): void => {
+            this.barNextScale = pressed ? 0.8 : 1.0
+          })
           this.playNext()
         })
     }
@@ -570,23 +587,35 @@ struct MainPage {
 
       Image($r('app.media.ic_public_play_last'))
         .height(this.scaledSize(24))
+        .scale({ x: this.barPrevScale, y: this.barPrevScale })
         .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
           $r('app.color.player_icon_inactive_color'))
         .onClick(() => {
+          this.barButtonPress((pressed: boolean): void => {
+            this.barPrevScale = pressed ? 0.8 : 1.0
+          })
           this.playPrevious()
         })
       Image(this.isPlaying ? $r('app.media.ic_public_play') : $r('app.media.ic_public_pause'))
         .height(this.scaledSize(28))
+        .scale({ x: this.barPlayScale, y: this.barPlayScale })
         .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
           $r('app.color.player_icon_inactive_color'))
         .onClick(() => {
+          this.barButtonPress((pressed: boolean): void => {
+            this.barPlayScale = pressed ? 0.8 : 1.0
+          })
           this.togglePlay()
         })
       Image($r('app.media.ic_public_play_next'))
         .height(this.scaledSize(24))
+        .scale({ x: this.barNextScale, y: this.barNextScale })
         .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
           $r('app.color.player_icon_inactive_color'))
         .onClick(() => {
+          this.barButtonPress((pressed: boolean): void => {
+            this.barNextScale = pressed ? 0.8 : 1.0
+          })
           this.playNext()
         })
     }
@@ -665,13 +694,9 @@ struct MainPage {
 
   onPlayStateChange(): void {
     if (this.isPlaying) {
-      this.getUIContext()?.animateTo(
-        { duration: StyleConstants.ANIMATION_ROTATION_START_DURATION, curve: curves.springMotion(0.3, 0.7) }, () => {
-        this.rotationAngle += 30
-      })
-      setTimeout(() => {
-        this.startRotation()
-      }, StyleConstants.ANIMATION_ROTATION_START_DURATION)
+      // 恢复播放直接从当前角度续转匀速旋转：不再做 +30° 弹簧「起步踢脚」，
+      // 避免暂停→续播时封面先快转一个角度再匀速的观感
+      this.startRotation()
       this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_GLOW_ON_DURATION, curve: Curve.EaseInOut },
         () => {
           this.isGlowing = true
@@ -691,6 +716,19 @@ struct MainPage {
     } else {
       this.avPlayerService.resume()
     }
+  }
+
+  // 播控条按钮按压弹簧动画：压至 0.8 后 ANIMATION_PRESS_DELAY_SHORT 弹回 1.0，
+  // 与播放器大页面 ControlAreaComponent 的按压手感一致
+  private barButtonPress(scaleSetter: (pressed: boolean) => void): void {
+    this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
+      scaleSetter(true)
+    })
+    setTimeout(() => {
+      this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
+        scaleSetter(false)
+      })
+    }, StyleConstants.ANIMATION_PRESS_DELAY_SHORT)
   }
 
   playPrevious(): void {
