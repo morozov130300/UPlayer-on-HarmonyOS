@@ -13,7 +13,7 @@ import { HoldingHandService, KEY_HOLDING_HAND_ENABLED, KEY_HOLDING_HAND_LEFT } f
 import { ColorConversion } from '../common/utils/ColorConversion'
 import { isLiquidGlassAvailable, showToastGlassMaterial, topBlurRadiusFromStrength } from '../common/utils/GlassUtil'
 import { StyleConstants } from '../common/constants/StyleConstants'
-import { KEY_HAS_POINTER_DEVICE, refreshPointerDeviceState } from '../common/utils/InputDeviceUtil'
+import { refreshPointerDeviceState } from '../common/utils/InputDeviceUtil'
 import { GlassBackButton } from '../view/GlassBackButton'
 
 const TAG = 'SettingsDetailPage'
@@ -98,10 +98,6 @@ struct SettingsDetailPage {
   @StorageLink('uplayer_tab_indicator_opacity') tabIndicatorOpacity: number = 50
   // 经典样式下隐藏"Tab栏与播控条模糊强度"：用动画过渡避免突兀
   // 由 @Watch 包进统一触发动画后翻转，芯片增删才会播放统一显隐过渡
-  @StorageLink(KEY_HAS_POINTER_DEVICE) @Watch('onPointerDeviceChange') hasPointerDevice: boolean = false
-  @State maskChipVisible: boolean = false
-  // 是否存在鼠标/触控板设备（决定「白色蒙版」开关是否显示）。
-  // 检测结果由 InputDeviceUtil 写入 AppStorage（无动画作用域），芯片显隐改读镜像值，
   @State pageTitle: string = ''
   // 顶部模糊预览的靠边方向：左手握持 → 靠右（沿用原有映射，由 HoldingHandService 统一滤波后广播）
   @StorageLink(KEY_HOLDING_HAND_LEFT) previewOnRight: boolean = false
@@ -146,13 +142,6 @@ struct SettingsDetailPage {
     { label: '经典', value: 'classic' },
     { label: '玻璃', value: 'immersive' }
   ]
-  // 底部栏触摸指示选项：关 / 白色蒙版 / 跟手光效
-  // 「白色蒙版」仅在检测到鼠标/触控板设备（鸿蒙 PC、外接鼠标）时才显示
-  private touchIndicatorOptions: TouchIndicatorOption[] = [
-    { label: '关', value: 'off' },
-    { label: '白色蒙版', value: 'mask' },
-    { label: '跟手光效', value: 'light' }
-  ]
   // 跟手光效颜色选项：白光 / 主题色
   private lightColorOptions: TouchIndicatorOption[] = [
     { label: '白光', value: 'white' },
@@ -189,24 +178,11 @@ struct SettingsDetailPage {
   @State aboutVersionName: string = ''
   @State checkingUpdate: boolean = false
 
-  // 指针设备检测结果变化：包进统一触发动画后翻转「白色蒙版」芯片显隐镜像值
-  onPointerDeviceChange(): void {
-    if (this.maskChipVisible === this.hasPointerDevice) {
-      return
-    }
-    this.animateSettingChange(() => {
-      this.maskChipVisible = this.hasPointerDevice
-    })
-  }
-
   aboutToAppear(): void {
     this.settings = this.dataService.getSettings()
     // 声明处初始值读取的是默认 AppSettingsData（tabStyle 恒为 classic），并非已保存设置；
     // 必须在加载真实设置后重算磨砂强度滑块可见性，否则新设备 + 玻璃样式进页时滑块会错误显示
     this.showClassicBlurStrength = !isLiquidGlassAvailable() || this.settings.tabStyle !== 'immersive'
-    // 进入设置页时刷新鼠标/触控板状态，决定「白色蒙版」开关是否显示；
-    // 镜像初值在刷新前直接取当前检测结果（首帧渲染不播过渡），之后热插拔变化经 @Watch 带动画翻转
-    this.maskChipVisible = this.hasPointerDevice
     refreshPointerDeviceState()
     const params = this.getUIContext()?.getRouter()
       .getParams() as Record<string, string>
@@ -1269,50 +1245,18 @@ struct SettingsDetailPage {
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
         .borderRadius(this.scaledSize(10))
 
-        // 底部栏触摸指示：关 / 白色蒙版 / 跟手光效。
-        // 仅玻璃样式且设备支持液态玻璃时显示：触摸指示依赖液态玻璃材质，经典样式下不生效；
-        // 白色蒙版开关按鼠标检测结果动态显示/隐藏（见 visibleTouchIndicatorOptions）
+        // 底部栏触摸指示：已全面改为跟手光效，用一个开关组件控制（开 = 'light'，关 = 'off'）。
+        // 仅玻璃样式且设备支持液态玻璃时显示：触摸指示依赖液态玻璃材质，经典样式下不生效
         if (isLiquidGlassAvailable() && this.settings.tabStyle === 'immersive') {
           Column() {
-            Row() {
-              this.subTitleRow('底部栏触摸指示')
-              Blank()
-              ForEach(this.visibleTouchIndicatorOptions(), (opt: TouchIndicatorOption) => {
-                Column() {
-                  Text(opt.label)
-                    .fontSize(this.scaledFont(11))
-                    .fontColor(this.settings.tabTouchIndicator === opt.value
-                      ? '#FFFFFF' : this.settingInactiveTextColor())
-                }
-                .padding({
-                  left: this.scaledSize(10),
-                  right: this.scaledSize(10),
-                  top: this.scaledSize(5),
-                  bottom: this.scaledSize(5)
-                })
-                .backgroundColor(this.settings.tabTouchIndicator === opt.value
-                  ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
-                .borderRadius(this.scaledSize(14))
-                .animation({ duration: 200, curve: Curve.EaseInOut })
-                .onClick(() => {
-                  this.settings.tabTouchIndicator = opt.value
-                  this.updateSetting()
-                  AppStorage.setOrCreate('uplayer_tab_touch_indicator', opt.value)
-                })
-                .transition(this.settingCardTransition())
-              }, (opt: TouchIndicatorOption) => opt.value)
-            }
-            .width('100%')
-            .constraintSize({ minWidth: 0, maxWidth: '100%' })
-            .alignItems(VerticalAlign.Center)
-            .padding({
-              left: this.scaledSize(14),
-              right: this.scaledSize(14),
-              top: this.scaledSize(10),
-              bottom: this.scaledSize(10)
+            this.toggleRow('底部栏触摸指示', this.settings.tabTouchIndicator === 'light', (isOn: boolean) => {
+              this.settings.tabTouchIndicator = isOn ? 'light' : 'off'
+              this.updateSetting()
+              AppStorage.setOrCreate('uplayer_tab_touch_indicator', this.settings.tabTouchIndicator)
             })
           }
           .width('100%')
+          .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
           .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
           .borderRadius(this.scaledSize(10))
           .transition(this.settingCardTransition())
@@ -2295,22 +2239,6 @@ struct SettingsDetailPage {
     this.getUIContext()?.animateTo({ curve: curves.springMotion(0.4, 0.8) }, change)
   }
 
-  // 根据鼠标检测结果过滤选项：无鼠标/触控板设备时隐藏「白色蒙版」（镜像值翻转带统一显隐动画）
-  private visibleTouchIndicatorOptions(): TouchIndicatorOption[] {
-    if (this.maskChipVisible) {
-      return this.touchIndicatorOptions
-    }
-    return [this.touchIndicatorOptions[0], this.touchIndicatorOptions[2]]
-  }
-
-  // 设备无鼠标/触控板时「白色蒙版」功能不存在，mask 值降级为 off（开关本身已隐藏）
-  private effectiveTouchIndicator(): string {
-    if (this.settings.tabTouchIndicator === 'mask' && !this.hasPointerDevice) {
-      return 'off'
-    }
-    return this.settings.tabTouchIndicator
-  }
-
   // 与首页上端 glassBlurRadius 是同一个函数、同一份取值，禁止在本文件重写公式
   private topBlurRadius(): number {
     return topBlurRadiusFromStrength(this.homeTopBlurStrength)
@@ -2336,7 +2264,7 @@ struct SettingsDetailPage {
   // 玻璃标题栏：返回按钮（自带 systemMaterial，处于 Navigation 标题栏生效区内 → 出真玻璃）+ 标题。
 
   private getPreviewBarFloatingStyle(): HdsTabsFloatingStyle {
-    const useLight: boolean = this.effectiveTouchIndicator() === 'light'
+    const useLight: boolean = this.settings.tabTouchIndicator === 'light'
     const lightColor: ResourceColor | undefined = useLight
       ? (this.settings.tabLightColor === 'white' ? '#FFFFFF' : this.primaryColor)
       : undefined

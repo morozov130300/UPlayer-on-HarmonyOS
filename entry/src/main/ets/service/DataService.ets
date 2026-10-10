@@ -787,7 +787,9 @@ return result
       let rawHoldingHandEnabled: Object | undefined = r['holdingHandEnabled']
       s.holdingHandEnabled = rawHoldingHandEnabled !== undefined ? rawHoldingHandEnabled as boolean : true
       let rawTabTouchIndicator: Object | undefined = r['tabTouchIndicator']
-      s.tabTouchIndicator = rawTabTouchIndicator !== undefined ? rawTabTouchIndicator as string : 'light'
+      let tabTouchIndicator: string = rawTabTouchIndicator !== undefined ? rawTabTouchIndicator as string : 'light'
+      // 「白色蒙版」选项已删除，底部栏触摸指示全面改为跟手光效：旧值 'mask' 迁移为 'light'
+      s.tabTouchIndicator = tabTouchIndicator === 'mask' ? 'light' : tabTouchIndicator
       let rawTabLightColor: Object | undefined = r['tabLightColor']
       s.tabLightColor = rawTabLightColor !== undefined ? rawTabLightColor as string : 'theme'
       let rawContinuePlayOnHeadsetUnplug: Object | undefined = r['continuePlayOnHeadsetUnplug']

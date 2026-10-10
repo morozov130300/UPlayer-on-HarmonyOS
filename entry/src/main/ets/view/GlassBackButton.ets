@@ -3,7 +3,6 @@ import { uiMaterial } from '@kit.ArkUI'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import { createTabGlassMaterial, DEFAULT_GLASS_STYLE, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
-import { KEY_HAS_POINTER_DEVICE } from '../common/utils/InputDeviceUtil'
 
 // 返回按钮统一组件：可点击区域维持原尺寸，内部套一层「可点击区域 × 0.6」的内切圆形，
 // 圆形的液态玻璃/磨砂/描边/阴影完全与底部 Tab 栏同源同参（同一批 AppStorage 配置驱动），
@@ -21,7 +20,6 @@ export struct GlassBackButton {
   @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
   @StorageLink('uplayer_glass_blur_strength') glassBlurStrength: number = 25
   @StorageLink('uplayer_tab_touch_indicator') tabTouchIndicator: string = 'light'
-  @StorageLink(KEY_HAS_POINTER_DEVICE) hasPointerDevice: boolean = false
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
   @StorageLink('uplayer_theme_mode') themeMode: string = 'system'
 
@@ -50,14 +48,6 @@ export struct GlassBackButton {
     return false
   }
 
-  // 与 Index.effectiveTouchIndicator 同逻辑：无指针设备时「白色蒙版」降级为关闭
-  private effectiveTouchIndicator(): string {
-    if (this.tabTouchIndicator === 'mask' && !this.hasPointerDevice) {
-      return 'off'
-    }
-    return this.tabTouchIndicator
-  }
-
   // 与底部 Tab 栏同源的材质选择（返回按钮固定不跟手形变，观感考量）：
   // 玻璃风格(immersive) → createTabGlassMaterial 全参工厂（含 lightEffect/colorInvert/applyShadow）；
   // 经典风格(classic) → 不挂任何材质（systemMaterial=undefined），仅由 backgroundEffect（高斯模糊）提供背景。
@@ -67,7 +57,7 @@ export struct GlassBackButton {
       if (!isLiquidGlassAvailable()) {
         return undefined
       }
-      const useLight: boolean = this.effectiveTouchIndicator() === 'light'
+      const useLight: boolean = this.tabTouchIndicator === 'light'
       // 跟手光效颜色设置已删除：暗黑固定白光、明亮固定主题色
       const lightColor: string | undefined = useLight
         ? (this.isDarkTheme() ? '#FFFFFF' : this.primaryColor)
