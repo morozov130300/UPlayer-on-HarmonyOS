@@ -74,7 +74,7 @@ export struct SettingsContent {
       .width('100%')
       .height(this.topContentPadding + this.topBandHeight)
       .padding({
-        left: 16,
+        left: 20,
         right: this.isPC ? Math.max(this.titleButtonWidth, 140) + 12 : 8,
         top: this.topContentPadding
       })

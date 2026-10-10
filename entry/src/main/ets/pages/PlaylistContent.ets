@@ -37,6 +37,9 @@ export struct PlaylistContent {
   @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
   @StorageLink(AppStorageKeyConstants.KEY_LIBRARY_REVISION) @Watch('onLibraryChange') libraryRevision: number = 0
   @StorageLink(AppStorageKeyConstants.KEY_FILTER_REVISION) @Watch('onFilterChange') filterRevision: number = 0
+  // Delete 键删除请求（Index 页面级键盘事件 +1）：编辑态下与删除按钮功能一致
+  @StorageLink(AppStorageKeyConstants.KEY_PLAYLIST_DELETE_REQUEST) @Watch('onDeleteRequest')
+  deleteRequest: number = 0
   private dataService: DataService = DataService.getInstance()
   private songScanner: SongScanner = SongScanner.getInstance()
   private scroller: Scroller = new Scroller()
@@ -281,6 +284,16 @@ export struct PlaylistContent {
     return this.editSelectedFolderIds.indexOf(folderId) >= 0
   }
 
+  // Delete 键：编辑态且有选中时执行与删除按钮相同的逻辑；空选/非编辑态忽略
+  onDeleteRequest(): void {
+    if (!this.isEditMode || this.editSelectedFolderIds.length === 0) {
+      return
+    }
+    this.deleteEditSelected().catch((err: Error) => {
+      Logger.error(TAG, `delete selected failed: ${JSON.stringify(err)}`)
+    })
+  }
+
   // 全局悬浮加号已上提到 Index：本页只上报「加号是否应显示」
   // （编辑态隐藏 + 滚动隐藏设置 + 滚动方向），由 Index 读取渲染
   private publishPlusVisible(): void {
@@ -332,7 +345,7 @@ export struct PlaylistContent {
         .width('100%')
         .height(this.topContentPadding + this.topBandHeight)
         .padding({
-          left: 16,
+          left: 20,
           right: this.isPC ? Math.max(this.titleButtonWidth, 140) + 12 : 8,
           top: this.topContentPadding
         })
