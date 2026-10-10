@@ -106,15 +106,17 @@ export function createTabGlassMaterial(strength: number, interactive: boolean,
 // 底部栏/多选操作栏等横向条状组件的液态玻璃材质工厂（API 26+）：
 // - interactive 复用全局「交互形变」开关控制 Q 弹形变
 // - applyShadow 固定关闭：这些组件均有手写 shadow 投影设计，避免材质阴影覆盖
-// - 不开 lightEffect / colorInvert（与页面级 createPageGlassMaterial 策略一致）
+// - lightColor 非 undefined 时开启跟手光效（与 Tab 栏 lightColor 策略一致）
 // 低算力设备（SMOOTH）返回 undefined，让组件保留 backgroundEffect 兜底
-export function createBarGlassMaterial(strength: number, interactive: boolean): uiMaterial.Material | undefined {
+export function createBarGlassMaterial(strength: number, interactive: boolean,
+  lightColor?: string): uiMaterial.Material | undefined {
   if (!isLiquidGlassAvailable() || isGlassOff(strength) || isLowPowerGlassDevice()) {
     return undefined
   }
   return new uiMaterial.ImmersiveMaterial({
     style: glassImmersiveStyleFromStrength(strength),
     interactive: interactive,
+    lightEffect: lightColor !== undefined ? { color: lightColor } : undefined,
     applyShadow: false
   })
 }

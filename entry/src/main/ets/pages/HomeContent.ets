@@ -1,5 +1,5 @@
 // ArkUI 26 Beta1: 接口定义变更（误报，本项目已是Stage模型）+ UX视觉布局变更（Text默认开启沉浸式材质，系统行为）
-import { common } from '@kit.AbilityKit'
+import { common, ConfigurationConstant } from '@kit.AbilityKit'
 import { deviceInfo } from '@kit.BasicServicesKit'
 import { SongInfo } from '../model/SongInfo'
 import { DataService, AppSettingsData, ImportResult } from '../service/DataService'
@@ -76,6 +76,7 @@ export struct HomeContent {
   @StorageLink('uplayer_theme_mode') themeMode: string = 'system'
   // 底部栏样式：经典样式下多选菜单栏不挂任何背景效果（磨砂/液态玻璃）
   @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
+  @StorageLink('uplayer_tab_touch_indicator') tabTouchIndicator: string = 'light'
   @StorageLink('uplayer_home_top_blur_strength') homeTopBlurStrength: number = 25
   private dataService: DataService = DataService.getInstance()
   private songScanner: SongScanner = SongScanner.getInstance()
@@ -100,7 +101,18 @@ export struct HomeContent {
     if (this.tabStyle === 'classic') {
       return undefined
     }
-    return createBarGlassMaterial(DEFAULT_GLASS_STYLE, true)
+    return createBarGlassMaterial(DEFAULT_GLASS_STYLE, true,
+      this.tabTouchIndicator === 'light' ? (this.isDarkTheme() ? '#FFFFFF' : this.primaryColor) : undefined)
+  }
+
+  private isDarkTheme(): boolean {
+    if (this.themeMode === 'dark') {
+      return true
+    }
+    if (this.themeMode === 'system') {
+      return this.context?.config.colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK
+    }
+    return false
   }
 
   // 经典样式下同样不挂磨砂层（与材质一起关断）

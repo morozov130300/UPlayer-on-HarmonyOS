@@ -1067,7 +1067,9 @@ struct MainPage {
     if (this.tabStyle !== 'immersive') {
       return undefined
     }
-    return createBarGlassMaterial(DEFAULT_GLASS_STYLE, true)
+    const lightColor: string | undefined = this.tabTouchIndicator === 'light' ?
+      (this.isDarkTheme() ? '#FFFFFF' : this.primaryColor) : undefined
+    return createBarGlassMaterial(DEFAULT_GLASS_STYLE, true, lightColor)
   }
 
   private isSongInfoShort(): boolean {
