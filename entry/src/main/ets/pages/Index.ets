@@ -840,6 +840,7 @@ struct MainPage {
         TabContent() {
           PlaylistContent({
             topContentPadding: this.topContentInset(),
+            topBandHeight: this.homeHeaderHeight() - this.topContentInset(),
             bottomContentPadding: this.bottomOverlayInset(),
             onNavigateToHome: (): void => {
               this.onFolderClick()
@@ -850,7 +851,9 @@ struct MainPage {
 
         TabContent() {
           SettingsContent({
-            topContentPadding: this.topContentInset(), bottomContentPadding: this.bottomOverlayInset()
+            topContentPadding: this.topContentInset(),
+            topBandHeight: this.homeHeaderHeight() - this.topContentInset(),
+            bottomContentPadding: this.bottomOverlayInset()
           }).width('100%').height('100%')
         }
         .tabBar(this.tabLabelBuilder(2, '设置', $r('app.media.ic_public_settings')))

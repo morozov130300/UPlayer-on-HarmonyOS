@@ -1,4 +1,5 @@
 import { uiAppearance } from '@kit.ArkUI'
+import { deviceInfo } from '@kit.BasicServicesKit'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { ColorHelper } from '../common/utils/ColorHelper'
 
@@ -13,7 +14,10 @@ interface SettingCategory {
 @Component
 export struct SettingsContent {
   topContentPadding: number = 0
+  // 顶部标题带高度（Index 传入，与主页问候语带同源）：标题在带内垂直居中，几何与主页一致
+  topBandHeight: number = 72
   bottomContentPadding: number = 0
+  private isPC: boolean = deviceInfo.deviceType === '2in1'
   @StorageLink('uplayer_theme_mode') themeMode: string = 'system'
   @StorageLink(KEY_PRIMARY_COLOR) primaryColor: string = '#007DFF'
   @StorageLink(AppStorageKeyConstants.KEY_TITLE_BUTTON_WIDTH) titleButtonWidth: number = 0
@@ -68,10 +72,13 @@ export struct SettingsContent {
           .fontWeight(FontWeight.Bold)
       }
       .width('100%')
+      .height(this.topContentPadding + this.topBandHeight)
       .padding({
-        left: this.scaledSize(16), right: this.titleButtonWidth + this.scaledSize(12),
-        top: this.topContentPadding + this.scaledSize(12), bottom: this.scaledSize(6)
+        left: 16,
+        right: this.isPC ? Math.max(this.titleButtonWidth, 140) + 12 : 8,
+        top: this.topContentPadding
       })
+      .alignItems(VerticalAlign.Center)
 
       Column({ space: this.scaledSize(6) }) {
         ForEach(this.categories, (cat: SettingCategory) => {
@@ -100,6 +107,7 @@ export struct SettingsContent {
         }, (cat: SettingCategory) => cat.route)
       }
       .width('100%')
+      .margin({ top: this.scaledSize(6) })
       .padding({
         left: this.scaledSize(12), right: this.scaledSize(12),
         bottom: this.bottomContentPadding

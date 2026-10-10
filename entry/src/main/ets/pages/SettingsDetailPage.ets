@@ -1576,19 +1576,36 @@ struct SettingsDetailPage {
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(this.scaledSize(10))
 
-      Column() {
-        this.toggleRow('耳机断开时继续播放', this.settings.continuePlayOnHeadsetUnplug, (val: boolean) => {
-          this.settings.continuePlayOnHeadsetUnplug = val
-          this.updateSetting()
-        })
-        Text('关闭时：拔出耳机/断开蓝牙会自动暂停播放并提示；开启时：系统默认切回扬声器继续播放')
-          .fontSize(this.scaledFont(11))
-          .fontColor(this.settingSubTextColor())
-          .width('100%')
-          .margin({ top: this.scaledSize(2) })
+      Row() {
+        Column({ space: this.scaledSize(6) }) {
+          Text('耳机断开时继续播放')
+            .fontSize(this.scaledFont(14))
+            .fontColor(this.settingTextColor())
+            .fontWeight(FontWeight.Medium)
+          Text('关闭时：拔出耳机/断开蓝牙会自动暂停播放并提示；开启时：系统默认切回扬声器继续播放')
+            .fontSize(this.scaledFont(12))
+            .fontColor(this.settingSubTextColor())
+        }
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Start)
+
+        Toggle({ type: ToggleType.Switch, isOn: this.settings.continuePlayOnHeadsetUnplug })
+          .selectedColor(this.primaryColor)
+          .alignSelf(ItemAlign.Center)
+          .margin({ left: this.scaledSize(10) })
+          .onChange((isOn: boolean) => {
+            this.settings.continuePlayOnHeadsetUnplug = isOn
+            this.updateSetting()
+          })
       }
       .width('100%')
-      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+      .padding({
+        left: this.scaledSize(14),
+        right: this.scaledSize(14),
+        top: this.scaledSize(10),
+        bottom: this.scaledSize(10)
+      })
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(this.scaledSize(10))
 
@@ -1785,7 +1802,7 @@ struct SettingsDetailPage {
         })
         if (!this.soundFieldSupported) {
           Text('当前设备不支持声场效果')
-            .fontSize(this.scaledFont(11))
+            .fontSize(this.scaledFont(12))
             .fontColor(this.settingSubTextColor())
             .width('100%')
             .margin({ top: this.scaledSize(2) })
@@ -1821,7 +1838,7 @@ struct SettingsDetailPage {
         })
         if (!this.environmentSupported) {
           Text('当前设备不支持环境效果')
-            .fontSize(this.scaledFont(11))
+            .fontSize(this.scaledFont(12))
             .fontColor(this.settingSubTextColor())
             .width('100%')
             .margin({ top: this.scaledSize(2) })
@@ -1857,7 +1874,7 @@ struct SettingsDetailPage {
         })
         if (!this.beautifierSupported) {
           Text('当前设备不支持声音美化')
-            .fontSize(this.scaledFont(11))
+            .fontSize(this.scaledFont(12))
             .fontColor(this.settingSubTextColor())
             .width('100%')
             .margin({ top: this.scaledSize(2) })
@@ -1893,7 +1910,7 @@ struct SettingsDetailPage {
         })
         if (!this.spaceRenderSupported) {
           Text('当前设备不支持空间渲染')
-            .fontSize(this.scaledFont(11))
+            .fontSize(this.scaledFont(12))
             .fontColor(this.settingSubTextColor())
             .width('100%')
             .margin({ top: this.scaledSize(2) })
