@@ -968,7 +968,9 @@ export struct ControlAreaComponent {
           .backgroundColor($r('app.color.player_bg_color'))
           .borderRadius(4)
           .height(this.scaledFont(32))
-          .padding({ left: 8, right: 8 })
+          // 编辑态文字起点必须与显示态值文字对齐（标签列 64vp 右缘）：左内边距为 0，
+          // 点击行进入编辑时文字不再随输入框内边距横向位移
+          .padding({ left: 0, right: 8 })
           .layoutWeight(1)
           .defaultFocus(true)
           .enterKeyType(EnterKeyType.Done)
