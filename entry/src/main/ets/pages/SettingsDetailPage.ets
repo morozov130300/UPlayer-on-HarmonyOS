@@ -1594,43 +1594,40 @@ struct SettingsDetailPage {
 
       Column() {
         Row() {
-          this.subTitleRow('播放速度')
+          Text('播放速度')
+            .fontSize(this.scaledFont(14))
+            .fontColor(this.settingTextColor())
+            .fontWeight(FontWeight.Medium)
           Blank()
-        }
-        .width('100%')
-
-        Row() {
           Text(this.settings.playSpeed.toFixed(1) + 'x')
             .fontSize(this.scaledFont(12))
             .fontColor(this.settingTextColor())
         }
         .width('100%')
-        .padding({ left: this.scaledSize(12), right: this.scaledSize(12), top: this.scaledSize(2) })
+        .height(this.scaledSize(44))
+        .alignItems(VerticalAlign.Center)
 
-        Stack() {
-          Slider({
-            value: (this.settings.playSpeed - 0.5) * 100,
-            min: 0,
-            max: 250,
-            step: 10,
-            style: SliderStyle.OutSet
+        Slider({
+          value: (this.settings.playSpeed - 0.5) * 100,
+          min: 0,
+          max: 250,
+          step: 10,
+          style: SliderStyle.OutSet
+        })
+          .width('100%')
+          .selectedColor(this.primaryColor)
+          .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+          .blockColor('#FFFFFF')
+          .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
+          .blockBorderColor(this.primaryColor)
+          .blockBorderWidth(3)
+          .onChange((value: number, mode: SliderChangeMode) => {
+            this.onSpeedChange(value, mode)
           })
-            .width('100%')
-            .selectedColor(this.primaryColor)
-            .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-            .blockColor('#FFFFFF')
-            .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
-            .blockBorderColor(this.primaryColor)
-            .blockBorderWidth(3)
-            .onChange((value: number, mode: SliderChangeMode) => {
-              this.onSpeedChange(value, mode)
-            })
-        }
-        .width('100%')
-        .height(this.scaledSize(40))
-        .padding({ left: this.scaledSize(12), right: this.scaledSize(12), bottom: this.scaledSize(8) })
+          .margin({ top: this.scaledSize(4), bottom: this.scaledSize(12) })
       }
       .width('100%')
+      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(this.scaledSize(10))
     }
