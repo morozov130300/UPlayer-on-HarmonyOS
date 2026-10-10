@@ -259,6 +259,15 @@ public:
                 std::chrono::steady_clock::now() - startedAt).count();
         };
         Stop();
+        pipelineInputCalls_.store(0);
+        pipelineInputBytes_.store(0);
+        pipelineInputFirstLogged_.store(false);
+        pipelineRenderCalls_ = 0;
+        pipelineRenderReqBytes_ = 0;
+        pipelineRenderRespBytes_ = 0;
+        pipelineRenderFirstLogged_ = false;
+        pipelineStatsBaseMs_ = 0;
+        pipelineLastLogMs_ = 0;
         {
             std::lock_guard<std::mutex> lock(effectMutex_);
             activeEqEnabled_ = requestedEqEnabled_.load();
@@ -350,6 +359,9 @@ public:
         resamplePos_ = 0.0;
         resampleLeft_.clear();
         resampleRight_.clear();
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "native track sampleRate=%{public}d channels=%{public}d resampleTo=%{public}d",
+            sampleRate_, channelCount_, resampleOutputRate_);
         decoderThread_ = std::thread(&NativeAudioPlayer::DecoderLoop, this);
         if (OH_AudioRenderer_Start(renderer_) != AUDIOSTREAM_SUCCESS) {
             OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG, "renderer start failed");
@@ -1013,6 +1025,8 @@ private:
                 static_cast<int>(type), static_cast<int>(createResult));
             return !required;
         }
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "effect node type=%{public}d created", static_cast<int>(type));
         return true;
     }
 
@@ -1283,6 +1297,20 @@ private:
         if (success) {
             OH_AudioRenderer_SetSpeed(renderer_, playbackSpeed_);
             OH_AudioRenderer_SetVolume(renderer_, volume_);
+            int32_t actualRate = 0;
+            int32_t actualChannels = 0;
+            int32_t actualFrameSize = 0;
+            float actualSpeed = 0.0f;
+            OH_AudioStream_LatencyMode latencyMode = AUDIOSTREAM_LATENCY_MODE_NORMAL;
+            OH_AudioRenderer_GetSamplingRate(renderer_, &actualRate);
+            OH_AudioRenderer_GetChannelCount(renderer_, &actualChannels);
+            OH_AudioRenderer_GetLatencyMode(renderer_, &latencyMode);
+            OH_AudioRenderer_GetFrameSizeInCallback(renderer_, &actualFrameSize);
+            OH_AudioRenderer_GetSpeed(renderer_, &actualSpeed);
+            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "renderer actual rate=%{public}d channels=%{public}d latency=%{public}d "
+                "frameSize=%{public}d speed=%{public}.3f",
+                actualRate, actualChannels, static_cast<int>(latencyMode), actualFrameSize, actualSpeed);
         }
         if (!success) {
             OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG, "generate renderer failed");
@@ -1559,6 +1587,13 @@ private:
         }
         NativeAudioPlayer* player = static_cast<NativeAudioPlayer*>(userData);
         int32_t readSize = player->ReadPcm(audioData, audioDataSize, finished);
+        player->pipelineInputCalls_.fetch_add(1, std::memory_order_relaxed);
+        player->pipelineInputBytes_.fetch_add(readSize > 0 ? static_cast<uint64_t>(readSize) : 0,
+            std::memory_order_relaxed);
+        if (!player->pipelineInputFirstLogged_.exchange(true)) {
+            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "pipeline input first pull size=%{public}d", audioDataSize);
+        }
         player->MeasureInput(audioData, readSize);
         player->ApplyHeadroom(audioData, readSize);
         return readSize;
@@ -1613,6 +1648,35 @@ private:
         if (responseSize < audioDataSize) {
             std::memset(static_cast<uint8_t*>(audioData) + responseSize, 0,
                 static_cast<size_t>(audioDataSize - responseSize));
+        }
+        pipelineRenderCalls_++;
+        pipelineRenderReqBytes_ += static_cast<uint64_t>(audioDataSize);
+        pipelineRenderRespBytes_ += responseSize > 0 ? static_cast<uint64_t>(responseSize) : 0;
+        if (!pipelineRenderFirstLogged_) {
+            pipelineRenderFirstLogged_ = true;
+            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "pipeline render first req=%{public}d resp=%{public}d finished=%{public}d",
+                audioDataSize, responseSize, finished ? 1 : 0);
+        }
+        const int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        if (pipelineStatsBaseMs_ == 0) {
+            pipelineStatsBaseMs_ = nowMs;
+        }
+        if (nowMs - pipelineLastLogMs_ >= 2000) {
+            pipelineLastLogMs_ = nowMs;
+            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "pipeline flow elapsedMs=%{public}lld renderCalls=%{public}llu "
+                "reqBytes=%{public}llu respBytes=%{public}llu inputCalls=%{public}llu "
+                "inputBytes=%{public}llu",
+                static_cast<long long>(nowMs - pipelineStatsBaseMs_),
+                static_cast<unsigned long long>(pipelineRenderCalls_),
+                static_cast<unsigned long long>(pipelineRenderReqBytes_),
+                static_cast<unsigned long long>(pipelineRenderRespBytes_),
+                static_cast<unsigned long long>(pipelineInputCalls_.load(
+                    std::memory_order_relaxed)),
+                static_cast<unsigned long long>(pipelineInputBytes_.load(
+                    std::memory_order_relaxed)));
         }
         if (finished) {
             audioSuiteEofReached_ = true;
@@ -1816,6 +1880,16 @@ private:
     int32_t measurementPeak_ = 0;
     int32_t consecutiveClippingWindows_ = 0;
     int32_t cleanHeadroomWindows_ = 0;
+    // 管线数据流诊断：对比管线输入拉取量与 RenderFrame 输出量是否守恒（采样率错配定位）
+    std::atomic<uint64_t> pipelineInputCalls_ = 0;
+    std::atomic<uint64_t> pipelineInputBytes_ = 0;
+    std::atomic<bool> pipelineInputFirstLogged_ = false;
+    uint64_t pipelineRenderCalls_ = 0;
+    uint64_t pipelineRenderReqBytes_ = 0;
+    uint64_t pipelineRenderRespBytes_ = 0;
+    bool pipelineRenderFirstLogged_ = false;
+    int64_t pipelineStatsBaseMs_ = 0;
+    int64_t pipelineLastLogMs_ = 0;
     std::atomic<double> maxPositiveGainDb_ = 0.0;
     std::atomic<double> baseHeadroomDb_ = 0.0;
     std::atomic<double> targetHeadroomDb_ = 0.0;
