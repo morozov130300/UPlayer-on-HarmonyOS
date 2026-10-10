@@ -359,6 +359,9 @@ public:
         resamplePos_ = 0.0;
         resampleLeft_.clear();
         resampleRight_.clear();
+        inputDensityFactor_ = 1;
+        inputWindowFrames_ = 0;
+        inputWindowStartMs_ = 0;
         OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "native track sampleRate=%{public}d channels=%{public}d resampleTo=%{public}d",
             sampleRate_, channelCount_, resampleOutputRate_);
@@ -557,6 +560,8 @@ public:
         std::lock_guard<std::mutex> lock(effectMutex_);
         requestedEqEnabled_ = enabled;
         activeEqEnabled_ = enabled;
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "effect toggle eq=%{public}d", enabled ? 1 : 0);
         baseHeadroomDb_ = enabled ? std::max(0.0, maxPositiveGainDb_.load()) : 0.0;
         targetHeadroomDb_ = baseHeadroomDb_.load();
         if (!enabled) {
@@ -615,6 +620,8 @@ public:
     {
         std::lock_guard<std::mutex> lock(effectMutex_);
         requestedSoundFieldEnabled_ = enabled;
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "effect toggle soundField=%{public}d", enabled ? 1 : 0);
         if (soundFieldNode_ == nullptr) {
             return true;
         }
@@ -649,6 +656,8 @@ public:
     {
         std::lock_guard<std::mutex> lock(effectMutex_);
         requestedEnvironmentEnabled_ = enabled;
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "effect toggle environment=%{public}d", enabled ? 1 : 0);
         if (environmentNode_ == nullptr) {
             return true;
         }
@@ -683,6 +692,8 @@ public:
     {
         std::lock_guard<std::mutex> lock(effectMutex_);
         requestedBeautifierEnabled_ = enabled;
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "effect toggle beautifier=%{public}d", enabled ? 1 : 0);
         if (beautifierNode_ == nullptr) {
             return true;
         }
@@ -717,6 +728,8 @@ public:
     {
         std::lock_guard<std::mutex> lock(effectMutex_);
         requestedSpaceRenderEnabled_ = enabled;
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "effect toggle spaceRender=%{public}d", enabled ? 1 : 0);
         if (spaceRenderNode_ == nullptr) {
             return true;
         }
@@ -1499,7 +1512,8 @@ private:
         int16_t* out = static_cast<int16_t*>(audioData);
         int32_t outSamples = audioDataSize / 4; // 立体声 S16LE，每采样点 4 字节
         int32_t written = 0;
-        const double ratio = static_cast<double>(resampleInputRate_) / static_cast<double>(resampleOutputRate_);
+        const int32_t effOutRate = resampleOutputRate_ * inputDensityFactor_;
+        const double ratio = static_cast<double>(resampleInputRate_) / static_cast<double>(effOutRate);
         // 循环填充，直到写满请求的采样点数或解码结束。
         // 不能在持有 queueMutex_ 时等待，否则解码线程无法填充 pcmQueue_ 造成死锁。
         while (written < outSamples) {
@@ -1579,6 +1593,41 @@ private:
         return written * 4;
     }
 
+    void MeasureInputDensity(int32_t audioDataSize)
+    {
+        if (audioDataSize <= 0) {
+            return;
+        }
+        const int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        const uint64_t frames = static_cast<uint64_t>(audioDataSize) / 4;
+        if (inputWindowStartMs_ == 0) {
+            inputWindowStartMs_ = nowMs;
+            inputWindowFrames_ = 0;
+        }
+        inputWindowFrames_ += frames;
+        const int64_t winMs = nowMs - inputWindowStartMs_;
+        if (winMs < 500) {
+            return;
+        }
+        const uint64_t fps = inputWindowFrames_ * 1000 / static_cast<uint64_t>(winMs);
+        int32_t n = static_cast<int32_t>((fps + 24000) / 48000);
+        if (n < 1) {
+            n = 1;
+        }
+        if (n > 3) {
+            n = 3;
+        }
+        if (n != inputDensityFactor_) {
+            inputDensityFactor_ = n;
+            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "input density factor -> %{public}d (pullFps=%{public}llu)", n,
+                static_cast<unsigned long long>(fps));
+        }
+        inputWindowFrames_ = 0;
+        inputWindowStartMs_ = nowMs;
+    }
+
     static int32_t InputDataCallback(OH_AudioNode*, void* userData, void* audioData,
         int32_t audioDataSize, bool* finished)
     {
@@ -1596,6 +1645,7 @@ private:
         }
         player->MeasureInput(audioData, readSize);
         player->ApplyHeadroom(audioData, readSize);
+        player->MeasureInputDensity(audioDataSize);
         return readSize;
     }
 
@@ -1663,7 +1713,7 @@ private:
         if (pipelineStatsBaseMs_ == 0) {
             pipelineStatsBaseMs_ = nowMs;
         }
-        if (nowMs - pipelineLastLogMs_ >= 2000) {
+        if (nowMs - pipelineLastLogMs_ >= 1000) {
             pipelineLastLogMs_ = nowMs;
             OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                 "pipeline flow elapsedMs=%{public}lld renderCalls=%{public}llu "
@@ -1908,6 +1958,11 @@ private:
     double resamplePos_ = 0.0;
     int32_t resampleInputRate_ = 44100;
     int32_t resampleOutputRate_ = 48000;
+    // 密度自适应：OHAudioSuite 管线对输入按 N 倍速率拉取（N 实时测量为 1 或 2）。
+    // 拉取 N 倍时把源重采样到 48000×N，使源按实时速率推进，消除 2× 拉取导致的倍速/变调。
+    int32_t inputDensityFactor_ = 1;
+    uint64_t inputWindowFrames_ = 0;
+    int64_t inputWindowStartMs_ = 0;
     std::deque<int16_t> resampleLeft_ = {};
     std::deque<int16_t> resampleRight_ = {};
 };

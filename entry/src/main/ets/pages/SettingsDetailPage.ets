@@ -71,6 +71,14 @@ interface TouchIndicatorOption {
   value: string
 }
 
+// 芯片行 @Builder 参数：@Builder 多参数/按值传递时内部 UI 不随状态刷新（点选后高亮不动），
+// 必须合并为单对象字面量按引用传递（$$ 接收），current 直接携带状态属性读取才实时刷新
+interface ChipRowOptions {
+  labels: string[]
+  current: number
+  onPick: (value: number) => void
+}
+
 @Entry
 @Component
 @SuppressWarnings({ rules: [SuppressWarningsType.SYSCAP] })
@@ -1742,7 +1750,7 @@ struct SettingsDetailPage {
                     .onClick(() => {
                       this.applyEqPreset(i)
                     })
-                }, (name: string) => name)
+                }, (name: string, i: number) => name + (this.eqPresetActive(i) ? '_on' : '_off'))
               }
               .height(this.scaledSize(30))
               .alignItems(VerticalAlign.Center)
@@ -1765,7 +1773,7 @@ struct SettingsDetailPage {
                 }
                 .width(this.scaledSize(44))
                 .alignItems(HorizontalAlign.Center)
-              }, (band: EqBandInfo) => band.freq)
+              }, (band: EqBandInfo) => band.freq + this.settings.eqBands[band.index])
             }
             .width('100%')
             .justifyContent(FlexAlign.Center)
@@ -1810,7 +1818,7 @@ struct SettingsDetailPage {
                   }
                   .width(this.scaledSize(44))
                   .alignItems(HorizontalAlign.Center)
-                }, (band: EqBandInfo) => band.freq)
+                }, (band: EqBandInfo) => band.freq + this.settings.eqBands[band.index])
               }
               .width('100%')
               .justifyContent(FlexAlign.Center)
@@ -1872,8 +1880,12 @@ struct SettingsDetailPage {
 
       if (this.settings.soundFieldEnabled && this.soundFieldSupported) {
         Column() {
-          this.typeChipRow(['前置', '宏大', '聆听', '宽广'], this.settings.soundFieldType, (t: number) => {
-            this.onSoundFieldTypeChange(t)
+          this.chipRow({
+            labels: ['前置', '宏大', '聆听', '宽广'],
+            current: this.settings.soundFieldType - 1,
+            onPick: (t: number) => {
+              this.onSoundFieldTypeChange(t + 1)
+            }
           })
         }
         .width('100%')
@@ -1908,8 +1920,12 @@ struct SettingsDetailPage {
 
       if (this.settings.environmentEnabled && this.environmentSupported) {
         Column() {
-          this.typeChipRow(['广播', '听筒', '水下', '留声机'], this.settings.environmentType, (t: number) => {
-            this.onEnvironmentTypeChange(t)
+          this.chipRow({
+            labels: ['广播', '听筒', '水下', '留声机'],
+            current: this.settings.environmentType - 1,
+            onPick: (t: number) => {
+              this.onEnvironmentTypeChange(t + 1)
+            }
           })
         }
         .width('100%')
@@ -1944,8 +1960,12 @@ struct SettingsDetailPage {
 
       if (this.settings.beautifierEnabled && this.beautifierSupported) {
         Column() {
-          this.typeChipRow(['清澈', '剧场', 'CD', '录音棚'], this.settings.beautifierType, (t: number) => {
-            this.onBeautifierTypeChange(t)
+          this.chipRow({
+            labels: ['清澈', '剧场', 'CD', '录音棚'],
+            current: this.settings.beautifierType - 1,
+            onPick: (t: number) => {
+              this.onBeautifierTypeChange(t + 1)
+            }
           })
         }
         .width('100%')
@@ -1980,8 +2000,12 @@ struct SettingsDetailPage {
 
       if (this.settings.spaceRenderEnabled && this.spaceRenderSupported) {
         Column({ space: this.scaledSize(10) }) {
-          this.chipRow(SpaceRenderTable.MODE_NAMES, this.settings.spaceRenderMode, (m: number) => {
-            this.onSpaceModeChange(m)
+          this.chipRow({
+            labels: SpaceRenderTable.MODE_NAMES,
+            current: this.settings.spaceRenderMode,
+            onPick: (m: number) => {
+              this.onSpaceModeChange(m)
+            }
           })
           if (this.settings.spaceRenderMode === 0) {
             this.spaceSliderRow('X 位置', 0, -5, 5, 0.5, ' m')
@@ -1992,8 +2016,12 @@ struct SettingsDetailPage {
             this.spaceSliderRow('Y 位置', 1, -5, 5, 0.5, ' m')
             this.spaceSliderRow('Z 位置', 2, -5, 5, 0.5, ' m')
             this.spaceSliderRow('环绕时间', 3, 2, 40, 1, ' s')
-            this.chipRow(['逆时针', '顺时针'], Math.round(this.spaceValue(4)), (d: number) => {
-              this.onSpaceDirectionChange(d)
+            this.chipRow({
+              labels: ['逆时针', '顺时针'],
+              current: Math.round(this.spaceValue(4)),
+              onPick: (d: number) => {
+                this.onSpaceDirectionChange(d)
+              }
             })
           } else {
             this.spaceSliderRow('扩展半径', 0, 1, 5, 0.5, ' m')
@@ -2169,10 +2197,11 @@ struct SettingsDetailPage {
     }
   }
 
-  // 效果选项芯片行：labels[i] 对应值 i+1（声场/环境/美声类型），选中高亮主题色
+  // 效果选项芯片行：labels[i] 对应值 i+1（声场/环境/美声类型 1-4，引擎枚举 1 起值）；
+  // 高亮按 0 起索引比较，需把 1 起 current 归一为 current - 1，点选回调再 +1 还原
   @Builder
   typeChipRow(labels: string[], current: number, onPick: (value: number) => void): void {
-    this.chipRow(labels, current, (v: number) => {
+    this.chipRow(labels, current - 1, (v: number) => {
       onPick(v + 1)
     })
   }
@@ -2197,7 +2226,7 @@ struct SettingsDetailPage {
               onPick(i)
             }
           })
-      }, (label: string) => label)
+      }, (label: string, i: number) => label + (current === i ? '_on' : '_off'))
     }
     .width('100%')
     .justifyContent(FlexAlign.Start)
