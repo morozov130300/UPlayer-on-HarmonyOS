@@ -20,6 +20,8 @@ const FAVORITES_FOLDER_ID: string = '__favorites__'
 @Component
 export struct PlaylistContent {
   topContentPadding: number = 0
+  // 顶部标题带高度（Index 传入，与主页问候语带同源）：标题在带内垂直居中，几何与主页一致
+  topBandHeight: number = 72
   bottomContentPadding: number = 0
   onNavigateToHome: () => void = (): void => {}
   private context: common.UIAbilityContext | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
@@ -39,6 +41,7 @@ export struct PlaylistContent {
   private songScanner: SongScanner = SongScanner.getInstance()
   private scroller: Scroller = new Scroller()
   private previousFolderPaths: string[] = []
+  private isPC: boolean = deviceInfo.deviceType === '2in1'
   @State isEditMode: boolean = false
   @State editSelectedFolderIds: string[] = []
   @State gridColumns: number = 2
@@ -327,12 +330,13 @@ export struct PlaylistContent {
             .onClick(() => { this.cycleSortMode() })
         }
         .width('100%')
+        .height(this.topContentPadding + this.topBandHeight)
         .padding({
           left: 16,
-          right: Math.max(this.titleButtonWidth, 140) + 12,
-          top: this.topContentPadding + this.scaledSize(20),
-          bottom: 12
+          right: this.isPC ? Math.max(this.titleButtonWidth, 140) + 12 : 8,
+          top: this.topContentPadding
         })
+        .alignItems(VerticalAlign.Center)
 
         Scroll(this.scroller) {
           Column() {
@@ -347,7 +351,7 @@ export struct PlaylistContent {
               .columnsTemplate('1fr '.repeat(this.gridColumns).trim())
               .columnsGap(10)
               .rowsGap(10)
-              .padding({ left: 16, right: 16 })
+              .padding({ left: 16, right: 16, top: 12 })
               .width('100%')
             } else {
               Text('暂无歌单，点击添加歌曲')
