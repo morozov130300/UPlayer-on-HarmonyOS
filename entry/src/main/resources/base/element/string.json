@@ -36,6 +36,10 @@
       "name": "no_lyric",
       "value": "无歌词"
     },
+    {
+      "name": "loading_lyric",
+      "value": "正在加载歌词…"
+    },
     
     {
       "name": "reason_file_access_persist",

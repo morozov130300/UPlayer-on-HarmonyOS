@@ -145,6 +145,11 @@ struct SettingsDetailPage {
     { label: '白色蒙版', value: 'mask' },
     { label: '跟手光效', value: 'light' }
   ]
+  // 跟手光效颜色选项：白光 / 主题色
+  private lightColorOptions: TouchIndicatorOption[] = [
+    { label: '白光', value: 'white' },
+    { label: '主题色', value: 'theme' }
+  ]
   // ═══ 设置项显隐统一动画（所有条件显隐的设置卡片/选项必须完全一致，禁止各自定义）═══
   private colorOptions: ThemeColorOption[] = [
     { name: '鸿蒙蓝', value: '#007DFF' },
@@ -1305,6 +1310,54 @@ struct SettingsDetailPage {
           .transition(this.settingCardTransition())
         }
 
+        // 跟手光效颜色：白光 / 主题色。仅玻璃样式且触摸指示为「跟手光效」时显示
+        if (isLiquidGlassAvailable() && this.settings.tabStyle === 'immersive' &&
+          this.settings.tabTouchIndicator === 'light') {
+          Column() {
+            Row() {
+              this.subTitleRow('跟手光效颜色')
+              Blank()
+              ForEach(this.lightColorOptions, (opt: TouchIndicatorOption) => {
+                Column() {
+                  Text(opt.label)
+                    .fontSize(this.scaledFont(11))
+                    .fontColor(this.settings.tabLightColor === opt.value
+                      ? '#FFFFFF' : this.settingInactiveTextColor())
+                }
+                .padding({
+                  left: this.scaledSize(10),
+                  right: this.scaledSize(10),
+                  top: this.scaledSize(5),
+                  bottom: this.scaledSize(5)
+                })
+                .backgroundColor(this.settings.tabLightColor === opt.value
+                  ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+                .borderRadius(this.scaledSize(14))
+                .animation({ duration: 200, curve: Curve.EaseInOut })
+                .onClick(() => {
+                  this.settings.tabLightColor = opt.value
+                  this.updateSetting()
+                  AppStorage.setOrCreate('uplayer_tab_light_color', opt.value)
+                })
+                .transition(this.settingCardTransition())
+              }, (opt: TouchIndicatorOption) => opt.value)
+            }
+            .width('100%')
+            .constraintSize({ minWidth: 0, maxWidth: '100%' })
+            .alignItems(VerticalAlign.Center)
+            .padding({
+              left: this.scaledSize(14),
+              right: this.scaledSize(14),
+              top: this.scaledSize(10),
+              bottom: this.scaledSize(10)
+            })
+          }
+          .width('100%')
+          .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+          .borderRadius(this.scaledSize(10))
+          .transition(this.settingCardTransition())
+        }
+
         // 磨砂兜底模糊强度（独立设置项卡片）：
         // - 老设备：两种样式都显示（磨砂兜底始终生效）
         // - 新设备：仅经典样式显示（玻璃样式液态玻璃接管，磨砂层关闭）
@@ -2260,7 +2313,7 @@ struct SettingsDetailPage {
   private getPreviewBarFloatingStyle(): HdsTabsFloatingStyle {
     const useLight: boolean = this.effectiveTouchIndicator() === 'light'
     const lightColor: ResourceColor | undefined = useLight
-      ? (this.isDark() ? '#FFFFFF' : this.primaryColor)
+      ? (this.settings.tabLightColor === 'white' ? '#FFFFFF' : this.primaryColor)
       : undefined
     const previewBarWidth: number = 228
     // 预览器垂直居中：栏在 72vp 预览带内上下居中，边距随显示大小缩放（栏高 scaledSize(44)）

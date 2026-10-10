@@ -305,10 +305,9 @@ export struct PlaylistContent {
     if (this.context === undefined) {
       return
     }
-    const newSongs: SongInfo[] = await this.songScanner.pickAudioFiles(this.context)
-    if (newSongs.length > 0) {
-      const result: ImportResult = this.dataService.addSongs(newSongs)
-      this.loadData()
+    // 增量流式导入：每提取完一批即入库，本页列表经 KEY_LIBRARY_REVISION 的 @Watch 自动逐批刷新
+    const result: ImportResult = await this.songScanner.importSongs(this.context, this.dataService)
+    if (result.newCount + result.dupCount > 0) {
       try {
         showToastGlassMaterial(this.getUIContext()?.getPromptAction(),
           `新增 ${result.newCount} 首` + (result.dupCount > 0 ? `，${result.dupCount} 首已存在` : ''))

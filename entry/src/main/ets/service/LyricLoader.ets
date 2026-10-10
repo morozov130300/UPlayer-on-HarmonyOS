@@ -3,6 +3,7 @@
 // 避免此前两份各自演进的加载逻辑再次分叉。
 import { fileIo as fs } from '@kit.CoreFileKit'
 import { util } from '@kit.ArkTS'
+import { BusinessError } from '@kit.BasicServicesKit'
 import { SongInfo } from '../model/SongInfo'
 import { LrcEntry } from '../viewmodel/LrcEntry'
 import { LyricFile } from '../common/constants/LyricConst'
@@ -11,6 +12,16 @@ import { parseKrcLyric, parseLrcLyric } from '../common/utils/LrcUtils'
 import Logger from '../common/utils/Logger'
 
 const TAG = 'LyricLoader'
+
+// 内存缓存上限：64 首歌的解析结果，峰值约几 MB，超出按插入序淘汰最旧条目（近似 LRU）
+const LYRIC_CACHE_MAX_ENTRIES: number = 64
+const lyricCache: Map<string, LrcEntry[]> = new Map<string, LrcEntry[]>()
+// 在途请求去重：同一首歌的并发调用共享同一个 Promise，避免首页迷你歌词 + 播放页歌词 + 双 Watch 重复读盘
+const pendingLoads: Map<string, Promise<LrcEntry[]>> = new Map<string, Promise<LrcEntry[]>>()
+
+function lyricCacheKey(song: SongInfo): string {
+  return `${song.lyricUri}|${song.lyricPath}`
+}
 
 function addCandidate(list: string[], value: string): void {
   if (value.length === 0 || list.indexOf(value) >= 0) {
@@ -89,10 +100,59 @@ async function loadFromPath(path: string): Promise<LrcEntry[]> {
 /**
  * 读取并解析歌曲歌词。逐个候选尝试，返回首个解析出非空内容的结果；
  * 全部失败返回空数组，由上层显示「无歌词」占位。
- * 不缓存结果：调用方（播放器 / 首页）各自按需重新读取。
+ * 内存缓存 + 在途去重：切歌时首页与播放页的并发调用只产生一次文件 I/O；
+ * 空结果（无歌词）同样缓存，避免每次切歌重复探测不存在的文件。
  */
 export async function loadLyricEntries(song: SongInfo): Promise<LrcEntry[]> {
   const candidates: string[] = buildLyricCandidates(song)
+  if (candidates.length === 0) {
+    return []
+  }
+  const key: string = lyricCacheKey(song)
+  const cached: LrcEntry[] | undefined = lyricCache.get(key)
+  if (cached !== undefined) {
+    // 刷新 LRU 新鲜度：Map 保持插入序，先删后插
+    lyricCache.delete(key)
+    lyricCache.set(key, cached)
+    return cached
+  }
+  const pending: Promise<LrcEntry[]> | undefined = pendingLoads.get(key)
+  if (pending !== undefined) {
+    return pending
+  }
+  const loadTask: Promise<LrcEntry[]> = startLyricLoad(key, candidates)
+  pendingLoads.set(key, loadTask)
+  return loadTask
+}
+
+// 启动一次真实读盘：完成后按身份比对落缓存（clearLyricCache 后在途结果不落缓存）；
+// 失败兜底返回空数组（与 loadFromPath 内部吞错语义一致），不落缓存，下次调用重新读盘
+function startLyricLoad(key: string, candidates: string[]): Promise<LrcEntry[]> {
+  const task: Promise<LrcEntry[]> = loadFromCandidates(candidates)
+    .then((entries: LrcEntry[]): LrcEntry[] => {
+      if (pendingLoads.get(key) === task) {
+        pendingLoads.delete(key)
+        lyricCache.set(key, entries)
+        if (lyricCache.size > LYRIC_CACHE_MAX_ENTRIES) {
+          const oldestKey: string | undefined = lyricCache.keys().next().value
+          if (oldestKey !== undefined) {
+            lyricCache.delete(oldestKey)
+          }
+        }
+      }
+      return entries
+    })
+    .catch((err: BusinessError): LrcEntry[] => {
+      if (pendingLoads.get(key) === task) {
+        pendingLoads.delete(key)
+      }
+      Logger.warn(TAG, `load lyric entries failed key=${key} err=${JSON.stringify(err)}`)
+      return []
+    })
+  return task
+}
+
+async function loadFromCandidates(candidates: string[]): Promise<LrcEntry[]> {
   for (let i = 0; i < candidates.length; i++) {
     const entries: LrcEntry[] = await loadFromPath(candidates[i])
     if (entries.length > 0) {
@@ -103,4 +163,13 @@ export async function loadLyricEntries(song: SongInfo): Promise<LrcEntry[]> {
     }
   }
   return []
+}
+
+/**
+ * 清空歌词内存缓存与在途请求表。歌词引用发生集合级变化（重新导入覆盖）时调用，
+ * 保证已打开页面重新读取落盘数据；在途请求的返回值仍交给当次调用方，但不落缓存。
+ */
+export function clearLyricCache(): void {
+  lyricCache.clear()
+  pendingLoads.clear()
 }

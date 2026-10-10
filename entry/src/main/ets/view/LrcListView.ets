@@ -26,6 +26,8 @@ const NONE_LINE: number = -1;
 export default struct LrcListView {
   @Prop @Watch('onTimeUpdated') lyricMilliSecondsTime: number;
   @Prop @Watch('onLyricUpdated') mLrcEntryList: Array<LrcEntry> = [];
+  // 三态渲染：加载中 →「正在加载歌词…」；加载完成有歌词 → 列表；加载完成无歌词 →「无歌词」
+  @Prop isLyricLoading: boolean = false;
   @State fontSize: number = 20;
   @State mCurrentLine: number = NONE_LINE;
   private scrollerForList: Scroller = new Scroller();
@@ -36,6 +38,10 @@ export default struct LrcListView {
   private scrollDebounceTimer: number = -1;
 
   onTimeUpdated() {
+    // 加载中列表未挂载，此时滚动无意义且 scrollToIndex 属于非法入参
+    if (this.isLyricLoading) {
+      return;
+    }
     if (!this.hasLrc()) {
       this.isHasLyric = false;
       return;
@@ -132,7 +138,15 @@ export default struct LrcListView {
 
   build() {
     Column() {
-      if (this.isHasLyric) {
+      if (this.isLyricLoading) {
+        /** 加载中占位：区别于「无歌词」，如实提示尚未解析完成 */
+        Text($r('app.string.loading_lyric'))
+          .fontFamily('HarmonyHeiTi')
+          .fontColor("#FFFFFF")
+          .fontSize(20)
+          .fontWeight(FontWeight.Bold)
+          .width('100%')
+      } else if (this.isHasLyric) {
         /** ✅ 歌词列表：带滚动 + 淡出边缘 */
         List({ space: 20, initialIndex: 0, scroller: this.scrollerForList }) {
           ForEach(this.mLrcEntryList, (item: LrcEntry, index: number) => {

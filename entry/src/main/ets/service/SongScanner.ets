@@ -2,7 +2,7 @@ import { picker, fileShare } from '@kit.CoreFileKit'
 import { common } from '@kit.AbilityKit'
 import { SongInfo } from '../model/SongInfo'
 import { FolderInfo } from '../model/FolderInfo'
-import { AUDIO_EXTENSIONS } from './DataService'
+import { AUDIO_EXTENSIONS, DataService, ImportResult } from './DataService'
 import { AudioMetadataService } from './AudioMetadataService'
 import { applyMetadataToSong, extractSongMetadata } from './MetadataTask'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
@@ -11,8 +11,10 @@ import Logger from '../common/utils/Logger'
 
 const TAG = 'SongScanner'
 
-// TaskPool 并发提取的工人数：过多会挤占 fd 与 CPU，4 路已能充分并行
-const METADATA_CONCURRENCY: number = 4
+// TaskPool 并发提取的工人数：PC 多核收益明显，6 路在 fd/CPU 占用与吞吐间平衡
+const METADATA_CONCURRENCY: number = 6
+// 增量流式入库的批大小：每提取完这么多首回调一次 onBatch 入库刷新列表
+const IMPORT_BATCH_SIZE: number = 8
 
 export class SongScanner {
   private static instance: SongScanner = new SongScanner()
@@ -31,7 +33,11 @@ export class SongScanner {
     return false
   }
 
-  public async pickAudioFiles(context: common.UIAbilityContext): Promise<SongInfo[]> {
+  // onBatch：增量流式入库回调。提供时，每提取完 IMPORT_BATCH_SIZE 首（含结尾尾批）回调一次，
+  // 每首歌恰通过回调交付一次，调用方不得再对返回值整体 addSongs；
+  // 不提供时行为与旧版一致（全部提取完一次性返回，由调用方自行入库）。
+  public async pickAudioFiles(context: common.UIAbilityContext,
+    onBatch?: (batch: SongInfo[]) => void): Promise<SongInfo[]> {
     try {
       const options: picker.DocumentSelectOptions = new picker.DocumentSelectOptions()
       const docPicker: picker.DocumentViewPicker = new picker.DocumentViewPicker(context)
@@ -66,16 +72,17 @@ export class SongScanner {
           allUrisToPersist.push(songs[i].lyricUri)
         }
       }
-      // 先持久化授权，再进行后台提取
-      await this.persistUris(allUrisToPersist)
-
       if (songs.length > 0) {
-        // 进度状态：导入中 / 总数 / 已完成
+        // 进度状态：导入中 / 总数 / 已完成。
+        // 浮层必须在授权持久化之前出现：persistUris 随文件数线性变慢（实测约 300ms/16 个 URI），
+        // 若先授权再亮浮层，picker 确认后会有一段完全无反馈的空窗
         AppStorage.setOrCreate(AppStorageKeyConstants.KEY_IMPORT_RUNNING, true)
         AppStorage.setOrCreate(AppStorageKeyConstants.KEY_IMPORT_TOTAL, songs.length)
         AppStorage.setOrCreate(AppStorageKeyConstants.KEY_IMPORT_DONE, 0)
         try {
-          await this.extractMetadataParallel(songs)
+          // 先持久化授权，再进行后台提取
+          await this.persistUris(allUrisToPersist)
+          await this.extractMetadataParallel(songs, onBatch)
         } finally {
           AppStorage.setOrCreate(AppStorageKeyConstants.KEY_IMPORT_DONE, songs.length)
           AppStorage.setOrCreate(AppStorageKeyConstants.KEY_IMPORT_RUNNING, false)
@@ -91,10 +98,14 @@ export class SongScanner {
     }
   }
 
-  // TaskPool 并行提取元数据：固定工人数滚动消费队列，每完成一首更新进度
-  private async extractMetadataParallel(songs: SongInfo[]): Promise<void> {
+  // TaskPool 并行提取元数据：固定工人数滚动消费队列，每完成一首更新进度；
+  // 提供 onBatch 时按 IMPORT_BATCH_SIZE 攒批回调，让调用方边提取边入库边刷新列表。
+  // batchBuffer 仅在主线程事件循环内读写（worker 回调 resolve 在主线程），无并发问题
+  private async extractMetadataParallel(songs: SongInfo[],
+    onBatch?: (batch: SongInfo[]) => void): Promise<void> {
     let nextIndex: number = 0
     let doneCount: number = 0
+    const batchBuffer: SongInfo[] = []
     const worker = async (): Promise<void> => {
       let index: number = nextIndex
       nextIndex++
@@ -107,6 +118,10 @@ export class SongScanner {
         }
         doneCount++
         AppStorage.setOrCreate(AppStorageKeyConstants.KEY_IMPORT_DONE, doneCount)
+        batchBuffer.push(song)
+        if (batchBuffer.length >= IMPORT_BATCH_SIZE) {
+          this.flushBatch(batchBuffer, onBatch)
+        }
         index = nextIndex
         nextIndex++
       }
@@ -117,6 +132,28 @@ export class SongScanner {
       workers.push(worker())
     }
     await Promise.all(workers)
+    this.flushBatch(batchBuffer, onBatch)
+  }
+
+  // 攒批交付：满批或收尾时把缓冲区整体交给 onBatch（splice 清空复用）
+  private flushBatch(batchBuffer: SongInfo[], onBatch?: (batch: SongInfo[]) => void): void {
+    if (onBatch !== undefined && batchBuffer.length > 0) {
+      onBatch(batchBuffer.splice(0))
+    }
+  }
+
+  // 三个导入入口（首页加号/歌单页加号/全局悬浮加号）的统一导入流程：
+  // 选歌 → 分批提取 → 每批入库（两页列表经 KEY_LIBRARY_REVISION 的 @Watch 自动逐批刷新）→ 汇总计数。
+  // pickAudioFiles 异常中断时，已完成批次均已入库，计数如实返回
+  public async importSongs(context: common.UIAbilityContext,
+    dataService: DataService): Promise<ImportResult> {
+    const total: ImportResult = new ImportResult()
+    await this.pickAudioFiles(context, (batch: SongInfo[]): void => {
+      const result: ImportResult = dataService.addSongs(batch)
+      total.newCount += result.newCount
+      total.dupCount += result.dupCount
+    })
+    return total
   }
 
   private isLyricFile(fileName: string): boolean {
