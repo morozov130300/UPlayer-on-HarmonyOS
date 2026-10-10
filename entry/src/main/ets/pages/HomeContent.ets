@@ -636,7 +636,6 @@ export struct HomeContent {
     }
   }
 
-  @State lastScrollY: number = 0
   private lastPrefetchTime: number = 0
 
   build() {
@@ -692,22 +691,17 @@ export struct HomeContent {
             scrollForward: NestedScrollMode.SELF_FIRST,
             scrollBackward: NestedScrollMode.SELF_FIRST
           })
-          .onDidScroll(() => {
-            // 回退说明：官方 scrollOffset 参数为逐帧电平触发，滚动期间每帧都会发布可见性，
-            // 反复重启加号淡入淡出动画导致观感为「无动画」；旧 lastScrollY 差分为边沿触发，
-            // 只在方向翻转时发布一次，按「单项不等价即回退」恢复
-            const offset = this.scroller.currentOffset()
-            const yOffset: number = offset.yOffset
-            if (yOffset > this.lastScrollY && (yOffset - this.lastScrollY) > 10) {
+          .onDidScroll((scrollOffset: number) => {
+            // scrollOffset 为本帧带符号偏移：向下滚动为正、向上为负
+            if (scrollOffset > 10) {
               this.isPlusVisible = false
               this.publishPlusVisible()
-              this.prefetchInScrollDirection(yOffset, true)
-            } else if (yOffset < this.lastScrollY) {
+              this.prefetchInScrollDirection(this.scroller.currentOffset().yOffset, true)
+            } else if (scrollOffset < 0) {
               this.isPlusVisible = true
               this.publishPlusVisible()
-              this.prefetchInScrollDirection(yOffset, false)
+              this.prefetchInScrollDirection(this.scroller.currentOffset().yOffset, false)
             }
-            this.lastScrollY = yOffset
           })
 
           if (this.displayItems.length === 0) {
