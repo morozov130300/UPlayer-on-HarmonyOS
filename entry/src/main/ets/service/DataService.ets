@@ -119,6 +119,9 @@ export class DataService {
       }
       this.dbSnapshot = snapshot
       await this.initFolders()
+      // init 完成后缓存已就绪：收敛历史脏筛选状态（initToAppStorage 可能先于 init 完成，
+      // 之前因缓存未就绪被守卫跳过），保证启动后胶囊不残留已删文件夹
+      this.pruneFilterAndFolders(songs)
       Logger.info(TAG, `init: loaded ${songs.length} songs from database`)
     } catch (err) {
       this.songsCache = []
@@ -437,15 +440,122 @@ return result
   }
 
   removeSong(songId: string): void {
+    this.removeSongsByIds([songId])
+  }
+
+  // 统一的歌曲删除入口：与 removeSongsByFolders 相同的全链路清理
+  // （播放队列 / 筛选状态 / 文件夹列表 / 当前播放），主页多选删除必须走这里，
+  // 否则删除后筛选胶囊、folders 缓存等会残留已删文件夹
+  removeSongsByIds(ids: string[]): LibraryDeleteResult {
+    const result: LibraryDeleteResult = new LibraryDeleteResult()
+    if (ids.length === 0) {
+      return result
+    }
+    const idSet: Set<string> = new Set<string>()
+    for (let i = 0; i < ids.length; i++) {
+      idSet.add(ids[i])
+    }
     const songs: SongInfo[] = this.getSongs()
-    const filtered: SongInfo[] = []
+    const currentPath: string = AppStorage.get<string>('uplayer_current_song_path') ?? ''
+    let currentSongId: string = ''
     for (let i = 0; i < songs.length; i++) {
-      if (songs[i].id !== songId) {
-        filtered.push(songs[i])
+      if (songs[i].filePath === currentPath) {
+        currentSongId = songs[i].id
+        break
       }
     }
-    this.saveSongs(filtered)
+    const remainingSongs: SongInfo[] = []
+    const removedIds: Set<string> = new Set<string>()
+    for (let i = 0; i < songs.length; i++) {
+      if (idSet.has(songs[i].id)) {
+        result.removedSongIds.push(songs[i].id)
+        removedIds.add(songs[i].id)
+      } else {
+        remainingSongs.push(songs[i])
+      }
+    }
+    if (result.removedSongIds.length === 0) {
+      return result
+    }
+    const queue: string[] = this.getPlayNextQueue()
+    const remainingQueue: string[] = []
+    for (let i = 0; i < queue.length; i++) {
+      if (!removedIds.has(queue[i])) {
+        remainingQueue.push(queue[i])
+      }
+    }
+    this.setPlayNextQueue(remainingQueue)
+    this.pruneFilterAndFolders(remainingSongs)
+    result.currentSongRemoved = currentSongId.length > 0 && removedIds.has(currentSongId)
+    if (!result.currentSongRemoved && currentSongId.length > 0) {
+      for (let i = 0; i < remainingSongs.length; i++) {
+        if (remainingSongs[i].id === currentSongId) {
+          result.currentSongIndex = i
+          break
+        }
+      }
+    }
+    if (result.currentSongRemoved) {
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, -1)
+      AppStorage.setOrCreate('uplayer_current_title', '')
+      AppStorage.setOrCreate('uplayer_current_artist', '')
+      AppStorage.setOrCreate('uplayer_current_song_id', '')
+      AppStorage.setOrCreate('uplayer_current_cover_state', 'placeholder')
+      AppStorage.setOrCreate('uplayer_current_album_art', '')
+      AppStorage.setOrCreate('uplayer_current_song_path', '')
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PROGRESS, 0)
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PROGRESS_MAX, 0)
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TOTAL_MS_TIME, 0)
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_TIME, '00:00')
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TOTAL_TIME, '00:00')
+    } else if (result.currentSongIndex >= 0) {
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, result.currentSongIndex)
+    }
+    this.saveSongs(remainingSongs)
     this.flushPendingSongWrites()
+    return result
+  }
+
+  // 按剩余曲库收敛筛选状态与文件夹列表：剔除已无任何歌曲的文件夹路径。
+  // 只清「空文件夹」——多文件夹筛选下部分删除不能误清仍有歌曲的选中项；
+  // setSelectedFolderPaths 内部会 bump KEY_FILTER_REVISION，首页胶囊经 @Watch 自动刷新。
+  // songsCache 未就绪（init 前）时不做收敛：以空曲库为基准会误清持久化的筛选状态。
+  private pruneFilterAndFolders(remainingSongs: SongInfo[]): void {
+    if (this.songsCache === undefined) {
+      return
+    }
+    const livePaths: Set<string> = new Set<string>()
+    for (let i = 0; i < remainingSongs.length; i++) {
+      if (remainingSongs[i].folderPath.length > 0) {
+        livePaths.add(remainingSongs[i].folderPath)
+      }
+    }
+    const selectedPaths: string[] = this.getSelectedFolderPaths()
+    const remainingSelected: string[] = []
+    let filterChanged: boolean = false
+    for (let i = 0; i < selectedPaths.length; i++) {
+      if (livePaths.has(selectedPaths[i])) {
+        remainingSelected.push(selectedPaths[i])
+      } else {
+        filterChanged = true
+      }
+    }
+    if (filterChanged) {
+      this.setSelectedFolderPaths(remainingSelected)
+    }
+    const folders: FolderInfo[] = this.getFolders()
+    const remainingFolders: FolderInfo[] = []
+    let foldersChanged: boolean = false
+    for (let i = 0; i < folders.length; i++) {
+      if (livePaths.has(folders[i].path)) {
+        remainingFolders.push(folders[i])
+      } else {
+        foldersChanged = true
+      }
+    }
+    if (foldersChanged) {
+      this.saveFolders(remainingFolders)
+    }
   }
 
   removeSongsByFolders(folderPaths: string[]): LibraryDeleteResult {
@@ -927,6 +1037,9 @@ return result
     }
     this.appStorageInitialized = true
     const settings: AppSettingsData = this.getSettings()
+    // 启动期收敛历史脏数据：持久化的筛选状态里可能残留已无歌曲的文件夹路径
+    // （旧版本主页删除路径不清理筛选状态导致落盘），按当前曲库剔除，胶囊即恢复正确
+    this.pruneFilterAndFolders(this.getSongs())
     AppStorage.setOrCreate(KEY_SETTINGS, settings)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_LIBRARY_REVISION, 0)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_FILTER_REVISION, 0)

@@ -2,9 +2,11 @@
 import { common } from '@kit.AbilityKit'
 import { deviceInfo } from '@kit.BasicServicesKit'
 import { SongInfo } from '../model/SongInfo'
-import { DataService, AppSettingsData, ImportResult } from '../service/DataService'
+import { DataService, AppSettingsData, ImportResult, LibraryDeleteResult } from '../service/DataService'
 import { SongScanner } from '../service/SongScanner'
 import { AVPlayerService } from '../service/AVPlayerService'
+import { AVSessionController } from '../common/utils/mediautils/AVSessionController'
+import { LiveViewService } from '../service/LiveViewService'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import { DisplayItemDataSource } from '../viewmodel/DisplayItemDataSource'
 import Logger from '../common/utils/Logger'
@@ -189,6 +191,9 @@ export struct HomeContent {
 
   onLibraryChange(): void {
     this.loadData()
+    // 曲库任何变更后强制刷新胶囊文案：筛选状态可能随删除被收敛（如文件夹歌曲被全删），
+    // 但收敛不一定 bump KEY_FILTER_REVISION，这里兜底保证胶囊与数据一致
+    this.refreshFilterLabel()
   }
 
   onFilterChange(): void {
@@ -592,12 +597,22 @@ export struct HomeContent {
   }
 
   deleteSelected(): void {
-    for (let i = 0; i < this.selectedIds.length; i++) {
-      this.dataService.removeSong(this.selectedIds[i])
-    }
+    // 走统一删除入口：全链路清理（播放队列/筛选状态/文件夹列表/当前播放），
+    // 否则删除某文件夹全部歌曲后，顶部筛选胶囊仍残留该文件夹名
+    const result: LibraryDeleteResult = this.dataService.removeSongsByIds(this.selectedIds.slice())
     this.isMultiSelectMode = false
     this.selectedIds = []
+    if (result.currentSongRemoved) {
+      AVPlayerService.getInstance().stop().catch((err: Error) => {
+        Logger.error(TAG, `stop player after delete failed: ${JSON.stringify(err)}`)
+      })
+      AVSessionController.getInstance().clearCurrentMedia()
+      LiveViewService.getInstance().stopLiveView().catch((err: Error) => {
+        Logger.error(TAG, `stop live view after delete failed: ${JSON.stringify(err)}`)
+      })
+    }
     this.loadData()
+    this.refreshFilterLabel()
   }
 
   isSelected(id: string): boolean {
