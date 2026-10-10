@@ -18,6 +18,8 @@ export struct LyricsComponent {
   @Prop mainWindowInfo: WindowInfo;
   @StorageLink(AppStorageKeyConstants.KEY_PROGRESS) time: number = 0;
   @State mLrcEntryList: Array<LrcEntry> = [];
+  // 歌词加载态：加载中显示「正在加载歌词…」，与「无歌词」区分，避免解析前误占位
+  @State isLyricLoading: boolean = false;
   @StorageLink(AppStorageKeyConstants.KEY_SONG_LIST) songList: SongInfo[] = [];
   @StorageProp(AppStorageKeyConstants.KEY_SELECT_INDEX) @Watch('getLrcEntryList') selectIndex: number = 0;
   // 按 id 解析当前播放歌曲，避免队列下标失配导致歌词与实际播放不一致
@@ -48,9 +50,11 @@ export struct LyricsComponent {
 
   async getLrcEntryList(): Promise<void> {
     const requestId: number = ++this.lyricLoadRequestId;
-    this.mLrcEntryList = [];
+    this.isLyricLoading = true;
     const song: SongInfo = this.currentSong();
     if (song.id.length === 0) {
+      this.mLrcEntryList = [];
+      this.isLyricLoading = false;
       return;
     }
     // 两个歌词字段都为空时 LyricLoader 会直接返回空数组（不做任何 I/O 或路径推导），
@@ -61,7 +65,9 @@ export struct LyricsComponent {
     if (requestId !== this.lyricLoadRequestId || this.currentSongId !== song.id) {
       return;
     }
+    // 先赋列表再关加载态（同一同步块单次重渲染），避免闪「无歌词」
     this.mLrcEntryList = entries;
+    this.isLyricLoading = false;
   }
 
   build() {
@@ -95,7 +101,8 @@ export struct LyricsComponent {
         .margin({ bottom: $r('app.float.info_margin_bottom') })
       }
 
-      LrcListView({ lyricMilliSecondsTime: this.time, mLrcEntryList: this.mLrcEntryList })
+      LrcListView({ lyricMilliSecondsTime: this.time, mLrcEntryList: this.mLrcEntryList,
+        isLyricLoading: this.isLyricLoading })
         .layoutWeight(1)
 
       if (this.mainWindowInfo.widthBp === WidthBreakpoint.WIDTH_SM && this.isShowControl) {

@@ -9,6 +9,7 @@ import Logger from '../common/utils/Logger'
 import { BusinessError } from '@kit.BasicServicesKit'
 import { MusicPlayMode } from '../common/constants/PlayerConstants'
 import { AudioMetadataService } from './AudioMetadataService'
+import { clearLyricCache } from './LyricLoader'
 
 const TAG = 'DataService'
 
@@ -80,6 +81,8 @@ export class AppSettingsData {
   // 底部栏点击/拖动指示器风格：light=跟手光效，mask=白色蒙版，off=关闭
   // mask 仅在有鼠标/触控板的设备上提供（设置页按检测结果显隐开关，无鼠标时降级为 off）
   tabTouchIndicator: string = 'light'
+  // 跟手光效颜色：white=白光，theme=主题色光
+  tabLightColor: string = 'theme'
   }
 
 export class DataService {
@@ -675,6 +678,8 @@ return result
       s.holdingHandEnabled = rawHoldingHandEnabled !== undefined ? rawHoldingHandEnabled as boolean : true
       let rawTabTouchIndicator: Object | undefined = r['tabTouchIndicator']
       s.tabTouchIndicator = rawTabTouchIndicator !== undefined ? rawTabTouchIndicator as string : 'light'
+      let rawTabLightColor: Object | undefined = r['tabLightColor']
+      s.tabLightColor = rawTabLightColor !== undefined ? rawTabLightColor as string : 'theme'
       let rawContinuePlayOnHeadsetUnplug: Object | undefined = r['continuePlayOnHeadsetUnplug']
       s.continuePlayOnHeadsetUnplug = rawContinuePlayOnHeadsetUnplug !== undefined ? rawContinuePlayOnHeadsetUnplug as boolean : false
       if (eqBandsMigrated) {
@@ -720,6 +725,7 @@ return result
 
     r['holdingHandEnabled'] = settings.holdingHandEnabled
     r['tabTouchIndicator'] = settings.tabTouchIndicator
+    r['tabLightColor'] = settings.tabLightColor
     r['continuePlayOnHeadsetUnplug'] = settings.continuePlayOnHeadsetUnplug
     this.getPref().preferencesPut(KEY_SETTINGS, JSON.stringify(r))
     AppStorage.setOrCreate(KEY_SETTINGS, settings)
@@ -910,6 +916,8 @@ return result
   private bumpLyricRevision(): void {
     const revision: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_LYRIC_REVISION) ?? 0
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_LYRIC_REVISION, revision + 1)
+    // 歌词引用集合变化：清掉内存缓存，各歌词视图 Watch 重载时重新读盘
+    clearLyricCache()
   }
 
   initToAppStorage(): AppSettingsData {
@@ -946,6 +954,7 @@ return result
 
     AppStorage.setOrCreate('uplayer_holding_hand_enabled', settings.holdingHandEnabled)
     AppStorage.setOrCreate('uplayer_tab_touch_indicator', settings.tabTouchIndicator)
+    AppStorage.setOrCreate('uplayer_tab_light_color', settings.tabLightColor)
     this.activatePersistedUris()
     return settings
   }

@@ -15,6 +15,7 @@ import { DataService, AppSettingsData } from './DataService'
 import { MusicPlayMode } from '../common/constants/PlayerConstants'
 import { WindowUtil } from '../common/utils/WindowUtil'
 import { showToastGlassMaterial } from '../common/utils/GlassUtil'
+import { loadLyricEntries } from './LyricLoader'
 
 const TAG = 'AVPlayerService'
 
@@ -329,6 +330,7 @@ export class AVPlayerService {
       return
     }
     this.prefetchSongCovers(index)
+    this.prefetchSongLyrics(index)
     AppStorage.setOrCreate('uplayer_current_title', song.title.length > 0 ? song.title : song.name)
     AppStorage.setOrCreate('uplayer_current_artist', song.artist)
     AppStorage.setOrCreate('uplayer_current_song_id', song.id)
@@ -484,6 +486,29 @@ export class AVPlayerService {
     }
     if (nextIndex !== index && nextIndex !== previousIndex) {
       covers.prefetchAlbumCover(songs[nextIndex], AlbumCoverSize.SMALL, CoverPriority.LOW)
+    }
+  }
+
+  // 歌词预取：当前歌曲立刻读盘（落在 LyricLoader 在途去重里，页面 Watch 触发时共享同一请求），
+  // 上一首/下一首提前入缓存，顺序切歌时 0 等待。fire-and-forget，失败不阻塞播放
+  private prefetchSongLyrics(index: number): void {
+    const songs: SongInfo[] = this.getPlayQueue()
+    if (songs.length === 0 || index < 0 || index >= songs.length) {
+      return
+    }
+    const previousIndex: number = index <= 0 ? songs.length - 1 : index - 1
+    const nextIndex: number = index >= songs.length - 1 ? 0 : index + 1
+    const targets: SongInfo[] = [songs[index]]
+    if (previousIndex !== index) {
+      targets.push(songs[previousIndex])
+    }
+    if (nextIndex !== index && nextIndex !== previousIndex) {
+      targets.push(songs[nextIndex])
+    }
+    for (let i = 0; i < targets.length; i++) {
+      loadLyricEntries(targets[i]).catch((err: Error): void => {
+        Logger.warn(TAG, `prefetch lyric failed id=${targets[i].id} err=${JSON.stringify(err)}`)
+      })
     }
   }
 
