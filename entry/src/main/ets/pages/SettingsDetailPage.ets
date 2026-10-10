@@ -799,7 +799,9 @@ struct SettingsDetailPage {
       this.scopeLine('• 底部 Tab 栏（沉浸式玻璃，带光效跟手 + 按压 Q 弹形变）')
       this.scopeLine('• 右下角播控条')
       this.scopeLine('• 顶部的模糊层（首页顶部标题区，覆盖首页第一屏）')
-      this.scopeLine('• 首页 / 歌单 / 设置 / 设置详情 四个一级页面的顶层背景（仅档位与材质在此生效）')
+      this.scopeLine('• 首页长按歌曲进入多选后的顶部菜单栏')
+      this.scopeLine('• 各页面左上角圆形返回按钮（设置详情、播放器等页面；玻璃样式出真玻璃，经典样式为磨砂兜底）')
+      this.scopeLine('• 全局悬浮加号按钮（磨砂玻璃盘）')
       this.scopeLine(
         '• 操作时屏幕底部短暂弹出的文字提示浮层（如切换播放模式时的"随机播放"）——设备支持液态玻璃时固定使用液态玻璃材质')
 
@@ -808,8 +810,9 @@ struct SettingsDetailPage {
         .fontColor(this.settingSubTextColor())
         .width('100%')
         .padding({ top: this.scaledSize(6) })
-      this.scopeLine('• 音乐播放器页面')
-      this.scopeLine('• 系统API ≤ 26 （液态玻璃材质降级为背景模糊）')
+      this.scopeLine('• 首页 / 歌单 / 设置 / 设置详情 四个一级页面的顶层背景（均使用预设纯色背景，明暗自适应）')
+      this.scopeLine('• 音乐播放器页面背景（仅左上角返回按钮使用玻璃）')
+      this.scopeLine('• 系统 API < 26 的设备（液态玻璃材质自动降级为磨砂模糊）')
 
       Row() {
         Button('知道了')
