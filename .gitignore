@@ -12,11 +12,7 @@
 /.appanalyzer
 .bitfun/
 .deveco/
-/.bitfun/search/flashgrep-index/
-# 本地图标库，不推送到云端
 /HarmonyOS图标库/
-/HarmonyOS_Icons/
-/HarmonyOS_Icons.zip
 .openbitfun/
 /.openbitfun/search/flashgrep-index/
 # 参考样例/嵌入式仓库，不纳入主仓库

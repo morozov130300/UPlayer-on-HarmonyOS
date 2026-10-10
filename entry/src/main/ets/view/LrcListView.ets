@@ -16,9 +16,7 @@
 
 import { LrcEntry } from "../viewmodel/LrcEntry";
 import { LengthMetrics } from "@kit.ArkUI";
-import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
 import { AVPlayerService } from '../service/AVPlayerService';
-import { StyleConstants } from '../common/constants/StyleConstants';
 
 const NONE_LINE: number = -1;
 
@@ -32,7 +30,6 @@ export default struct LrcListView {
   @State mCurrentLine: number = NONE_LINE;
   private scrollerForList: Scroller = new Scroller();
   @State isHasLyric: boolean = true;
-  @StorageLink(AppStorageKeyConstants.KEY_IMAGE_COLOR) themeColor: string = 'rgba(0, 125, 255, 1)';
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance();
   private isUserScrolling: boolean = false;
   private scrollDebounceTimer: number = -1;
@@ -152,13 +149,6 @@ export default struct LrcListView {
           ForEach(this.mLrcEntryList, (item: LrcEntry, index: number) => {
             ListItem() {
               Row() {
-                Column()
-                  .width(3)
-                  .height(this.mCurrentLine === index ? 24 : 0)
-                  .backgroundColor(this.themeColor)
-                  .borderRadius(2)
-                  .margin({ right: 12 })
-                  .animation({ duration: StyleConstants.ANIMATION_LYRIC_HIGHLIGHT_DURATION, curve: Curve.EaseInOut })
                 Text(item.lineWords)
                   .fontFamily('HarmonyHeiTi')
                   .fontColor(this.mCurrentLine === index ? "#FFFFFF" : "#B3ffffff")
