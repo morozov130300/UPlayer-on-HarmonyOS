@@ -2197,36 +2197,32 @@ struct SettingsDetailPage {
     }
   }
 
-  // 效果选项芯片行：labels[i] 对应值 i+1（声场/环境/美声类型 1-4，引擎枚举 1 起值）；
-  // 高亮按 0 起索引比较，需把 1 起 current 归一为 current - 1，点选回调再 +1 还原
+  // 芯片行：必须按引用传递（单对象字面量 + $$ 接收），current 携带状态属性读取，
+  // 状态变化才会触发内部高亮刷新；按值多参数传递时点选后高亮不动（参数被冻结，
+  // ForEach key/属性绑定都不会随状态重新求值）。
+  // current 语义为与 ForEach 索引同基准（0 起）的选中下标：空间渲染模式/方向直接传 0 起值，
+  // 声场/环境/美声的 1 起类型值（引擎枚举 1-4）在调用处 -1 归一，onPick 回调处再 +1 还原
   @Builder
-  typeChipRow(labels: string[], current: number, onPick: (value: number) => void): void {
-    this.chipRow(labels, current - 1, (v: number) => {
-      onPick(v + 1)
-    })
-  }
-
-  @Builder
-  chipRow(labels: string[], current: number, onPick: (value: number) => void): void {
+  chipRow($$: ChipRowOptions): void {
     Row({ space: this.scaledSize(6) }) {
-      ForEach(labels, (label: string, i: number) => {
+      ForEach($$.labels, (label: string, i: number) => {
         Text(label)
           .fontSize(this.scaledFont(12))
-          .fontColor(current === i ? '#FFFFFF' : this.settingTextColor())
+          .fontColor($$.current === i ? '#FFFFFF' : this.settingTextColor())
           .padding({
             left: this.scaledSize(10),
             right: this.scaledSize(10),
             top: this.scaledSize(5),
             bottom: this.scaledSize(5)
           })
-          .backgroundColor(current === i ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+          .backgroundColor($$.current === i ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
           .borderRadius(this.scaledSize(15))
           .onClick(() => {
-            if (current !== i) {
-              onPick(i)
+            if ($$.current !== i) {
+              $$.onPick(i)
             }
           })
-      }, (label: string, i: number) => label + (current === i ? '_on' : '_off'))
+      }, (label: string) => label)
     }
     .width('100%')
     .justifyContent(FlexAlign.Start)
