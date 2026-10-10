@@ -830,7 +830,7 @@ struct MainPage {
               .justifyContent(FlexAlign.Start)
               .alignItems(VerticalAlign.Center)
               .padding({
-                top: this.topContentInset(), left: 16, right: this.isPC ? Math.max(this.titleButtonWidth, 140) + 12 : 8
+                top: this.topContentInset(), left: 20, right: this.isPC ? Math.max(this.titleButtonWidth, 140) + 12 : 8
               })
             }.width('100%').height(this.homeHeaderHeight()).hitTestBehavior(HitTestMode.Transparent)
           }.width('100%').height('100%')
@@ -972,7 +972,7 @@ struct MainPage {
   }
 
   private homeHeaderHeight(): number {
-    return this.isPC ? Math.max(76, this.topContentInset() + 56) : this.topContentInset() + 72
+    return this.isPC ? Math.max(64, this.topContentInset() + 32) : this.topContentInset() + 40
   }
 
   private scaledSize(size: number): number {
@@ -1112,6 +1112,15 @@ struct MainPage {
       this.isCtrlPressed(event)) {
       const current: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_HOME_SELECT_ALL_REQUEST) ?? 0
       AppStorage.setOrCreate(AppStorageKeyConstants.KEY_HOME_SELECT_ALL_REQUEST, current + 1)
+      return true
+    }
+    // Delete 键：多选/编辑态下与删除按钮功能一致，按当前页分发删除请求，由内容页 @Watch 执行
+    if (event.keyCode === KeyCode.KEYCODE_FORWARD_DEL &&
+      (this.currentIndex === 0 || this.currentIndex === 1)) {
+      const key: string = this.currentIndex === 0 ?
+        AppStorageKeyConstants.KEY_HOME_DELETE_REQUEST : AppStorageKeyConstants.KEY_PLAYLIST_DELETE_REQUEST
+      const current: number = AppStorage.get<number>(key) ?? 0
+      AppStorage.setOrCreate(key, current + 1)
       return true
     }
     return false

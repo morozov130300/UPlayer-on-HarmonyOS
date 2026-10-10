@@ -53,6 +53,10 @@ export class AppStorageKeyConstants {
   // Ctrl+A 全选请求（计数器）：页面级键盘事件无法直接改 HomeContent 的 @State，
   // 每次按下 +1 触发 HomeContent 的 @Watch，由它在多选态下把可见歌曲全部选中
   public static readonly KEY_HOME_SELECT_ALL_REQUEST: string = BaseConstants.KEY_PREFIX + 'HomeSelectAllRequest'
+  // Delete 键删除请求（计数器）：页面级键盘事件无法直接改内容页的 @State，
+  // 每次按下 +1 触发内容页的 @Watch，由它在多选/编辑态下执行与删除按钮相同的逻辑
+  public static readonly KEY_HOME_DELETE_REQUEST: string = BaseConstants.KEY_PREFIX + 'HomeDeleteRequest'
+  public static readonly KEY_PLAYLIST_DELETE_REQUEST: string = BaseConstants.KEY_PREFIX + 'PlaylistDeleteRequest'
   // 全局悬浮加号可见性（由各内容页上报）：滚动隐藏/多选/编辑态变化时写入，
   // Index 按当前激活页读取——首页↔歌单切换时加号不重建、不位移，设置页隐藏
   public static readonly KEY_HOME_PLUS_VISIBLE: string = BaseConstants.KEY_PREFIX + 'HomePlusVisible'

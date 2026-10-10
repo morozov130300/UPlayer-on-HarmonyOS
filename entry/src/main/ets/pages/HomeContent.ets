@@ -55,6 +55,9 @@ export struct HomeContent {
   // Ctrl+A 全选请求（由 Index 的页面级键盘事件写入并 +1）：多选态下全选可见歌曲
   @StorageLink(AppStorageKeyConstants.KEY_HOME_SELECT_ALL_REQUEST) @Watch('onSelectAllRequest')
   selectAllRequest: number = 0
+  // Delete 键删除请求（Index 页面级键盘事件 +1）：多选态下与删除按钮功能一致
+  @StorageLink(AppStorageKeyConstants.KEY_HOME_DELETE_REQUEST) @Watch('onDeleteRequest')
+  deleteRequest: number = 0
   @StorageLink(AppStorageKeyConstants.KEY_TITLE_BUTTON_WIDTH) titleButtonWidth: number = 0
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
   @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
@@ -170,6 +173,14 @@ export struct HomeContent {
       return
     }
     this.selectedIds = this.getVisibleSongIds()
+  }
+
+  // Delete 键：多选态且有选中时执行与删除按钮相同的逻辑；空选/非多选态忽略
+  onDeleteRequest(): void {
+    if (!this.isMultiSelectMode || this.selectedIds.length === 0) {
+      return
+    }
+    this.deleteSelected()
   }
 
   onLibraryChange(): void {
