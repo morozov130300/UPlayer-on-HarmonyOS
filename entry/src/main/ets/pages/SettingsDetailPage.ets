@@ -1245,11 +1245,11 @@ struct SettingsDetailPage {
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
         .borderRadius(this.scaledSize(10))
 
-        // 底部栏触摸指示：已全面改为跟手光效，用一个开关组件控制（开 = 'light'，关 = 'off'）。
-        // 仅玻璃样式且设备支持液态玻璃时显示：触摸指示依赖液态玻璃材质，经典样式下不生效
+        // 跟手光效（原「底部栏触摸指示」）：用一个开关组件控制（开 = 'light'，关 = 'off'）。
+        // 仅玻璃样式且设备支持液态玻璃时显示：跟手光效依赖液态玻璃材质，经典样式下不生效
         if (isLiquidGlassAvailable() && this.settings.tabStyle === 'immersive') {
           Column() {
-            this.toggleRow('底部栏触摸指示', this.settings.tabTouchIndicator === 'light', (isOn: boolean) => {
+            this.toggleRow('跟手光效', this.settings.tabTouchIndicator === 'light', (isOn: boolean) => {
               // 附属卡片「跟手光效颜色」显隐翻转必须包进统一触发动画，过渡才会播放（与 EQ/空间渲染开关同规范）
               this.animateSettingChange(() => {
                 this.settings.tabTouchIndicator = isOn ? 'light' : 'off'
