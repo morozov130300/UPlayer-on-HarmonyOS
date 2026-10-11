@@ -878,6 +878,9 @@ struct MainPage {
       // 玻璃模式：barFloatingStyle 含 systemMaterialEffect（液态玻璃）→ 磨砂关闭
       .barBackgroundBlurStyle((this.tabStyle !== 'immersive' || !isLiquidGlassAvailable())
         ? this.getBarBackgroundBlur() : BlurStyle.NONE)
+      // PC 禁滑动切页：系统把鼠标滚轮转换成横向滑动事件，scrollable(true) 下滚一轮就切一次页签；
+      // PC 上切页本就走 TabBar 点击，关掉滑动切页后滚轮回归列表滚动。触屏设备保留滑动切页。
+      .scrollable(!this.isPC)
       .animationDuration(StyleConstants.ANIMATION_SWIPER_DURATION)
       .onChange((index: number) => {
         // tab 切换：弹簧曲线驱动指示器光晕从旧 tab 滑向新 tab，图标缩放/变色同帧过渡
