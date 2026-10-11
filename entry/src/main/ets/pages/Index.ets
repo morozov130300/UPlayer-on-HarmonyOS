@@ -245,8 +245,8 @@ struct MainPage {
       // 设备不支持液态玻璃：仍可走悬浮布局（只是没有玻璃材质），布局不降级
     }
     const level: hdsMaterial.MaterialLevel = hdsMaterial.MaterialLevel.ADAPTIVE
-    const useLight: boolean = this.tabTouchIndicator === 'light'
-    const lightColor: ResourceColor | undefined = useLight ? this.followLightColor() : undefined
+    // 关跟手光效时传全透明色显式关闭（lightColor 默认值是深浅色固定光效色，传 undefined 会回落默认光效而非关闭）
+    const lightColor: ResourceColor = this.tabTouchIndicator === 'light' ? this.followLightColor() : Color.Transparent
     const smallScreen: boolean = this.breakpoint === 'sm' || this.breakpoint === 'md'
     const barWidthVp: number = Math.round(this.mainWidthVp * 0.4)
     const hasBarWidth: boolean = this.mainWidthVp > 0
