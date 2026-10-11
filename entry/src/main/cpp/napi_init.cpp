@@ -29,6 +29,7 @@
 #include "ohaudio/native_audio_common.h"
 #include "ohaudio/native_audio_manager.h"
 #include "ohaudio/native_audio_stream_manager.h"
+#include "ohaudiosuite/native_audio_converter.h"
 #include "ohaudiosuite/native_audio_suite_base.h"
 #include "ohaudiosuite/native_audio_suite_engine.h"
 
@@ -65,6 +66,13 @@ constexpr int64_t DENSITY_HOLD_COOLDOWN_MS = 2000;       // 播放中自动保�
 // 短响应时在回调预算内重试拉取剩余字节，用真实数据补满帧，而非补零遮蔽。
 constexpr int32_t PIPELINE_SHORTFALL_RETRY_MAX = 4;      // 短响应重试上限（单帧总调用 ≤5 次）
 constexpr int32_t PIPELINE_SHORTFALL_RETRY_WAIT_MS = 1;  // 零产出时的微等待，给效果服务补块时间
+
+// 官方 OH_AudioConverter 单次输入回调允许返回的最大字节数（官方上限 400KB，留出余量）。
+constexpr size_t CONVERTER_INPUT_MAX_BYTES = 256 * 1024;
+// 官方 OH_AudioConverter 支持的采样率白名单（native_audio_converter.h 明确列举）。
+constexpr int32_t CONVERTER_SUPPORTED_RATES[] = {
+    8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000, 64000, 88200, 96000, 176400, 192000
+};
 
 std::mutex playerOperationMutex;
 std::atomic<uint64_t> latestPlayRequest = 0;
@@ -398,10 +406,8 @@ public:
             currentPositionMs_ = targetPositionMs;
         }
         resampleInputRate_ = sampleRate_;
-        resamplePos_ = 0.0;
-        resampleLeft_.clear();
-        resampleRight_.clear();
         inputDensityFactor_.store(1);
+        converterInputFinished_.store(false);
         inputWindowFrames_ = 0;
         inputWindowStartMs_ = 0;
         OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
@@ -464,6 +470,7 @@ public:
             std::lock_guard<std::mutex> lock(queueMutex_);
             pcmQueue_.clear();
         }
+        converterInputFinished_.store(true);
         queueCondition_.notify_all();
         // 先 join 解码线程，让它在 stopRequested_ 置位后自然退出（QueryInputBuffer/
         // QueryOutputBuffer 的 20ms 超时会让它快速返回并检查循环条件）。
@@ -545,6 +552,7 @@ public:
             OH_AudioSuiteEngine_Destroy(engine_);
             engine_ = nullptr;
         }
+        DestroyConverter();
         if (decoder_ != nullptr) {
             OH_AVErrCode destroyResult = OH_AudioCodec_Destroy(decoder_);
             OH_LOG_Print(LOG_APP, destroyResult == AV_ERR_OK ? LOG_INFO : LOG_ERROR,
@@ -1380,10 +1388,8 @@ private:
         {
             std::lock_guard<std::mutex> lock(queueMutex_);
             pcmQueue_.clear();
-            resampleLeft_.clear();
-            resampleRight_.clear();
-            resamplePos_ = 0.0;
         }
+        converterInputFinished_.store(false);
         firstPcmReady_ = false;
         currentPositionMs_ = seekPosition;
         completed_ = false;
@@ -1529,100 +1535,197 @@ private:
         }
     }
 
-    // usePipeline=true 表示数据将进入 AudioSuite 音效管线：该管线会以 inputDensityFactor_ 倍速率
-    // 拉取输入，故此处按 48000×N 输出，使源按实时速率推进；直通渲染（音效全关）恒按 48000 输出，
-    // 否则会残留管线期的补偿倍数，导致播放速度减半、音调降低。
+    // 官方 OH_AudioConverter 输入回调：按转换器的请求提供源采样率 PCM。
+    static int32_t ConverterDataCallback(void* userData, const void** outInputData,
+        OH_AudioConverter_InputStatus* outStatus)
+    {
+        if (userData == nullptr || outInputData == nullptr || outStatus == nullptr) {
+            return 0;
+        }
+        return static_cast<NativeAudioPlayer*>(userData)->FillConverterInput(outInputData, outStatus);
+    }
+
+    // 从 pcmQueue_ 取一段连续源 PCM 交给转换器。官方要求 outInputData 指向的内存在 Process
+    // 返回前保持有效，因此必须拷贝到常驻缓冲，不能直接指向队列内部节点。
+    int32_t FillConverterInput(const void** outInputData, OH_AudioConverter_InputStatus* outStatus)
+    {
+        *outInputData = nullptr;
+        std::unique_lock<std::mutex> lock(queueMutex_);
+        // 数据不足一个采样点：短等解码线程（8ms，与 FAST 低时延回调期限匹配），
+        // 不能在持锁状态下长阻塞，否则解码线程无法填充队列造成死锁。
+        if (pcmQueue_.size() < 4 && !decodingEnded_.load() && !stopRequested_.load()) {
+            queueCondition_.wait_for(lock, std::chrono::milliseconds(8), [this]() {
+                return stopRequested_.load() || decodingEnded_.load() || pcmQueue_.size() >= 4;
+            });
+        }
+        if (stopRequested_.load()) {
+            converterInputFinished_.store(true);
+            *outStatus = AUDIOCONVERTER_INPUT_DATA_FINISHED;
+            return 0;
+        }
+        if (pcmQueue_.size() < 4) {
+            if (decodingEnded_.load()) {
+                converterInputFinished_.store(true);
+                *outStatus = AUDIOCONVERTER_INPUT_DATA_FINISHED;
+            } else {
+                *outStatus = AUDIOCONVERTER_INPUT_NO_AVAILABLE_DATA;
+            }
+            return 0;
+        }
+        // 只按整采样点（立体声 S16LE，4 字节）交付，转换器不接受半个采样点
+        size_t want = pcmQueue_.size() - (pcmQueue_.size() % 4);
+        if (want > CONVERTER_INPUT_MAX_BYTES) {
+            want = CONVERTER_INPUT_MAX_BYTES;
+        }
+        if (converterInputBuf_.size() < want) {
+            converterInputBuf_.resize(want);
+        }
+        std::copy(pcmQueue_.begin(), pcmQueue_.begin() + static_cast<std::ptrdiff_t>(want),
+            converterInputBuf_.begin());
+        pcmQueue_.erase(pcmQueue_.begin(), pcmQueue_.begin() + static_cast<std::ptrdiff_t>(want));
+        lock.unlock();
+        queueCondition_.notify_all();
+        *outInputData = converterInputBuf_.data();
+        *outStatus = AUDIOCONVERTER_INPUT_HAVE_DATA;
+        return static_cast<int32_t>(want);
+    }
+
+    static bool IsConverterRateSupported(int32_t rate)
+    {
+        for (int32_t supported : CONVERTER_SUPPORTED_RATES) {
+            if (supported == rate) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // 取最接近的受支持采样率，避免极少数非标采样率导致转换器创建失败而完全无声。
+    static int32_t NearestConverterRate(int32_t rate)
+    {
+        int32_t best = CONVERTER_SUPPORTED_RATES[0];
+        int64_t bestDiff = static_cast<int64_t>(rate) - best;
+        if (bestDiff < 0) {
+            bestDiff = -bestDiff;
+        }
+        for (int32_t supported : CONVERTER_SUPPORTED_RATES) {
+            int64_t diff = static_cast<int64_t>(rate) - supported;
+            if (diff < 0) {
+                diff = -diff;
+            }
+            if (diff < bestDiff) {
+                bestDiff = diff;
+                best = supported;
+            }
+        }
+        return best;
+    }
+
+    // 创建或复用「源采样率 -> 目标采样率」的官方格式转换器。目标采样率随 inputDensityFactor_
+    // 变化，不匹配时重建；采样率变化只发生在切歌，重建成本可接受。
+    bool EnsureConverter(int32_t outputRate)
+    {
+        if (!IsConverterRateSupported(outputRate)) {
+            if (!converterRateWarned_) {
+                converterRateWarned_ = true;
+                OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                    "converter output rate unsupported=%{public}d", outputRate);
+            }
+            return false;
+        }
+        const int32_t inputRate = IsConverterRateSupported(resampleInputRate_)
+            ? resampleInputRate_ : NearestConverterRate(resampleInputRate_);
+        if (converter_ != nullptr && converterInputRate_ == inputRate && converterOutputRate_ == outputRate) {
+            return true;
+        }
+        DestroyConverter();
+        OH_AudioConverter_Format inputFormat = {};
+        inputFormat.encodingType = AUDIO_ENCODING_TYPE_RAW;
+        inputFormat.samplingRate = static_cast<OH_Audio_SampleRate>(inputRate);
+        inputFormat.channelLayout = CH_LAYOUT_STEREO;
+        inputFormat.sampleFormat = AUDIO_SAMPLE_S16LE;
+        OH_AudioConverter_Format outputFormat = inputFormat;
+        outputFormat.samplingRate = static_cast<OH_Audio_SampleRate>(outputRate);
+        OH_AudioConverter* created = nullptr;
+        OH_AudioConverter_Result createResult = OH_AudioConverter_Create(&inputFormat, &outputFormat, &created);
+        if (createResult != AUDIOCONVERTER_SUCCESS || created == nullptr) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "converter create failed code=%{public}d in=%{public}d out=%{public}d",
+                static_cast<int>(createResult), inputRate, outputRate);
+            return false;
+        }
+        OH_AudioConverter_Result callbackResult =
+            OH_AudioConverter_SetInputCallback(created, ConverterDataCallback, this);
+        if (callbackResult != AUDIOCONVERTER_SUCCESS) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "converter set callback failed code=%{public}d", static_cast<int>(callbackResult));
+            OH_AudioConverter_Destroy(created);
+            return false;
+        }
+        converter_ = created;
+        converterInputRate_ = inputRate;
+        converterOutputRate_ = outputRate;
+        converterInputFinished_.store(false);
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "audio converter ready in=%{public}d out=%{public}d", inputRate, outputRate);
+        return true;
+    }
+
+    void DestroyConverter()
+    {
+        if (converter_ != nullptr) {
+            OH_AudioConverter_Destroy(converter_);
+            converter_ = nullptr;
+        }
+        converterInputRate_ = 0;
+        converterOutputRate_ = 0;
+        // 保留 converterInputBuf_ 容量：切歌/密度变化都会重建转换器，避免反复分配大缓冲
+    }
+
+    // 取源采样率 PCM 经官方 OH_AudioConverter 转成目标采样率写入 audioData。
+    // usePipeline=true 时目标为 48000×inputDensityFactor_：AudioSuite 管线按 N 倍速率拉取输入，
+    // 输出速率必须同步放大 N 倍，源才会按实时速率推进；直通渲染恒为 48000，否则会残留管线期倍率，
+    // 导致播放速度减半、音调降低。
     int32_t ReadPcm(void* audioData, int32_t audioDataSize, bool* finished, bool usePipeline)
     {
         if (audioData == nullptr || audioDataSize <= 0 || finished == nullptr) {
             return 0;
         }
-        int16_t* out = static_cast<int16_t*>(audioData);
-        int32_t outSamples = audioDataSize / 4; // 立体声 S16LE，每采样点 4 字节
-        int32_t written = 0;
-        const int32_t effOutRate = usePipeline
+        *finished = false;
+        const int32_t targetRate = usePipeline
             ? resampleOutputRate_ * inputDensityFactor_.load()
             : resampleOutputRate_;
-        const double ratio = static_cast<double>(resampleInputRate_) / static_cast<double>(effOutRate);
-        // 循环填充，直到写满请求的采样点数或解码结束。
-        // 不能在持有 queueMutex_ 时等待，否则解码线程无法填充 pcmQueue_ 造成死锁。
-        while (written < outSamples) {
-            std::unique_lock<std::mutex> lock(queueMutex_);
-            // 从 pcmQueue_ 读取源采样率 PCM（立体声 S16LE，每采样点 4 字节）到重采样缓冲
-            while (pcmQueue_.size() >= 4 && resampleLeft_.size() < 4096) {
-                int16_t left = static_cast<int16_t>((pcmQueue_[0] & 0xFF) | (pcmQueue_[1] << 8));
-                int16_t right = static_cast<int16_t>((pcmQueue_[2] & 0xFF) | (pcmQueue_[3] << 8));
-                resampleLeft_.push_back(left);
-                resampleRight_.push_back(right);
-                pcmQueue_.pop_front();
-                pcmQueue_.pop_front();
-                pcmQueue_.pop_front();
-                pcmQueue_.pop_front();
-            }
-            // 数据不足且解码未结束：释放锁等待解码线程产出数据（带超时，防止偶发卡死）
-            if (resampleLeft_.size() < 2 && !decodingEnded_.load()) {
-                // RT 渲染回调内最多等 8ms（FAST 低时延模式回调期限紧，长阻塞必欠载）；
-                // 解码队列已扩到 1s 余量，正常情况此等待不会触发
-                queueCondition_.wait_for(lock, std::chrono::milliseconds(8), [this]() {
-                    return stopRequested_.load() || decodingEnded_.load() ||
-                        resampleLeft_.size() >= 2 || pcmQueue_.size() >= 4;
-                });
-                if (stopRequested_.load()) {
-                    *finished = true;
-                    return written * 4;
-                }
-                continue;
-            }
-            // 线性插值重采样：源采样率 -> 48000
-            while (written < outSamples && resampleLeft_.size() >= 2) {
-                double pos = resamplePos_;
-                int32_t idx = static_cast<int32_t>(pos);
-                if (idx + 1 >= static_cast<int32_t>(resampleLeft_.size())) {
-                    // resamplePos_ 已指向缓冲末尾，消费掉已越过的采样点后回到缓冲开头继续
-                    int32_t skip = static_cast<int32_t>(resampleLeft_.size()) - 1;
-                    for (int32_t i = 0; i < skip && !resampleLeft_.empty(); i++) {
-                        resampleLeft_.pop_front();
-                        resampleRight_.pop_front();
-                    }
-                    resamplePos_ -= skip;
-                    continue;
-                }
-                double frac = pos - idx;
-                int16_t l0 = resampleLeft_[idx];
-                int16_t l1 = resampleLeft_[idx + 1];
-                int16_t r0 = resampleRight_[idx];
-                int16_t r1 = resampleRight_[idx + 1];
-                out[written * 2] = static_cast<int16_t>(l0 + (l1 - l0) * frac);
-                out[written * 2 + 1] = static_cast<int16_t>(r0 + (r1 - r0) * frac);
-                written++;
-                resamplePos_ += ratio;
-                // 消费已越过的输入采样点
-                int32_t consumed = static_cast<int32_t>(resamplePos_);
-                if (consumed > 0) {
-                    for (int32_t i = 0; i < consumed && !resampleLeft_.empty(); i++) {
-                        resampleLeft_.pop_front();
-                        resampleRight_.pop_front();
-                    }
-                    resamplePos_ -= consumed;
-                }
-            }
-            // 解码结束且缓冲耗尽：标记 finished
-            if (decodingEnded_.load() && pcmQueue_.empty() && resampleLeft_.size() < 2) {
-                *finished = true;
-                queueCondition_.notify_all();
-                return written * 4;
-            }
-            // 若本次未写满但仍有数据可继续，回到循环顶部继续填充
-            if (resampleLeft_.size() < 2 && decodingEnded_.load()) {
-                *finished = true;
-                queueCondition_.notify_all();
-                return written * 4;
-            }
+        if (!EnsureConverter(targetRate)) {
+            std::memset(audioData, 0, static_cast<size_t>(audioDataSize));
+            return 0;
+        }
+        int32_t outputSize = 0;
+        OH_AudioConverter_Result result =
+            OH_AudioConverter_Process(converter_, audioData, audioDataSize, &outputSize);
+        if (result != AUDIOCONVERTER_SUCCESS) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "converter process failed code=%{public}d size=%{public}d",
+                static_cast<int>(result), outputSize);
+            std::memset(audioData, 0, static_cast<size_t>(audioDataSize));
+            return 0;
+        }
+        if (outputSize < 0) {
+            outputSize = 0;
+        }
+        if (outputSize > audioDataSize) {
+            outputSize = audioDataSize;
+        }
+        if (outputSize < audioDataSize) {
+            std::memset(static_cast<uint8_t*>(audioData) + outputSize, 0,
+                static_cast<size_t>(audioDataSize - outputSize));
+        }
+        // 官方契约：输入回调报告 DATA_FINISHED 后仍需反复 Process，直到 outputSize 为 0
+        // 才表示内部缓存（含重采样滤波尾巴）全部刷出，此时才可判定播放结束。
+        if (converterInputFinished_.load() && outputSize == 0) {
+            *finished = true;
             queueCondition_.notify_all();
         }
-        *finished = false;
-        queueCondition_.notify_all();
-        return written * 4;
+        return outputSize;
     }
 
     void MeasureInputDensity(int32_t audioDataSize)
@@ -1662,8 +1765,10 @@ private:
         // 防止拉取抖动导致因子反复跳变（每次跳变都是一次音调阶跃）
         int32_t candidate = current;
         if (std::abs(measuredFps - nominalFps) > DENSITY_SWITCH_BAND * nominalFps) {
+            // 上限 2：密度因子现在驱动官方 OH_AudioConverter 的输出采样率，必须是官方白名单内的值
+            // （48000×2=96000 合法，×3=144000 不在白名单），且实测倍率恒为 1 或 2。
             candidate = std::clamp(
-                static_cast<int32_t>(std::lround(measuredFps / 48000.0)), 1, 3);
+                static_cast<int32_t>(std::lround(measuredFps / 48000.0)), 1, 2);
         }
         // 滞回确认：密度因子绝不直接在播放路径上切换——直接切换会瞬间改变重采样比率，
         // 造成波形错位（沙声）与短促音调偏移。确认后的动作分两种：
@@ -2259,12 +2364,11 @@ private:
     float spaceExtRadius_ = 2.0f;
     int32_t spaceExtAngle_ = 180;
     std::mutex effectMutex_;
-    // 重采样状态：解码器输出源采样率 PCM，均衡器管线固定 48000
-    double resamplePos_ = 0.0;
+    // 采样率状态：解码器输出源采样率 PCM，均衡器管线固定 48000
     int32_t resampleInputRate_ = 44100;
     int32_t resampleOutputRate_ = 48000;
-    // 密度自适应：OHAudioSuite 管线对输入按 N 倍速率拉取（N 实时测量为 1 或 2）。
-    // 拉取 N 倍时把源重采样到 48000×N，使源按实时速率推进，消除 2× 拉取导致的倍速/变调。
+    // 密度自适应：OHAudioSuite 管线对输入按 N 倍速率拉取（实测为 1 或 2）。
+    // 拉取 N 倍时把源转换到 48000×N，使源按实时速率推进，消除 2× 拉取导致的倍速/变调。
     // 仅在管线路径生效（ReadPcm 的 usePipeline 参数），直通渲染恒按 48000 推进。
     // 渲染线程与管线输入回调线程都会访问，必须原子。
     std::atomic<int32_t> inputDensityFactor_ = 1;
@@ -2286,8 +2390,14 @@ private:
     // densityHoldLastMs_ 记录上次释放时刻，播放中漂移触发的自动保护受冷却限制防频繁闪断
     int32_t densityRetarget_ = 0;
     int64_t densityHoldLastMs_ = 0;
-    std::deque<int16_t> resampleLeft_ = {};
-    std::deque<int16_t> resampleRight_ = {};
+    // 官方 OH_AudioConverter 句柄（libohaudiosuite.so，API 26）：替代自写线性插值重采样。
+    // 只在渲染线程 / 管线输入回调线程内由 ReadPcm 与 EnsureConverter 独占访问。
+    OH_AudioConverter* converter_ = nullptr;
+    int32_t converterInputRate_ = 0;
+    int32_t converterOutputRate_ = 0;
+    std::vector<uint8_t> converterInputBuf_ = {};
+    std::atomic<bool> converterInputFinished_ = false;
+    bool converterRateWarned_ = false;
 };
 
 napi_value BooleanValue(napi_env env, bool value)
