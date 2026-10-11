@@ -15,8 +15,6 @@ export struct GlassBackButton {
   iconSize: number = 15
   iconColor: ResourceColor = $r('app.color.text_primary')
   iconOpacity: number = 0.9
-  // 是否挂主题色阴影外圈（默认开启；播放器页关闭）
-  themedShadow: boolean = true
   onBack: () => void = () => {}
 
   @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
@@ -92,12 +90,12 @@ export struct GlassBackButton {
         ? undefined : { radius: this.glassBlurStrength * 0.5 })
       .systemMaterial(this.backMaterial())
       .border({ width: 1, color: 'rgba(255,255,255,0.22)' })
-      // 阴影照搬 Tab 栏观感，按圆形直径等比缩小；themedShadow=false 时不挂主题色阴影
-      .shadow(this.themedShadow ? {
+      // 阴影照搬 Tab 栏观感，按圆形直径等比缩小；颜色固定白色（不用主题色）
+      .shadow({
         radius: Math.round(this.circleSize() * 0.35),
-        color: ColorHelper.hexWithAlpha(this.primaryColor, '44'),
+        color: ColorHelper.hexWithAlpha('#FFFFFF', '44'),
         offsetY: Math.round(this.circleSize() * 0.1)
-      } : undefined)
+      })
     }
     .width(this.clickSize)
     .height(this.clickSize)
