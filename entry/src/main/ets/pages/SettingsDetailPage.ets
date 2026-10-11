@@ -72,6 +72,13 @@ interface TouchIndicatorOption {
   value: string
 }
 
+// 磨砂档位选项：value 直接对应档位代表值（0=关闭 / 25=Thin / 40=Regular / 60=Thick，
+// 与 Index.getBarBackgroundBlur 阈值映射一致）
+interface BlurLevelOption {
+  label: string
+  value: number
+}
+
 // 芯片行 @Builder 参数：@Builder 多参数/按值传递时内部 UI 不随状态刷新（点选后高亮不动），
 // 必须合并为单对象字面量按引用传递（$$ 接收），current 直接携带状态属性读取才实时刷新
 interface ChipRowOptions {
@@ -149,6 +156,13 @@ struct SettingsDetailPage {
   private lightColorOptions: TouchIndicatorOption[] = [
     { label: '白光', value: 'white' },
     { label: '主题色', value: 'theme' }
+  ]
+  // 磨砂档位：直接给出系统 BlurStyle 档位，替代原 0-100 连续滑杆
+  private blurLevelOptions: BlurLevelOption[] = [
+    { label: '关闭', value: 0 },
+    { label: '轻', value: 25 },
+    { label: '中', value: 40 },
+    { label: '重', value: 60 }
   ]
   // ═══ 设置项显隐统一动画（所有条件显隐的设置卡片/选项必须完全一致，禁止各自定义）═══
   private colorOptions: ThemeColorOption[] = [
@@ -1331,36 +1345,31 @@ struct SettingsDetailPage {
             }
             .width('100%')
 
-            Text('控制底部 Tab 栏与迷你播控条的磨砂模糊半径；明暗模式均生效，0 为关闭。')
+            Text('控制底部 Tab 栏与迷你播控条的磨砂档位；明暗模式均生效。')
               .fontSize(this.scaledFont(12))
               .fontColor(this.settingSubTextColor())
               .width('100%')
-            Row({ space: this.scaledSize(12) }) {
-              Text('弱')
-                .fontSize(this.scaledFont(11))
-                .fontColor(this.settingTextColor())
-              Slider({
-                value: this.settings.glassBlurStrength,
-                min: 0,
-                max: 100,
-                step: 1,
-                style: SliderStyle.OutSet
-              })
-                .layoutWeight(1)
-                .selectedColor(this.primaryColor)
-                .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-                .blockColor('#FFFFFF')
-                .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
-                .blockBorderColor(this.primaryColor)
-                .blockBorderWidth(3)
-                .onChange((value: number, mode: SliderChangeMode) => {
-                  this.settings.glassBlurStrength = value
-                  this.glassBlurStrength = value
-                  this.updateSetting(this.isSliderSettled(mode))
+            Row({ space: this.scaledSize(8) }) {
+              ForEach(this.blurLevelOptions, (opt: BlurLevelOption) => {
+                Column() {
+                  Text(opt.label)
+                    .fontSize(this.scaledFont(11))
+                    .fontColor(this.currentBlurLevel() === opt.value ? Color.White : this.settingTextColor())
+                }
+                .padding({
+                  left: this.scaledSize(14), right: this.scaledSize(14),
+                  top: this.scaledSize(5), bottom: this.scaledSize(5)
                 })
-              Text('强')
-                .fontSize(this.scaledFont(11))
-                .fontColor(this.settingTextColor())
+                .backgroundColor(this.currentBlurLevel() === opt.value
+                  ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+                .borderRadius(this.scaledSize(14))
+                .animation({ duration: 200, curve: Curve.EaseInOut })
+                .onClick(() => {
+                  this.settings.glassBlurStrength = opt.value
+                  this.glassBlurStrength = opt.value
+                  this.updateSetting()
+                })
+              }, (opt: BlurLevelOption) => opt.label)
             }
             .width('100%')
             .alignItems(VerticalAlign.Center)
@@ -2359,6 +2368,21 @@ struct SettingsDetailPage {
 
   // 预览栏磨砂档位：与 Index.getBarBackgroundBlur 同一套阈值（0=NONE / ≤30=Thin / ≤50=Regular / 其他=Thick），
   // 玻璃样式下的关闭由调用点判断（返回 BlurStyle.NONE），本方法只做强度 → 档位映射
+  // 当前磨砂强度所属档位代表值（用于档位芯片高亮）：阈值与 Index.getBarBackgroundBlur 一致
+  private currentBlurLevel(): number {
+    const v: number = this.settings.glassBlurStrength
+    if (v <= 0) {
+      return 0
+    }
+    if (v <= 30) {
+      return 25
+    }
+    if (v <= 50) {
+      return 40
+    }
+    return 60
+  }
+
   private getPreviewBarBackgroundBlur(): BlurStyle {
     if (this.glassBlurStrength <= 0) {
       return BlurStyle.NONE
