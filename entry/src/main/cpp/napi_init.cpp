@@ -38,6 +38,15 @@ constexpr const char* UPLAYER_LOG_TAG = "UPlayerNative";
 constexpr double EQUALIZER_MIN_GAIN_DB = -10.0;
 constexpr double EQUALIZER_MAX_GAIN_DB = 10.0;
 
+// 闭环响度补偿参数。AudioSuite 效果链会改变电平，而华为该套 API 未提供任何增益/音量接口
+// （头文件仅有均衡器 gains[10]），只能在应用侧按「输入 RMS : 输出 RMS」反推补偿增益。
+constexpr int64_t LOUDNESS_WINDOW_MS = 300;          // 测量窗口时长
+constexpr double LOUDNESS_MIN_REFERENCE_RMS = 200.0; // 源过轻不补偿（≈ -44dBFS，避免抬噪底）
+constexpr double LOUDNESS_MIN_GAIN = 0.25;           // 补偿下限 -12dB
+constexpr double LOUDNESS_MAX_GAIN = 4.0;            // 补偿上限 +12dB
+constexpr double LOUDNESS_WINDOW_SMOOTHING = 0.6;    // 窗口间的目标增益平滑系数
+constexpr double LOUDNESS_GAIN_SMOOTHING = 0.0002;   // 逐采样增益平滑（时间常数 ≈100ms@48k）
+
 std::mutex playerOperationMutex;
 std::atomic<uint64_t> latestPlayRequest = 0;
 
@@ -271,10 +280,8 @@ public:
         {
             std::lock_guard<std::mutex> lock(effectMutex_);
             activeEqEnabled_ = requestedEqEnabled_.load();
-            baseHeadroomDb_ = activeEqEnabled_.load() ? std::max(0.0, maxPositiveGainDb_.load()) : 0.0;
-            targetHeadroomDb_ = baseHeadroomDb_.load();
-            headroomDb_ = baseHeadroomDb_.load();
         }
+        ResetLoudnessCompensation();
         OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "native startup stage=stop elapsedMs=%{public}lld", elapsedMs());
         if (requestId != latestPlayRequest.load()) {
@@ -545,11 +552,7 @@ public:
         outputPositiveFullScaleCount_ = 0;
         outputNegativeFullScaleCount_ = 0;
         measurementPeak_ = 0;
-        consecutiveClippingWindows_ = 0;
-        cleanHeadroomWindows_ = 0;
-        baseHeadroomDb_ = 0.0;
-        targetHeadroomDb_ = 0.0;
-        headroomDb_ = 0.0;
+        ResetLoudnessCompensation();
     }
 
     bool SetEnabled(bool enabled)
@@ -562,15 +565,6 @@ public:
         activeEqEnabled_ = enabled;
         OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "effect toggle eq=%{public}d", enabled ? 1 : 0);
-        baseHeadroomDb_ = enabled ? std::max(0.0, maxPositiveGainDb_.load()) : 0.0;
-        targetHeadroomDb_ = baseHeadroomDb_.load();
-        if (!enabled) {
-            headroomDb_ = 0.0;
-            consecutiveClippingWindows_ = 0;
-            cleanHeadroomWindows_ = 0;
-        } else {
-            headroomDb_ = std::max(headroomDb_.load(), baseHeadroomDb_.load());
-        }
         // 管线可能被其他效果占用，EQ 节点旁路状态必须与开关同步，避免关闭 EQ 后残留处理
         if (eqNode_ == nullptr) {
             return true;
@@ -585,16 +579,6 @@ public:
     {
         std::lock_guard<std::mutex> lock(effectMutex_);
         bands_ = bands;
-        maxPositiveGainDb_ = static_cast<double>(*std::max_element(bands_.begin(), bands_.end()));
-        const double baseHeadroom = requestedEqEnabled_.load() ? std::max(0.0, maxPositiveGainDb_.load()) : 0.0;
-        baseHeadroomDb_ = baseHeadroom;
-        targetHeadroomDb_ = baseHeadroom;
-        headroomDb_ = std::max(headroomDb_.load(), baseHeadroom);
-        cleanHeadroomWindows_ = 0;
-        if (baseHeadroom <= 0.0) {
-            targetHeadroomDb_ = 0.0;
-            headroomDb_ = 0.0;
-        }
         if (!requestedEqEnabled_ || eqNode_ == nullptr) {
             return true;
         }
@@ -1649,7 +1633,6 @@ private:
                 "pipeline input first pull size=%{public}d", audioDataSize);
         }
         player->MeasureInput(audioData, readSize);
-        player->ApplyHeadroom(audioData, readSize);
         player->MeasureInputDensity(audioDataSize);
         return readSize;
     }
@@ -1676,6 +1659,11 @@ private:
 
     bool RenderAudio(void* audioData, int32_t audioDataSize, bool usePipeline)
     {
+        if (usePipeline != lastUsePipeline_) {
+            // 直通 <-> 音效管线 切换：重置响度补偿，让新路径重新测量并快速收敛
+            lastUsePipeline_ = usePipeline;
+            ResetLoudnessCompensation();
+        }
         if (!usePipeline) {
             // 音效全关走直通渲染：清空密度测量窗口，避免切回管线时沿用陈旧窗口，
             // 也确保直通路径不受管线期补偿倍数影响（ReadPcm 传 usePipeline=false）。
@@ -1704,6 +1692,8 @@ private:
                 static_cast<int>(result), responseSize, finished ? 1 : 0, audioDataSize);
             return false;
         }
+        // 闭环响度补偿：只处理管线真正产出的有效数据，之后再补零
+        ApplyLoudnessCompensation(audioData, responseSize > 0 ? responseSize : 0);
         if (responseSize < audioDataSize) {
             std::memset(static_cast<uint8_t*>(audioData) + responseSize, 0,
                 static_cast<size_t>(audioDataSize - responseSize));
@@ -1766,39 +1756,82 @@ private:
         if (samples == nullptr || sampleCount <= 0) {
             return;
         }
+        double squareSum = 0.0;
         for (int32_t i = 0; i < sampleCount; i++) {
+            const double value = static_cast<double>(samples[i]);
+            squareSum += value * value;
             inputPositiveFullScaleCount_ += samples[i] == std::numeric_limits<int16_t>::max() ? 1 : 0;
             inputNegativeFullScaleCount_ += samples[i] == std::numeric_limits<int16_t>::min() ? 1 : 0;
         }
         inputMeasurementSampleCount_ += static_cast<uint64_t>(sampleCount);
+        // 闭环响度补偿的参考电平：重采样后、未做任何衰减的源电平
+        loudnessInputSumSquares_ += squareSum;
+        loudnessInputSampleCount_ += static_cast<uint64_t>(sampleCount);
     }
 
-    void ApplyHeadroom(void* audioData, int32_t audioDataSize)
+    void ResetLoudnessCompensation()
     {
-        double currentDb = headroomDb_.load();
-        const double targetDb = targetHeadroomDb_.load();
-        if (currentDb < targetDb) {
-            currentDb = std::min(targetDb, currentDb + 0.25);
-        } else if (currentDb > targetDb) {
-            currentDb = std::max(targetDb, currentDb - 0.10);
-        }
-        headroomDb_ = currentDb;
-        double attenuationDb = currentDb;
-        if (attenuationDb <= 0.0) {
-            return;
-        }
+        loudnessTargetGain_.store(1.0);
+        loudnessAppliedGain_ = 1.0;
+        loudnessInputSumSquares_ = 0.0;
+        loudnessInputSampleCount_ = 0;
+        loudnessRawOutputSumSquares_ = 0.0;
+        loudnessRawOutputSampleCount_ = 0;
+        loudnessWindowStartMs_ = 0;
+    }
+
+    // 闭环响度补偿：先测「管线原始输出」RMS（补偿前），按固定时间窗与「输入参考 RMS」比较，
+    // 反推补偿增益并逐采样平滑应用，最后硬限幅兜底。使开/关音效时的响度保持一致。
+    void ApplyLoudnessCompensation(void* audioData, int32_t audioDataSize)
+    {
         int16_t* samples = static_cast<int16_t*>(audioData);
-        int32_t sampleCount = audioDataSize / static_cast<int32_t>(sizeof(int16_t));
+        const int32_t sampleCount = audioDataSize / static_cast<int32_t>(sizeof(int16_t));
         if (samples == nullptr || sampleCount <= 0) {
             return;
         }
-        const double scale = std::pow(10.0, -attenuationDb / 20.0);
+        double squareSum = 0.0;
         for (int32_t i = 0; i < sampleCount; i++) {
-            const double scaled = static_cast<double>(samples[i]) * scale;
+            const double value = static_cast<double>(samples[i]);
+            squareSum += value * value;
+        }
+        loudnessRawOutputSumSquares_ += squareSum;
+        loudnessRawOutputSampleCount_ += static_cast<uint64_t>(sampleCount);
+
+        const int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        if (loudnessWindowStartMs_ == 0) {
+            loudnessWindowStartMs_ = nowMs;
+        } else if (nowMs - loudnessWindowStartMs_ >= LOUDNESS_WINDOW_MS &&
+            loudnessInputSampleCount_ > 0 && loudnessRawOutputSampleCount_ > 0) {
+            const double inputRms = std::sqrt(
+                loudnessInputSumSquares_ / static_cast<double>(loudnessInputSampleCount_));
+            const double outputRms = std::sqrt(
+                loudnessRawOutputSumSquares_ / static_cast<double>(loudnessRawOutputSampleCount_));
+            if (inputRms > LOUDNESS_MIN_REFERENCE_RMS && outputRms > 1.0) {
+                const double target = std::clamp(inputRms / outputRms, LOUDNESS_MIN_GAIN, LOUDNESS_MAX_GAIN);
+                const double current = loudnessTargetGain_.load();
+                loudnessTargetGain_.store(current + (target - current) * LOUDNESS_WINDOW_SMOOTHING);
+                OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                    "loudness comp inputRms=%{public}.1f outputRms=%{public}.1f target=%{public}.3f",
+                    inputRms, outputRms, loudnessTargetGain_.load());
+            }
+            loudnessInputSumSquares_ = 0.0;
+            loudnessInputSampleCount_ = 0;
+            loudnessRawOutputSumSquares_ = 0.0;
+            loudnessRawOutputSampleCount_ = 0;
+            loudnessWindowStartMs_ = nowMs;
+        }
+
+        const double targetGain = loudnessTargetGain_.load();
+        double gain = loudnessAppliedGain_;
+        for (int32_t i = 0; i < sampleCount; i++) {
+            gain += (targetGain - gain) * LOUDNESS_GAIN_SMOOTHING;
+            const double scaled = static_cast<double>(samples[i]) * gain;
             const long converted = std::lround(scaled);
             samples[i] = static_cast<int16_t>(std::clamp<long>(converted,
                 std::numeric_limits<int16_t>::min(), std::numeric_limits<int16_t>::max()));
         }
+        loudnessAppliedGain_ = gain;
     }
 
     void MeasureOutput(void* audioData, int32_t audioDataSize, bool equalizerEnabled)
@@ -1823,28 +1856,6 @@ private:
         if (measurementSampleCount_ >= 48000 * 2) {
             const uint64_t inputClipped = inputPositiveFullScaleCount_ + inputNegativeFullScaleCount_;
             const uint64_t outputClipped = outputPositiveFullScaleCount_ + outputNegativeFullScaleCount_;
-            const uint64_t addedFullScale = outputClipped > inputClipped ? outputClipped - inputClipped : 0;
-            const double addedClipRatio = measurementSampleCount_ == 0 ? 0.0 :
-                static_cast<double>(addedFullScale) / static_cast<double>(measurementSampleCount_);
-            const bool addedClipping = equalizerEnabled && addedClipRatio > 0.00001;
-            consecutiveClippingWindows_ = addedClipping ? consecutiveClippingWindows_ + 1 : 0;
-            cleanHeadroomWindows_ = addedClipping ? 0 : cleanHeadroomWindows_ + 1;
-            double targetDb = targetHeadroomDb_.load();
-            if (consecutiveClippingWindows_ >= 2 && maxPositiveGainDb_.load() > 0.0) {
-                const double previous = targetDb;
-                targetDb = std::min(12.0, targetDb + 0.5);
-                targetHeadroomDb_ = targetDb;
-                if (targetDb != previous) {
-                    OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                        "equalizer clipping feedback addedRatio=%{public}.6f targetHeadroomDb=%{public}.1f",
-                        addedClipRatio, targetDb);
-                }
-                consecutiveClippingWindows_ = 0;
-            } else if (cleanHeadroomWindows_ >= 8) {
-                const double floorDb = baseHeadroomDb_.load();
-                targetHeadroomDb_ = std::max(floorDb, targetDb - 0.25);
-                cleanHeadroomWindows_ = 0;
-            }
             const double rms = std::sqrt(
                 measurementSquareSum_ / static_cast<double>(measurementSampleCount_));
             const double inputClipRatio = inputMeasurementSampleCount_ == 0 ? 0.0 :
@@ -1854,10 +1865,11 @@ private:
             OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                 "audio level eq=%{public}d peak=%{public}d rms=%{public}.1f "
                 "inputClip=%{public}llu(%{public}.4f%%) outputClip=%{public}llu(%{public}.4f%%) "
-                "headroomDb=%{public}.1f",
+                "loudnessGain=%{public}.3f",
                 equalizerEnabled ? 1 : 0, measurementPeak_, rms,
                 static_cast<unsigned long long>(inputClipped), inputClipRatio,
-                static_cast<unsigned long long>(outputClipped), outputClipRatio, headroomDb_.load());
+                static_cast<unsigned long long>(outputClipped), outputClipRatio,
+                loudnessTargetGain_.load());
             measurementSquareSum_ = 0.0;
             measurementSampleCount_ = 0;
             measurementPeak_ = 0;
@@ -1937,8 +1949,6 @@ private:
     uint64_t outputPositiveFullScaleCount_ = 0;
     uint64_t outputNegativeFullScaleCount_ = 0;
     int32_t measurementPeak_ = 0;
-    int32_t consecutiveClippingWindows_ = 0;
-    int32_t cleanHeadroomWindows_ = 0;
     // 管线数据流诊断：对比管线输入拉取量与 RenderFrame 输出量是否守恒（采样率错配定位）
     std::atomic<uint64_t> pipelineInputCalls_ = 0;
     std::atomic<uint64_t> pipelineInputBytes_ = 0;
@@ -1949,10 +1959,15 @@ private:
     bool pipelineRenderFirstLogged_ = false;
     int64_t pipelineStatsBaseMs_ = 0;
     int64_t pipelineLastLogMs_ = 0;
-    std::atomic<double> maxPositiveGainDb_ = 0.0;
-    std::atomic<double> baseHeadroomDb_ = 0.0;
-    std::atomic<double> targetHeadroomDb_ = 0.0;
-    std::atomic<double> headroomDb_ = 0.0;
+    // 闭环响度补偿状态：目标增益跨线程读写（原子），应用增益与窗口累加仅渲染线程访问
+    std::atomic<double> loudnessTargetGain_ = 1.0;
+    double loudnessAppliedGain_ = 1.0;
+    double loudnessInputSumSquares_ = 0.0;
+    uint64_t loudnessInputSampleCount_ = 0;
+    double loudnessRawOutputSumSquares_ = 0.0;
+    uint64_t loudnessRawOutputSampleCount_ = 0;
+    int64_t loudnessWindowStartMs_ = 0;
+    bool lastUsePipeline_ = false;
     std::array<int32_t, EQUALIZER_BAND_NUM> bands_ = {};
     // 空间渲染参数（effectMutex_ 保护）：摆位/旋转共用 x/y/z，旋转另有环绕时间/方向，扩展另有半径/角度
     float spaceX_ = 0.0f;
