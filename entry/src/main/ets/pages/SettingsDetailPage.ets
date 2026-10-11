@@ -1576,11 +1576,31 @@ struct SettingsDetailPage {
   buildPlaybackSection(): void {
     Column({ space: 10 }) {
       Column() {
-        this.toggleRow('淡入淡出', this.settings.fadeInOut, (val: boolean) => {
-          this.settings.fadeInOut = val
-          this.updateSetting()
-          AppStorage.setOrCreate('uplayer_fade_in_out', val)
-        })
+        Row() {
+          Column({ space: this.scaledSize(4) }) {
+            Text('淡入淡出')
+              .fontSize(this.scaledFont(14))
+              .fontColor(this.settingTextColor())
+              .fontWeight(FontWeight.Medium)
+            Text('开启时：起播、恢复、暂停时音量平滑渐变；关闭时：立即播放/暂停，音量直接生效')
+              .fontSize(this.scaledFont(12))
+              .fontColor(this.settingSubTextColor())
+          }
+          .layoutWeight(1)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Start)
+
+          Toggle({ type: ToggleType.Switch, isOn: this.settings.fadeInOut })
+            .selectedColor(this.primaryColor)
+            .onChange((val: boolean) => {
+              this.settings.fadeInOut = val
+              this.updateSetting()
+              AppStorage.setOrCreate('uplayer_fade_in_out', val)
+            })
+        }
+        .width('100%')
+        .constraintSize({ minHeight: this.scaledSize(44) })
+        .alignItems(VerticalAlign.Center)
       }
       .width('100%')
       .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })

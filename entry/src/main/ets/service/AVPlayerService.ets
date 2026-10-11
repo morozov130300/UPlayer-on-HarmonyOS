@@ -46,6 +46,7 @@ export class AVPlayerService {
   private fadeStep: number = 0
   private static FADE_STEPS: number = 30
   private static FADE_INTERVAL: number = 10
+  private static FADE_FLOOR: number = 0.01
   private static EQUALIZER_MIN_GAIN_DB: number = -10
   private static EQUALIZER_MAX_GAIN_DB: number = 10
   private static SEEK_SETTLE_MS: number = 2000
@@ -283,11 +284,19 @@ export class AVPlayerService {
         if (startPositionMs > 0) {
           nativeAudio.seek(startPositionMs)
         }
-        nativeAudio.setVolume(this.desiredVolume)
+        const fadeInOutOnStart: boolean = !startPaused && (AppStorage.get<boolean>('uplayer_fade_in_out') ?? false)
+        if (fadeInOutOnStart) {
+          nativeAudio.setVolume(0)
+        } else {
+          nativeAudio.setVolume(this.desiredVolume)
+        }
         nativeAudio.setSpeed(this.desiredSpeed)
         this.activePlaybackGeneration = requestId
         if (!startPaused) {
           nativeAudio.resume()
+          if (fadeInOutOnStart) {
+            this.fadeIn()
+          }
           AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, true)
           this.sessionController.setPlayState(true)
         }
@@ -559,7 +568,14 @@ export class AVPlayerService {
       this.avPlayer.setVolume(this.desiredVolume)
       this.avPlayer.setPlaybackRate(this.desiredSpeed)
       if (!startPaused) {
-        this.avPlayer.play()
+        const fadeInOutOnStart: boolean = AppStorage.get<boolean>('uplayer_fade_in_out') ?? false
+        if (fadeInOutOnStart) {
+          this.avPlayer.setVolume(0)
+          this.avPlayer.play()
+          this.fadeIn()
+        } else {
+          this.avPlayer.play()
+        }
       }
       this.activePlaybackGeneration = requestId
       this.backendState = BackendState.PLAYING_AV
@@ -628,7 +644,14 @@ export class AVPlayerService {
         this.isSwitchingTrack = false
         return
       }
+      const fadeInOutOnStart: boolean = AppStorage.get<boolean>('uplayer_fade_in_out') ?? false
+      if (fadeInOutOnStart) {
+        this.avPlayer.setVolume(0)
+      }
       this.avPlayer.play()
+      if (fadeInOutOnStart) {
+        this.fadeIn()
+      }
       this.activePlaybackGeneration = requestId
       this.backendState = BackendState.PLAYING_AV
       this.sessionController.setAVMetadata()
@@ -773,7 +796,7 @@ export class AVPlayerService {
     this.fadeTimer = setInterval(() => {
       this.fadeStep++
       const ratio: number = Math.min(this.fadeStep / AVPlayerService.FADE_STEPS, 1)
-      const vol: number = Math.min(targetVol * ratio * ratio, targetVol)
+      const vol: number = Math.min(targetVol * Math.pow(AVPlayerService.FADE_FLOOR, 1 - ratio), targetVol)
       this.applyFadeVolume(vol)
       if (this.fadeStep >= AVPlayerService.FADE_STEPS) {
         this.stopFade()
@@ -789,7 +812,7 @@ export class AVPlayerService {
     this.fadeTimer = setInterval(() => {
       this.fadeStep++
       const ratio: number = Math.min(this.fadeStep / AVPlayerService.FADE_STEPS, 1)
-      const vol: number = Math.max(startVol * (1 - ratio) * (1 - ratio), 0)
+      const vol: number = Math.max(startVol * Math.pow(AVPlayerService.FADE_FLOOR, ratio), 0)
       this.applyFadeVolume(vol)
       if (this.fadeStep >= AVPlayerService.FADE_STEPS) {
         this.stopFade()
@@ -1199,7 +1222,8 @@ export class AVPlayerService {
       if (this.spaceRenderEnabled) {
         nativeAudio.setSpaceRenderConfig(this.spaceRenderMode, this.spaceRenderValues)
       }
-      if (startPaused) {
+      const fadeInOutOnStart: boolean = !startPaused && (AppStorage.get<boolean>('uplayer_fade_in_out') ?? false)
+      if (startPaused || fadeInOutOnStart) {
         nativeAudio.setVolume(0)
       }
       const started: boolean = await nativeAudio.play(file.fd, size, startPositionMs)
@@ -1216,7 +1240,11 @@ export class AVPlayerService {
       this.nativeMode = true
       this.activePlaybackGeneration = requestId
       this.backendState = BackendState.PLAYING_NATIVE
-      nativeAudio.setVolume(this.desiredVolume)
+      if (fadeInOutOnStart) {
+        this.fadeIn()
+      } else {
+        nativeAudio.setVolume(this.desiredVolume)
+      }
       nativeAudio.setSpeed(this.desiredSpeed)
       this.currentFilePath = fileUri
       this.isPrepared = true
