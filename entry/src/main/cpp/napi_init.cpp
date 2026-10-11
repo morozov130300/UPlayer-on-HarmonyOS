@@ -47,6 +47,15 @@ constexpr double LOUDNESS_MAX_GAIN = 4.0;            // 补偿上限 +12dB
 constexpr double LOUDNESS_WINDOW_SMOOTHING = 0.6;    // 窗口间的目标增益平滑系数
 constexpr double LOUDNESS_GAIN_SMOOTHING = 0.0002;   // 逐采样增益平滑（时间常数 ≈100ms@48k）
 
+// 管线直通保持：效果开关/管线激活瞬间，管线拉取模式突变，旧密度因子未收敛前按旧速率喂源
+// 会产生倍速高音调/慢速低音调。保持期内可听输出走直通（音调恒定正确），管线喂静音完成密度
+// 重测，收敛后与直通末段交叉淡化切回管线输出。
+constexpr int64_t PIPELINE_HOLD_MS = 300;                // 保持时长（≥2 个密度窗口，保证滞回收敛）
+constexpr int32_t PIPELINE_HOLD_CARRY_SAMPLES = 960;     // 释放交叉淡化长度（10ms@48k 立体声采样）
+constexpr int32_t PIPELINE_HOLD_SCRATCH_SAMPLES = 96000; // 预热渲染暂存（0.5s 立体声，避免 RT 分配）
+constexpr int32_t DENSITY_WINDOW_MS = 120;               // 拉取密度测量窗口（从 500ms 收窄以快速收敛）
+constexpr double DENSITY_SWITCH_BAND = 0.15;             // 密度因子滞回带宽（±15% 内不切换）
+
 std::mutex playerOperationMutex;
 std::atomic<uint64_t> latestPlayRequest = 0;
 
@@ -276,6 +285,19 @@ public:
         pipelineRenderRespBytes_ = 0;
         pipelineRenderFirstLogged_ = false;
         pipelineShortfallPrev_ = false;
+        pipelineHoldActive_.store(false);
+        pipelineHoldRequested_.store(false);
+        holdCarrySamples_ = 0;
+        densityPendingCandidate_ = 0;
+        densityPendingCount_ = 0;
+        // 每次 Play 强制经历一次「激活翻转 → 直通保持」，首帧不直接用旧因子喂管线
+        lastUsePipeline_ = false;
+        if (holdScratch_.size() < static_cast<size_t>(PIPELINE_HOLD_SCRATCH_SAMPLES)) {
+            holdScratch_.assign(static_cast<size_t>(PIPELINE_HOLD_SCRATCH_SAMPLES), 0);
+        }
+        if (holdCarry_.size() < static_cast<size_t>(PIPELINE_HOLD_CARRY_SAMPLES)) {
+            holdCarry_.assign(static_cast<size_t>(PIPELINE_HOLD_CARRY_SAMPLES), 0);
+        }
         pipelineStatsBaseMs_ = 0;
         pipelineLastLogMs_ = 0;
         {
@@ -566,6 +588,8 @@ public:
         activeEqEnabled_ = enabled;
         OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "effect toggle eq=%{public}d", enabled ? 1 : 0);
+        // 开关瞬间管线拉取模式可能变化：请求直通保持，密度因子重测收敛后再切入管线输出
+        pipelineHoldRequested_.store(true);
         // 管线可能被其他效果占用，EQ 节点旁路状态必须与开关同步，避免关闭 EQ 后残留处理
         if (eqNode_ == nullptr) {
             return true;
@@ -607,6 +631,7 @@ public:
         requestedSoundFieldEnabled_ = enabled;
         OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "effect toggle soundField=%{public}d", enabled ? 1 : 0);
+        pipelineHoldRequested_.store(true);
         if (soundFieldNode_ == nullptr) {
             return true;
         }
@@ -643,6 +668,7 @@ public:
         requestedEnvironmentEnabled_ = enabled;
         OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "effect toggle environment=%{public}d", enabled ? 1 : 0);
+        pipelineHoldRequested_.store(true);
         if (environmentNode_ == nullptr) {
             return true;
         }
@@ -679,6 +705,7 @@ public:
         requestedBeautifierEnabled_ = enabled;
         OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "effect toggle beautifier=%{public}d", enabled ? 1 : 0);
+        pipelineHoldRequested_.store(true);
         if (beautifierNode_ == nullptr) {
             return true;
         }
@@ -715,6 +742,7 @@ public:
         requestedSpaceRenderEnabled_ = enabled;
         OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "effect toggle spaceRender=%{public}d", enabled ? 1 : 0);
+        pipelineHoldRequested_.store(true);
         if (spaceRenderNode_ == nullptr) {
             return true;
         }
@@ -1590,8 +1618,14 @@ private:
         if (audioDataSize <= 0) {
             return;
         }
-        const int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count();
+        // 效果开关/保持期起点请求重测：丢弃陈旧窗口与滞回暂存，从干净窗口重新测量
+        if (densityWindowResetRequested_.exchange(false)) {
+            inputWindowStartMs_ = 0;
+            inputWindowFrames_ = 0;
+            densityPendingCandidate_ = 0;
+            densityPendingCount_ = 0;
+        }
+        const int64_t nowMs = SteadyNowMs();
         const uint64_t frames = static_cast<uint64_t>(audioDataSize) / 4;
         if (inputWindowStartMs_ == 0) {
             inputWindowStartMs_ = nowMs;
@@ -1599,22 +1633,36 @@ private:
         }
         inputWindowFrames_ += frames;
         const int64_t winMs = nowMs - inputWindowStartMs_;
-        if (winMs < 500) {
+        if (winMs < DENSITY_WINDOW_MS) {
             return;
         }
-        const uint64_t fps = inputWindowFrames_ * 1000 / static_cast<uint64_t>(winMs);
-        int32_t n = static_cast<int32_t>((fps + 24000) / 48000);
-        if (n < 1) {
-            n = 1;
+        const double measuredFps = static_cast<double>(inputWindowFrames_) * 1000.0 /
+            static_cast<double>(winMs);
+        const int32_t current = inputDensityFactor_.load();
+        const double nominalFps = static_cast<double>(current) * 48000.0;
+        // 滞回：仅在实测偏离当前档位标称值超过带宽、且连续 2 个窗口指向同一新档位时才切换，
+        // 防止拉取抖动导致因子反复跳变（每次跳变都是一次音调阶跃）
+        int32_t candidate = current;
+        if (std::abs(measuredFps - nominalFps) > DENSITY_SWITCH_BAND * nominalFps) {
+            candidate = std::clamp(
+                static_cast<int32_t>(std::lround(measuredFps / 48000.0)), 1, 3);
         }
-        if (n > 3) {
-            n = 3;
-        }
-        if (n != inputDensityFactor_.load()) {
-            inputDensityFactor_.store(n);
-            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                "input density factor -> %{public}d (pullFps=%{public}llu)", n,
-                static_cast<unsigned long long>(fps));
+        if (candidate == current) {
+            densityPendingCandidate_ = 0;
+            densityPendingCount_ = 0;
+        } else if (candidate == densityPendingCandidate_) {
+            densityPendingCount_++;
+            if (densityPendingCount_ >= 2) {
+                inputDensityFactor_.store(candidate);
+                densityPendingCandidate_ = 0;
+                densityPendingCount_ = 0;
+                OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                    "input density factor -> %{public}d (measuredFps=%{public}.1f)",
+                    candidate, measuredFps);
+            }
+        } else {
+            densityPendingCandidate_ = candidate;
+            densityPendingCount_ = 1;
         }
         inputWindowFrames_ = 0;
         inputWindowStartMs_ = nowMs;
@@ -1627,6 +1675,21 @@ private:
             return 0;
         }
         NativeAudioPlayer* player = static_cast<NativeAudioPlayer*>(userData);
+        // 管线直通保持期：预热渲染喂静音（不消费源、不进响度输入参考），
+        // 拉取节奏照常计入密度测量，保持期结束恢复真实拉取
+        if (player->pipelineHoldActive_.load()) {
+            if (audioData != nullptr && audioDataSize > 0) {
+                std::memset(audioData, 0, static_cast<size_t>(audioDataSize));
+            }
+            if (finished != nullptr) {
+                *finished = false;
+            }
+            player->pipelineInputCalls_.fetch_add(1, std::memory_order_relaxed);
+            player->pipelineInputBytes_.fetch_add(audioDataSize > 0 ?
+                static_cast<uint64_t>(audioDataSize) : 0, std::memory_order_relaxed);
+            player->MeasureInputDensity(audioDataSize);
+            return audioDataSize > 0 ? audioDataSize : 0;
+        }
         int32_t readSize = player->ReadPcm(audioData, audioDataSize, finished, true);
         player->pipelineInputCalls_.fetch_add(1, std::memory_order_relaxed);
         player->pipelineInputBytes_.fetch_add(readSize > 0 ? static_cast<uint64_t>(readSize) : 0,
@@ -1660,30 +1723,15 @@ private:
         return AUDIO_DATA_CALLBACK_RESULT_VALID;
     }
 
-    bool RenderAudio(void* audioData, int32_t audioDataSize, bool usePipeline)
+    static int64_t SteadyNowMs()
     {
-        if (usePipeline != lastUsePipeline_) {
-            // 直通 <-> 音效管线 切换：重置响度补偿，让新路径重新测量并快速收敛
-            lastUsePipeline_ = usePipeline;
-            ResetLoudnessCompensation();
-        }
-        if (!usePipeline) {
-            // 音效全关走直通渲染：清空密度测量窗口，避免切回管线时沿用陈旧窗口，
-            // 也确保直通路径不受管线期补偿倍数影响（ReadPcm 传 usePipeline=false）。
-            inputWindowStartMs_ = 0;
-            inputWindowFrames_ = 0;
-            bool finished = false;
-            int32_t readSize = ReadPcm(audioData, audioDataSize, &finished, false);
-            if (readSize < audioDataSize) {
-                std::memset(static_cast<uint8_t*>(audioData) + readSize, 0,
-                    static_cast<size_t>(audioDataSize - readSize));
-            }
-            if (finished) {
-                audioSuiteEofReached_ = true;
-                MarkPlaybackCompleted();
-            }
-            return true;
-        }
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+
+    // 正常管线路径：RenderFrame + 响度补偿 + 欠载边缘淡变 + 流量统计（仅渲染线程调用）
+    bool RenderPipelineFrame(void* audioData, int32_t audioDataSize)
+    {
         bool finished = false;
         int32_t responseSize = 0;
         std::lock_guard<std::mutex> lock(effectMutex_);
@@ -1735,8 +1783,7 @@ private:
                 "pipeline render first req=%{public}d resp=%{public}d finished=%{public}d",
                 audioDataSize, responseSize, finished ? 1 : 0);
         }
-        const int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count();
+        const int64_t nowMs = SteadyNowMs();
         if (pipelineStatsBaseMs_ == 0) {
             pipelineStatsBaseMs_ = nowMs;
         }
@@ -1760,6 +1807,114 @@ private:
             MarkPlaybackCompleted();
         }
         return true;
+    }
+
+    bool RenderAudio(void* audioData, int32_t audioDataSize, bool usePipeline)
+    {
+        const bool pipelineActivated = usePipeline && !lastUsePipeline_;
+        if (usePipeline != lastUsePipeline_) {
+            // 直通 <-> 音效管线 切换：重置响度补偿，让新路径重新测量并快速收敛
+            lastUsePipeline_ = usePipeline;
+            ResetLoudnessCompensation();
+        }
+        if (!usePipeline) {
+            // 音效全关走直通渲染：清空密度测量窗口，避免切回管线时沿用陈旧窗口，
+            // 也确保直通路径不受管线期补偿倍数影响（ReadPcm 传 usePipeline=false）。
+            inputWindowStartMs_ = 0;
+            inputWindowFrames_ = 0;
+            // 直通无拉取音调问题，保持态作废（carry 已过时，不再参与后续交叉淡化）
+            pipelineHoldActive_.store(false);
+            holdCarrySamples_ = 0;
+            bool finished = false;
+            int32_t readSize = ReadPcm(audioData, audioDataSize, &finished, false);
+            if (readSize < audioDataSize) {
+                std::memset(static_cast<uint8_t*>(audioData) + readSize, 0,
+                    static_cast<size_t>(audioDataSize - readSize));
+            }
+            if (finished) {
+                audioSuiteEofReached_ = true;
+                MarkPlaybackCompleted();
+            }
+            return true;
+        }
+        // 管线激活翻转或效果开关请求 → 进入/延长直通保持期：可听输出走直通（音调恒定正确），
+        // 管线喂静音完成拉取密度重测，收敛后交叉淡化切回管线输出，
+        // 消除开关瞬间按旧密度因子喂源导致的倍速高音调/慢速低音调。
+        if (pipelineActivated || pipelineHoldRequested_.exchange(false)) {
+            if (!pipelineHoldActive_.exchange(true)) {
+                OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                    "pipeline hold start (activation=%{public}d)", pipelineActivated ? 1 : 0);
+            }
+            holdStartMs_ = SteadyNowMs();
+            // 保持期起点重测密度：丢弃陈旧窗口与滞回暂存
+            densityWindowResetRequested_.store(true);
+        }
+        if (pipelineHoldActive_.load()) {
+            if (SteadyNowMs() - holdStartMs_ < PIPELINE_HOLD_MS) {
+                // 保持帧：可听输出走直通渲染（不经过 !usePipeline 分支，密度窗口存活），
+                // 末段存入 carry 供释放帧交叉淡化；管线预热渲染由 InputDataCallback
+                // 的 hold 分支喂静音，只用于维持拉取节奏供密度测量
+                bool finished = false;
+                int32_t readSize = ReadPcm(audioData, audioDataSize, &finished, false);
+                if (readSize < audioDataSize) {
+                    std::memset(static_cast<uint8_t*>(audioData) + readSize, 0,
+                        static_cast<size_t>(audioDataSize - readSize));
+                }
+                const int32_t totalSamples =
+                    audioDataSize / static_cast<int32_t>(sizeof(int16_t));
+                const int32_t carrySamples =
+                    std::min(totalSamples, PIPELINE_HOLD_CARRY_SAMPLES);
+                if (carrySamples > 0) {
+                    std::memcpy(holdCarry_.data(),
+                        static_cast<const int16_t*>(audioData) + (totalSamples - carrySamples),
+                        static_cast<size_t>(carrySamples) * sizeof(int16_t));
+                    holdCarrySamples_ = carrySamples;
+                }
+                if (finished) {
+                    audioSuiteEofReached_ = true;
+                    MarkPlaybackCompleted();
+                }
+                if (static_cast<size_t>(audioDataSize) / sizeof(int16_t) <= holdScratch_.size()) {
+                    int32_t responseSize = 0;
+                    bool warmupFinished = false;
+                    std::lock_guard<std::mutex> lock(effectMutex_);
+                    OH_AudioSuite_Result warmupResult = OH_AudioSuiteEngine_RenderFrame(
+                        pipeline_, holdScratch_.data(), audioDataSize,
+                        &responseSize, &warmupFinished);
+                    if (warmupResult != AUDIOSUITE_SUCCESS) {
+                        OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                            "hold warmup RenderFrame failed result=%{public}d",
+                            static_cast<int>(warmupResult));
+                    }
+                }
+                return true;
+            }
+            // 释放帧：保持期满，密度因子已按新拉取模式收敛。先清 hold 再渲染
+            // （InputDataCallback 据此恢复真实拉取），头部与直通末段做 10ms 交叉淡化
+            // 遮蔽「未处理 ↔ 处理」波形的相位跳变
+            pipelineHoldActive_.store(false);
+            ResetLoudnessCompensation();
+            if (!RenderPipelineFrame(audioData, audioDataSize)) {
+                return false;
+            }
+            int16_t* outSamples = static_cast<int16_t*>(audioData);
+            const int32_t totalSamples =
+                audioDataSize / static_cast<int32_t>(sizeof(int16_t));
+            const int32_t fadeSamples = std::min(holdCarrySamples_,
+                std::min(PIPELINE_HOLD_CARRY_SAMPLES, totalSamples));
+            for (int32_t i = 0; i < fadeSamples; i++) {
+                const double fadeGain =
+                    static_cast<double>(i + 1) / static_cast<double>(fadeSamples);
+                outSamples[i] = static_cast<int16_t>(std::lround(
+                    static_cast<double>(holdCarry_[i]) * (1.0 - fadeGain) +
+                    static_cast<double>(outSamples[i]) * fadeGain));
+            }
+            holdCarrySamples_ = 0;
+            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "pipeline hold release");
+            return true;
+        }
+        return RenderPipelineFrame(audioData, audioDataSize);
     }
 
     void MarkPlaybackCompleted()
@@ -2018,6 +2173,18 @@ private:
     std::atomic<int32_t> inputDensityFactor_ = 1;
     uint64_t inputWindowFrames_ = 0;
     int64_t inputWindowStartMs_ = 0;
+    // 管线直通保持状态：效果开关/管线激活瞬间拉取模式突变，旧密度因子未收敛前按旧速率
+    // 喂源会产生倍速高音调/慢速低音调。holdActive 与请求位跨线程（NAPI 开关线程 ↔ 渲染
+    // 线程）须原子；holdStartMs_/carry 为渲染线程私有。
+    std::atomic<bool> pipelineHoldActive_ = false;
+    std::atomic<bool> pipelineHoldRequested_ = false;
+    std::atomic<bool> densityWindowResetRequested_ = false;
+    int64_t holdStartMs_ = 0;
+    int32_t holdCarrySamples_ = 0;
+    std::vector<int16_t> holdScratch_;
+    std::vector<int16_t> holdCarry_;
+    int32_t densityPendingCandidate_ = 0;
+    int32_t densityPendingCount_ = 0;
     std::deque<int16_t> resampleLeft_ = {};
     std::deque<int16_t> resampleRight_ = {};
 };
