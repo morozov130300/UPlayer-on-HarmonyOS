@@ -841,8 +841,9 @@ return result
     r['tabLightColor'] = settings.tabLightColor
     r['continuePlayOnHeadsetUnplug'] = settings.continuePlayOnHeadsetUnplug
     this.getPref().preferencesPut(KEY_SETTINGS, JSON.stringify(r), immediate)
-    AppStorage.setOrCreate(KEY_SETTINGS, settings)
+    // 跨页实时联动只推"有独立消费键"的字段（整份 settings 对象无消费者，不再推送，避免死广播）
     AppStorage.setOrCreate('uplayer_fade_in_out', settings.fadeInOut)
+    AppStorage.setOrCreate('uplayer_plus_button_scroll_hide', settings.plusButtonScrollHide)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CONTINUE_PLAY_ON_UNPLUG, settings.continuePlayOnHeadsetUnplug)
   }
 
@@ -1043,7 +1044,6 @@ return result
     // 启动期收敛历史脏数据：持久化的筛选状态里可能残留已无歌曲的文件夹路径
     // （旧版本主页删除路径不清理筛选状态导致落盘），按当前曲库剔除，胶囊即恢复正确
     this.pruneFilterAndFolders(this.getSongs())
-    AppStorage.setOrCreate(KEY_SETTINGS, settings)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_LIBRARY_REVISION, 0)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_FILTER_REVISION, 0)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_LYRIC_REVISION, 0)
@@ -1067,7 +1067,7 @@ return result
     AppStorage.setOrCreate('uplayer_glass_blur_strength', settings.glassBlurStrength)
     AppStorage.setOrCreate('uplayer_home_top_blur_strength', settings.homeTopBlurStrength)
     AppStorage.setOrCreate('uplayer_tab_indicator_opacity', settings.tabIndicatorOpacity)
-
+    AppStorage.setOrCreate('uplayer_plus_button_scroll_hide', settings.plusButtonScrollHide)
     AppStorage.setOrCreate('uplayer_holding_hand_enabled', settings.holdingHandEnabled)
     AppStorage.setOrCreate('uplayer_tab_touch_indicator', settings.tabTouchIndicator)
     AppStorage.setOrCreate('uplayer_tab_light_color', settings.tabLightColor)

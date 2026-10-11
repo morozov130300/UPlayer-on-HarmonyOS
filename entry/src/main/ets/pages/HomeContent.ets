@@ -81,6 +81,9 @@ export struct HomeContent {
   @StorageLink('uplayer_tab_touch_indicator') tabTouchIndicator: string = 'light'
   @StorageLink('uplayer_tab_light_color') tabLightColor: string = 'theme'
   @StorageLink('uplayer_home_top_blur_strength') homeTopBlurStrength: number = 25
+  // 下滑隐藏加号：设置页切换后需跨页实时生效，故走 AppStorage 键 + @Watch 重新上报加号可见性
+  @StorageLink('uplayer_plus_button_scroll_hide') @Watch('onPlusScrollHideChange')
+  plusButtonScrollHide: boolean = true
   private dataService: DataService = DataService.getInstance()
   private songScanner: SongScanner = SongScanner.getInstance()
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
@@ -376,7 +379,12 @@ export struct HomeContent {
   // （多选态隐藏 + 滚动隐藏设置 + 滚动方向），由 Index 读取渲染
   private publishPlusVisible(): void {
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_HOME_PLUS_VISIBLE,
-      !this.isMultiSelectMode && (this.isPlusVisible || !this.settings.plusButtonScrollHide))
+      !this.isMultiSelectMode && (this.isPlusVisible || !this.plusButtonScrollHide))
+  }
+
+  // 设置页「向下滑动时隐藏加号按钮」变更：立即按新值重算并上报加号可见性
+  onPlusScrollHideChange(): void {
+    this.publishPlusVisible()
   }
 
   async onPlusClick(): Promise<void> {
