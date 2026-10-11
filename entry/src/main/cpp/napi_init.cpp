@@ -55,6 +55,9 @@ constexpr int32_t PIPELINE_HOLD_CARRY_SAMPLES = 960;     // 释放交叉淡化�
 constexpr int32_t PIPELINE_HOLD_SCRATCH_SAMPLES = 96000; // 预热渲染暂存（0.5s 立体声，避免 RT 分配）
 constexpr int32_t DENSITY_WINDOW_MS = 120;               // 拉取密度测量窗口（从 500ms 收窄以快速收敛）
 constexpr double DENSITY_SWITCH_BAND = 0.15;             // 密度因子滞回带宽（±15% 内不切换）
+constexpr int32_t DENSITY_PLAYBACK_CONFIRM_WINDOWS = 3;  // 播放中漂移确认窗口数（保守，防误触发）
+constexpr int32_t DENSITY_HOLD_CONFIRM_WINDOWS = 2;      // 保持期内确认窗口数（300ms 内完成收敛）
+constexpr int64_t DENSITY_HOLD_COOLDOWN_MS = 2000;       // 播放中自动保护切换冷却（防频繁直通闪断）
 
 std::mutex playerOperationMutex;
 std::atomic<uint64_t> latestPlayRequest = 0;
@@ -290,6 +293,8 @@ public:
         holdCarrySamples_ = 0;
         densityPendingCandidate_ = 0;
         densityPendingCount_ = 0;
+        densityRetarget_ = 0;
+        densityHoldLastMs_ = 0;
         // 每次 Play 强制经历一次「激活翻转 → 直通保持」，首帧不直接用旧因子喂管线
         lastUsePipeline_ = false;
         if (holdScratch_.size() < static_cast<size_t>(PIPELINE_HOLD_SCRATCH_SAMPLES)) {
@@ -1647,18 +1652,34 @@ private:
             candidate = std::clamp(
                 static_cast<int32_t>(std::lround(measuredFps / 48000.0)), 1, 3);
         }
+        // 滞回确认：密度因子绝不直接在播放路径上切换——直接切换会瞬间改变重采样比率，
+        // 造成波形错位（沙声）与短促音调偏移。确认后的动作分两种：
+        // 1) 保持期内确认（开关音效/激活保护中）：记录目标档，释放帧在直通保护下应用；
+        // 2) 播放中确认（引擎拉取自行漂移）：只请求直通保护重测（带冷却防频繁闪断），
+        //    确认与应用全部转移到保护期内完成，可听路径上永远不发生因子切换。
         if (candidate == current) {
             densityPendingCandidate_ = 0;
             densityPendingCount_ = 0;
         } else if (candidate == densityPendingCandidate_) {
             densityPendingCount_++;
-            if (densityPendingCount_ >= 2) {
-                inputDensityFactor_.store(candidate);
+            const bool inHold = pipelineHoldActive_.load();
+            const int32_t required = inHold ? DENSITY_HOLD_CONFIRM_WINDOWS
+                : DENSITY_PLAYBACK_CONFIRM_WINDOWS;
+            if (densityPendingCount_ >= required) {
                 densityPendingCandidate_ = 0;
                 densityPendingCount_ = 0;
-                OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                    "input density factor -> %{public}d (measuredFps=%{public}.1f)",
-                    candidate, measuredFps);
+                if (inHold) {
+                    densityRetarget_ = candidate;
+                    OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                        "input density retarget=%{public}d confirmed in hold (measuredFps=%{public}.1f)",
+                        candidate, measuredFps);
+                } else if (densityHoldLastMs_ == 0 ||
+                    SteadyNowMs() - densityHoldLastMs_ >= DENSITY_HOLD_COOLDOWN_MS) {
+                    pipelineHoldRequested_.store(true);
+                    OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                        "input density drift -> hold requested (candidate=%{public}d "
+                        "measuredFps=%{public}.1f)", candidate, measuredFps);
+                }
             }
         } else {
             densityPendingCandidate_ = candidate;
@@ -1825,6 +1846,7 @@ private:
             // 直通无拉取音调问题，保持态作废（carry 已过时，不再参与后续交叉淡化）
             pipelineHoldActive_.store(false);
             holdCarrySamples_ = 0;
+            densityRetarget_ = 0;
             bool finished = false;
             int32_t readSize = ReadPcm(audioData, audioDataSize, &finished, false);
             if (readSize < audioDataSize) {
@@ -1846,8 +1868,9 @@ private:
                     "pipeline hold start (activation=%{public}d)", pipelineActivated ? 1 : 0);
             }
             holdStartMs_ = SteadyNowMs();
-            // 保持期起点重测密度：丢弃陈旧窗口与滞回暂存
+            // 保持期起点重测密度：丢弃陈旧窗口、滞回暂存与上一次保持的未应用目标档
             densityWindowResetRequested_.store(true);
+            densityRetarget_ = 0;
         }
         if (pipelineHoldActive_.load()) {
             if (SteadyNowMs() - holdStartMs_ < PIPELINE_HOLD_MS) {
@@ -1894,6 +1917,16 @@ private:
             // 遮蔽「未处理 ↔ 处理」波形的相位跳变
             pipelineHoldActive_.store(false);
             ResetLoudnessCompensation();
+            // 应用保持期确认的密度目标档：切换发生在静音预热之后、释放渲染之前，
+            // 可听端（直通）全程无感，可闻路径上不存在因子切换
+            if (densityRetarget_ != 0) {
+                inputDensityFactor_.store(densityRetarget_);
+                OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                    "input density factor -> %{public}d (hold retarget applied)",
+                    densityRetarget_);
+                densityRetarget_ = 0;
+            }
+            densityHoldLastMs_ = SteadyNowMs();
             if (!RenderPipelineFrame(audioData, audioDataSize)) {
                 return false;
             }
@@ -2185,6 +2218,10 @@ private:
     std::vector<int16_t> holdCarry_;
     int32_t densityPendingCandidate_ = 0;
     int32_t densityPendingCount_ = 0;
+    // 密度目标档与自动保护冷却：retarget 仅在保持期内确认记录、释放帧应用（渲染线程私有）；
+    // densityHoldLastMs_ 记录上次释放时刻，播放中漂移触发的自动保护受冷却限制防频繁闪断
+    int32_t densityRetarget_ = 0;
+    int64_t densityHoldLastMs_ = 0;
     std::deque<int16_t> resampleLeft_ = {};
     std::deque<int16_t> resampleRight_ = {};
 };
