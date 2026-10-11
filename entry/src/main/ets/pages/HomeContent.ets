@@ -34,13 +34,11 @@ class DisplayItem {
 
 @Component
 export struct HomeContent {
-  // 布局几何参数由 Index 每次渲染重算下发（含 scaledSize 显示大小缩放），
-  // 必须用 @Prop 跟随父组件刷新：普通成员只在创建时赋值一次，调节显示大小后不会更新
-  @Prop topContentPadding: number = 0
-  @Prop bottomContentPadding: number = 0
+  topContentPadding: number = 0
+  bottomContentPadding: number = 0
   // 问候语内容带（由 Index 传入）：多选菜单栏进入多选时落在该带内，替换问候语的位置
-  @Prop greetingBandTop: number = 0
-  @Prop greetingBandHeight: number = 0
+  greetingBandTop: number = 0
+  greetingBandHeight: number = 0
   private isPC: boolean = deviceInfo.deviceType === '2in1'
   private context: common.UIAbilityContext | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
   @State songs: SongInfo[] = []
