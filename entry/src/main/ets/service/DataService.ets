@@ -70,6 +70,8 @@ export class AppSettingsData {
   fadeInOut: boolean = false
   // 耳机/蓝牙等输出设备断开时是否继续播放（系统默认路由到扬声器）；关闭则断开时自动暂停并提示
   continuePlayOnHeadsetUnplug: boolean = false
+  // 通知/提示音响起时保持本应用音量不被系统压低（AudioSession 并发策略，默认关）
+  ignoreNotificationDuck: boolean = false
   fontSizeScale: number = 1.0
   displaySizeScale: number = 1.0
   tabStyle: string = 'classic'
@@ -794,6 +796,8 @@ return result
       s.tabLightColor = rawTabLightColor !== undefined ? rawTabLightColor as string : 'theme'
       let rawContinuePlayOnHeadsetUnplug: Object | undefined = r['continuePlayOnHeadsetUnplug']
       s.continuePlayOnHeadsetUnplug = rawContinuePlayOnHeadsetUnplug !== undefined ? rawContinuePlayOnHeadsetUnplug as boolean : false
+      let rawIgnoreNotificationDuck: Object | undefined = r['ignoreNotificationDuck']
+      s.ignoreNotificationDuck = rawIgnoreNotificationDuck !== undefined ? rawIgnoreNotificationDuck as boolean : false
       if (eqBandsMigrated) {
         this.saveSettings(s)
       }
@@ -840,11 +844,13 @@ return result
     r['tabTouchIndicator'] = settings.tabTouchIndicator
     r['tabLightColor'] = settings.tabLightColor
     r['continuePlayOnHeadsetUnplug'] = settings.continuePlayOnHeadsetUnplug
+    r['ignoreNotificationDuck'] = settings.ignoreNotificationDuck
     this.getPref().preferencesPut(KEY_SETTINGS, JSON.stringify(r), immediate)
     // 跨页实时联动只推"有独立消费键"的字段（整份 settings 对象无消费者，不再推送，避免死广播）
     AppStorage.setOrCreate('uplayer_fade_in_out', settings.fadeInOut)
     AppStorage.setOrCreate('uplayer_plus_button_scroll_hide', settings.plusButtonScrollHide)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CONTINUE_PLAY_ON_UNPLUG, settings.continuePlayOnHeadsetUnplug)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_IGNORE_NOTIFICATION_DUCK, settings.ignoreNotificationDuck)
   }
 
   // ═══════════ Simple string flags ═══════════
@@ -1061,6 +1067,7 @@ return result
     AppStorage.setOrCreate('uplayer_theme_mode', settings.themeMode)
     AppStorage.setOrCreate('uplayer_fade_in_out', settings.fadeInOut)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CONTINUE_PLAY_ON_UNPLUG, settings.continuePlayOnHeadsetUnplug)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_IGNORE_NOTIFICATION_DUCK, settings.ignoreNotificationDuck)
     AppStorage.setOrCreate('uplayer_font_size_scale', settings.fontSizeScale)
     AppStorage.setOrCreate('uplayer_display_size_scale', settings.displaySizeScale)
     AppStorage.setOrCreate('uplayer_tab_style', settings.tabStyle)
