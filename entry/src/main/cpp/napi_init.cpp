@@ -359,11 +359,7 @@ public:
         resamplePos_ = 0.0;
         resampleLeft_.clear();
         resampleRight_.clear();
-        // 管线输入拉取倍率由系统决定、与曲目无关，是设备级固有属性。起播时优先沿用
-        // 已实测基线，而不是无条件退回 1 倍——退回 1 倍会让开头几百毫秒按错误速率做
-        // 重采样（源被 2 倍速消耗），听感就是起播/切音效瞬间的音调偏高（或偏低）。
-        const int32_t steadyDensity = steadyDensityFactor_.load();
-        inputDensityFactor_.store(steadyDensity > 0 ? steadyDensity : 1);
+        inputDensityFactor_.store(1);
         inputWindowFrames_ = 0;
         inputWindowStartMs_ = 0;
         OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
@@ -1616,27 +1612,19 @@ private:
         }
         inputWindowFrames_ += frames;
         const int64_t winMs = nowMs - inputWindowStartMs_;
-        // 评估门槛按"累计帧数"而非固定墙钟时长：48kHz 下集满 4800 帧需 100ms，而管线
-        // 按 2 倍拉取时 50ms 即可集满，因此起播/切音效后能更快锁定真实倍率，不再让
-        // 开头的错误速率（音调偏高/偏低）拖满原先固定的 500ms。
-        if (inputWindowFrames_ < 4800 && winMs < 200) {
+        if (winMs < 500) {
             return;
         }
-        const uint64_t fps = winMs > 0 ?
-            inputWindowFrames_ * 1000 / static_cast<uint64_t>(winMs) : 0;
-        int32_t n = inputDensityFactor_.load();
-        // 迟滞判定：只有明显偏离当前倍率才切换，避免回调抖动让倍率来回跳变。
-        if (fps > 120000) {
-            n = 3;
-        } else if (fps > 72000) {
-            n = 2;
-        } else if (fps < 60000) {
+        const uint64_t fps = inputWindowFrames_ * 1000 / static_cast<uint64_t>(winMs);
+        int32_t n = static_cast<int32_t>((fps + 24000) / 48000);
+        if (n < 1) {
             n = 1;
+        }
+        if (n > 3) {
+            n = 3;
         }
         if (n != inputDensityFactor_.load()) {
             inputDensityFactor_.store(n);
-            // 记录设备级稳态倍率，供后续起播直接沿用，消除重复测量窗口造成的开头变调。
-            steadyDensityFactor_.store(n);
             OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                 "input density factor -> %{public}d (pullFps=%{public}llu)", n,
                 static_cast<unsigned long long>(fps));
@@ -1984,9 +1972,6 @@ private:
     // 仅在管线路径生效（ReadPcm 的 usePipeline 参数），直通渲染恒按 48000 推进。
     // 渲染线程与管线输入回调线程都会访问，必须原子。
     std::atomic<int32_t> inputDensityFactor_ = 1;
-    // 设备级稳态倍率（0 表示尚未测得）：测量收敛后记录，起播时直接沿用，
-    // 避免每次起播/切音效都从 1 倍重新猜测而在开头产生音调失配。
-    std::atomic<int32_t> steadyDensityFactor_ = 0;
     uint64_t inputWindowFrames_ = 0;
     int64_t inputWindowStartMs_ = 0;
     std::deque<int16_t> resampleLeft_ = {};
