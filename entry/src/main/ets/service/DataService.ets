@@ -803,7 +803,8 @@ return result
     }
   }
 
-  saveSettings(settings: AppSettingsData): void {
+  // immediate=false 时只写内存并走 300ms 惰性 flush，供拖动过程中逐帧调用，避免每帧落盘
+  saveSettings(settings: AppSettingsData, immediate: boolean = true): void {
     const normalizedBands: number[] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     for (let i = 0; i < settings.eqBands.length && i < normalizedBands.length; i++) {
       normalizedBands[i] = Math.max(EQUALIZER_MIN_GAIN_DB,
@@ -839,7 +840,7 @@ return result
     r['tabTouchIndicator'] = settings.tabTouchIndicator
     r['tabLightColor'] = settings.tabLightColor
     r['continuePlayOnHeadsetUnplug'] = settings.continuePlayOnHeadsetUnplug
-    this.getPref().preferencesPut(KEY_SETTINGS, JSON.stringify(r))
+    this.getPref().preferencesPut(KEY_SETTINGS, JSON.stringify(r), immediate)
     AppStorage.setOrCreate(KEY_SETTINGS, settings)
     AppStorage.setOrCreate('uplayer_fade_in_out', settings.fadeInOut)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CONTINUE_PLAY_ON_UNPLUG, settings.continuePlayOnHeadsetUnplug)

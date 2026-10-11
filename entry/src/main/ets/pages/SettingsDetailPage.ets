@@ -388,8 +388,14 @@ struct SettingsDetailPage {
     .clip(true)
   }
 
-  updateSetting(): void {
-    this.dataService.saveSettings(this.settings)
+  // immediate=true 立即落盘（离散操作）；false 走惰性 flush（拖动逐帧调用，避免每帧写盘卡顿）
+  updateSetting(immediate: boolean = true): void {
+    this.dataService.saveSettings(this.settings, immediate)
+  }
+
+  // 滑轨是否已松手（松手帧才需要立即落盘）
+  private isSliderSettled(mode: SliderChangeMode): boolean {
+    return mode === SliderChangeMode.End || mode === SliderChangeMode.Click
   }
 
   setThemeMode(mode: string): void {
@@ -448,7 +454,7 @@ struct SettingsDetailPage {
 
   onSpeedChange(value: number, mode: SliderChangeMode): void {
     this.settings.playSpeed = 0.5 + value / 100
-    this.updateSetting()
+    this.updateSetting(this.isSliderSettled(mode))
     try {
       this.avPlayerService.setSpeed(this.settings.playSpeed)
     } catch (e) {
@@ -466,7 +472,7 @@ struct SettingsDetailPage {
     if (!applied && (mode === SliderChangeMode.End || mode === SliderChangeMode.Click)) {
       Logger.error(TAG, `equalizer change not applied by native backend index=${bandIndex} value=${bands[bandIndex]}`)
     }
-    this.updateSetting()
+    this.updateSetting(this.isSliderSettled(mode))
   }
 
   // ═══ 均衡器预设（官方 9 预设一键切换，手动拖滑块后自动回到自定义态无高亮）═══
@@ -553,7 +559,7 @@ struct SettingsDetailPage {
     }
     this.settings.spaceRenderValues = values
     this.settings = this.settings
-    this.updateSetting()
+    this.updateSetting(this.isSliderSettled(mode))
     this.avPlayerService.applySpaceRender(this.settings.spaceRenderEnabled, this.settings.spaceRenderMode, values)
   }
 
@@ -955,7 +961,7 @@ struct SettingsDetailPage {
               .onChange((value: number, mode: SliderChangeMode) => {
                 this.settings.homeTopBlurStrength = value
                 this.homeTopBlurStrength = value
-                this.updateSetting()
+                this.updateSetting(this.isSliderSettled(mode))
               })
             Text('深')
               .fontSize(this.scaledFont(11))
@@ -1102,7 +1108,7 @@ struct SettingsDetailPage {
               .onChange((value: number, mode: SliderChangeMode) => {
                 this.settings.fontSizeScale = value / 100
                 this.fontSizeScale = this.settings.fontSizeScale
-                this.updateSetting()
+                this.updateSetting(this.isSliderSettled(mode))
               })
           }
           .layoutWeight(1)
@@ -1154,7 +1160,7 @@ struct SettingsDetailPage {
               .onChange((value: number, mode: SliderChangeMode) => {
                 this.settings.displaySizeScale = value / 100
                 this.displaySizeScale = this.settings.displaySizeScale
-                this.updateSetting()
+                this.updateSetting(this.isSliderSettled(mode))
               })
           }
           .layoutWeight(1)
@@ -1338,7 +1344,7 @@ struct SettingsDetailPage {
                 .onChange((value: number, mode: SliderChangeMode) => {
                   this.settings.glassBlurStrength = value
                   this.glassBlurStrength = value
-                  this.updateSetting()
+                  this.updateSetting(this.isSliderSettled(mode))
                 })
               Text('强')
                 .fontSize(this.scaledFont(11))
@@ -1389,7 +1395,7 @@ struct SettingsDetailPage {
               .onChange((value: number, mode: SliderChangeMode) => {
                 this.settings.tabIndicatorOpacity = value
                 this.tabIndicatorOpacity = value
-                this.updateSetting()
+                this.updateSetting(this.isSliderSettled(mode))
               })
             Text('深')
               .fontSize(this.scaledFont(11))
