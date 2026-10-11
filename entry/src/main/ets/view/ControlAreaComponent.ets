@@ -143,13 +143,15 @@ export struct ControlAreaComponent {
   };
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF';
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0;
+  // 显示大小必须用 @StorageLink 响应式读取：AppStorage.get 非响应式，调节后组件不刷新
+  @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0;
 
   private scaledFont(size: number): number {
     return Math.round(size * this.fontSizeScale)
   }
 
   private scaledSize(size: number): number {
-    return Math.round(size * (AppStorage.get<number>('uplayer_display_size_scale') ?? 1.0))
+    return Math.round(size * this.displaySizeScale)
   }
 
   // Toast 液态玻璃材质（API 26+ 调用级 systemMaterial）：

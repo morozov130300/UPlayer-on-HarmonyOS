@@ -277,54 +277,43 @@ struct SettingsDetailPage {
 
   // 设置页顶部带模糊半径：统一走 GlassUtil 的分段函数（先正比例、到 60 后恒定，临界处无缝相接），
 
-  // HdsTabs 的 barBackgroundBlurStyle 只在组件创建时生效，档位变化后的属性更新不会重渲染
-  // （拖动档位滑轨预览无变化的根因）；用 ForEach 以「样式+生效档位」为 key，
-  // 跨档位/切样式时强制销毁重建预览 HdsTabs，保证预览实时跟随档位（与重新进页看到的观感一致）
-  private previewRebuildKeys(): string[] {
-    const blur: BlurStyle = (this.settings.tabStyle !== 'immersive' || !isLiquidGlassAvailable())
-      ? this.getPreviewBarBackgroundBlur() : BlurStyle.NONE
-    return [`${this.settings.tabStyle}|${blur}`]
-  }
-
   @Builder
   previewTabBar(): void {
     Stack({ alignContent: Alignment.Center }) {
-      ForEach(this.previewRebuildKeys(), (key: string) => {
-        HdsTabs({ controller: this.previewTabsController, index: this.previewTabIndex }) {
-          TabContent()
-            .tabBar(this.previewTabLabelBuilder(0, '首页', $r('app.media.ic_public_home')))
-          TabContent()
-            .tabBar(this.previewTabLabelBuilder(1, '歌单', $r('app.media.ic_public_view_list')))
-          TabContent()
-            .tabBar(this.previewTabLabelBuilder(2, '设置', $r('app.media.ic_public_settings')))
+      HdsTabs({ controller: this.previewTabsController, index: this.previewTabIndex }) {
+        TabContent()
+          .tabBar(this.previewTabLabelBuilder(0, '首页', $r('app.media.ic_public_home')))
+        TabContent()
+          .tabBar(this.previewTabLabelBuilder(1, '歌单', $r('app.media.ic_public_view_list')))
+        TabContent()
+          .tabBar(this.previewTabLabelBuilder(2, '设置', $r('app.media.ic_public_settings')))
+      }
+      .barPosition(BarPosition.End)
+      .barOverlap(true)
+      .barHeight(this.scaledSize(44))
+      // 与真机同参：Index.barWidth 恒传 scaledSize(228)；小屏（<600vp）下系统收折成胶囊默认宽
+      .barWidth(this.scaledSize(228))
+      .scrollable(true)
+      .barBackgroundColor(Color.Transparent)
+      .barFloatingStyle(this.getPreviewBarFloatingStyle())
+      // 磨砂档位与真机 Tab 栏同机制（barBackgroundBlurStyle 离散档位，阈值同 Index.getBarBackgroundBlur）：
+      //   0=NONE / ≤30=Thin / ≤50=Regular / 其他=Thick，滑杆拖动跨阈值时档位跳变，观感与真机一致
+      // 玻璃模式：barFloatingStyle 含 systemMaterialEffect（液态玻璃）→ 磨砂关闭（NONE，与真机一致）
+      .barBackgroundBlurStyle((this.settings.tabStyle !== 'immersive' || !isLiquidGlassAvailable())
+        ? this.getPreviewBarBackgroundBlur() : BlurStyle.NONE)
+      .animationDuration(StyleConstants.ANIMATION_SWIPER_DURATION)
+      .onChange((index: number) => {
+        this.switchPreviewTab(index)
+      })
+      .width('100%')
+      .height(this.scaledSize(100))
+      .onAreaChange((_oldArea: Area, newArea: Area) => {
+        // 与真机同公式：barWidth = 主容器宽 × 0.4（≥600vp 才下发，小屏交给系统胶囊默认值）
+        const w: number = newArea.width as number
+        if (w > 0 && w !== this.previewBarWidthVp) {
+          this.previewBarWidthVp = w
         }
-        .barPosition(BarPosition.End)
-        .barOverlap(true)
-        .barHeight(this.scaledSize(44))
-        // 与真机同参：Index.barWidth 恒传 scaledSize(228)；小屏（<600vp）下系统收折成胶囊默认宽
-        .barWidth(this.scaledSize(228))
-        .scrollable(true)
-        .barBackgroundColor(Color.Transparent)
-        .barFloatingStyle(this.getPreviewBarFloatingStyle())
-        // 磨砂档位与真机 Tab 栏同机制（barBackgroundBlurStyle 离散档位，阈值同 Index.getBarBackgroundBlur）：
-        //   0=NONE / ≤30=Thin / ≤50=Regular / 其他=Thick，滑杆拖动跨阈值时档位跳变，观感与真机一致
-        // 玻璃模式：barFloatingStyle 含 systemMaterialEffect（液态玻璃）→ 磨砂关闭（NONE，与真机一致）
-        .barBackgroundBlurStyle((this.settings.tabStyle !== 'immersive' || !isLiquidGlassAvailable())
-          ? this.getPreviewBarBackgroundBlur() : BlurStyle.NONE)
-        .animationDuration(StyleConstants.ANIMATION_SWIPER_DURATION)
-        .onChange((index: number) => {
-          this.switchPreviewTab(index)
-        })
-        .width('100%')
-        .height(this.scaledSize(100))
-        .onAreaChange((_oldArea: Area, newArea: Area) => {
-          // 与真机同公式：barWidth = 主容器宽 × 0.4（≥600vp 才下发，小屏交给系统胶囊默认值）
-          const w: number = newArea.width as number
-          if (w > 0 && w !== this.previewBarWidthVp) {
-            this.previewBarWidthVp = w
-          }
-        })
-      }, (key: string) => key)
+      })
     }
     .width('100%')
     .height(this.scaledSize(100))

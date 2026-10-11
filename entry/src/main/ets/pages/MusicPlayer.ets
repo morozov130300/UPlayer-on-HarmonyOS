@@ -21,6 +21,8 @@ struct MusicPlayer {
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF';
   @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) isPlaying: boolean = false;
   @StorageLink(AppStorageKeyConstants.KEY_TOP_HEIGHT) topHeight: number = 0;
+  // 显示大小：玻璃标题栏返回键/标题带高度随设置缩放（与其他页返回键一致）
+  @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0;
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance();
   // 返回按钮玻璃材质只在「Navigation 标题栏」生效区渲染；用空路由栈把本页套进
   // Navigation 仅为取得玻璃生效区，实际返回仍走 router（playerGlassTitleBar.onBack）
@@ -76,6 +78,10 @@ struct MusicPlayer {
     }
   }
 
+  private scaledSize(size: number): number {
+    return Math.round(size * this.displaySizeScale)
+  }
+
   // 玻璃标题栏：把返回键（GlassBackButton 自带 systemMaterial）放进 Navigation 标题栏生效区 → 出真玻璃。
   // 标题栏自身不设材质（背景透明），玻璃区域限定在返回键圆形上（功耗友好，避免与背景图大面积材质嵌套）。
   // 返回键定位沿用原 PlayerInfoComponent：左 8vp、顶部 topHeight（状态栏高度）。
@@ -83,8 +89,8 @@ struct MusicPlayer {
   playerGlassTitleBar() {
     Row() {
       GlassBackButton({
-        clickSize: 56,
-        iconSize: 18,
+        clickSize: this.scaledSize(56),
+        iconSize: this.scaledSize(18),
         iconColor: Color.White,
         iconOpacity: 0.8,
         onBack: () => {
@@ -133,7 +139,7 @@ struct MusicPlayer {
     }
     .title({
       builder: this.playerGlassTitleBar,
-      height: this.topHeight + 56
+      height: this.topHeight + this.scaledSize(56)
     }, {
       backgroundColor: Color.Transparent,
       barStyle: BarStyle.STACK
