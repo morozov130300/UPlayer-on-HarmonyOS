@@ -71,6 +71,10 @@ export class AppStorageKeyConstants {
   // 输出设备列表/首选设备变化计数器：AudioRoutingService 在 availableDeviceChange 时 +1，
   // 「更多」面板的「输出设备」行 @StorageProp @Watch 到变化后刷新设备名与列表
   public static readonly KEY_OUTPUT_DEVICE_REVISION: string = BaseConstants.KEY_PREFIX + 'OutputDeviceRevision'
+  // 通知/提示音不压低本应用音量（设置页「播放」区开关，默认关）：
+  // 开启时 AudioFocusService 激活 AudioSession 声明「与其它流并发播放」(CONCURRENCY_MIX_WITH_OTHERS)，
+  // 其它应用（含系统通知音）后续请求音频焦点时不再对本应用执行 duck（压低音量）
+  public static readonly KEY_IGNORE_NOTIFICATION_DUCK: string = BaseConstants.KEY_PREFIX + 'IgnoreNotificationDuck'
   // 系统媒体音量最大格数（getMaxVolumeByStream 结果，AVVolumePanel.volumeLevel 换算用）
   public static readonly KEY_VOL_PANEL_MAX: string = BaseConstants.KEY_PREFIX + 'VolPanelMax'
 }

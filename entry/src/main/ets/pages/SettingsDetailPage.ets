@@ -5,6 +5,7 @@ import { bundleManager, common, ConfigurationConstant } from '@kit.AbilityKit'
 import { updateManager } from '@kit.AppGalleryKit'
 import { AppSettingsData, DataService } from '../service/DataService'
 import { AVPlayerService } from '../service/AVPlayerService'
+import { AudioFocusService } from '../service/AudioFocusService'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import Logger from '../common/utils/Logger'
@@ -99,8 +100,10 @@ struct SettingsDetailPage {
   // 经典样式下隐藏"Tab栏与播控条模糊强度"：用动画过渡避免突兀
   // 由 @Watch 包进统一触发动画后翻转，芯片增删才会播放统一显隐过渡
   @State pageTitle: string = ''
-  // 顶部模糊预览的靠边方向：左手握持 → 靠右（沿用原有映射，由 HoldingHandService 统一滤波后广播）
+  // 预览器跟随系统手习惯方向（与真机 Tab 栏同配置：adaptToHandedness=true 时左右手翻转靠边）
   @StorageLink(KEY_HOLDING_HAND_LEFT) previewOnRight: boolean = false
+  // 预览 HdsTabs 实际布局宽（vp）：onAreaChange 上报，驱动 barWidth 同真机公式（宽×0.4）
+  @State previewBarWidthVp: number = 0
   // Tab 栏实时预览：直接使用 HdsTabs 系统组件，与 Index 完全一致的渲染管线
   @State previewTabIndex: number = 0
   @State showColorPicker: boolean = false
@@ -288,20 +291,27 @@ struct SettingsDetailPage {
       .barPosition(BarPosition.End)
       .barOverlap(true)
       .barHeight(this.scaledSize(44))
-      .barWidth(this.scaledSize(228))
       .scrollable(true)
       .barBackgroundColor(Color.Transparent)
       .barFloatingStyle(this.getPreviewBarFloatingStyle())
-      // 经典模式：barFloatingStyle 不含 systemMaterialEffect → TabBar 走 barBackgroundEffect 连续磨砂，
-      //   半径随「模糊强度」滑杆实时变化（拖动即反馈）
-      // 玻璃模式：barFloatingStyle 含 systemMaterialEffect（液态玻璃）→ 磨砂关闭（radius 0，与真机一致）
-      .barBackgroundEffect(this.getPreviewBarBackgroundEffect())
+      // 磨砂档位与真机 Tab 栏同机制（barBackgroundBlurStyle 离散档位，阈值同 Index.getBarBackgroundBlur）：
+      //   0=NONE / ≤30=Thin / ≤50=Regular / 其他=Thick，滑杆拖动跨阈值时档位跳变，观感与真机一致
+      // 玻璃模式：barFloatingStyle 含 systemMaterialEffect（液态玻璃）→ 磨砂关闭（NONE，与真机一致）
+      .barBackgroundBlurStyle((this.settings.tabStyle !== 'immersive' || !isLiquidGlassAvailable())
+        ? this.getPreviewBarBackgroundBlur() : BlurStyle.NONE)
       .animationDuration(StyleConstants.ANIMATION_SWIPER_DURATION)
       .onChange((index: number) => {
         this.switchPreviewTab(index)
       })
-      .width(this.scaledSize(228))
+      .width('100%')
       .height(this.scaledSize(72))
+      .onAreaChange((_oldArea: Area, newArea: Area) => {
+        // 与真机同公式：barWidth = 主容器宽 × 0.4（≥600vp 才下发，小屏交给系统胶囊默认值）
+        const w: number = newArea.width as number
+        if (w > 0 && w !== this.previewBarWidthVp) {
+          this.previewBarWidthVp = w
+        }
+      })
     }
     .width('100%')
     .height(this.scaledSize(72))
@@ -1610,6 +1620,40 @@ struct SettingsDetailPage {
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(this.scaledSize(10))
 
+      Row() {
+        Column({ space: this.scaledSize(6) }) {
+          Text('通知不压低音量')
+            .fontSize(this.scaledFont(14))
+            .fontColor(this.settingTextColor())
+            .fontWeight(FontWeight.Medium)
+          Text('开启后系统通知、提示音响起时本应用音量保持不变；此时与其它应用音频并发播放，互不打断')
+            .fontSize(this.scaledFont(12))
+            .fontColor(this.settingSubTextColor())
+        }
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Start)
+
+        Toggle({ type: ToggleType.Switch, isOn: this.settings.ignoreNotificationDuck })
+          .selectedColor(this.primaryColor)
+          .alignSelf(ItemAlign.Center)
+          .margin({ left: this.scaledSize(10) })
+          .onChange((isOn: boolean) => {
+            this.settings.ignoreNotificationDuck = isOn
+            this.updateSetting()
+            AudioFocusService.getInstance().applyIgnoreNotificationDuck(isOn)
+          })
+      }
+      .width('100%')
+      .padding({
+        left: this.scaledSize(14),
+        right: this.scaledSize(14),
+        top: this.scaledSize(10),
+        bottom: this.scaledSize(10)
+      })
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
+
       Column() {
         Row() {
           Text('播放速度')
@@ -2261,34 +2305,50 @@ struct SettingsDetailPage {
     const lightColor: ResourceColor | undefined = useLight
       ? (this.settings.tabLightColor === 'white' ? '#FFFFFF' : this.primaryColor)
       : undefined
-    const previewBarWidth: number = 228
-    // 预览器垂直居中：栏在 72vp 预览带内上下居中，边距随显示大小缩放（栏高 scaledSize(44)）
-    const previewBarBottomMargin: number = (this.scaledSize(72) - this.scaledSize(44)) / 2
+    // 与真机同公式：主容器宽 × 0.4（HdsTabs 宽 <600vp 小屏态时不下发，系统走默认胶囊，与真机 sm/md 行为一致）
+    const hasBarWidth: boolean = this.previewBarWidthVp > 0
+    const smallScreen: boolean = this.previewBarWidthVp < 600
+    const barWidthVp: number = Math.round(this.previewBarWidthVp * 0.4)
     if (this.settings.tabStyle === 'immersive' && isLiquidGlassAvailable()) {
       return {
-        adaptToHandedness: false,
+        adaptToHandedness: true,
         gradientMask: { maskColor: 'rgba(0,0,0,0)', maskHeight: 0 },
         systemMaterialEffect: {
           materialType: hdsMaterial.MaterialType.IMMERSIVE,
           materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE,
         },
-        barBottomMargin: previewBarBottomMargin,
-        barSideMargin: 0,
+        barBottomMargin: 28,
         lightColor: lightColor,
-        barWidth: { smallWidth: previewBarWidth, mediumWidth: previewBarWidth, largeWidth: previewBarWidth },
+        barWidth: (smallScreen || !hasBarWidth) ? undefined :
+          { smallWidth: barWidthVp, mediumWidth: barWidthVp, largeWidth: barWidthVp },
       } as HdsTabsFloatingStyle
     }
     return {
-      adaptToHandedness: false,
+      adaptToHandedness: true,
       gradientMask: { maskColor: 'rgba(0,0,0,0)', maskHeight: 0 },
-      barBottomMargin: previewBarBottomMargin,
-      barSideMargin: 0,
+      barBottomMargin: 28,
       lightColor: lightColor,
-      barWidth: { smallWidth: previewBarWidth, mediumWidth: previewBarWidth, largeWidth: previewBarWidth },
+      barWidth: (smallScreen || !hasBarWidth) ? undefined :
+        { smallWidth: barWidthVp, mediumWidth: barWidthVp, largeWidth: barWidthVp },
     } as HdsTabsFloatingStyle
   }
 
   // 顶部标题带：与首页上端完全同款的渐变模糊层（先正比例后恒定）+ 主题色渐变着色层，
+
+  // 预览栏磨砂档位：与 Index.getBarBackgroundBlur 同一套阈值（0=NONE / ≤30=Thin / ≤50=Regular / 其他=Thick），
+  // 玻璃样式下的关闭由调用点判断（返回 BlurStyle.NONE），本方法只做强度 → 档位映射
+  private getPreviewBarBackgroundBlur(): BlurStyle {
+    if (this.glassBlurStrength <= 0) {
+      return BlurStyle.NONE
+    }
+    if (this.glassBlurStrength <= 30) {
+      return BlurStyle.Thin
+    }
+    if (this.glassBlurStrength <= 50) {
+      return BlurStyle.Regular
+    }
+    return BlurStyle.Thick
+  }
 
   // 玻璃样式且设备支持液态玻璃时磨砂关闭（液态玻璃材质接管，与真机一致），radius 0 即无磨砂
   private getPreviewBarBackgroundEffect(): BackgroundEffectOptions {

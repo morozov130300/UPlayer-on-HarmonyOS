@@ -12,6 +12,7 @@ import nativeAudio from 'libuplayer.so'
 import { SongInfo } from '../model/SongInfo'
 import { AlbumCoverSize, AudioMetadataService, CoverPriority } from './AudioMetadataService'
 import { DataService, AppSettingsData } from './DataService'
+import { AudioFocusService } from './AudioFocusService'
 import { MusicPlayMode } from '../common/constants/PlayerConstants'
 import { WindowUtil } from '../common/utils/WindowUtil'
 import { showToastGlassMaterial } from '../common/utils/GlassUtil'
@@ -268,6 +269,9 @@ export class AVPlayerService {
     }
     this.pendingSeekMs = undefined
     this.cancelPrepare()
+    // AudioSession 可能因「无音频流运行」被系统超时去激活，起播前按设置补激活，
+    // 保证通知音到达时「不压低音量」的并发策略仍然生效
+    AudioFocusService.getInstance().ensureStrategy()
     // 若当前处于播放状态，本次是切歌（播放中切到下一首），stop/reset 期间不应把播放状态置为暂停
     const wasPlaying: boolean = AppStorage.get<boolean>(AppStorageKeyConstants.KEY_IS_PLAY) ?? false
     this.isSwitchingTrack = wasPlaying
@@ -665,6 +669,7 @@ export class AVPlayerService {
   }
 
   resume(): void {
+    AudioFocusService.getInstance().ensureStrategy()
     if (this.nativeMode) {
       const fadeInOut: boolean = AppStorage.get<boolean>('uplayer_fade_in_out') ?? false
       if (fadeInOut) {

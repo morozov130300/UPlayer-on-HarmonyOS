@@ -13,6 +13,7 @@ import Logger from '../common/utils/Logger';
 import { AudioMetadataService } from '../service/AudioMetadataService';
 import { HoldingHandService } from '../service/HoldingHandService';
 import { AudioRoutingService } from '../service/AudioRoutingService';
+import { AudioFocusService } from '../service/AudioFocusService';
 import { SongDatabase } from '../service/SongDatabase';
 import { ShareService } from '../service/ShareService';
 import { ColorConversion } from '../common/utils/ColorConversion';
@@ -82,6 +83,8 @@ export default class EntryAbility extends UIAbility {
     const settings: AppSettingsData = DataService.getInstance().initToAppStorage();
     // 音频输出设备路由监听（耳机断开自动暂停 / 输出设备切换入口）
     AudioRoutingService.getInstance().init();
+    // 通知/提示音不压低音量：按落库设置激活或去激活「并发播放」AudioSession
+    AudioFocusService.getInstance().applyIgnoreNotificationDuck(settings.ignoreNotificationDuck);
     // 智感握姿：按落库设置决定是否订阅 holdingHandChanged（首页加号与设置页预览共用同一份结果）
     HoldingHandService.getInstance().syncWithSetting();
     AVSessionController.getInstance().initAVSession();
