@@ -40,6 +40,9 @@ export struct PlaylistContent {
   // Delete 键删除请求（Index 页面级键盘事件 +1）：编辑态下与删除按钮功能一致
   @StorageLink(AppStorageKeyConstants.KEY_PLAYLIST_DELETE_REQUEST) @Watch('onDeleteRequest')
   deleteRequest: number = 0
+  // 下滑隐藏加号：设置页切换后需跨页实时生效，故走 AppStorage 键 + @Watch 重新上报加号可见性
+  @StorageLink('uplayer_plus_button_scroll_hide') @Watch('onPlusScrollHideChange')
+  plusButtonScrollHide: boolean = true
   private dataService: DataService = DataService.getInstance()
   private songScanner: SongScanner = SongScanner.getInstance()
   private scroller: Scroller = new Scroller()
@@ -298,7 +301,12 @@ export struct PlaylistContent {
   // （编辑态隐藏 + 滚动隐藏设置 + 滚动方向），由 Index 读取渲染
   private publishPlusVisible(): void {
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PLAYLIST_PLUS_VISIBLE,
-      !this.isEditMode && (this.isPlusVisible || !this.settings.plusButtonScrollHide))
+      !this.isEditMode && (this.isPlusVisible || !this.plusButtonScrollHide))
+  }
+
+  // 设置页「向下滑动时隐藏加号按钮」变更：立即按新值重算并上报加号可见性
+  onPlusScrollHideChange(): void {
+    this.publishPlusVisible()
   }
 
   async onPlusClick(): Promise<void> {
