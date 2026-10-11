@@ -1356,7 +1356,6 @@ struct SettingsDetailPage {
                 .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
                 .blockBorderColor(this.primaryColor)
                 .blockBorderWidth(3)
-                .showSteps(true)
                 .onChange((value: number, mode: SliderChangeMode) => {
                   this.settings.glassBlurStrength = value
                   this.glassBlurStrength = value
