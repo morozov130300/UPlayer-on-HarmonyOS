@@ -275,6 +275,7 @@ public:
         pipelineRenderReqBytes_ = 0;
         pipelineRenderRespBytes_ = 0;
         pipelineRenderFirstLogged_ = false;
+        pipelineShortfallPrev_ = false;
         pipelineStatsBaseMs_ = 0;
         pipelineLastLogMs_ = 0;
         {
@@ -1520,7 +1521,9 @@ private:
             }
             // 数据不足且解码未结束：释放锁等待解码线程产出数据（带超时，防止偶发卡死）
             if (resampleLeft_.size() < 2 && !decodingEnded_.load()) {
-                queueCondition_.wait_for(lock, std::chrono::milliseconds(50), [this]() {
+                // RT 渲染回调内最多等 8ms（FAST 低时延模式回调期限紧，长阻塞必欠载）；
+                // 解码队列已扩到 1s 余量，正常情况此等待不会触发
+                queueCondition_.wait_for(lock, std::chrono::milliseconds(8), [this]() {
                     return stopRequested_.load() || decodingEnded_.load() ||
                         resampleLeft_.size() >= 2 || pcmQueue_.size() >= 4;
                 });
@@ -1692,11 +1695,36 @@ private:
                 static_cast<int>(result), responseSize, finished ? 1 : 0, audioDataSize);
             return false;
         }
-        // 闭环响度补偿：只处理管线真正产出的有效数据，之后再补零
+        // 闭环响度补偿：只处理管线真正产出的有效数据
         ApplyLoudnessCompensation(audioData, responseSize > 0 ? responseSize : 0);
-        if (responseSize < audioDataSize) {
-            std::memset(static_cast<uint8_t*>(audioData) + responseSize, 0,
-                static_cast<size_t>(audioDataSize - responseSize));
+        // 官方契约：管线尽量填满请求帧，实际写入量经 responseSize 返回；不足时不能直接补零——
+        // 有效数据到零的阶跃是可闻的「沙」声。末尾做 128 采样（≈2.7ms@48k）线性淡出，
+        // 下一帧恢复时头部对称淡入，把补零造成的爆点遮蔽掉。
+        const int32_t totalSamples = audioDataSize / static_cast<int32_t>(sizeof(int16_t));
+        const int32_t validSamples = responseSize > 0 ?
+            std::min(responseSize, audioDataSize) / static_cast<int32_t>(sizeof(int16_t)) : 0;
+        int16_t* outSamples = static_cast<int16_t*>(audioData);
+        if (validSamples < totalSamples) {
+            constexpr int32_t SHORTFALL_FADE_SAMPLES = 128;
+            const int32_t fadeStart = std::max(0, validSamples - SHORTFALL_FADE_SAMPLES);
+            for (int32_t i = fadeStart; i < validSamples; i++) {
+                const double fadeGain = static_cast<double>(validSamples - i) /
+                    static_cast<double>(validSamples - fadeStart);
+                outSamples[i] = static_cast<int16_t>(std::lround(
+                    static_cast<double>(outSamples[i]) * fadeGain));
+            }
+            std::memset(outSamples + validSamples, 0,
+                static_cast<size_t>(totalSamples - validSamples) * sizeof(int16_t));
+            pipelineShortfallPrev_ = true;
+        } else if (pipelineShortfallPrev_) {
+            constexpr int32_t SHORTFALL_FADE_SAMPLES = 128;
+            const int32_t fadeSamples = std::min(SHORTFALL_FADE_SAMPLES, totalSamples);
+            for (int32_t i = 0; i < fadeSamples; i++) {
+                const double fadeGain = static_cast<double>(i + 1) / static_cast<double>(fadeSamples);
+                outSamples[i] = static_cast<int16_t>(std::lround(
+                    static_cast<double>(outSamples[i]) * fadeGain));
+            }
+            pipelineShortfallPrev_ = false;
         }
         pipelineRenderCalls_++;
         pipelineRenderReqBytes_ += static_cast<uint64_t>(audioDataSize);
@@ -1913,7 +1941,7 @@ private:
     std::mutex queueMutex_;
     std::condition_variable queueCondition_;
     std::deque<uint8_t> pcmQueue_;
-    const size_t maxQueueBytes_ = 48000 * 2 * 2 / 4;
+    const size_t maxQueueBytes_ = 48000 * 2 * 2;
     std::atomic<bool> stopRequested_ = true;
     std::atomic<bool> seekRequested_ = false;
     std::atomic<uint64_t> seekRequestSequence_ = 0;
@@ -1957,6 +1985,7 @@ private:
     uint64_t pipelineRenderReqBytes_ = 0;
     uint64_t pipelineRenderRespBytes_ = 0;
     bool pipelineRenderFirstLogged_ = false;
+    bool pipelineShortfallPrev_ = false;
     int64_t pipelineStatsBaseMs_ = 0;
     int64_t pipelineLastLogMs_ = 0;
     // 闭环响度补偿状态：目标增益跨线程读写（原子），应用增益与窗口累加仅渲染线程访问
