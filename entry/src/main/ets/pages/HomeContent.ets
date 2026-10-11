@@ -610,6 +610,16 @@ export struct HomeContent {
     const result: LibraryDeleteResult = this.dataService.removeSongsByIds(this.selectedIds.slice())
     this.isMultiSelectMode = false
     this.selectedIds = []
+    this.applyLibraryDeleteResult(result)
+  }
+
+  deleteSongById(songId: string): void {
+    // 左滑删除同样走统一删除入口，与多选删除共用清理链路
+    const result: LibraryDeleteResult = this.dataService.removeSongsByIds([songId])
+    this.applyLibraryDeleteResult(result)
+  }
+
+  private applyLibraryDeleteResult(result: LibraryDeleteResult): void {
     if (result.currentSongRemoved) {
       AVPlayerService.getInstance().stop().catch((err: Error) => {
         Logger.error(TAG, `stop player after delete failed: ${JSON.stringify(err)}`)
@@ -699,6 +709,14 @@ export struct HomeContent {
                 }
               }
               .reuseId(item.isHeader ? 'header' : 'song')
+              // 左滑露出删除：非多选态的歌曲行启用（多选态行内有勾选与手柄拖拽，避免手势冲突）
+              .swipeAction({
+                end: (!item.isHeader && !this.isMultiSelectMode) ? {
+                  builder: (): void => {
+                    this.songSwipeDeleteButton(item.song)
+                  }
+                } : undefined
+              })
               .translate({ y: this.isDraggingSong(item) ? this.dragOffsetY : 0 })
               .scale(this.isDraggingSong(item) ? { x: 1.03, y: 1.03 } : { x: 1, y: 1 })
               .zIndex(this.isDraggingSong(item) ? 100 : 0)
@@ -1070,5 +1088,26 @@ export struct HomeContent {
           })
       )
     )
+  }
+
+  @Builder
+  songSwipeDeleteButton(song: SongInfo): void {
+    Row({ space: this.scaledSize(4) }) {
+      Image($r('app.media.ic_public_delete'))
+        .width(this.scaledSize(16))
+        .height(this.scaledSize(16))
+        .fillColor(Color.White)
+      Text('删除')
+        .fontSize(Math.round(13 * this.fontSizeScale))
+        .fontColor(Color.White)
+    }
+    .width(this.scaledSize(72))
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .backgroundColor('#FF3B30')
+    .onClick(() => {
+      this.deleteSongById(song.id)
+    })
   }
 }
