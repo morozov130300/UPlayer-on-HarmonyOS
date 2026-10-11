@@ -1328,9 +1328,6 @@ struct SettingsDetailPage {
             Row() {
               this.subTitleRow('Tab栏与播控条模糊强度')
               Blank()
-              Text(this.blurLevelLabel())
-                .fontSize(this.scaledFont(11))
-                .fontColor(this.primaryColor)
             }
             .width('100%')
 
@@ -2375,21 +2372,6 @@ struct SettingsDetailPage {
       return 40
     }
     return 60
-  }
-
-  // 当前档位中文名（滑轨右侧实时显示）
-  private blurLevelLabel(): string {
-    const v: number = this.sliderBlurValue()
-    if (v <= 0) {
-      return '关闭'
-    }
-    if (v <= 20) {
-      return '轻'
-    }
-    if (v <= 40) {
-      return '中'
-    }
-    return '重'
   }
 
   private getPreviewBarBackgroundBlur(): BlurStyle {

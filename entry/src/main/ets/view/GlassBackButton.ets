@@ -9,10 +9,11 @@ import { createTabGlassMaterial, DEFAULT_GLASS_STYLE, isLiquidGlassAvailable } f
 // 保证风格切换时返回按钮与 Tab 栏同步变化。
 @Component
 export struct GlassBackButton {
-  // 可点击区域直径（由调用方按各页原有缩放规则算好）
-  clickSize: number = 48
+  // 可点击区域直径（由调用方按各页原有缩放规则算好）：
+  // 必须 @Prop——普通成员只在创建时赋值一次，调节显示大小后父组件重算的 scaledSize 新值收不到
+  @Prop clickSize: number = 48
   // 图标直径（按与圆形相同的比例缩放后显示）
-  iconSize: number = 15
+  @Prop iconSize: number = 15
   iconColor: ResourceColor = $r('app.color.text_primary')
   iconOpacity: number = 0.9
   onBack: () => void = () => {}
