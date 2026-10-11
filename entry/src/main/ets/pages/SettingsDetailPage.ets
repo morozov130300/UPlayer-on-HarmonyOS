@@ -2345,9 +2345,15 @@ struct SettingsDetailPage {
           { smallWidth: barWidthVp, mediumWidth: barWidthVp, largeWidth: barWidthVp },
       } as HdsTabsFloatingStyle
     }
+    // 实验中：显式传 MaterialType.NONE（"无材质效果"）尝试剥掉悬浮栏默认底色，
+    // 使 barBackgroundBlurStyle 磨砂档位透出生效
     return {
       adaptToHandedness: true,
       gradientMask: { maskColor: 'rgba(0,0,0,0)', maskHeight: 0 },
+      systemMaterialEffect: {
+        materialType: hdsMaterial.MaterialType.NONE,
+        materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE,
+      },
       barBottomMargin: 28,
       lightColor: lightColor,
       barWidth: (smallScreen || !hasBarWidth) ? undefined :

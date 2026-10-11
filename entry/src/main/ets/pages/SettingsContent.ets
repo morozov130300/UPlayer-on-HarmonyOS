@@ -13,12 +13,10 @@ interface SettingCategory {
 
 @Component
 export struct SettingsContent {
-  // 布局几何参数由 Index 每次渲染重算下发（含 scaledSize 显示大小缩放），
-  // 必须用 @Prop 跟随父组件刷新：普通成员只在创建时赋值一次，调节显示大小后不会更新
-  @Prop topContentPadding: number = 0
+  topContentPadding: number = 0
   // 顶部标题带高度（Index 传入，与主页问候语带同源）：标题在带内垂直居中，几何与主页一致
-  @Prop topBandHeight: number = 72
-  @Prop bottomContentPadding: number = 0
+  topBandHeight: number = 72
+  bottomContentPadding: number = 0
   private isPC: boolean = deviceInfo.deviceType === '2in1'
   @StorageLink('uplayer_theme_mode') themeMode: string = 'system'
   @StorageLink(KEY_PRIMARY_COLOR) primaryColor: string = '#007DFF'
