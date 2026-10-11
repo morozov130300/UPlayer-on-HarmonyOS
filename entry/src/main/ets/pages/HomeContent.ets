@@ -1092,22 +1092,31 @@ export struct HomeContent {
 
   @Builder
   songSwipeDeleteButton(song: SongInfo): void {
-    Row({ space: this.scaledSize(4) }) {
-      Image($r('app.media.ic_public_delete'))
-        .width(this.scaledSize(16))
-        .height(this.scaledSize(16))
-        .fillColor(Color.White)
-      Text('删除')
-        .fontSize(Math.round(13 * this.fontSizeScale))
-        .fontColor(Color.White)
+    Row() {
+      Row({ space: this.scaledSize(4) }) {
+        Image($r('app.media.ic_public_delete'))
+          .width(this.scaledSize(16))
+          .height(this.scaledSize(16))
+          .fillColor(Color.White)
+        Text('删除')
+          .fontSize(Math.round(13 * this.fontSizeScale))
+          .fontColor(Color.White)
+      }
+      .height(this.scaledSize(36))
+      .padding({
+        left: this.scaledSize(14), right: this.scaledSize(14)
+      })
+      .borderRadius(this.scaledSize(18))
+      .backgroundColor('#FF3B30')
+      .alignItems(VerticalAlign.Center)
+      .margin({ right: this.scaledSize(12) })
+      .onClick(() => {
+        this.deleteSongById(song.id)
+      })
     }
-    .width(this.scaledSize(72))
+    .width(this.scaledSize(88))
     .height('100%')
-    .justifyContent(FlexAlign.Center)
+    .justifyContent(FlexAlign.End)
     .alignItems(VerticalAlign.Center)
-    .backgroundColor('#FF3B30')
-    .onClick(() => {
-      this.deleteSongById(song.id)
-    })
   }
 }
