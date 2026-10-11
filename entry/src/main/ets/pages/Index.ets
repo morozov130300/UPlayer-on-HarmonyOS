@@ -498,9 +498,8 @@ struct MainPage {
       bottom: this.scaledSize(2)
     })
     .backgroundColor(Color.Transparent)
-    .backgroundEffect(this.frostLayerEnabled() ? {
-      radius: this.glassBlurRadius()
-    } : undefined)
+    .backgroundBlurStyle((this.tabStyle !== 'immersive' || !isLiquidGlassAvailable())
+      ? this.getBarBackgroundBlur() : BlurStyle.NONE)
     .systemMaterial(this.bottomBarGlassMaterial())
     .border({
       width: 1, color: 'rgba(255,255,255,0.22)'
@@ -633,11 +632,10 @@ struct MainPage {
       top: this.scaledSize(2),
       bottom: this.scaledSize(2)
     })
-    // miniBar 兜底磨砂层：经典样式下没有液态玻璃材质，靠 backgroundEffect 出磨砂效果；
-    // 玻璃样式下 HdsTabs 会给 miniBar 挂 systemMaterialEffect（沉浸式），此时磨砂层与玻璃材质叠加，观感一致
-    .backgroundEffect(this.tabStyle !== 'immersive' && this.frostLayerEnabled() ? {
-      radius: this.glassBlurRadius()
-    } : undefined)
+    // miniBar 磨砂层：与 TabBar 同条件同档位（getBarBackgroundBlur），经典样式下同为系统磨砂材质，
+    // 玻璃样式下挂液态玻璃材质、磨砂关 NONE，保证 tab 与播控条观感一致
+    .backgroundBlurStyle((this.tabStyle !== 'immersive' || !isLiquidGlassAvailable())
+      ? this.getBarBackgroundBlur() : BlurStyle.NONE)
     // miniBar 自挂液态玻璃材质（位于 Tabs 底部栏生效区内，材质可正常渲染）：
     // interactive 交互形变 + lightEffect 跟手光效，无歌曲时点击/拖拽同样有反馈
     .systemMaterial(this.bottomBarGlassMaterial())
@@ -1060,20 +1058,10 @@ struct MainPage {
     }
   }
 
-  private glassBlurRadius(): number {
-    return this.glassBlurStrength * 0.5
-  }
-
   // 否则传 undefined 让 lightEffect 完全关闭，便于外层使用系统自带的按压白色蒙版。
 
-  // 磨砂层挂载条件（播控条使用，与 Tab 风格解耦）：「磨砂层叠加」设置项已删除，
-  // 明暗模式均由模糊强度控制（0=关）；玻璃样式的液态玻璃材质配置不受此影响
-  private frostLayerEnabled(): boolean {
-    return this.glassBlurStrength > 0
-  }
-
   // 底部播放信息栏的液态玻璃材质：仅沉浸(immersive)样式下挂载；
-  // 经典样式下返回 undefined，让 backgroundEffect（高斯模糊）生效
+  // 经典样式下返回 undefined，磨砂由 backgroundBlurStyle 兜底（与 TabBar 同档位）
   // 跟手光效颜色：白光 / 主题色（设置项 uplayer_tab_light_color）
   private followLightColor(): string {
     return this.tabLightColor === 'white' ? '#FFFFFF' : this.primaryColor
