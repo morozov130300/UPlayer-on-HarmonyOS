@@ -825,7 +825,7 @@ public:
 
     bool SetSpeed(float speed)
     {
-        playbackSpeed_ = speed;
+        playbackSpeed_.store(speed, std::memory_order_relaxed);
         return renderer_ == nullptr || OH_AudioRenderer_SetSpeed(renderer_, speed) == AUDIOSTREAM_SUCCESS;
     }
 
@@ -1333,7 +1333,7 @@ private:
         bool success = OH_AudioStreamBuilder_GenerateRenderer(builder, &renderer_) == AUDIOSTREAM_SUCCESS;
         OH_AudioStreamBuilder_Destroy(builder);
         if (success) {
-            OH_AudioRenderer_SetSpeed(renderer_, playbackSpeed_);
+            OH_AudioRenderer_SetSpeed(renderer_, playbackSpeed_.load(std::memory_order_relaxed));
             OH_AudioRenderer_SetVolume(renderer_, volume_);
             int32_t actualRate = 0;
             int32_t actualChannels = 0;
@@ -1648,8 +1648,14 @@ private:
         if (winMs < DENSITY_WINDOW_MS) {
             return;
         }
+        // 倍速下渲染器排空加快，引擎拉取随之上等比：实测 fps = 密度 × 倍速 × 48000。
+        // 必须剔除倍速分量后再与档位标称值比较——否则倍速会被密度修正环抵消：
+        // 设 2× → 实测翻倍 → 因子上调 → 重采样比减半 → 源回到 1× 实时推进 → 倍速失效。
+        // 密度因子只追踪引擎自身密度，与倍速无关（ReadPcm 仍按 48000×N 喂，源推进=倍速×实时）。
+        const float rawSpeed = playbackSpeed_.load(std::memory_order_relaxed);
+        const double speedNorm = rawSpeed > 0.05f ? static_cast<double>(rawSpeed) : 1.0;
         const double measuredFps = static_cast<double>(inputWindowFrames_) * 1000.0 /
-            static_cast<double>(winMs);
+            static_cast<double>(winMs) / speedNorm;
         const int32_t current = inputDensityFactor_.load();
         const double nominalFps = static_cast<double>(current) * 48000.0;
         // 滞回：仅在实测偏离当前档位标称值超过带宽、且连续 2 个窗口指向同一新档位时才切换，
@@ -2212,7 +2218,8 @@ private:
     std::atomic<int32_t> environmentType_ = 1;
     std::atomic<int32_t> beautifierType_ = 1;
     std::atomic<int32_t> spaceRenderMode_ = 0;
-    float playbackSpeed_ = 1.0f;
+    // JS 线程 SetSpeed 写、渲染回调 MeasureInputDensity 读，必须原子
+    std::atomic<float> playbackSpeed_ = 1.0f;
     float volume_ = 1.0f;
     double measurementSquareSum_ = 0.0;
     uint64_t measurementSampleCount_ = 0;
