@@ -46,6 +46,7 @@ constexpr double LOUDNESS_MIN_GAIN = 0.25;           // 补偿下限 -12dB
 constexpr double LOUDNESS_MAX_GAIN = 4.0;            // 补偿上限 +12dB
 constexpr double LOUDNESS_WINDOW_SMOOTHING = 0.6;    // 窗口间的目标增益平滑系数
 constexpr double LOUDNESS_GAIN_SMOOTHING = 0.0002;   // 逐采样增益平滑（时间常数 ≈100ms@48k）
+constexpr double LOUDNESS_SOFT_KNEE_START = 24000.0; // 软限幅起控点（≈-2.7dBFS，以下完全透明）
 
 // 管线直通保持：效果开关/管线激活瞬间，管线拉取模式突变，旧密度因子未收敛前按旧速率喂源
 // 会产生倍速高音调/慢速低音调。保持期内可听输出走直通（音调恒定正确），管线喂静音完成密度
@@ -58,6 +59,12 @@ constexpr double DENSITY_SWITCH_BAND = 0.15;             // 密度因子滞回�
 constexpr int32_t DENSITY_PLAYBACK_CONFIRM_WINDOWS = 3;  // 播放中漂移确认窗口数（保守，防误触发）
 constexpr int32_t DENSITY_HOLD_CONFIRM_WINDOWS = 2;      // 保持期内确认窗口数（300ms 内完成收敛）
 constexpr int64_t DENSITY_HOLD_COOLDOWN_MS = 2000;       // 播放中自动保护切换冷却（防频繁直通闪断）
+// 管线短响应补块：声场/环境音/美声/空间渲染经系统效果服务异步 IPC 分块交付，RenderFrame
+// 请求整帧时服务块偶发未就绪 → responseSize 短于请求 → 帧内数据空洞即随机「沙沙」声
+// （均衡器为内联同步 DSP 永不短响应，与「除均衡器外开任何音效都有沙声」现象吻合）。
+// 短响应时在回调预算内重试拉取剩余字节，用真实数据补满帧，而非补零遮蔽。
+constexpr int32_t PIPELINE_SHORTFALL_RETRY_MAX = 4;      // 短响应重试上限（单帧总调用 ≤5 次）
+constexpr int32_t PIPELINE_SHORTFALL_RETRY_WAIT_MS = 1;  // 零产出时的微等待，给效果服务补块时间
 
 std::mutex playerOperationMutex;
 std::atomic<uint64_t> latestPlayRequest = 0;
@@ -1753,25 +1760,61 @@ private:
     // 正常管线路径：RenderFrame + 响度补偿 + 欠载边缘淡变 + 流量统计（仅渲染线程调用）
     bool RenderPipelineFrame(void* audioData, int32_t audioDataSize)
     {
+        // EOF 守卫：官方契约规定管线 finished 后再调 RenderFrame 返回
+        // AUDIOSUITE_ERROR_UNSUPPORTED_OPERATION，会被下方误判为渲染失败并刷错误日志。
+        // EOF 后（新播放/seek 会复位该标志）静音交付。
+        if (audioSuiteEofReached_.load()) {
+            std::memset(audioData, 0, static_cast<size_t>(audioDataSize));
+            return true;
+        }
         bool finished = false;
-        int32_t responseSize = 0;
-        std::lock_guard<std::mutex> lock(effectMutex_);
-        OH_AudioSuite_Result result = OH_AudioSuiteEngine_RenderFrame(
-            pipeline_, audioData, audioDataSize, &responseSize, &finished);
-        if (result != AUDIOSUITE_SUCCESS) {
-            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                "RenderFrame failed result=%d responseSize=%d finished=%d inputSize=%d",
-                static_cast<int>(result), responseSize, finished ? 1 : 0, audioDataSize);
-            return false;
+        int32_t produced = 0;
+        {
+            std::lock_guard<std::mutex> lock(effectMutex_);
+            int32_t attempt = 0;
+            while (produced < audioDataSize) {
+                int32_t responseSize = 0;
+                bool partFinished = false;
+                OH_AudioSuite_Result result = OH_AudioSuiteEngine_RenderFrame(
+                    pipeline_, static_cast<uint8_t*>(audioData) + produced,
+                    audioDataSize - produced, &responseSize, &partFinished);
+                if (result != AUDIOSUITE_SUCCESS) {
+                    OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                        "RenderFrame failed result=%d responseSize=%d finished=%d inputSize=%d",
+                        static_cast<int>(result), responseSize, partFinished ? 1 : 0,
+                        audioDataSize - produced);
+                    if (produced == 0) {
+                        return false;
+                    }
+                    break; // 已拉到部分数据：交付部分帧，尾部按短响应淡出处理
+                }
+                if (responseSize > audioDataSize - produced) {
+                    responseSize = audioDataSize - produced;
+                }
+                if (responseSize > 0) {
+                    produced += responseSize;
+                }
+                finished = finished || partFinished;
+                if (partFinished || produced >= audioDataSize) {
+                    break;
+                }
+                // 短响应：异步效果服务块未就绪，微等待后重试补满本帧（见常量区注释）
+                attempt++;
+                if (attempt > PIPELINE_SHORTFALL_RETRY_MAX) {
+                    break;
+                }
+                if (responseSize == 0) {
+                    std::this_thread::sleep_for(
+                        std::chrono::milliseconds(PIPELINE_SHORTFALL_RETRY_WAIT_MS));
+                }
+            }
         }
         // 闭环响度补偿：只处理管线真正产出的有效数据
-        ApplyLoudnessCompensation(audioData, responseSize > 0 ? responseSize : 0);
-        // 官方契约：管线尽量填满请求帧，实际写入量经 responseSize 返回；不足时不能直接补零——
-        // 有效数据到零的阶跃是可闻的「沙」声。末尾做 128 采样（≈2.7ms@48k）线性淡出，
-        // 下一帧恢复时头部对称淡入，把补零造成的爆点遮蔽掉。
+        ApplyLoudnessCompensation(audioData, produced);
+        // 补块重试后仍不足（服务确实无数据/EOF）：末尾做 128 采样（≈2.7ms@48k）线性淡出，
+        // 下一帧恢复时头部对称淡入，把补零造成的爆点遮蔽掉；重试已大幅降低此路径触发概率。
         const int32_t totalSamples = audioDataSize / static_cast<int32_t>(sizeof(int16_t));
-        const int32_t validSamples = responseSize > 0 ?
-            std::min(responseSize, audioDataSize) / static_cast<int32_t>(sizeof(int16_t)) : 0;
+        const int32_t validSamples = produced / static_cast<int32_t>(sizeof(int16_t));
         int16_t* outSamples = static_cast<int16_t*>(audioData);
         if (validSamples < totalSamples) {
             constexpr int32_t SHORTFALL_FADE_SAMPLES = 128;
@@ -1797,12 +1840,12 @@ private:
         }
         pipelineRenderCalls_++;
         pipelineRenderReqBytes_ += static_cast<uint64_t>(audioDataSize);
-        pipelineRenderRespBytes_ += responseSize > 0 ? static_cast<uint64_t>(responseSize) : 0;
+        pipelineRenderRespBytes_ += static_cast<uint64_t>(produced);
         if (!pipelineRenderFirstLogged_) {
             pipelineRenderFirstLogged_ = true;
             OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                 "pipeline render first req=%{public}d resp=%{public}d finished=%{public}d",
-                audioDataSize, responseSize, finished ? 1 : 0);
+                audioDataSize, produced, finished ? 1 : 0);
         }
         const int64_t nowMs = SteadyNowMs();
         if (pipelineStatsBaseMs_ == 0) {
@@ -1897,7 +1940,8 @@ private:
                     audioSuiteEofReached_ = true;
                     MarkPlaybackCompleted();
                 }
-                if (static_cast<size_t>(audioDataSize) / sizeof(int16_t) <= holdScratch_.size()) {
+                if (static_cast<size_t>(audioDataSize) / sizeof(int16_t) <= holdScratch_.size() &&
+                    !audioSuiteEofReached_.load()) {
                     int32_t responseSize = 0;
                     bool warmupFinished = false;
                     std::lock_guard<std::mutex> lock(effectMutex_);
@@ -2040,10 +2084,23 @@ private:
 
         const double targetGain = loudnessTargetGain_.load();
         double gain = loudnessAppliedGain_;
+        // 软限幅：增益 >1 时满刻度音乐峰直接硬 clamp 到 int16 会平顶削波，本身就是
+        // 可闻毛刺源。超过起控点后改走 tanh 软膝渐进逼近 ±32767：起控点以下完全透明，
+        // 膝内斜率连续（无拐点爆音），渐近限幅永不削平顶。
+        const double kneeSpan = static_cast<double>(std::numeric_limits<int16_t>::max()) -
+            LOUDNESS_SOFT_KNEE_START;
         for (int32_t i = 0; i < sampleCount; i++) {
             gain += (targetGain - gain) * LOUDNESS_GAIN_SMOOTHING;
             const double scaled = static_cast<double>(samples[i]) * gain;
-            const long converted = std::lround(scaled);
+            double limited = scaled;
+            if (scaled > LOUDNESS_SOFT_KNEE_START) {
+                limited = LOUDNESS_SOFT_KNEE_START +
+                    kneeSpan * std::tanh((scaled - LOUDNESS_SOFT_KNEE_START) / kneeSpan);
+            } else if (scaled < -LOUDNESS_SOFT_KNEE_START) {
+                limited = -(LOUDNESS_SOFT_KNEE_START +
+                    kneeSpan * std::tanh((-scaled - LOUDNESS_SOFT_KNEE_START) / kneeSpan));
+            }
+            const long converted = std::lround(limited);
             samples[i] = static_cast<int16_t>(std::clamp<long>(converted,
                 std::numeric_limits<int16_t>::min(), std::numeric_limits<int16_t>::max()));
         }
