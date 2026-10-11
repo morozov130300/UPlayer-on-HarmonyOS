@@ -359,7 +359,7 @@ public:
         resamplePos_ = 0.0;
         resampleLeft_.clear();
         resampleRight_.clear();
-        inputDensityFactor_ = 1;
+        inputDensityFactor_.store(1);
         inputWindowFrames_ = 0;
         inputWindowStartMs_ = 0;
         OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
@@ -1504,7 +1504,10 @@ private:
         }
     }
 
-    int32_t ReadPcm(void* audioData, int32_t audioDataSize, bool* finished)
+    // usePipeline=true 表示数据将进入 AudioSuite 音效管线：该管线会以 inputDensityFactor_ 倍速率
+    // 拉取输入，故此处按 48000×N 输出，使源按实时速率推进；直通渲染（音效全关）恒按 48000 输出，
+    // 否则会残留管线期的补偿倍数，导致播放速度减半、音调降低。
+    int32_t ReadPcm(void* audioData, int32_t audioDataSize, bool* finished, bool usePipeline)
     {
         if (audioData == nullptr || audioDataSize <= 0 || finished == nullptr) {
             return 0;
@@ -1512,7 +1515,9 @@ private:
         int16_t* out = static_cast<int16_t*>(audioData);
         int32_t outSamples = audioDataSize / 4; // 立体声 S16LE，每采样点 4 字节
         int32_t written = 0;
-        const int32_t effOutRate = resampleOutputRate_ * inputDensityFactor_;
+        const int32_t effOutRate = usePipeline
+            ? resampleOutputRate_ * inputDensityFactor_.load()
+            : resampleOutputRate_;
         const double ratio = static_cast<double>(resampleInputRate_) / static_cast<double>(effOutRate);
         // 循环填充，直到写满请求的采样点数或解码结束。
         // 不能在持有 queueMutex_ 时等待，否则解码线程无法填充 pcmQueue_ 造成死锁。
@@ -1618,8 +1623,8 @@ private:
         if (n > 3) {
             n = 3;
         }
-        if (n != inputDensityFactor_) {
-            inputDensityFactor_ = n;
+        if (n != inputDensityFactor_.load()) {
+            inputDensityFactor_.store(n);
             OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                 "input density factor -> %{public}d (pullFps=%{public}llu)", n,
                 static_cast<unsigned long long>(fps));
@@ -1635,7 +1640,7 @@ private:
             return 0;
         }
         NativeAudioPlayer* player = static_cast<NativeAudioPlayer*>(userData);
-        int32_t readSize = player->ReadPcm(audioData, audioDataSize, finished);
+        int32_t readSize = player->ReadPcm(audioData, audioDataSize, finished, true);
         player->pipelineInputCalls_.fetch_add(1, std::memory_order_relaxed);
         player->pipelineInputBytes_.fetch_add(readSize > 0 ? static_cast<uint64_t>(readSize) : 0,
             std::memory_order_relaxed);
@@ -1672,8 +1677,12 @@ private:
     bool RenderAudio(void* audioData, int32_t audioDataSize, bool usePipeline)
     {
         if (!usePipeline) {
+            // 音效全关走直通渲染：清空密度测量窗口，避免切回管线时沿用陈旧窗口，
+            // 也确保直通路径不受管线期补偿倍数影响（ReadPcm 传 usePipeline=false）。
+            inputWindowStartMs_ = 0;
+            inputWindowFrames_ = 0;
             bool finished = false;
-            int32_t readSize = ReadPcm(audioData, audioDataSize, &finished);
+            int32_t readSize = ReadPcm(audioData, audioDataSize, &finished, false);
             if (readSize < audioDataSize) {
                 std::memset(static_cast<uint8_t*>(audioData) + readSize, 0,
                     static_cast<size_t>(audioDataSize - readSize));
@@ -1960,7 +1969,9 @@ private:
     int32_t resampleOutputRate_ = 48000;
     // 密度自适应：OHAudioSuite 管线对输入按 N 倍速率拉取（N 实时测量为 1 或 2）。
     // 拉取 N 倍时把源重采样到 48000×N，使源按实时速率推进，消除 2× 拉取导致的倍速/变调。
-    int32_t inputDensityFactor_ = 1;
+    // 仅在管线路径生效（ReadPcm 的 usePipeline 参数），直通渲染恒按 48000 推进。
+    // 渲染线程与管线输入回调线程都会访问，必须原子。
+    std::atomic<int32_t> inputDensityFactor_ = 1;
     uint64_t inputWindowFrames_ = 0;
     int64_t inputWindowStartMs_ = 0;
     std::deque<int16_t> resampleLeft_ = {};
