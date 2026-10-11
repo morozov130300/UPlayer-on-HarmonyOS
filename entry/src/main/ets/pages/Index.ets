@@ -257,12 +257,15 @@ struct MainPage {
     if (!smallScreen) {
       // tab 与播控条各占 2/5（= barWidthVp，主容器宽 × 0.4）；中间留 1/5 间隙
       const miniBarWidthVp: number = barWidthVp
+      // 磨砂态（经典样式或设备无液态玻璃）：迷你栏背景跟随页签栏背景（enableMiniBarBackground=true），
+      // 与 TabBar 磨砂完全一致；迷你栏区域内自挂 backgroundBlurStyle 采样不到页面背景（渲染为透明），必须走系统背景。
+      // 沉浸式玻璃：关闭系统背景，避免容器背景像围栏一样裁掉自挂材质的交互形变。
+      const frostedMode: boolean = this.tabStyle !== 'immersive' || !isLiquidGlassAvailable()
       miniBar = {
         miniBarBuilder: (): void => {
           this.miniBarBuilder()
         },
-        // 关闭 HdsTabs 自带迷你栏背景：避免容器背景像围栏一样裁掉自挂材质的交互形变
-        enableMiniBarBackground: false,
+        enableMiniBarBackground: frostedMode,
         // 关闭迷你栏容器对 builder 内容的默认裁剪（SDK 默认 enableMiniBarClip=true）：
         // 否则交互形变鼓包超出容器边界的部分被剪掉，不动边缘看起来像一圈"围栏"
         enableMiniBarClip: false,
@@ -622,7 +625,7 @@ struct MainPage {
         })
     }
     .height(this.scaledSize(44))
-    // 胶囊圆角：HdsTabs 自带迷你栏背景关闭后，磨砂层与自挂玻璃材质都按 Row 自身几何渲染，
+    // 胶囊圆角：沉浸式下系统迷你栏背景关闭，自挂玻璃材质按 Row 自身几何渲染，
     // 必须显式给圆角（44 高 → 22 半径胶囊，与 playerControl 一致），否则渲染成直角方形
     .borderRadius(this.scaledSize(22))
     .alignSelf(ItemAlign.Center)
@@ -632,11 +635,8 @@ struct MainPage {
       top: this.scaledSize(2),
       bottom: this.scaledSize(2)
     })
-    // miniBar 磨砂层：与 TabBar 同条件同档位（getBarBackgroundBlur），经典样式下同为系统磨砂材质，
-    // 玻璃样式下挂液态玻璃材质、磨砂关 NONE，保证 tab 与播控条观感一致
-    .backgroundBlurStyle((this.tabStyle !== 'immersive' || !isLiquidGlassAvailable())
-      ? this.getBarBackgroundBlur() : BlurStyle.NONE)
-    // miniBar 自挂液态玻璃材质（位于 Tabs 底部栏生效区内，材质可正常渲染）：
+    // miniBar 底色：磨砂态由系统迷你栏背景提供（enableMiniBarBackground=true，跟随页签栏），
+    // 玻璃样式下挂液态玻璃材质（位于 Tabs 底部栏生效区内，材质可正常渲染）：
     // interactive 交互形变 + lightEffect 跟手光效，无歌曲时点击/拖拽同样有反馈
     .systemMaterial(this.bottomBarGlassMaterial())
   }
