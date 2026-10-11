@@ -1093,28 +1093,24 @@ export struct HomeContent {
   @Builder
   songSwipeDeleteButton(song: SongInfo): void {
     Row() {
-      Row({ space: this.scaledSize(4) }) {
+      Row() {
         Image($r('app.media.ic_public_delete'))
           .width(this.scaledSize(16))
           .height(this.scaledSize(16))
           .fillColor(Color.White)
-        Text('删除')
-          .fontSize(Math.round(13 * this.fontSizeScale))
-          .fontColor(Color.White)
       }
       .height(this.scaledSize(36))
-      .padding({
-        left: this.scaledSize(14), right: this.scaledSize(14)
-      })
+      .width(this.scaledSize(36))
       .borderRadius(this.scaledSize(18))
       .backgroundColor('#FF3B30')
+      .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
       .margin({ right: this.scaledSize(12) })
       .onClick(() => {
         this.deleteSongById(song.id)
       })
     }
-    .width(this.scaledSize(88))
+    .width(this.scaledSize(48))
     .height('100%')
     .justifyContent(FlexAlign.End)
     .alignItems(VerticalAlign.Center)
