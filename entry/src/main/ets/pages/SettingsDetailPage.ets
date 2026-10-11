@@ -1250,7 +1250,10 @@ struct SettingsDetailPage {
         if (isLiquidGlassAvailable() && this.settings.tabStyle === 'immersive') {
           Column() {
             this.toggleRow('底部栏触摸指示', this.settings.tabTouchIndicator === 'light', (isOn: boolean) => {
-              this.settings.tabTouchIndicator = isOn ? 'light' : 'off'
+              // 附属卡片「跟手光效颜色」显隐翻转必须包进统一触发动画，过渡才会播放（与 EQ/空间渲染开关同规范）
+              this.animateSettingChange(() => {
+                this.settings.tabTouchIndicator = isOn ? 'light' : 'off'
+              })
               this.updateSetting()
               AppStorage.setOrCreate('uplayer_tab_touch_indicator', this.settings.tabTouchIndicator)
             })
