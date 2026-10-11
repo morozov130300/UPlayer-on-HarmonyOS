@@ -46,52 +46,6 @@ HarmonyOS图标库/
 - 大图标：32 × 32 vp
 - 使用 `.vp` 单位而非 `.px`
 
----
-
-## 命令行构建命令（仅供参考）
-
-### ⚠️ 智能体自行编译
-
-**代码改动完成后，智能体必须立即自行编译验证，编译产物推送给用户，而非要求用户手动操作。** 编译失败时智能体自行分析原因并修复，必要时才向用户报告。
-
-编译命令：`hvigorw assembleHap`，产物路径：`entry/build/default/outputs/default`。
-
-### ⚠️ 禁止修改 DevEco Studio SDK 目录
-
-**智能体绝对禁止在 `D:\DevEco Studio\sdk\` 下创建、删除或修改任何文件/目录（包括 junction、symlink、缓存等）。**
-
-遇到 SDK 路径不匹配、版本找不到等编译环境问题，只能给出排查建议，由用户自己决定如何处理，绝不能直接操作 SDK 目录。
-
-## 真机调试命令
-
-### hdc 工具路径
-
-- `D:\DevEco Studio\sdk\default\openharmony\toolchains\hdc.exe`
-
-### 常用命令
-
-```powershell
-# 查看连接的设备
-hdc list targets
-
-# 安装 HAP
-hdc install -m <hap路径>
-
-# 启动应用
-hdc shell aa start -a EntryAbility -b <bundleName>
-
-# 查看日志
-hdc shell hilog
-```
-
-### bundleName
-
-- UPlayer: `cn.edu.whut.uplayer`
-
-## 构建产物位置
-
-- HAP 文件：`entry/build/default/outputs/default`
-
 ## 开发规范
 
 ### ⚠️ 行为准则（最高优先级）
@@ -145,52 +99,14 @@ hdc shell hilog
 
 ### ⚠️ 工具优先使用规范（最高优先级）
 
-**尽可能使用智能体已暴露出来供调用的工具（tool）完成任务，只有在工具确实不可用的情况下，才允许改用命令行（ExecCommand）。**
+**尽可能使用智能体已暴露出来供调用的工具（tool）完成任务，只有在工具确实不可用的情况下，才允许改用命令行（ExecCommand）。
 
-#### 触发条件
+##### 禁止事项
 
-| 场景 | 正确做法 |
-| --- | --- |
-| 读取/写入/删除文件 | 使用 Read / Write / Edit / Delete 工具 |
-| 查找文件或搜索代码 | 使用 Glob / Grep 工具 |
-| 版本控制（status/diff/log/add/commit/push 等） | 使用 Git 工具（见下方 Git 工具使用规范） |
-| 查询鸿蒙官方文档 | 使用 MCP 工具 searchDocuments / getDocumentsById |
-| 确实没有对应工具的场景 | 才使用 ExecCommand 执行命令行 |
-
-#### 禁止事项
-
-- ❌ **严禁图省事直接用命令行替代已有工具**（如用 `type`/`cat` 读文件、用 `findstr`/`grep` 搜索代码、用 `git` 命令做版本控制）
+- ❌ **严禁图省事直接用命令行替代已有工具**（如用 `type`/`cat` 读文件、用 `findstr`/`grep` 搜索代码）
 - ❌ **严禁用脚本或 shell 命令重新实现已有工具的能力**
 - ✅ **每次执行前先自检：这件事有没有现成的工具？有则必须用工具**
 - ✅ **只有确认没有可用工具时，才使用命令行，并在回复中说明原因**
-
-### ⚠️ Git 工具使用规范（最高优先级）
-
-**所有 Git 操作必须使用 Git 工具，禁止使用命令行调用 git。**
-
-#### 触发条件（出现以下任一情况时必须使用 Git 工具）
-
-| 场景 | 说明 |
-| --- | --- |
-| 查看状态 | `git status`、`git diff`、`git log` |
-| 暂存/提交 | `git add`、`git commit` |
-| 分支操作 | `git branch`、`git checkout`、`git switch` |
-| 拉取/推送 | `git pull`、`git push`、`git fetch` |
-| 查看历史 | `git log`、`git show`、`git blame` |
-
-#### 正确调用方式
-
-**必须先调用 `GetToolSpec` 加载工具 schema，再调用 `CallDeferredTool` 执行。**
-
-```
-首次使用 → GetToolSpec(Git) → 获取 schema → CallDeferredTool(Git, {operation: "status"}) → 后续直接使用 CallDeferredTool
-```
-
-#### 禁止事项
-
-- ❌ **严禁使用 ExecCommand 调用 `git` 命令**
-- ❌ **严禁直接拼接 shell 命令进行版本控制**
-- ✅ **所有版本控制操作必须通过 Git 工具调用**
 
 ### ⚠️ MCP 知识库使用（最高优先级）
 
@@ -305,7 +221,7 @@ hdc shell hilog
 - ❌ **禁止以"备用"为理由保留临时脚本**
 - ❌ **禁止反复执行同一脚本而不删**——改用一次执行+立即删除的方式
 
-### ⚠️ 调试前必须编译（最高优先级）
+### ⚠️ 调试前和修改完成后必须编译（最高优先级）
 
 **每次调试前必须先编译！** 智能体完成代码修改后，必须执行：
 
