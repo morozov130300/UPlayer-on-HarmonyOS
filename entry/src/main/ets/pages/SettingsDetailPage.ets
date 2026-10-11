@@ -448,9 +448,7 @@ struct SettingsDetailPage {
 
   onSpeedChange(value: number, mode: SliderChangeMode): void {
     this.settings.playSpeed = 0.5 + value / 100
-    if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-      this.updateSetting()
-    }
+    this.updateSetting()
     try {
       this.avPlayerService.setSpeed(this.settings.playSpeed)
     } catch (e) {
@@ -468,9 +466,7 @@ struct SettingsDetailPage {
     if (!applied && (mode === SliderChangeMode.End || mode === SliderChangeMode.Click)) {
       Logger.error(TAG, `equalizer change not applied by native backend index=${bandIndex} value=${bands[bandIndex]}`)
     }
-    if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-      this.updateSetting()
-    }
+    this.updateSetting()
   }
 
   // ═══ 均衡器预设（官方 9 预设一键切换，手动拖滑块后自动回到自定义态无高亮）═══
@@ -557,10 +553,8 @@ struct SettingsDetailPage {
     }
     this.settings.spaceRenderValues = values
     this.settings = this.settings
-    if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-      this.updateSetting()
-      this.avPlayerService.applySpaceRender(this.settings.spaceRenderEnabled, this.settings.spaceRenderMode, values)
-    }
+    this.updateSetting()
+    this.avPlayerService.applySpaceRender(this.settings.spaceRenderEnabled, this.settings.spaceRenderMode, values)
   }
 
   onSpaceDirectionChange(direction: number): void {
@@ -961,9 +955,7 @@ struct SettingsDetailPage {
               .onChange((value: number, mode: SliderChangeMode) => {
                 this.settings.homeTopBlurStrength = value
                 this.homeTopBlurStrength = value
-                if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-                  this.updateSetting()
-                }
+                this.updateSetting()
               })
             Text('深')
               .fontSize(this.scaledFont(11))
@@ -1110,9 +1102,7 @@ struct SettingsDetailPage {
               .onChange((value: number, mode: SliderChangeMode) => {
                 this.settings.fontSizeScale = value / 100
                 this.fontSizeScale = this.settings.fontSizeScale
-                if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-                  this.updateSetting()
-                }
+                this.updateSetting()
               })
           }
           .layoutWeight(1)
@@ -1164,9 +1154,7 @@ struct SettingsDetailPage {
               .onChange((value: number, mode: SliderChangeMode) => {
                 this.settings.displaySizeScale = value / 100
                 this.displaySizeScale = this.settings.displaySizeScale
-                if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-                  this.updateSetting()
-                }
+                this.updateSetting()
               })
           }
           .layoutWeight(1)
@@ -1350,9 +1338,7 @@ struct SettingsDetailPage {
                 .onChange((value: number, mode: SliderChangeMode) => {
                   this.settings.glassBlurStrength = value
                   this.glassBlurStrength = value
-                  if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-                    this.updateSetting()
-                  }
+                  this.updateSetting()
                 })
               Text('强')
                 .fontSize(this.scaledFont(11))
@@ -1403,9 +1389,7 @@ struct SettingsDetailPage {
               .onChange((value: number, mode: SliderChangeMode) => {
                 this.settings.tabIndicatorOpacity = value
                 this.tabIndicatorOpacity = value
-                if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-                  this.updateSetting()
-                }
+                this.updateSetting()
               })
             Text('深')
               .fontSize(this.scaledFont(11))
