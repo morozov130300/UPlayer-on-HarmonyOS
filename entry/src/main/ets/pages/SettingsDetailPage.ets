@@ -2323,10 +2323,10 @@ struct SettingsDetailPage {
   // 玻璃标题栏：返回按钮（自带 systemMaterial，处于 Navigation 标题栏生效区内 → 出真玻璃）+ 标题。
 
   private getPreviewBarFloatingStyle(): HdsTabsFloatingStyle {
-    const useLight: boolean = this.settings.tabTouchIndicator === 'light'
-    const lightColor: ResourceColor | undefined = useLight
-      ? (this.settings.tabLightColor === 'white' ? '#FFFFFF' : this.primaryColor)
-      : undefined
+    // 与真机 Index 同逻辑：关跟手光效时传全透明色显式关闭
+    //（lightColor 默认值是深浅色固定光效色，传 undefined 会回落默认光效而非关闭）
+    const lightColor: ResourceColor = this.settings.tabTouchIndicator === 'light'
+      ? (this.settings.tabLightColor === 'white' ? '#FFFFFF' : this.primaryColor) : Color.Transparent
     // 与真机同公式：主容器宽 × 0.4（HdsTabs 宽 <600vp 小屏态时不下发，系统走默认胶囊，与真机 sm/md 行为一致）
     const hasBarWidth: boolean = this.previewBarWidthVp > 0
     const smallScreen: boolean = this.previewBarWidthVp < 600
