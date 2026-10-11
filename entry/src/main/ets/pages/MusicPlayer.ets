@@ -87,7 +87,6 @@ struct MusicPlayer {
         iconSize: 18,
         iconColor: Color.White,
         iconOpacity: 0.8,
-        themedShadow: false,
         onBack: () => {
           this.getUIContext()?.getRouter().back()
         }
