@@ -54,16 +54,6 @@ const SQL_CREATE_SONGS: string = 'CREATE TABLE IF NOT EXISTS songs (' +
   'trackCount TEXT NOT NULL DEFAULT \'\',' +
   'fileSize INTEGER NOT NULL DEFAULT 0)'
 
-// 旧库升级：CREATE TABLE IF NOT EXISTS 不会给已有表补列，
-// 对缺失列逐个 ALTER TABLE ADD COLUMN（列名 → 列定义）
-const SONGS_MIGRATION_COLUMNS: string[][] = [
-  ['channels', 'TEXT NOT NULL DEFAULT \'\''],
-  ['bitDepth', 'TEXT NOT NULL DEFAULT \'\''],
-  ['codec', 'TEXT NOT NULL DEFAULT \'\''],
-  ['trackCount', 'TEXT NOT NULL DEFAULT \'\''],
-  ['fileSize', 'INTEGER NOT NULL DEFAULT 0']
-]
-
 const SQL_INDEX_URI: string = 'CREATE INDEX IF NOT EXISTS idx_songs_uri ON songs(uri)'
 const SQL_INDEX_FOLDER: string = 'CREATE INDEX IF NOT EXISTS idx_songs_folder ON songs(folderPath)'
 const SQL_INDEX_SORT: string = 'CREATE INDEX IF NOT EXISTS idx_songs_sort ON songs(sortOrder)'
@@ -103,7 +93,6 @@ export class SongDatabase {
       relationalStore.getRdbStore(context, config).then(async (store: relationalStore.RdbStore) => {
         this.store = store
         await store.executeSql(SQL_CREATE_SONGS)
-        await this.migrateSongsTable(store)
         await store.executeSql(SQL_INDEX_URI)
         await store.executeSql(SQL_INDEX_FOLDER)
         await store.executeSql(SQL_INDEX_SORT)
@@ -116,33 +105,6 @@ export class SongDatabase {
       })
     })
     return this.initPromise
-  }
-
-  // 旧库补列迁移：PRAGMA table_info 查已有列，缺失的新列逐个 ALTER TABLE ADD COLUMN
-  private async migrateSongsTable(store: relationalStore.RdbStore): Promise<void> {
-    try {
-      const resultSet: relationalStore.ResultSet = await store.querySql('PRAGMA table_info(songs)')
-      const existing: Set<string> = new Set<string>()
-      try {
-        while (resultSet.goToNextRow()) {
-          const idx: number = resultSet.getColumnIndex('name')
-          if (idx >= 0) {
-            existing.add(resultSet.getString(idx))
-          }
-        }
-      } finally {
-        resultSet.close()
-      }
-      for (let i = 0; i < SONGS_MIGRATION_COLUMNS.length; i++) {
-        const column: string[] = SONGS_MIGRATION_COLUMNS[i]
-        if (!existing.has(column[0])) {
-          await store.executeSql(`ALTER TABLE songs ADD COLUMN ${column[0]} ${column[1]}`)
-          Logger.info(TAG, `migrateSongsTable: added column ${column[0]}`)
-        }
-      }
-    } catch (err) {
-      Logger.warn(TAG, `migrateSongsTable failed: ${JSON.stringify(err)}`)
-    }
   }
 
   public async queryAllSongs(): Promise<SongInfo[]> {
