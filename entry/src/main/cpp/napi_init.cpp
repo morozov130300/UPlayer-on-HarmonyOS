@@ -5,6 +5,7 @@
 #include <cmath>
 #include <condition_variable>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <deque>
 #include <list>
@@ -3460,8 +3461,617 @@ static std::string WriteId3TagsToFd(int32_t fd, const std::map<std::string, std:
     return "";
 }
 
-// 写入 ID3 标签：writeId3Tags(fd, tags) → 空串=成功；"unsupported"开头=格式不支持；其他=错误描述
-napi_value WriteId3Tags(napi_env env, napi_callback_info info)
+// ===== FLAC Vorbis Comment 写入 =====
+// FLAC 结构：fLaC 魔数 + 元数据块序列（块头 1 字节 last/type + 24 位大端长度）。
+// 重建：STREAMINFO 原样 + 新 VORBIS_COMMENT(4) + 其余块保留（PADDING(1)/旧 VORBIS_COMMENT 丢弃）
+// + 尾部 PADDING 块（预留 4KB，降低下次编辑的平移量），整区域替换。
+
+static void AppendU32Le(std::vector<uint8_t>& out, uint32_t value)
+{
+    out.push_back(static_cast<uint8_t>(value & 0xFF));
+    out.push_back(static_cast<uint8_t>((value >> 8) & 0xFF));
+    out.push_back(static_cast<uint8_t>((value >> 16) & 0xFF));
+    out.push_back(static_cast<uint8_t>((value >> 24) & 0xFF));
+}
+
+static void FlacAppendComment(std::vector<uint8_t>& out, const std::string& key, const std::string& value)
+{
+    const std::string entry = key + "=" + value;
+    AppendU32Le(out, static_cast<uint32_t>(entry.size()));
+    out.insert(out.end(), entry.begin(), entry.end());
+}
+
+static std::string TagValue(const std::map<std::string, std::string>& tags, const char* key)
+{
+    const auto found = tags.find(key);
+    return found == tags.end() ? std::string() : found->second;
+}
+
+static std::string WriteFlacTagsToFd(int32_t fd, const std::map<std::string, std::string>& tags)
+{
+    struct stat fileStat = {};
+    if (fstat(fd, &fileStat) != 0 || fileStat.st_size < 8) {
+        return "stat failed";
+    }
+    const uint64_t fileSize = static_cast<uint64_t>(fileStat.st_size);
+    uint8_t magic[4] = {};
+    if (pread(fd, magic, sizeof(magic), 0) != sizeof(magic) || std::memcmp(magic, "fLaC", 4) != 0) {
+        return "unsupported: not flac";
+    }
+    uint64_t offset = 4;
+    bool last = false;
+    bool hasStreamInfo = false;
+    std::vector<uint8_t> streamInfo;
+    std::vector<std::pair<uint8_t, std::vector<uint8_t>>> otherBlocks;
+    while (!last) {
+        if (offset + 4 > fileSize || otherBlocks.size() > 64) {
+            return "corrupt flac blocks";
+        }
+        uint8_t blockHeader[4] = {};
+        if (pread(fd, blockHeader, sizeof(blockHeader), offset) != sizeof(blockHeader)) {
+            return "read flac block failed";
+        }
+        last = (blockHeader[0] & 0x80) != 0;
+        const uint8_t type = blockHeader[0] & 0x7F;
+        const uint32_t size = (static_cast<uint32_t>(blockHeader[1]) << 16) |
+            (static_cast<uint32_t>(blockHeader[2]) << 8) | static_cast<uint32_t>(blockHeader[3]);
+        if (size > ID3_MAX_TAG_BYTES || offset + 4 + size > fileSize) {
+            return "corrupt flac block size";
+        }
+        std::vector<uint8_t> data(size);
+        if (size > 0 && pread(fd, data.data(), size, offset + 4) != static_cast<ssize_t>(size)) {
+            return "read flac block failed";
+        }
+        if (type == 0) { // STREAMINFO
+            streamInfo = data;
+            hasStreamInfo = true;
+        } else if (type != 1 && type != 4) { // PADDING / VORBIS_COMMENT 重建时丢弃
+            otherBlocks.push_back({ type, data });
+        }
+        offset += 4 + size;
+    }
+    if (!hasStreamInfo || streamInfo.size() != 34) {
+        return "corrupt flac: streaminfo";
+    }
+    const uint64_t oldRegionEnd = offset;
+
+    // VORBIS_COMMENT 内容：厂商串 + 键值对（小端 u32 长度前缀，KEY=value UTF-8）
+    std::vector<uint8_t> comment;
+    const std::string vendor = "UPlayer";
+    AppendU32Le(comment, static_cast<uint32_t>(vendor.size()));
+    comment.insert(comment.end(), vendor.begin(), vendor.end());
+    std::vector<std::pair<std::string, std::string>> entries;
+    const std::string title = TagValue(tags, "title");
+    if (!title.empty()) entries.push_back({ "TITLE", title });
+    const std::string artist = TagValue(tags, "artist");
+    if (!artist.empty()) entries.push_back({ "ARTIST", artist });
+    const std::string album = TagValue(tags, "album");
+    if (!album.empty()) entries.push_back({ "ALBUM", album });
+    const std::string genre = TagValue(tags, "genre");
+    if (!genre.empty()) entries.push_back({ "GENRE", genre });
+    const std::string dateTime = TagValue(tags, "dateTime");
+    const std::string year = TagValue(tags, "year");
+    const std::string date = !dateTime.empty() ? dateTime : year;
+    if (!date.empty()) entries.push_back({ "DATE", date });
+    const std::string track = TagValue(tags, "track");
+    if (!track.empty()) entries.push_back({ "TRACKNUMBER", track });
+    const std::string disc = TagValue(tags, "disc");
+    if (!disc.empty()) entries.push_back({ "DISCNUMBER", disc });
+    const std::string composer = TagValue(tags, "composer");
+    if (!composer.empty()) entries.push_back({ "COMPOSER", composer });
+    const std::string albumArtist = TagValue(tags, "albumArtist");
+    if (!albumArtist.empty()) entries.push_back({ "ALBUMARTIST", albumArtist });
+    const std::string author = TagValue(tags, "author");
+    if (!author.empty()) entries.push_back({ "AUTHOR", author });
+    const std::string language = TagValue(tags, "language");
+    if (!language.empty()) entries.push_back({ "LANGUAGE", language });
+    const std::string encoder = TagValue(tags, "encoder");
+    if (!encoder.empty()) entries.push_back({ "ENCODER", encoder });
+    const std::string commentText = TagValue(tags, "comment");
+    if (!commentText.empty()) entries.push_back({ "COMMENT", commentText });
+    const std::string conductor = TagValue(tags, "conductor");
+    if (!conductor.empty()) entries.push_back({ "CONDUCTOR", conductor });
+    const std::string description = TagValue(tags, "description");
+    if (!description.empty()) entries.push_back({ "DESCRIPTION", description });
+    AppendU32Le(comment, static_cast<uint32_t>(entries.size()));
+    for (const auto& entry : entries) {
+        FlacAppendComment(comment, entry.first, entry.second);
+    }
+    if (comment.size() > 0xFFFFFF) {
+        return "flac comment too large";
+    }
+
+    // 重建元数据区域 [4, oldRegionEnd)
+    std::vector<uint8_t> region;
+    auto appendBlock = [&region](uint8_t type, const std::vector<uint8_t>& data, bool lastFlag) {
+        region.push_back(static_cast<uint8_t>(lastFlag ? (type | 0x80) : type));
+        region.push_back(static_cast<uint8_t>((data.size() >> 16) & 0xFF));
+        region.push_back(static_cast<uint8_t>((data.size() >> 8) & 0xFF));
+        region.push_back(static_cast<uint8_t>(data.size() & 0xFF));
+        region.insert(region.end(), data.begin(), data.end());
+    };
+    appendBlock(0, streamInfo, false);
+    appendBlock(4, comment, false);
+    for (const auto& block : otherBlocks) {
+        appendBlock(block.first, block.second, false);
+    }
+    appendBlock(1, std::vector<uint8_t>(4096, 0), true); // 尾部 PADDING
+
+    const int64_t delta = static_cast<int64_t>(region.size()) -
+        static_cast<int64_t>(oldRegionEnd - 4);
+    if (delta != 0) {
+        if (!ShiftRegion(fd, oldRegionEnd, fileSize, delta)) {
+            return "shift audio data failed";
+        }
+        if (ftruncate(fd, static_cast<off_t>(fileSize) + delta) != 0) {
+            return "truncate failed";
+        }
+    }
+    if (pwrite(fd, region.data(), region.size(), 4) != static_cast<ssize_t>(region.size())) {
+        return "write flac blocks failed";
+    }
+    if (fsync(fd) != 0) {
+        return "fsync failed";
+    }
+    return "";
+}
+
+// ===== MP4/M4A ilst 写入 =====
+// 结构：moov > udta > meta（含 4 字节版本/标志）> ilst > 各标签盒。
+// 重建 ilst（保留非受管条目如封面 covr），沿 udta/meta/moov 链重算尺寸后整 moov 区域替换。
+constexpr uint32_t MP4_MAX_MOOV_BYTES = 64 * 1024 * 1024;
+
+static uint32_t ReadBe32(const uint8_t* data)
+{
+    return (static_cast<uint32_t>(data[0]) << 24) | (static_cast<uint32_t>(data[1]) << 16) |
+        (static_cast<uint32_t>(data[2]) << 8) | static_cast<uint32_t>(data[3]);
+}
+
+struct Mp4ChildBox {
+    uint32_t type = 0;
+    uint64_t offset = 0;
+    uint64_t size = 0;
+};
+
+// 严格遍历 [start, end) 内的盒序列（要求恰好耗尽）
+static bool Mp4CollectChildren(const std::vector<uint8_t>& buffer, uint64_t start, uint64_t end,
+    std::vector<Mp4ChildBox>& children)
+{
+    uint64_t pos = start;
+    while (pos + 8 <= end) {
+        const uint32_t size = ReadBe32(buffer.data() + pos);
+        const uint32_t type = ReadBe32(buffer.data() + pos + 4);
+        if (size < 8 || pos + size > end) {
+            return false;
+        }
+        Mp4ChildBox child;
+        child.type = type;
+        child.offset = pos;
+        child.size = size;
+        children.push_back(child);
+        pos += size;
+    }
+    return pos == end;
+}
+
+static void Mp4AppendFourCC(std::vector<uint8_t>& out, const char* type)
+{
+    for (int i = 0; i < 4; i++) {
+        out.push_back(static_cast<uint8_t>(type[i]));
+    }
+}
+
+// 追加一个盒：8 字节头（大端尺寸 + FourCC）+ 载荷
+static void Mp4AppendEntry(std::vector<uint8_t>& out, const char* type, const std::vector<uint8_t>& payload)
+{
+    AppendU32Be(out, static_cast<uint32_t>(payload.size() + 8));
+    Mp4AppendFourCC(out, type);
+    out.insert(out.end(), payload.begin(), payload.end());
+}
+
+// 文本标签盒：<type> > data（flags=1 UTF-8）
+static void Mp4BuildTextEntry(std::vector<uint8_t>& out, const char* type, const std::string& value)
+{
+    std::vector<uint8_t> payload;
+    AppendU32Be(payload, static_cast<uint32_t>(value.size() + 16));
+    Mp4AppendFourCC(payload, "data");
+    AppendU32Be(payload, 1); // 版本 0 + flags 1（UTF-8 文本）
+    AppendU32Be(payload, 0); // 保留
+    payload.insert(payload.end(), value.begin(), value.end());
+    Mp4AppendEntry(out, type, payload);
+}
+
+// 自由格式标签盒：---- > mean(com.apple.iTunes) + name + data
+static void Mp4BuildFreeformEntry(std::vector<uint8_t>& out, const std::string& name,
+    const std::string& value)
+{
+    std::vector<uint8_t> payload;
+    const std::string mean = "com.apple.iTunes";
+    AppendU32Be(payload, static_cast<uint32_t>(mean.size() + 13));
+    Mp4AppendFourCC(payload, "mean");
+    AppendU32Be(payload, 0);
+    payload.insert(payload.end(), mean.begin(), mean.end());
+    payload.push_back(0);
+    AppendU32Be(payload, static_cast<uint32_t>(name.size() + 13));
+    Mp4AppendFourCC(payload, "name");
+    AppendU32Be(payload, 0);
+    payload.insert(payload.end(), name.begin(), name.end());
+    payload.push_back(0);
+    AppendU32Be(payload, static_cast<uint32_t>(value.size() + 16));
+    Mp4AppendFourCC(payload, "data");
+    AppendU32Be(payload, 1);
+    AppendU32Be(payload, 0);
+    payload.insert(payload.end(), value.begin(), value.end());
+    Mp4AppendEntry(out, "----", payload);
+}
+
+// trkn/disk 数字对："3" 或 "3/12" → 8 字节二进制载荷（flags=0）
+static bool ParseNumberPair(const std::string& text, uint16_t& first, uint16_t& second)
+{
+    first = 0;
+    second = 0;
+    const size_t slash = text.find('/');
+    const std::string head = slash == std::string::npos ? text : text.substr(0, slash);
+    const long headValue = strtol(head.c_str(), nullptr, 10);
+    if (headValue > 0 && headValue <= 0xFFFF) {
+        first = static_cast<uint16_t>(headValue);
+    }
+    if (slash != std::string::npos) {
+        const long tailValue = strtol(text.c_str() + slash + 1, nullptr, 10);
+        if (tailValue > 0 && tailValue <= 0xFFFF) {
+            second = static_cast<uint16_t>(tailValue);
+        }
+    }
+    return first != 0 || second != 0;
+}
+
+static void Mp4BuildNumberPairEntry(std::vector<uint8_t>& out, const char* type,
+    uint16_t first, uint16_t second)
+{
+    std::vector<uint8_t> payload;
+    AppendU32Be(payload, 8 + 8);
+    Mp4AppendFourCC(payload, "data");
+    AppendU32Be(payload, 0); // flags=0 二进制
+    AppendU32Be(payload, 0);
+    payload.push_back(0);
+    payload.push_back(0);
+    payload.push_back(static_cast<uint8_t>((first >> 8) & 0xFF));
+    payload.push_back(static_cast<uint8_t>(first & 0xFF));
+    payload.push_back(static_cast<uint8_t>((second >> 8) & 0xFF));
+    payload.push_back(static_cast<uint8_t>(second & 0xFF));
+    payload.push_back(0);
+    payload.push_back(0);
+    Mp4AppendEntry(out, type, payload);
+}
+
+// 新建 meta 时合成的 hdlr 盒（mdir）
+static std::vector<uint8_t> Mp4BuildMetaHandler()
+{
+    std::vector<uint8_t> payload;
+    AppendU32Be(payload, 0);
+    AppendU32Be(payload, 0);
+    Mp4AppendFourCC(payload, "mdir");
+    for (int i = 0; i < 12; i++) {
+        payload.push_back(0);
+    }
+    payload.push_back(0);
+    std::vector<uint8_t> handler;
+    Mp4AppendEntry(handler, "hdlr", payload);
+    return handler;
+}
+
+// ilst 受管条目类型（编辑时整体重建；gnre 数字流派一并删除避免与 ©gen 冲突）
+static bool Mp4IsManagedType(uint32_t type)
+{
+    switch (type) {
+        case 0xA96E616D: // ©nam 标题
+        case 0xA9415254: // ©ART 歌手
+        case 0xA9616C62: // ©alb 专辑
+        case 0xA967656E: // ©gen 流派
+        case 0x676E7265: // gnre 数字流派
+        case 0xA9646179: // ©day 年份/日期
+        case 0x74726B6E: // trkn 音轨号
+        case 0x6469736B: // disk 碟号
+        case 0xA9777274: // ©wrt 作曲家
+        case 0x61415254: // aART 专辑艺术家
+        case 0xA9746F6F: // ©too 编码器
+        case 0xA9636D74: // ©cmt 注释
+        case 0x64657363: // desc 描述
+        case 0xA96C616E: // ©lan 语言
+        case 0x2D2D2D2D: // ----（按 name 再筛）
+            return true;
+        default:
+            return false;
+    }
+}
+
+// ---- 盒的 name 子盒内容（跳过 8 头 + 4 版本/标志，去尾部 NUL）
+static std::string Mp4FreeformName(const uint8_t* box, uint64_t boxSize)
+{
+    std::string result;
+    uint64_t pos = 8;
+    while (pos + 8 <= boxSize) {
+        const uint32_t size = ReadBe32(box + pos);
+        const uint32_t type = ReadBe32(box + pos + 4);
+        if (size < 8 || pos + size > boxSize) {
+            break;
+        }
+        if (type == 0x6E616D65 && size >= 12 && size <= 128) { // name
+            result.assign(reinterpret_cast<const char*>(box + pos + 12), size - 12);
+            while (!result.empty() && result.back() == '\0') {
+                result.pop_back();
+            }
+            break;
+        }
+        pos += size;
+    }
+    return result;
+}
+
+// 保留 ilst 中非受管条目的原始字节（含封面 covr 等）
+static void Mp4CollectKeptIlstBoxes(const std::vector<uint8_t>& moov, const Mp4ChildBox& ilst,
+    std::vector<uint8_t>& kept)
+{
+    uint64_t pos = ilst.offset + 8;
+    const uint64_t end = ilst.offset + ilst.size;
+    while (pos + 8 <= end) {
+        const uint32_t size = ReadBe32(moov.data() + pos);
+        const uint32_t type = ReadBe32(moov.data() + pos + 4);
+        if (size < 8 || pos + size > end) {
+            break;
+        }
+        bool managed = Mp4IsManagedType(type);
+        if (managed && type == 0x2D2D2D2D) {
+            const std::string name = Mp4FreeformName(moov.data() + pos, size);
+            managed = name == "AUTHOR" || name == "LANGUAGE" || name == "CONDUCTOR";
+        }
+        if (!managed) {
+            kept.insert(kept.end(), moov.begin() + pos, moov.begin() + pos + size);
+        }
+        pos += size;
+    }
+}
+
+// 16 个编辑键 → ilst 条目（空值 = 删除对应条目）
+static void Mp4AppendTagEntries(std::vector<uint8_t>& ilstContent,
+    const std::map<std::string, std::string>& tags)
+{
+    const std::string title = TagValue(tags, "title");
+    if (!title.empty()) {
+        Mp4BuildTextEntry(ilstContent, "\xA9" "nam", title);
+    }
+    const std::string artist = TagValue(tags, "artist");
+    if (!artist.empty()) {
+        Mp4BuildTextEntry(ilstContent, "\xA9" "ART", artist);
+    }
+    const std::string album = TagValue(tags, "album");
+    if (!album.empty()) {
+        Mp4BuildTextEntry(ilstContent, "\xA9" "alb", album);
+    }
+    const std::string genre = TagValue(tags, "genre");
+    if (!genre.empty()) {
+        Mp4BuildTextEntry(ilstContent, "\xA9" "gen", genre);
+    }
+    const std::string dateTime = TagValue(tags, "dateTime");
+    const std::string year = TagValue(tags, "year");
+    const std::string day = !dateTime.empty() ? dateTime : year;
+    if (!day.empty()) {
+        Mp4BuildTextEntry(ilstContent, "\xA9" "day", day);
+    }
+    const std::string track = TagValue(tags, "track");
+    uint16_t trackNumber = 0;
+    uint16_t trackTotal = 0;
+    if (!track.empty() && ParseNumberPair(track, trackNumber, trackTotal)) {
+        Mp4BuildNumberPairEntry(ilstContent, "trkn", trackNumber, trackTotal);
+    }
+    const std::string disc = TagValue(tags, "disc");
+    uint16_t discNumber = 0;
+    uint16_t discTotal = 0;
+    if (!disc.empty() && ParseNumberPair(disc, discNumber, discTotal)) {
+        Mp4BuildNumberPairEntry(ilstContent, "disk", discNumber, discTotal);
+    }
+    const std::string composer = TagValue(tags, "composer");
+    if (!composer.empty()) {
+        Mp4BuildTextEntry(ilstContent, "\xA9" "wrt", composer);
+    }
+    const std::string albumArtist = TagValue(tags, "albumArtist");
+    if (!albumArtist.empty()) {
+        Mp4BuildTextEntry(ilstContent, "aART", albumArtist);
+    }
+    const std::string encoder = TagValue(tags, "encoder");
+    if (!encoder.empty()) {
+        Mp4BuildTextEntry(ilstContent, "\xA9" "too", encoder);
+    }
+    const std::string commentText = TagValue(tags, "comment");
+    if (!commentText.empty()) {
+        Mp4BuildTextEntry(ilstContent, "\xA9" "cmt", commentText);
+    }
+    const std::string description = TagValue(tags, "description");
+    if (!description.empty()) {
+        Mp4BuildTextEntry(ilstContent, "desc", description);
+    }
+    const std::string author = TagValue(tags, "author");
+    if (!author.empty()) {
+        Mp4BuildFreeformEntry(ilstContent, "AUTHOR", author);
+    }
+    const std::string language = TagValue(tags, "language");
+    if (!language.empty()) {
+        Mp4BuildFreeformEntry(ilstContent, "LANGUAGE", language);
+    }
+    const std::string conductor = TagValue(tags, "conductor");
+    if (!conductor.empty()) {
+        Mp4BuildFreeformEntry(ilstContent, "CONDUCTOR", conductor);
+    }
+}
+
+static std::string WriteMp4TagsToFd(int32_t fd, const std::map<std::string, std::string>& tags)
+{
+    struct stat fileStat = {};
+    if (fstat(fd, &fileStat) != 0 || fileStat.st_size < 8) {
+        return "stat failed";
+    }
+    const uint64_t fileSize = static_cast<uint64_t>(fileStat.st_size);
+    // 顶层盒遍历定位 moov
+    uint64_t moovStart = 0;
+    uint64_t moovSize = 0;
+    bool moovFound = false;
+    uint64_t offset = 0;
+    while (offset + 8 <= fileSize) {
+        uint8_t header[8] = {};
+        if (pread(fd, header, sizeof(header), offset) != sizeof(header)) {
+            return "read box header failed";
+        }
+        const uint64_t size = ReadBe32(header);
+        const uint32_t type = ReadBe32(header + 4);
+        if (size == 1) {
+            return "unsupported: 64-bit box";
+        }
+        if (size < 8) {
+            return "corrupt box size";
+        }
+        if (type == 0x6D6F6F76) { // moov
+            moovStart = offset;
+            moovSize = size;
+            moovFound = true;
+            break;
+        }
+        offset += size;
+    }
+    if (!moovFound || moovSize > MP4_MAX_MOOV_BYTES) {
+        return "moov not found or oversized";
+    }
+    std::vector<uint8_t> moov(moovSize);
+    if (pread(fd, moov.data(), moov.size(), moovStart) != static_cast<ssize_t>(moov.size())) {
+        return "read moov failed";
+    }
+    std::vector<Mp4ChildBox> moovChildren;
+    if (!Mp4CollectChildren(moov, 8, moov.size(), moovChildren)) {
+        return "corrupt moov children";
+    }
+    const Mp4ChildBox* udta = nullptr;
+    for (const Mp4ChildBox& child : moovChildren) {
+        if (child.type == 0x75647461) { // udta
+            udta = &child;
+            break;
+        }
+    }
+    std::vector<Mp4ChildBox> udtaChildren;
+    if (udta != nullptr &&
+        !Mp4CollectChildren(moov, udta->offset + 8, udta->offset + udta->size, udtaChildren)) {
+        return "corrupt udta children";
+    }
+    std::vector<uint8_t> metaVersionFlags = { 0, 0, 0, 0 };
+    std::vector<uint8_t> metaOthers; // meta 内除 ilst 外的子盒（hdlr 等）原始字节
+    std::vector<uint8_t> udtaOthers; // udta 内除 meta 外的子盒原始字节
+    bool haveHdlr = false;
+    for (const Mp4ChildBox& child : udtaChildren) {
+        if (child.type == 0x6D657461) { // meta
+            continue;
+        }
+        udtaOthers.insert(udtaOthers.end(), moov.begin() + child.offset,
+            moov.begin() + child.offset + child.size);
+    }
+    std::vector<uint8_t> ilstContent;
+    for (const Mp4ChildBox& child : udtaChildren) {
+        if (child.type != 0x6D657461 || child.size < 12) { // meta
+            continue;
+        }
+        metaVersionFlags.assign(moov.begin() + child.offset + 8, moov.begin() + child.offset + 12);
+        std::vector<Mp4ChildBox> metaChildren;
+        if (!Mp4CollectChildren(moov, child.offset + 12, child.offset + child.size, metaChildren)) {
+            return "corrupt meta children";
+        }
+        for (const Mp4ChildBox& metaChild : metaChildren) {
+            if (metaChild.type == 0x696C7374) { // ilst
+                Mp4CollectKeptIlstBoxes(moov, metaChild, ilstContent);
+                continue;
+            }
+            metaOthers.insert(metaOthers.end(), moov.begin() + metaChild.offset,
+                moov.begin() + metaChild.offset + metaChild.size);
+            if (metaChild.type == 0x68646C72) { // hdlr
+                haveHdlr = true;
+            }
+        }
+    }
+    if (!haveHdlr) {
+        const std::vector<uint8_t> handler = Mp4BuildMetaHandler();
+        metaOthers.insert(metaOthers.end(), handler.begin(), handler.end());
+    }
+    Mp4AppendTagEntries(ilstContent, tags);
+    if (ilstContent.size() > 0xFFFFFFF0) {
+        return "ilst too large";
+    }
+    // ilst > meta > udta > moov 逐级重建
+    std::vector<uint8_t> ilstBox;
+    Mp4AppendEntry(ilstBox, "ilst", ilstContent);
+    std::vector<uint8_t> metaContent = metaVersionFlags;
+    metaContent.insert(metaContent.end(), metaOthers.begin(), metaOthers.end());
+    metaContent.insert(metaContent.end(), ilstBox.begin(), ilstBox.end());
+    std::vector<uint8_t> metaBox;
+    Mp4AppendEntry(metaBox, "meta", metaContent);
+    std::vector<uint8_t> udtaContent = udtaOthers;
+    udtaContent.insert(udtaContent.end(), metaBox.begin(), metaBox.end());
+    std::vector<uint8_t> udtaBox;
+    Mp4AppendEntry(udtaBox, "udta", udtaContent);
+    std::vector<uint8_t> newMoovContent;
+    for (const Mp4ChildBox& child : moovChildren) {
+        if (child.type == 0x75647461) { // udta
+            continue;
+        }
+        newMoovContent.insert(newMoovContent.end(), moov.begin() + child.offset,
+            moov.begin() + child.offset + child.size);
+    }
+    newMoovContent.insert(newMoovContent.end(), udtaBox.begin(), udtaBox.end());
+    std::vector<uint8_t> newMoov;
+    Mp4AppendEntry(newMoov, "moov", newMoovContent);
+
+    const int64_t delta = static_cast<int64_t>(newMoov.size()) - static_cast<int64_t>(moovSize);
+    if (delta != 0) {
+        if (!ShiftRegion(fd, moovStart + moovSize, fileSize, delta)) {
+            return "shift audio data failed";
+        }
+        if (ftruncate(fd, static_cast<off_t>(fileSize) + delta) != 0) {
+            return "truncate failed";
+        }
+    }
+    if (pwrite(fd, newMoov.data(), newMoov.size(), moovStart) != static_cast<ssize_t>(newMoov.size())) {
+        return "write moov failed";
+    }
+    if (fsync(fd) != 0) {
+        return "fsync failed";
+    }
+    return "";
+}
+
+// 按文件魔数分发：ID3/MPEG 帧 → ID3v2；fLaC → Vorbis Comment；ftyp → MP4 ilst
+static std::string WriteAudioTagsToFd(int32_t fd, const std::map<std::string, std::string>& tags)
+{
+    uint8_t magic[8] = {};
+    struct stat fileStat = {};
+    if (fstat(fd, &fileStat) != 0 || fileStat.st_size < 4) {
+        return "stat failed";
+    }
+    const size_t magicSize = fileStat.st_size < 8 ? static_cast<size_t>(fileStat.st_size) : 8;
+    if (pread(fd, magic, magicSize, 0) != static_cast<ssize_t>(magicSize)) {
+        return "read file failed";
+    }
+    if (std::memcmp(magic, "ID3", 3) == 0) {
+        return WriteId3TagsToFd(fd, tags);
+    }
+    if (std::memcmp(magic, "fLaC", 4) == 0) {
+        return WriteFlacTagsToFd(fd, tags);
+    }
+    if (magic[0] == 0xFF && (magic[1] & 0xE0) == 0xE0) {
+        return WriteId3TagsToFd(fd, tags);
+    }
+    if (fileStat.st_size >= 8 && std::memcmp(magic + 4, "ftyp", 4) == 0) {
+        return WriteMp4TagsToFd(fd, tags);
+    }
+    return "unsupported: not mp3/flac/mp4";
+}
+
+// 写入音频标签：writeAudioTags(fd, tags) → 空串=成功；"unsupported"开头=格式不支持；其他=错误描述
+napi_value WriteAudioTags(napi_env env, napi_callback_info info)
 {
     size_t argc = 2;
     napi_value args[2] = { nullptr, nullptr };
@@ -3495,7 +4105,7 @@ napi_value WriteId3Tags(napi_env env, napi_callback_info info)
         text.resize(length);
         tags[mapping.key] = text;
     }
-    return StringValue(env, WriteId3TagsToFd(fd, tags));
+    return StringValue(env, WriteAudioTagsToFd(fd, tags));
 }
 
 napi_value Init(napi_env env, napi_value exports)
@@ -3530,7 +4140,7 @@ napi_value Init(napi_env env, napi_value exports)
         { "getAlbumCover", nullptr, GetAlbumCover, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "cacheAlbumCover", nullptr, CacheAlbumCover, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "clearAlbumCoverCache", nullptr, ClearAlbumCoverCache, nullptr, nullptr, nullptr, napi_default, nullptr },
-        { "writeId3Tags", nullptr, WriteId3Tags, nullptr, nullptr, nullptr, napi_default, nullptr }
+        { "writeAudioTags", nullptr, WriteAudioTags, nullptr, nullptr, nullptr, napi_default, nullptr }
     };
     napi_define_properties(env, exports, sizeof(descriptors) / sizeof(descriptors[0]), descriptors);
     return exports;
