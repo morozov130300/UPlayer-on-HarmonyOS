@@ -80,6 +80,7 @@ export default class EntryAbility extends UIAbility {
     DataService.getInstance().init(this.context).catch((err: Error) => {
       Logger.error(TAG, `DataService init failed: ${JSON.stringify(err)}`);
     }).then((): void => {
+    try {
     const settings: AppSettingsData = DataService.getInstance().initToAppStorage();
     // 音频输出设备路由监听（耳机断开自动暂停 / 输出设备切换入口）
     AudioRoutingService.getInstance().init();
@@ -109,6 +110,7 @@ export default class EntryAbility extends UIAbility {
     AppStorage.setOrCreate<number>(AppStorageKeyConstants.KEY_VOL_PANEL_MAX, 15);
     AppStorage.setOrCreate<number>(AppStorageKeyConstants.KEY_CURRENT_VOLUME, 1);
 
+    hilog.info(DOMAIN, 'testTag', 'startup before loadContent');
     windowStage.loadContent('pages/Index', (err) => {
       if (err.code) {
         hilog.error(DOMAIN, 'testTag', 'Failed to load the content. Cause: %{public}s', JSON.stringify(err));
@@ -149,6 +151,10 @@ export default class EntryAbility extends UIAbility {
         });
       });
     });
+    } catch (e) {
+      hilog.error(DOMAIN, 'testTag', 'startup chain exception: %{public}s',
+        e instanceof Error ? `${e.name}: ${e.message} stack: ${e.stack}` : JSON.stringify(e));
+    }
     });
   }
 
