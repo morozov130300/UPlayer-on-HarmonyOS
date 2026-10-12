@@ -3834,6 +3834,7 @@ constexpr uint32_t ID3_MAX_TAG_BYTES = 32 * 1024 * 1024;
 struct Id3Frame {
     std::string id;
     std::vector<uint8_t> content;
+    uint8_t flags[2] = { 0, 0 }; // 保留帧原标志（压缩/数据长度指示等），避免重建后帧失效
 };
 
 struct Id3TagMapping {
@@ -4123,7 +4124,7 @@ static std::string WriteId3TagsToFd(int32_t fd, const std::map<std::string, std:
         if (version != 2 && version != 3 && version != 4) {
             return "unsupported: id3v2." + std::to_string(version);
         }
-        if (tagSize == 0 || tagSize > ID3_MAX_TAG_BYTES ||
+        if (tagSize > ID3_MAX_TAG_BYTES ||
             static_cast<uint64_t>(tagSize) + 10 > fileSize) {
             return "corrupt tag size";
         }
@@ -4194,8 +4195,12 @@ static std::string WriteId3TagsToFd(int32_t fd, const std::map<std::string, std:
                     break;
                 }
                 if (!replaced) {
-                    keptFrames.push_back(
-                        { id, std::vector<uint8_t>(content, content + frameSize) });
+                    Id3Frame kept;
+                    kept.id = id;
+                    kept.flags[0] = frame[8];
+                    kept.flags[1] = frame[9];
+                    kept.content.assign(content, content + frameSize);
+                    keptFrames.push_back(kept);
                 }
             }
             offset += frameHeaderSize + frameSize;
@@ -4217,8 +4222,8 @@ static std::string WriteId3TagsToFd(int32_t fd, const std::map<std::string, std:
     for (const Id3Frame& kept : keptFrames) {
         body.insert(body.end(), kept.id.begin(), kept.id.end());
         AppendU32Be(body, static_cast<uint32_t>(kept.content.size()));
-        body.push_back(0);
-        body.push_back(0);
+        body.push_back(kept.flags[0]);
+        body.push_back(kept.flags[1]);
         body.insert(body.end(), kept.content.begin(), kept.content.end());
     }
     for (const Id3TagMapping& mapping : ID3_TAG_MAPPINGS) {
@@ -4294,18 +4299,23 @@ static std::string TagValue(const std::map<std::string, std::string>& tags, cons
     return found == tags.end() ? std::string() : found->second;
 }
 
-static std::string WriteFlacTagsToFd(int32_t fd, const std::map<std::string, std::string>& tags)
+static std::string WriteFlacTagsToFd(int32_t fd, const std::map<std::string, std::string>& tags,
+    uint64_t baseOffset)
 {
     struct stat fileStat = {};
     if (fstat(fd, &fileStat) != 0 || fileStat.st_size < 8) {
         return "stat failed";
     }
     const uint64_t fileSize = static_cast<uint64_t>(fileStat.st_size);
+    if (baseOffset + 8 > fileSize) {
+        return "corrupt flac offset";
+    }
     uint8_t magic[4] = {};
-    if (pread(fd, magic, sizeof(magic), 0) != sizeof(magic) || std::memcmp(magic, "fLaC", 4) != 0) {
+    if (pread(fd, magic, sizeof(magic), baseOffset) != sizeof(magic) ||
+        std::memcmp(magic, "fLaC", 4) != 0) {
         return "unsupported: not flac";
     }
-    uint64_t offset = 4;
+    uint64_t offset = baseOffset + 4;
     bool last = false;
     bool hasStreamInfo = false;
     std::vector<uint8_t> streamInfo;
@@ -4388,7 +4398,7 @@ static std::string WriteFlacTagsToFd(int32_t fd, const std::map<std::string, std
         return "flac comment too large";
     }
 
-    // 重建元数据区域 [4, oldRegionEnd)
+    // 重建元数据区域 [baseOffset + 4, oldRegionEnd)
     std::vector<uint8_t> region;
     auto appendBlock = [&region](uint8_t type, const std::vector<uint8_t>& data, bool lastFlag) {
         region.push_back(static_cast<uint8_t>(lastFlag ? (type | 0x80) : type));
@@ -4405,7 +4415,7 @@ static std::string WriteFlacTagsToFd(int32_t fd, const std::map<std::string, std
     appendBlock(1, std::vector<uint8_t>(4096, 0), true); // 尾部 PADDING
 
     const int64_t delta = static_cast<int64_t>(region.size()) -
-        static_cast<int64_t>(oldRegionEnd - 4);
+        static_cast<int64_t>(oldRegionEnd - (baseOffset + 4));
     if (delta != 0) {
         if (!ShiftRegion(fd, oldRegionEnd, fileSize, delta)) {
             return "shift audio data failed";
@@ -4414,7 +4424,8 @@ static std::string WriteFlacTagsToFd(int32_t fd, const std::map<std::string, std
             return "truncate failed";
         }
     }
-    if (pwrite(fd, region.data(), region.size(), 4) != static_cast<ssize_t>(region.size())) {
+    if (pwrite(fd, region.data(), region.size(), baseOffset + 4) !=
+        static_cast<ssize_t>(region.size())) {
         return "write flac blocks failed";
     }
     if (fsync(fd) != 0) {
@@ -4850,9 +4861,34 @@ static std::string WriteMp4TagsToFd(int32_t fd, const std::map<std::string, std:
     return "";
 }
 
-// 按文件魔数分发：ID3/MPEG 帧 → ID3v2；fLaC → Vorbis Comment；ftyp → MP4 ilst
+// 顶层盒扫描探测 MP4：覆盖 ftyp 不在文件头（free/skip 前缀）或 moov 前置的文件
+static bool Mp4Probe(int32_t fd, uint64_t fileSize)
+{
+    uint64_t offset = 0;
+    for (int guard = 0; guard < 256 && offset + 8 <= fileSize; ++guard) {
+        uint8_t boxHeader[8] = {};
+        if (pread(fd, boxHeader, sizeof(boxHeader), offset) != sizeof(boxHeader)) {
+            return false;
+        }
+        const uint32_t size = ReadBe32(boxHeader);
+        if (size == 1 || size < 8) {
+            return false; // 64 位 largesize / 非法尺寸：不按 MP4 处理
+        }
+        if (std::memcmp(boxHeader + 4, "ftyp", 4) == 0 || std::memcmp(boxHeader + 4, "moov", 4) == 0) {
+            return true;
+        }
+        offset += size;
+    }
+    return false;
+}
+
+// 全局串行化标签写入：并发编辑（多个 taskpool 任务同时平移同一文件）会交错损坏数据
+static std::mutex audioTagsWriteMutex;
+
+// 按文件魔数分发：ID3/MPEG 帧 → ID3v2；fLaC → Vorbis Comment；MP4 盒结构 → ilst
 static std::string WriteAudioTagsToFd(int32_t fd, const std::map<std::string, std::string>& tags)
 {
+    std::lock_guard<std::mutex> lock(audioTagsWriteMutex);
     uint8_t magic[8] = {};
     struct stat fileStat = {};
     if (fstat(fd, &fileStat) != 0 || fileStat.st_size < 4) {
@@ -4863,15 +4899,28 @@ static std::string WriteAudioTagsToFd(int32_t fd, const std::map<std::string, st
         return "read file failed";
     }
     if (std::memcmp(magic, "ID3", 3) == 0) {
+        // ID3 前缀的 FLAC（旧工具产物）：跳过 ID3 区域后是 fLaC 则走 Vorbis Comment 写入
+        uint8_t id3Header[10] = {};
+        if (fileStat.st_size >= 18 && pread(fd, id3Header, 10, 0) == 10) {
+            uint64_t id3End = 10 + Id3SyncSafeDecode(id3Header + 6);
+            if ((id3Header[5] & 0x10) != 0) { // footer 计入跳过区域
+                id3End += 10;
+            }
+            uint8_t flacMagic[4] = {};
+            if (id3End + 8 <= static_cast<uint64_t>(fileStat.st_size) &&
+                pread(fd, flacMagic, 4, id3End) == 4 && std::memcmp(flacMagic, "fLaC", 4) == 0) {
+                return WriteFlacTagsToFd(fd, tags, id3End);
+            }
+        }
         return WriteId3TagsToFd(fd, tags);
     }
     if (std::memcmp(magic, "fLaC", 4) == 0) {
-        return WriteFlacTagsToFd(fd, tags);
+        return WriteFlacTagsToFd(fd, tags, 0);
     }
     if (magic[0] == 0xFF && (magic[1] & 0xE0) == 0xE0) {
         return WriteId3TagsToFd(fd, tags);
     }
-    if (fileStat.st_size >= 8 && std::memcmp(magic + 4, "ftyp", 4) == 0) {
+    if (Mp4Probe(fd, static_cast<uint64_t>(fileStat.st_size))) {
         return WriteMp4TagsToFd(fd, tags);
     }
     return "unsupported: not mp3/flac/mp4";
