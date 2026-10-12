@@ -51,6 +51,25 @@ class SpaceRenderTable {
   ]
 }
 
+// 通用变声 10 类型（引擎枚举 1-10，顺序与 OH_AudioSuite_GeneralVoiceChangeType 一致）
+class GeneralVoiceChangeTable {
+  static readonly NAMES: string[] = ['萝莉', '赛博朋克', '女声', '男声', '混响', '怪兽', '大叔', '合成器', '颤音', '战争']
+}
+
+// 传统变声 7 类型（引擎枚举 1-7）与性别（1=女 2=男）
+class PureVoiceChangeTable {
+  static readonly GENDER_NAMES: string[] = ['女声', '男声']
+  static readonly TYPE_NAMES: string[] = ['卡通', '萝莉', '女声', '男声', '怪兽', '机器人', '大叔']
+  // 音调滑块：0 表示系统推荐（引擎 OH_PURE_VOICE_DEFAULT_PITCH），[0.3,3.0] 为自定义
+  static readonly PITCH_MIN: number = 0.3
+  static readonly PITCH_MAX: number = 3.0
+}
+
+// 音源分离输出：1=仅人声 2=仅伴奏 3=混合
+class SeparationTable {
+  static readonly OUTPUT_NAMES: string[] = ['人声', '伴奏', '混合']
+}
+
 
 interface ThemeColorOption {
   name: string
@@ -121,6 +140,11 @@ struct SettingsDetailPage {
   @State environmentSupported: boolean = false
   @State beautifierSupported: boolean = false
   @State spaceRenderSupported: boolean = false
+  @State generalVoiceChangeSupported: boolean = false
+  @State noiseReductionSupported: boolean = false
+  @State pureVoiceChangeSupported: boolean = false
+  @State tempoPitchSupported: boolean = false
+  @State separationSupported: boolean = false
   private context: common.UIAbilityContext
     | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
   // Tab 栏实时预览：直接使用 HdsTabs 系统组件，与 Index 完全一致的渲染管线
@@ -212,6 +236,11 @@ struct SettingsDetailPage {
     this.environmentSupported = this.avPlayerService.isEnvironmentSupported()
     this.beautifierSupported = this.avPlayerService.isVoiceBeautifierSupported()
     this.spaceRenderSupported = this.avPlayerService.isSpaceRenderSupported()
+    this.generalVoiceChangeSupported = this.avPlayerService.isGeneralVoiceChangeSupported()
+    this.noiseReductionSupported = this.avPlayerService.isNoiseReductionSupported()
+    this.pureVoiceChangeSupported = this.avPlayerService.isPureVoiceChangeSupported()
+    this.tempoPitchSupported = this.avPlayerService.isTempoPitchSupported()
+    this.separationSupported = this.avPlayerService.isSeparationSupported()
   }
 
   // 预览器说明：
@@ -604,6 +633,73 @@ struct SettingsDetailPage {
     this.settings = this.settings
     this.updateSetting()
     this.avPlayerService.applySpaceRender(this.settings.spaceRenderEnabled, this.settings.spaceRenderMode, values)
+  }
+
+  // ═══ 通用变声 / 降噪 / 传统变声 / 变速变调 / 音源分离 ═══
+  onGeneralVoiceTypeChange(type: number): void {
+    this.animateSettingChange(() => {
+      this.settings.generalVoiceChangeType = type
+      this.settings = this.settings
+    })
+    this.updateSetting()
+    this.avPlayerService.applyGeneralVoiceChange(this.settings.generalVoiceChangeEnabled, type)
+  }
+
+  onPureVoiceGenderChange(gender: number): void {
+    this.animateSettingChange(() => {
+      this.settings.pureVoiceChangeGender = gender
+      this.settings = this.settings
+    })
+    this.updateSetting()
+    this.avPlayerService.applyPureVoiceChange(this.settings.pureVoiceChangeEnabled, gender,
+      this.settings.pureVoiceChangeType, this.settings.pureVoiceChangePitch)
+  }
+
+  onPureVoiceTypeChange(type: number): void {
+    this.animateSettingChange(() => {
+      this.settings.pureVoiceChangeType = type
+      this.settings = this.settings
+    })
+    this.updateSetting()
+    this.avPlayerService.applyPureVoiceChange(this.settings.pureVoiceChangeEnabled,
+      this.settings.pureVoiceChangeGender, type, this.settings.pureVoiceChangePitch)
+  }
+
+  onPureVoicePitchChange(value: number, mode: SliderChangeMode): void {
+    // 0 表示系统推荐音调（引擎默认值），其余为 [0.3,3.0] 自定义
+    this.settings.pureVoiceChangePitch = value
+    this.settings = this.settings
+    this.updateSetting(this.isSliderSettled(mode))
+    this.avPlayerService.applyPureVoiceChange(this.settings.pureVoiceChangeEnabled,
+      this.settings.pureVoiceChangeGender, this.settings.pureVoiceChangeType, value)
+  }
+
+  onTempoSpeedChange(value: number, mode: SliderChangeMode): void {
+    this.settings.tempoSpeed = value
+    this.settings = this.settings
+    this.updateSetting(this.isSliderSettled(mode))
+    this.avPlayerService.applyTempoPitch(this.settings.tempoPitchEnabled, value, this.settings.tempoPitch)
+  }
+
+  onTempoPitchChange(value: number, mode: SliderChangeMode): void {
+    this.settings.tempoPitch = value
+    this.settings = this.settings
+    this.updateSetting(this.isSliderSettled(mode))
+    this.avPlayerService.applyTempoPitch(this.settings.tempoPitchEnabled, this.settings.tempoSpeed, value)
+  }
+
+  onSeparationOutputChange(output: number): void {
+    this.animateSettingChange(() => {
+      this.settings.separationOutput = output
+      this.settings = this.settings
+    })
+    this.updateSetting()
+    this.avPlayerService.applySeparation(this.settings.separationEnabled, output)
+  }
+
+  private pureVoicePitchText(): string {
+    const pitch: number = this.settings.pureVoiceChangePitch
+    return pitch <= 0 ? '系统推荐' : pitch.toFixed(1) + 'x'
   }
 
   pageTransition() {
@@ -2064,6 +2160,243 @@ struct SettingsDetailPage {
         .borderRadius(this.scaledSize(10))
         .transition(this.settingCardTransition())
       }
+
+      // ═══ 通用变声（主链内，10 种风格化变声）═══
+      Column() {
+        this.toggleRow('通用变声', this.settings.generalVoiceChangeEnabled, (val: boolean) => {
+          this.animateSettingChange(() => {
+            this.settings.generalVoiceChangeEnabled = val
+          })
+          this.updateSetting()
+          this.avPlayerService.applyGeneralVoiceChange(val, this.settings.generalVoiceChangeType)
+        })
+        if (!this.generalVoiceChangeSupported) {
+          Text('当前设备不支持通用变声')
+            .fontSize(this.scaledFont(12))
+            .fontColor(this.settingSubTextColor())
+            .width('100%')
+            .margin({ top: this.scaledSize(2) })
+        }
+      }
+      .width('100%')
+      .enabled(this.generalVoiceChangeSupported)
+      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
+
+      if (this.settings.generalVoiceChangeEnabled && this.generalVoiceChangeSupported) {
+        Column() {
+          this.scrollChipRow({
+            labels: GeneralVoiceChangeTable.NAMES,
+            current: this.settings.generalVoiceChangeType - 1,
+            onPick: (t: number) => {
+              this.onGeneralVoiceTypeChange(t + 1)
+            }
+          })
+        }
+        .width('100%')
+        .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+        .borderRadius(this.scaledSize(10))
+        .transition(this.settingCardTransition())
+      }
+
+      // ═══ 降噪（无参数，仅开关）═══
+      Column() {
+        this.toggleRow('降噪', this.settings.noiseReductionEnabled, (val: boolean) => {
+          this.animateSettingChange(() => {
+            this.settings.noiseReductionEnabled = val
+          })
+          this.updateSetting()
+          this.avPlayerService.applyNoiseReduction(val)
+        })
+        Text(this.noiseReductionSupported ? '降低背景噪声，输出为 16kHz 单声道（语音向处理）'
+          : '当前设备不支持降噪')
+          .fontSize(this.scaledFont(12))
+          .fontColor(this.settingSubTextColor())
+          .width('100%')
+          .margin({ top: this.scaledSize(2) })
+      }
+      .width('100%')
+      .enabled(this.noiseReductionSupported)
+      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
+
+      // ═══ 传统变声（性别 + 7 类型 + 音调）═══
+      Column() {
+        this.toggleRow('传统变声', this.settings.pureVoiceChangeEnabled, (val: boolean) => {
+          this.animateSettingChange(() => {
+            this.settings.pureVoiceChangeEnabled = val
+          })
+          this.updateSetting()
+          this.avPlayerService.applyPureVoiceChange(val, this.settings.pureVoiceChangeGender,
+            this.settings.pureVoiceChangeType, this.settings.pureVoiceChangePitch)
+        })
+        if (!this.pureVoiceChangeSupported) {
+          Text('当前设备不支持传统变声')
+            .fontSize(this.scaledFont(12))
+            .fontColor(this.settingSubTextColor())
+            .width('100%')
+            .margin({ top: this.scaledSize(2) })
+        }
+      }
+      .width('100%')
+      .enabled(this.pureVoiceChangeSupported)
+      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
+
+      if (this.settings.pureVoiceChangeEnabled && this.pureVoiceChangeSupported) {
+        Column({ space: this.scaledSize(10) }) {
+          this.chipRow({
+            labels: PureVoiceChangeTable.GENDER_NAMES,
+            current: this.settings.pureVoiceChangeGender - 1,
+            onPick: (g: number) => {
+              this.onPureVoiceGenderChange(g + 1)
+            }
+          })
+          this.scrollChipRow({
+            labels: PureVoiceChangeTable.TYPE_NAMES,
+            current: this.settings.pureVoiceChangeType - 1,
+            onPick: (t: number) => {
+              this.onPureVoiceTypeChange(t + 1)
+            }
+          })
+          Row() {
+            Text('音调')
+              .fontSize(this.scaledFont(12))
+              .fontColor(this.settingSubTextColor())
+              .width(this.scaledSize(72))
+              .flexShrink(0)
+            Slider({
+              value: this.settings.pureVoiceChangePitch <= 0 ? PureVoiceChangeTable.PITCH_MIN :
+                this.settings.pureVoiceChangePitch,
+              min: PureVoiceChangeTable.PITCH_MIN,
+              max: PureVoiceChangeTable.PITCH_MAX,
+              step: 0.1,
+              style: SliderStyle.OutSet
+            })
+              .layoutWeight(1)
+              .selectedColor(this.primaryColor)
+              .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+              .blockColor('#FFFFFF')
+              .blockSize({ width: this.scaledSize(16), height: this.scaledSize(16) })
+              .blockBorderColor(this.primaryColor)
+              .blockBorderWidth(2)
+              .sliderInteractionMode(SliderInteraction.SLIDE_ONLY)
+              .onChange((value: number, mode: SliderChangeMode) => {
+                this.onPureVoicePitchChange(value, mode)
+              })
+            Text(this.pureVoicePitchText())
+              .fontSize(this.scaledFont(12))
+              .fontColor(this.settingTextColor())
+              .width(this.scaledSize(64))
+              .textAlign(TextAlign.End)
+              .flexShrink(0)
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
+          Text('提示：传统变声输出为 16kHz 单声道（语音向处理）')
+            .fontSize(this.scaledFont(11))
+            .fontColor(this.settingSubTextColor())
+            .width('100%')
+        }
+        .width('100%')
+        .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+        .borderRadius(this.scaledSize(10))
+        .transition(this.settingCardTransition())
+      }
+
+      // ═══ 变速变调（速度 + 音调，与播放倍速相互独立）═══
+      Column() {
+        this.toggleRow('变速变调', this.settings.tempoPitchEnabled, (val: boolean) => {
+          this.animateSettingChange(() => {
+            this.settings.tempoPitchEnabled = val
+          })
+          this.updateSetting()
+          this.avPlayerService.applyTempoPitch(val, this.settings.tempoSpeed, this.settings.tempoPitch)
+        })
+        if (!this.tempoPitchSupported) {
+          Text('当前设备不支持变速变调')
+            .fontSize(this.scaledFont(12))
+            .fontColor(this.settingSubTextColor())
+            .width('100%')
+            .margin({ top: this.scaledSize(2) })
+        }
+      }
+      .width('100%')
+      .enabled(this.tempoPitchSupported)
+      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
+
+      if (this.settings.tempoPitchEnabled && this.tempoPitchSupported) {
+        Column({ space: this.scaledSize(10) }) {
+          this.optionSliderRow('速度', this.settings.tempoSpeed, 0.5, 10.0, 0.1, 'x',
+            (value: number, mode: SliderChangeMode) => {
+              this.onTempoSpeedChange(value, mode)
+            })
+          this.optionSliderRow('音调', this.settings.tempoPitch, 0.1, 5.0, 0.1, 'x',
+            (value: number, mode: SliderChangeMode) => {
+              this.onTempoPitchChange(value, mode)
+            })
+          Text('提示：变速变调输出为 48kHz 单声道')
+            .fontSize(this.scaledFont(11))
+            .fontColor(this.settingSubTextColor())
+            .width('100%')
+        }
+        .width('100%')
+        .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+        .borderRadius(this.scaledSize(10))
+        .transition(this.settingCardTransition())
+      }
+
+      // ═══ 音源分离（独立管线，多输出人声/伴奏）═══
+      Column() {
+        this.toggleRow('音源分离', this.settings.separationEnabled, (val: boolean) => {
+          this.animateSettingChange(() => {
+            this.settings.separationEnabled = val
+          })
+          this.updateSetting()
+          this.avPlayerService.applySeparation(val, this.settings.separationOutput)
+        })
+        if (!this.separationSupported) {
+          Text('当前设备不支持音源分离（依赖 NPU）')
+            .fontSize(this.scaledFont(12))
+            .fontColor(this.settingSubTextColor())
+            .width('100%')
+            .margin({ top: this.scaledSize(2) })
+        }
+      }
+      .width('100%')
+      .enabled(this.separationSupported)
+      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
+
+      if (this.settings.separationEnabled && this.separationSupported) {
+        Column({ space: this.scaledSize(8) }) {
+          this.chipRow({
+            labels: SeparationTable.OUTPUT_NAMES,
+            current: this.settings.separationOutput - 1,
+            onPick: (o: number) => {
+              this.onSeparationOutputChange(o + 1)
+            }
+          })
+          Text('分离使用独立管线，开启期间其他音效暂停生效，关闭后自动恢复')
+            .fontSize(this.scaledFont(11))
+            .fontColor(this.settingSubTextColor())
+            .width('100%')
+        }
+        .width('100%')
+        .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+        .borderRadius(this.scaledSize(10))
+        .transition(this.settingCardTransition())
+      }
     }
     .width('100%')
     .constraintSize({ minWidth: 0, maxWidth: '100%' })
@@ -2258,6 +2591,77 @@ struct SettingsDetailPage {
     }
     .width('100%')
     .justifyContent(FlexAlign.Start)
+  }
+
+  // 横向滚动芯片行：选项超过 6 个（通用变声 10 项/传统变声 7 项）时用，避免挤压换行
+  @Builder
+  scrollChipRow($$: ChipRowOptions): void {
+    Scroll() {
+      Row({ space: this.scaledSize(6) }) {
+        ForEach($$.labels, (label: string, i: number) => {
+          Text(label)
+            .fontSize(this.scaledFont(12))
+            .fontColor($$.current === i ? '#FFFFFF' : this.settingTextColor())
+            .padding({
+              left: this.scaledSize(10),
+              right: this.scaledSize(10),
+              top: this.scaledSize(5),
+              bottom: this.scaledSize(5)
+            })
+            .backgroundColor($$.current === i ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+            .borderRadius(this.scaledSize(15))
+            .onClick(() => {
+              if ($$.current !== i) {
+                $$.onPick(i)
+              }
+            })
+        }, (label: string) => label)
+      }
+      .padding({ left: this.scaledSize(2), right: this.scaledSize(2) })
+    }
+    .scrollable(ScrollDirection.Horizontal)
+    .scrollBar(BarState.Off)
+    .edgeEffect(EdgeEffect.None)
+    .width('100%')
+  }
+
+  // 通用参数滑块行：标签 + 水平滑杆 + 当前值（变速变调速度/音调等）
+  @Builder
+  optionSliderRow(label: string, value: number, min: number, max: number, step: number, unit: string,
+    onChange: (value: number, mode: SliderChangeMode) => void): void {
+    Row() {
+      Text(label)
+        .fontSize(this.scaledFont(12))
+        .fontColor(this.settingSubTextColor())
+        .width(this.scaledSize(72))
+        .flexShrink(0)
+      Slider({
+        value: value,
+        min: min,
+        max: max,
+        step: step,
+        style: SliderStyle.OutSet
+      })
+        .layoutWeight(1)
+        .selectedColor(this.primaryColor)
+        .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+        .blockColor('#FFFFFF')
+        .blockSize({ width: this.scaledSize(16), height: this.scaledSize(16) })
+        .blockBorderColor(this.primaryColor)
+        .blockBorderWidth(2)
+        .sliderInteractionMode(SliderInteraction.SLIDE_ONLY)
+        .onChange((v: number, mode: SliderChangeMode) => {
+          onChange(v, mode)
+        })
+      Text((Number.isInteger(value) ? value.toString() : value.toFixed(1)) + unit)
+        .fontSize(this.scaledFont(12))
+        .fontColor(this.settingTextColor())
+        .width(this.scaledSize(56))
+        .textAlign(TextAlign.End)
+        .flexShrink(0)
+    }
+    .width('100%')
+    .alignItems(VerticalAlign.Center)
   }
 
   // 空间渲染参数滑块行：标签 + 水平滑杆 + 当前值
