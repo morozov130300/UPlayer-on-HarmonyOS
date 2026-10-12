@@ -2886,12 +2886,32 @@ private:
                     int32_t responseSize = 0;
                     bool warmupFinished = false;
                     std::lock_guard<std::mutex> lock(effectMutex_);
-                    OH_AudioSuite_Result warmupResult = OH_AudioSuiteEngine_RenderFrame(
-                        pipeline_, holdScratch_.data(), audioDataSize,
-                        &responseSize, &warmupFinished);
+                    OH_AudioSuite_Result warmupResult = AUDIOSUITE_SUCCESS;
+                    if (activePipeline_ == ActivePipeline::SEP) {
+                        // 分离管线为多输出：预热必须走 MultiRenderFrame，否则拉取节奏无法被测量
+                        const size_t warmupSamples =
+                            (static_cast<size_t>(audioDataSize) + sizeof(int16_t) - 1) / sizeof(int16_t);
+                        if (sepScratchA_.size() < warmupSamples) {
+                            sepScratchA_.assign(warmupSamples, 0);
+                        }
+                        if (sepScratchB_.size() < warmupSamples) {
+                            sepScratchB_.assign(warmupSamples, 0);
+                        }
+                        void* warmupBuffers[2] = { sepScratchA_.data(), sepScratchB_.data() };
+                        OH_AudioDataArray warmupArray = {};
+                        warmupArray.audioDataArray = warmupBuffers;
+                        warmupArray.arraySize = 2;
+                        warmupArray.requestFrameSize = audioDataSize;
+                        warmupResult = OH_AudioSuiteEngine_MultiRenderFrame(
+                            sepGroup_.pipeline, &warmupArray, &responseSize, &warmupFinished);
+                    } else {
+                        warmupResult = OH_AudioSuiteEngine_RenderFrame(
+                            ActivePipelineHandle(), holdScratch_.data(), audioDataSize,
+                            &responseSize, &warmupFinished);
+                    }
                     if (warmupResult != AUDIOSUITE_SUCCESS) {
                         OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                            "hold warmup RenderFrame failed result=%{public}d",
+                            "hold warmup render failed result=%{public}d",
                             static_cast<int>(warmupResult));
                     }
                 }
@@ -3552,6 +3572,122 @@ napi_value SetSpaceRenderConfig(napi_env env, napi_callback_info info)
         values[i] = static_cast<float>(value);
     }
     return BooleanValue(env, NativeAudioPlayer::Instance().SetSpaceRenderConfig(mode, values));
+}
+
+napi_value SetGeneralVoiceChangeEnable(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1] = { nullptr };
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    bool enabled = false;
+    if (argc != 1 || napi_get_value_bool(env, args[0], &enabled) != napi_ok) {
+        return BooleanValue(env, false);
+    }
+    return BooleanValue(env, NativeAudioPlayer::Instance().SetGeneralVoiceChangeEnabled(enabled));
+}
+
+napi_value SetGeneralVoiceChangeType(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1] = { nullptr };
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    int32_t type = 0;
+    if (argc != 1 || napi_get_value_int32(env, args[0], &type) != napi_ok) {
+        return BooleanValue(env, false);
+    }
+    return BooleanValue(env, NativeAudioPlayer::Instance().SetGeneralVoiceChangeType(type));
+}
+
+napi_value SetNoiseReductionEnable(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1] = { nullptr };
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    bool enabled = false;
+    if (argc != 1 || napi_get_value_bool(env, args[0], &enabled) != napi_ok) {
+        return BooleanValue(env, false);
+    }
+    return BooleanValue(env, NativeAudioPlayer::Instance().SetNoiseReductionEnabled(enabled));
+}
+
+napi_value SetPureVoiceChangeEnable(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1] = { nullptr };
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    bool enabled = false;
+    if (argc != 1 || napi_get_value_bool(env, args[0], &enabled) != napi_ok) {
+        return BooleanValue(env, false);
+    }
+    return BooleanValue(env, NativeAudioPlayer::Instance().SetPureVoiceChangeEnabled(enabled));
+}
+
+napi_value SetPureVoiceChangeConfig(napi_env env, napi_callback_info info)
+{
+    size_t argc = 3;
+    napi_value args[3] = { nullptr, nullptr, nullptr };
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    int32_t gender = 0;
+    int32_t type = 0;
+    double pitch = 0;
+    if (argc != 3 || napi_get_value_int32(env, args[0], &gender) != napi_ok ||
+        napi_get_value_int32(env, args[1], &type) != napi_ok ||
+        napi_get_value_double(env, args[2], &pitch) != napi_ok) {
+        return BooleanValue(env, false);
+    }
+    return BooleanValue(env, NativeAudioPlayer::Instance().SetPureVoiceChangeConfig(
+        gender, type, static_cast<float>(pitch)));
+}
+
+napi_value SetTempoPitchEnable(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1] = { nullptr };
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    bool enabled = false;
+    if (argc != 1 || napi_get_value_bool(env, args[0], &enabled) != napi_ok) {
+        return BooleanValue(env, false);
+    }
+    return BooleanValue(env, NativeAudioPlayer::Instance().SetTempoPitchEnabled(enabled));
+}
+
+napi_value SetTempoPitchConfig(napi_env env, napi_callback_info info)
+{
+    size_t argc = 2;
+    napi_value args[2] = { nullptr, nullptr };
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    double speed = 1;
+    double pitch = 1;
+    if (argc != 2 || napi_get_value_double(env, args[0], &speed) != napi_ok ||
+        napi_get_value_double(env, args[1], &pitch) != napi_ok) {
+        return BooleanValue(env, false);
+    }
+    return BooleanValue(env, NativeAudioPlayer::Instance().SetTempoPitchConfig(
+        static_cast<float>(speed), static_cast<float>(pitch)));
+}
+
+napi_value SetSeparationEnable(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1] = { nullptr };
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    bool enabled = false;
+    if (argc != 1 || napi_get_value_bool(env, args[0], &enabled) != napi_ok) {
+        return BooleanValue(env, false);
+    }
+    return BooleanValue(env, NativeAudioPlayer::Instance().SetSeparationEnabled(enabled));
+}
+
+napi_value SetSeparationOutput(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1] = { nullptr };
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    int32_t output = 0;
+    if (argc != 1 || napi_get_value_int32(env, args[0], &output) != napi_ok) {
+        return BooleanValue(env, false);
+    }
+    return BooleanValue(env, NativeAudioPlayer::Instance().SetSeparationOutput(output));
 }
 
 napi_value IsEffectNodeSupported(napi_env env, napi_callback_info info)
@@ -4798,6 +4934,15 @@ napi_value Init(napi_env env, napi_value exports)
         { "setVoiceBeautifierType", nullptr, SetVoiceBeautifierType, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "setSpaceRenderEnable", nullptr, SetSpaceRenderEnable, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "setSpaceRenderConfig", nullptr, SetSpaceRenderConfig, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "setGeneralVoiceChangeEnable", nullptr, SetGeneralVoiceChangeEnable, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "setGeneralVoiceChangeType", nullptr, SetGeneralVoiceChangeType, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "setNoiseReductionEnable", nullptr, SetNoiseReductionEnable, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "setPureVoiceChangeEnable", nullptr, SetPureVoiceChangeEnable, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "setPureVoiceChangeConfig", nullptr, SetPureVoiceChangeConfig, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "setTempoPitchEnable", nullptr, SetTempoPitchEnable, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "setTempoPitchConfig", nullptr, SetTempoPitchConfig, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "setSeparationEnable", nullptr, SetSeparationEnable, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "setSeparationOutput", nullptr, SetSeparationOutput, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "isEffectNodeSupported", nullptr, IsEffectNodeSupported, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "setSpeed", nullptr, SetSpeed, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "setVolume", nullptr, SetVolume, nullptr, nullptr, nullptr, napi_default, nullptr },

@@ -65,6 +65,23 @@ export class AppSettingsData {
   spaceRenderEnabled: boolean = false
   spaceRenderMode: number = 0
   spaceRenderValues: number[] = [0, 0, 0]
+  // 通用变声（主链内）：类型 1-10
+  generalVoiceChangeEnabled: boolean = false
+  generalVoiceChangeType: number = 1
+  // 降噪（无参数）
+  noiseReductionEnabled: boolean = false
+  // 传统变声：性别 1=女 2=男，类型 1-7，音调 0=系统推荐 / [0.3,3.0] 自定义
+  pureVoiceChangeEnabled: boolean = false
+  pureVoiceChangeGender: number = 1
+  pureVoiceChangeType: number = 1
+  pureVoiceChangePitch: number = 0
+  // 变速变调：速度 [0.5,10.0]，音调 [0.1,5.0]
+  tempoPitchEnabled: boolean = false
+  tempoSpeed: number = 1
+  tempoPitch: number = 1
+  // 音源分离：输出 1=仅人声 2=仅伴奏 3=混合
+  separationEnabled: boolean = false
+  separationOutput: number = 1
   playSpeed: number = 1
   folderSortMode: string = 'name'
   fadeInOut: boolean = false
@@ -695,6 +712,37 @@ return result
       if (rawSpaceRenderValues !== undefined) {
         s.spaceRenderValues = rawSpaceRenderValues as number[]
       }
+      let rawGeneralVoiceChangeEnabled: Object | undefined = r['generalVoiceChangeEnabled']
+      s.generalVoiceChangeEnabled = rawGeneralVoiceChangeEnabled !== undefined ?
+        rawGeneralVoiceChangeEnabled as boolean : false
+      let rawGeneralVoiceChangeType: Object | undefined = r['generalVoiceChangeType']
+      s.generalVoiceChangeType = rawGeneralVoiceChangeType !== undefined ?
+        rawGeneralVoiceChangeType as number : 1
+      let rawNoiseReductionEnabled: Object | undefined = r['noiseReductionEnabled']
+      s.noiseReductionEnabled = rawNoiseReductionEnabled !== undefined ?
+        rawNoiseReductionEnabled as boolean : false
+      let rawPureVoiceChangeEnabled: Object | undefined = r['pureVoiceChangeEnabled']
+      s.pureVoiceChangeEnabled = rawPureVoiceChangeEnabled !== undefined ?
+        rawPureVoiceChangeEnabled as boolean : false
+      let rawPureVoiceChangeGender: Object | undefined = r['pureVoiceChangeGender']
+      s.pureVoiceChangeGender = rawPureVoiceChangeGender !== undefined ?
+        rawPureVoiceChangeGender as number : 1
+      let rawPureVoiceChangeType: Object | undefined = r['pureVoiceChangeType']
+      s.pureVoiceChangeType = rawPureVoiceChangeType !== undefined ?
+        rawPureVoiceChangeType as number : 1
+      let rawPureVoiceChangePitch: Object | undefined = r['pureVoiceChangePitch']
+      s.pureVoiceChangePitch = rawPureVoiceChangePitch !== undefined ?
+        rawPureVoiceChangePitch as number : 0
+      let rawTempoPitchEnabled: Object | undefined = r['tempoPitchEnabled']
+      s.tempoPitchEnabled = rawTempoPitchEnabled !== undefined ? rawTempoPitchEnabled as boolean : false
+      let rawTempoSpeed: Object | undefined = r['tempoSpeed']
+      s.tempoSpeed = rawTempoSpeed !== undefined ? rawTempoSpeed as number : 1
+      let rawTempoPitch: Object | undefined = r['tempoPitch']
+      s.tempoPitch = rawTempoPitch !== undefined ? rawTempoPitch as number : 1
+      let rawSeparationEnabled: Object | undefined = r['separationEnabled']
+      s.separationEnabled = rawSeparationEnabled !== undefined ? rawSeparationEnabled as boolean : false
+      let rawSeparationOutput: Object | undefined = r['separationOutput']
+      s.separationOutput = rawSeparationOutput !== undefined ? rawSeparationOutput as number : 1
       let rawFolderSort: Object | undefined = r['folderSortMode']
       s.folderSortMode = rawFolderSort !== undefined ? rawFolderSort as string : 'name'
       let rawFadeInOut: Object | undefined = r['fadeInOut']
@@ -755,6 +803,18 @@ return result
     r['spaceRenderEnabled'] = settings.spaceRenderEnabled
     r['spaceRenderMode'] = settings.spaceRenderMode
     r['spaceRenderValues'] = settings.spaceRenderValues
+    r['generalVoiceChangeEnabled'] = settings.generalVoiceChangeEnabled
+    r['generalVoiceChangeType'] = settings.generalVoiceChangeType
+    r['noiseReductionEnabled'] = settings.noiseReductionEnabled
+    r['pureVoiceChangeEnabled'] = settings.pureVoiceChangeEnabled
+    r['pureVoiceChangeGender'] = settings.pureVoiceChangeGender
+    r['pureVoiceChangeType'] = settings.pureVoiceChangeType
+    r['pureVoiceChangePitch'] = settings.pureVoiceChangePitch
+    r['tempoPitchEnabled'] = settings.tempoPitchEnabled
+    r['tempoSpeed'] = settings.tempoSpeed
+    r['tempoPitch'] = settings.tempoPitch
+    r['separationEnabled'] = settings.separationEnabled
+    r['separationOutput'] = settings.separationOutput
     r['playSpeed'] = settings.playSpeed
     r['folderSortMode'] = settings.folderSortMode
     r['fadeInOut'] = settings.fadeInOut

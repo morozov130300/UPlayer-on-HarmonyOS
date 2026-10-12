@@ -66,6 +66,18 @@ export class AVPlayerService {
   private spaceRenderEnabled: boolean = false
   private spaceRenderMode: number = 0
   private spaceRenderValues: number[] = [0, 0, 0]
+  private generalVoiceChangeEnabled: boolean = false
+  private generalVoiceChangeType: number = 1
+  private noiseReductionEnabled: boolean = false
+  private pureVoiceChangeEnabled: boolean = false
+  private pureVoiceChangeGender: number = 1
+  private pureVoiceChangeType: number = 1
+  private pureVoiceChangePitch: number = 0
+  private tempoPitchEnabled: boolean = false
+  private tempoSpeed: number = 1
+  private tempoPitch: number = 1
+  private separationEnabled: boolean = false
+  private separationOutput: number = 1
   private nativeProgressTimer: number = -1
   private nativeStartupTimer: number = -1
   private playRequestId: number = 0
@@ -1042,10 +1054,12 @@ export class AVPlayerService {
     await this.reloadForNativeEffects()
   }
 
-  // 任一音效启用即需要走原生链路（管线 Bypass 切换即时生效）
+  // 任一音效启用即需要走原生链路（管线 Bypass/管线切换即时生效）
   anyEffectEnabled(): boolean {
     return this.equalizerEnabled || this.soundFieldEnabled || this.environmentEnabled ||
-      this.beautifierEnabled || this.spaceRenderEnabled
+      this.beautifierEnabled || this.spaceRenderEnabled || this.generalVoiceChangeEnabled ||
+      this.noiseReductionEnabled || this.pureVoiceChangeEnabled || this.tempoPitchEnabled ||
+      this.separationEnabled
   }
 
   // 启动时把持久化设置同步进原生引擎与运行态（EntryAbility 调用）
@@ -1062,6 +1076,18 @@ export class AVPlayerService {
     this.spaceRenderEnabled = settings.spaceRenderEnabled
     this.spaceRenderMode = settings.spaceRenderMode
     this.spaceRenderValues = settings.spaceRenderValues
+    this.generalVoiceChangeEnabled = settings.generalVoiceChangeEnabled
+    this.generalVoiceChangeType = settings.generalVoiceChangeType
+    this.noiseReductionEnabled = settings.noiseReductionEnabled
+    this.pureVoiceChangeEnabled = settings.pureVoiceChangeEnabled
+    this.pureVoiceChangeGender = settings.pureVoiceChangeGender
+    this.pureVoiceChangeType = settings.pureVoiceChangeType
+    this.pureVoiceChangePitch = settings.pureVoiceChangePitch
+    this.tempoPitchEnabled = settings.tempoPitchEnabled
+    this.tempoSpeed = settings.tempoSpeed
+    this.tempoPitch = settings.tempoPitch
+    this.separationEnabled = settings.separationEnabled
+    this.separationOutput = settings.separationOutput
     this.applyAllEffectsToNative()
   }
 
@@ -1079,6 +1105,97 @@ export class AVPlayerService {
 
   isSpaceRenderSupported(): boolean {
     return nativeAudio.isEffectNodeSupported(208)
+  }
+
+  isGeneralVoiceChangeSupported(): boolean {
+    return nativeAudio.isEffectNodeSupported(210)
+  }
+
+  isNoiseReductionSupported(): boolean {
+    return nativeAudio.isEffectNodeSupported(202)
+  }
+
+  isPureVoiceChangeSupported(): boolean {
+    return nativeAudio.isEffectNodeSupported(209)
+  }
+
+  isTempoPitchSupported(): boolean {
+    return nativeAudio.isEffectNodeSupported(211)
+  }
+
+  isSeparationSupported(): boolean {
+    return nativeAudio.isEffectNodeSupported(204)
+  }
+
+  async applyGeneralVoiceChange(enabled: boolean, type: number = 1): Promise<void> {
+    const previousEnabled: boolean = this.generalVoiceChangeEnabled
+    this.generalVoiceChangeEnabled = enabled
+    this.generalVoiceChangeType = type
+    nativeAudio.setGeneralVoiceChangeEnable(enabled)
+    if (enabled) {
+      nativeAudio.setGeneralVoiceChangeType(this.generalVoiceChangeType)
+    }
+    if (previousEnabled === enabled || this.nativeMode || !enabled) {
+      return
+    }
+    await this.reloadForNativeEffects()
+  }
+
+  async applyNoiseReduction(enabled: boolean): Promise<void> {
+    const previousEnabled: boolean = this.noiseReductionEnabled
+    this.noiseReductionEnabled = enabled
+    nativeAudio.setNoiseReductionEnable(enabled)
+    if (previousEnabled === enabled || this.nativeMode || !enabled) {
+      return
+    }
+    await this.reloadForNativeEffects()
+  }
+
+  async applyPureVoiceChange(enabled: boolean, gender: number = 1, type: number = 1,
+    pitch: number = 0): Promise<void> {
+    const previousEnabled: boolean = this.pureVoiceChangeEnabled
+    this.pureVoiceChangeEnabled = enabled
+    this.pureVoiceChangeGender = gender
+    this.pureVoiceChangeType = type
+    this.pureVoiceChangePitch = pitch
+    nativeAudio.setPureVoiceChangeEnable(enabled)
+    if (enabled) {
+      nativeAudio.setPureVoiceChangeConfig(this.pureVoiceChangeGender, this.pureVoiceChangeType,
+        this.pureVoiceChangePitch)
+    }
+    if (previousEnabled === enabled || this.nativeMode || !enabled) {
+      return
+    }
+    await this.reloadForNativeEffects()
+  }
+
+  async applyTempoPitch(enabled: boolean, speed: number = 1, pitch: number = 1): Promise<void> {
+    const previousEnabled: boolean = this.tempoPitchEnabled
+    this.tempoPitchEnabled = enabled
+    this.tempoSpeed = speed
+    this.tempoPitch = pitch
+    nativeAudio.setTempoPitchEnable(enabled)
+    if (enabled) {
+      nativeAudio.setTempoPitchConfig(this.tempoSpeed, this.tempoPitch)
+    }
+    if (previousEnabled === enabled || this.nativeMode || !enabled) {
+      return
+    }
+    await this.reloadForNativeEffects()
+  }
+
+  async applySeparation(enabled: boolean, output: number = 1): Promise<void> {
+    const previousEnabled: boolean = this.separationEnabled
+    this.separationEnabled = enabled
+    this.separationOutput = output
+    nativeAudio.setSeparationEnable(enabled)
+    if (enabled) {
+      nativeAudio.setSeparationOutput(this.separationOutput)
+    }
+    if (previousEnabled === enabled || this.nativeMode || !enabled) {
+      return
+    }
+    await this.reloadForNativeEffects()
   }
 
   async applySoundField(enabled: boolean, type: number = 1): Promise<void> {
@@ -1166,6 +1283,24 @@ export class AVPlayerService {
     Logger.info(TAG, 'native spaceRender done')
     if (this.spaceRenderEnabled) {
       nativeAudio.setSpaceRenderConfig(this.spaceRenderMode, this.spaceRenderValues)
+    }
+    nativeAudio.setGeneralVoiceChangeEnable(this.generalVoiceChangeEnabled)
+    if (this.generalVoiceChangeEnabled) {
+      nativeAudio.setGeneralVoiceChangeType(this.generalVoiceChangeType)
+    }
+    nativeAudio.setNoiseReductionEnable(this.noiseReductionEnabled)
+    nativeAudio.setPureVoiceChangeEnable(this.pureVoiceChangeEnabled)
+    if (this.pureVoiceChangeEnabled) {
+      nativeAudio.setPureVoiceChangeConfig(this.pureVoiceChangeGender, this.pureVoiceChangeType,
+        this.pureVoiceChangePitch)
+    }
+    nativeAudio.setTempoPitchEnable(this.tempoPitchEnabled)
+    if (this.tempoPitchEnabled) {
+      nativeAudio.setTempoPitchConfig(this.tempoSpeed, this.tempoPitch)
+    }
+    nativeAudio.setSeparationEnable(this.separationEnabled)
+    if (this.separationEnabled) {
+      nativeAudio.setSeparationOutput(this.separationOutput)
     }
     Logger.info(TAG, 'native apply end')
   }
