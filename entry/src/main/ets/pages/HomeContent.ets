@@ -35,7 +35,9 @@ class DisplayItem {
 @Component
 export struct HomeContent {
   topContentPadding: number = 0
-  bottomContentPadding: number = 0
+  // 底部让位原始输入（Index 传入），页内自算 bottomOverlayInset() 以实时跟随显示大小
+  bottomSafeHeight: number = 0
+  smallBreakpoint: boolean = false
   // 问候语内容带（由 Index 传入）：多选菜单栏进入多选时落在该带内，替换问候语的位置
   greetingBandTop: number = 0
   greetingBandHeight: number = 0
@@ -91,6 +93,12 @@ export struct HomeContent {
 
   private scaledSize(size: number): number {
     return Math.round(size * this.displaySizeScale)
+  }
+
+  // 底部让位（原由 Index 算好传入，改为页内自算跟随显示大小）：
+  // 小屏 128≈56(tab)+28(margin)+40(播控)+4；大屏 88≈28+56+4
+  private bottomOverlayInset(): number {
+    return this.scaledSize(this.smallBreakpoint ? 128 : 88) + this.bottomSafeHeight
   }
 
   // 首页上端模糊半径：统一走 GlassUtil 的分段函数（先正比例、到 60 后恒定，临界处无缝相接）。
@@ -733,7 +741,7 @@ export struct HomeContent {
             ListItem() {
               Row()
                 .width('100%')
-                .height(this.bottomContentPadding)
+                .height(this.bottomOverlayInset())
             }
           }
           .width('100%')

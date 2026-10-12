@@ -800,7 +800,8 @@ struct MainPage {
           Stack({ alignContent: Alignment.Top }) {
             HomeContent({
               topContentPadding: this.homeHeaderHeight(),
-              bottomContentPadding: this.bottomOverlayInset(),
+              bottomSafeHeight: this.bottomSafeHeight,
+              smallBreakpoint: this.breakpoint === 'sm' || this.breakpoint === 'md',
               greetingBandTop: this.topContentInset(),
               greetingBandHeight: this.homeHeaderHeight() - this.topContentInset()
             }).width('100%').height('100%')
@@ -848,7 +849,8 @@ struct MainPage {
           PlaylistContent({
             topContentPadding: this.topContentInset(),
             topBandHeight: this.homeHeaderHeight() - this.topContentInset(),
-            bottomContentPadding: this.bottomOverlayInset(),
+            bottomSafeHeight: this.bottomSafeHeight,
+            smallBreakpoint: this.breakpoint === 'sm' || this.breakpoint === 'md',
             onNavigateToHome: (): void => {
               this.onFolderClick()
             }
@@ -860,7 +862,8 @@ struct MainPage {
           SettingsContent({
             topContentPadding: this.topContentInset(),
             topBandHeight: this.homeHeaderHeight() - this.topContentInset(),
-            bottomContentPadding: this.bottomOverlayInset()
+            bottomSafeHeight: this.bottomSafeHeight,
+            smallBreakpoint: this.breakpoint === 'sm' || this.breakpoint === 'md'
           }).width('100%').height('100%')
         }
         .tabBar(this.tabLabelBuilder(2, '设置', $r('app.media.ic_public_settings')))
@@ -987,16 +990,6 @@ struct MainPage {
 
   private scaledSize(size: number): number {
     return Math.round(size * this.displaySizeScale)
-  }
-
-  private bottomOverlayInset(): number {
-    // sm/md：playerControl 高于 TabBar 顶部（TabBar 默认 barBottomMargin=28vp，高度=56vp）
-    // 128vp ≈ 56(vp tab bar) + 28(vp barBottomMargin) + 40(vp playerControl) + 4(vp 间距)
-    if (this.breakpoint === 'sm' || this.breakpoint === 'md') {
-      return this.scaledSize(128) + this.bottomSafeHeight
-    }
-    // lg/xl：playerControl 与 TabBar 大致同高，88vp ≈ 28(barBottomMargin) + 56(bar height) + 4(间距)
-    return this.scaledSize(88) + this.bottomSafeHeight
   }
 
   // 小屏态自建播控条的底部偏移：压在 TabBar 顶部正上方。

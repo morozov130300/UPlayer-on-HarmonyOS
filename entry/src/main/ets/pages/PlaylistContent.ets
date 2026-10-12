@@ -22,7 +22,9 @@ export struct PlaylistContent {
   topContentPadding: number = 0
   // 顶部标题带高度（Index 传入，与主页问候语带同源）：标题在带内垂直居中，几何与主页一致
   topBandHeight: number = 72
-  bottomContentPadding: number = 0
+  // 底部让位原始输入（Index 传入），页内自算 bottomOverlayInset() 以实时跟随显示大小
+  bottomSafeHeight: number = 0
+  smallBreakpoint: boolean = false
   onNavigateToHome: () => void = (): void => {}
   private context: common.UIAbilityContext | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
   @State folders: FolderInfo[] = []
@@ -60,6 +62,12 @@ export struct PlaylistContent {
 
   private scaledSize(size: number): number {
     return Math.round(size * this.displaySizeScale)
+  }
+
+  // 底部让位（原由 Index 算好传入，改为页内自算跟随显示大小）：
+  // 小屏 128≈56(tab)+28(margin)+40(播控)+4；大屏 88≈28+56+4
+  private bottomOverlayInset(): number {
+    return this.scaledSize(this.smallBreakpoint ? 128 : 88) + this.bottomSafeHeight
   }
 
   onLibraryChange(): void {
@@ -384,7 +392,7 @@ export struct PlaylistContent {
             }
             Blank()
               .width('100%')
-              .height(this.bottomContentPadding)
+              .height(this.bottomOverlayInset())
           }
           .width('100%')
         }
@@ -432,7 +440,7 @@ export struct PlaylistContent {
           .padding({ left: 16, right: 16 })
           .backgroundColor($r('app.color.page_background_sm'))
           .border({ width: 1, color: $r('app.color.list_divider') })
-          .margin({ bottom: this.bottomContentPadding })
+          .margin({ bottom: this.bottomOverlayInset() })
         }
       }
       .width('100%')
