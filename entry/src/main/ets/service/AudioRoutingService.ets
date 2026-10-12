@@ -95,8 +95,7 @@ export class AudioRoutingService {
   }
 
   private availableDeviceChangeCallback = (action: audio.DeviceChangeAction): void => {
-    const revision: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_OUTPUT_DEVICE_REVISION) ?? 0
-    AppStorage.setOrCreate<number>(AppStorageKeyConstants.KEY_OUTPUT_DEVICE_REVISION, revision + 1)
+    this.bumpRevision()
   }
 
   private preferOutputDeviceChangeCallback = (desc: audio.AudioDeviceDescriptors): void => {

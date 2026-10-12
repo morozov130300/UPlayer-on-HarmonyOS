@@ -37,15 +37,7 @@ export struct LyricsComponent {
   }
 
   private currentSong(): SongInfo {
-    if (this.songList !== undefined) {
-      for (let i = 0; i < this.songList.length; i++) {
-        if (this.songList[i].id === this.currentSongId) {
-          return this.songList[i]
-        }
-      }
-    }
-    const song: SongInfo | undefined = DataService.getInstance().getSongById(this.currentSongId)
-    return song !== undefined ? song : new SongInfo()
+    return DataService.currentSongFromList(this.songList, this.currentSongId)
   }
 
   async getLrcEntryList(): Promise<void> {
@@ -106,7 +98,7 @@ export struct LyricsComponent {
         .layoutWeight(1)
 
       if (this.mainWindowInfo.widthBp === WidthBreakpoint.WIDTH_SM && this.isShowControl) {
-        ControlAreaComponent({ mainWindowInfo: this.mainWindowInfo })
+        ControlAreaComponent()
           .margin({ top: $r('app.float.control_lyric_margin') })
           .transition({ type: TransitionType.Insert, translate: { x: 0, y: 40 }, opacity: 0 })
           .transition({ type: TransitionType.Delete, translate: { x: 0, y: 40 }, opacity: 0 })

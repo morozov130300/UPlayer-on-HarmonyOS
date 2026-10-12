@@ -8,19 +8,18 @@ export default class InsightIntentExecutorImpl extends InsightIntentExecutor {
   async onExecuteInUIAbilityBackgroundMode(intentName: string, intentParam: Record<string, Object>):
     Promise<insightIntent.ExecuteResult> {
     Logger.info(TAG, `onExecuteInUIAbilityBackgroundMode intentName=${intentName}`);
-    return this.dispatchPlayIntent(intentName, intentParam);
+    return this.dispatchPlayIntent(intentName);
   }
 
   async onExecuteInUIAbilityForegroundMode(intentName: string, intentParam: Record<string, Object>):
     Promise<insightIntent.ExecuteResult> {
     Logger.info(TAG, `onExecuteInUIAbilityForegroundMode intentName=${intentName}`);
-    return this.dispatchPlayIntent(intentName, intentParam);
+    return this.dispatchPlayIntent(intentName);
   }
 
-  private dispatchPlayIntent(intentName: string, intentParam: Record<string, Object>): Promise<insightIntent.ExecuteResult> {
+  private dispatchPlayIntent(intentName: string): Promise<insightIntent.ExecuteResult> {
     if (intentName === 'PlayMusicList') {
-      const entityId: string = (typeof intentParam.entityId === 'string') ? intentParam.entityId : '';
-      return this.handlePlay(entityId);
+      return this.handlePlay();
     }
     return Promise.resolve({
       code: -1,
@@ -28,7 +27,7 @@ export default class InsightIntentExecutorImpl extends InsightIntentExecutor {
     } as insightIntent.ExecuteResult);
   }
 
-  private handlePlay(entityId: string): Promise<insightIntent.ExecuteResult> {
+  private handlePlay(): Promise<insightIntent.ExecuteResult> {
     try {
       const avPlayerService: AVPlayerService = AVPlayerService.getInstance();
       avPlayerService.resume();

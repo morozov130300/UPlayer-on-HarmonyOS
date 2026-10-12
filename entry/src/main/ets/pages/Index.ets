@@ -2,7 +2,7 @@ import { curves, uiMaterial } from '@kit.ArkUI'
 import {
   HdsTabs, HdsTabsController, HdsTabsFloatingStyle, HdsTabsMiniBar, hdsMaterial
 } from '@kit.UIDesignKit'
-import { common, ConfigurationConstant } from '@kit.AbilityKit'
+import { common } from '@kit.AbilityKit'
 import { deviceInfo } from '@kit.BasicServicesKit'
 import { KeyCode } from '@kit.InputKit'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
@@ -11,30 +11,25 @@ import { AVPlayerService } from '../service/AVPlayerService'
 import { HomeContent } from './HomeContent'
 import { PlaylistContent } from './PlaylistContent'
 import { SettingsContent } from './SettingsContent'
-import { DataService, ImportResult } from '../service/DataService'
-import { SongScanner } from '../service/SongScanner'
+import { DataService } from '../service/DataService'
+import { importSongsWithToast } from '../service/SongScanner'
 import { PoetryService } from '../service/PoetryService'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import {
   createBarGlassMaterial,
   DEFAULT_GLASS_STYLE,
   getDeviceMaterialLevel,
-  isLiquidGlassAvailable,
-  showToastGlassMaterial
+  isLiquidGlassAvailable
 } from '../common/utils/GlassUtil'
 import Logger from '../common/utils/Logger'
 import { LrcEntry } from '../viewmodel/LrcEntry'
 import { loadLyricEntries } from '../service/LyricLoader'
 import { AlbumCover } from '../component/AlbumCover'
 import { ColorConversion } from '../common/utils/ColorConversion'
+import { isDarkThemeEffective } from '../common/utils/ThemeUtil'
 import { StyleConstants } from '../common/constants/StyleConstants'
 import { ImportProgressOverlay } from '../view/ImportProgressOverlay'
 import { GlassPlusButton } from '../view/GlassPlusButton'
-import {
-  KEY_HAS_POINTER_DEVICE,
-  refreshPointerDeviceState,
-  startPointerDeviceListener
-} from '../common/utils/InputDeviceUtil'
 
 const TAG = 'Index'
 
@@ -76,27 +71,24 @@ struct MainPage {
   @StorageLink(AppStorageKeyConstants.KEY_TITLE_BUTTON_HEIGHT) titleButtonHeight: number = 0
   @StorageLink('uplayer_current_title') currentSongTitle: string = ''
   @StorageLink('uplayer_current_artist') currentSongArtist: string = ''
-  @StorageLink('uplayer_current_album_art') @Watch('onAlbumArtChange') currentSongAlbumArt: string = ''
   // 播控条封面/迷你歌词按 id 解析当前歌曲，避免队列下标失配
   @StorageLink('uplayer_current_song_id') @Watch('onCurrentSongChange') currentSongId: string = ''
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
   @StorageLink('uplayer_theme_mode') themeMode: string = 'system'
-  @StorageLink('uplayer_display_size_scale') @Watch('onDisplaySizeChange') displaySizeScale: number = 1.0
+  @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
   @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
   @StorageLink('uplayer_glass_blur_strength') glassBlurStrength: number = 25
   @StorageLink('uplayer_tab_touch_indicator') tabTouchIndicator: string = 'light'
   @StorageLink('uplayer_tab_light_color') tabLightColor: string = 'theme'
   @StorageLink('uplayer_tab_indicator_opacity') tabIndicatorOpacity: number = 50
-  // 是否存在鼠标/触控板设备（决定「白色蒙版」功能是否存在：无鼠标时 mask 降级为 off）
-  @StorageLink(KEY_HAS_POINTER_DEVICE) hasPointerDevice: boolean = false
   @State isTitleMarqueeRunning: boolean = true
   @State isArtistMarqueeRunning: boolean = true
   @State currentLyricLine: string = ''
   @State nextLyricLine: string = ''
   @State lyricEntries: LrcEntry[] = []
   @StorageLink(AppStorageKeyConstants.KEY_PROGRESS) @Watch('onProgressChange') playProgress: number = 0
-  @StorageLink(AppStorageKeyConstants.KEY_SELECT_INDEX) @Watch('onCurrentSongChange') selectedSongIndex: number = 0
+  @StorageProp(AppStorageKeyConstants.KEY_SELECT_INDEX) @Watch('onCurrentSongChange') selectedSongIndex: number = 0
   // 曲库歌词引用发生集合级变化（自愈回填 / 重新导入）时重新加载迷你歌词
   @StorageProp(AppStorageKeyConstants.KEY_LYRIC_REVISION) @Watch('loadCurrentLyrics') lyricRevision: number = 0
   // 主窗口可见性（EntryAbility 前后台写入）：窗口隐藏时停掉封面旋转定时器，避免持续请求 vsync
@@ -106,24 +98,17 @@ struct MainPage {
   private indicatorInset: number = 4
   private rotationTimer: number = -1
   private dataService: DataService = DataService.getInstance()
-  private songScanner: SongScanner = SongScanner.getInstance()
   private poetryService: PoetryService = PoetryService.getInstance()
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
   private isPC: boolean = deviceInfo.deviceType === '2in1'
   private lyricLoadRequestId: number = 0
-
-  onDisplaySizeChange(): void {
-    // 官方 Tabs 指示器由系统管理，无需手动更新 offset
-  }
 
   aboutToAppear(): void { // AppStorage 已由 EntryAbility 在 loadContent 之前完成初始化（initToAppStorage 幂等）， // 此处不再重复调用，避免重复执行可访问性检查与授权激活竞态
     ColorConversion.setSysBarLightBackground(this.isDarkTheme())
     this.updateGreeting()
     this.loadPoetryLine()
     this.logGlassGate() // 玻璃能力诊断（一次性）
-    this.loadCurrentLyrics() // 白色蒙版开关按鼠标/触控板检测结果显隐：刷新状态并监听热插拔
-    refreshPointerDeviceState()
-    startPointerDeviceListener()
+    this.loadCurrentLyrics()
     this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_GREETING_DURATION, curve: Curve.EaseOut },
       () => {
         this.greetingOpacity = 1
@@ -134,10 +119,6 @@ struct MainPage {
   // 手机/平板的返回键与侧滑返回：仅 @Entry 组件可监听
   onBackPress(): boolean {
     return this.tryExitMultiSelect()
-  }
-
-  onFolderClick(): void {
-    this.tabsController.changeIndex(0)
   }
 
   // 让位给随后切换到该位置的 HomeContent 多选菜单栏
@@ -238,14 +219,22 @@ struct MainPage {
         `tabStyle=${this.tabStyle} glassTh=${DEFAULT_GLASS_STYLE}`)
   }
 
+  // 悬浮样式缓存：build() 每次重绘都会调用 barFloatingStyle()，键不变时复用同一对象，
+  // 避免每帧新建样式对象触发 HdsTabs 样式重应用
+  private hdsBarStyleCache: HdsTabsFloatingStyle | undefined = undefined
+  private hdsBarStyleCacheKey: string = ''
+
   private getHdsBarFloatingStyle(): HdsTabsFloatingStyle | undefined {
+    // 缓存键覆盖全部输入（tabStyle/断点/主容器宽/跟手光效开关/光效配色/主题色），键不变即样式不变
+    const cacheKey: string = `${this.tabStyle}|${this.breakpoint}|${this.mainWidthVp}|` +
+      `${this.tabTouchIndicator}|${this.tabLightColor}|${this.primaryColor}`
+    if (this.hdsBarStyleCache !== undefined && this.hdsBarStyleCacheKey === cacheKey) {
+      return this.hdsBarStyleCache
+    }
     // 经典样式与玻璃样式：除了底色（磨砂 vs 液态玻璃）外，整体布局（悬浮 TabBar + 并排 miniBar + barWidth + barBottomMargin）必须完全一致
     // 因此本方法在两种样式下都返回有效 barFloatingStyle，仅 systemMaterialEffect 在经典下不设置
-    if (!isLiquidGlassAvailable()) {
-      // 设备不支持液态玻璃：仍可走悬浮布局（只是没有玻璃材质），布局不降级
-    }
-    const level: hdsMaterial.MaterialLevel = hdsMaterial.MaterialLevel.ADAPTIVE
-    // 关跟手光效时传全透明色显式关闭（lightColor 默认值是深浅色固定光效色，传 undefined 会回落默认光效而非关闭）
+    // 设备不支持液态玻璃时仍可走悬浮布局（只是没有玻璃材质），布局不降级
+    const level: hdsMaterial.MaterialLevel = hdsMaterial.MaterialLevel.ADAPTIVE    // 关跟手光效时传全透明色显式关闭（lightColor 默认值是深浅色固定光效色，传 undefined 会回落默认光效而非关闭）
     const lightColor: ResourceColor = this.tabTouchIndicator === 'light' ? this.followLightColor() : Color.Transparent
     const smallScreen: boolean = this.breakpoint === 'sm' || this.breakpoint === 'md'
     const barWidthVp: number = Math.round(this.mainWidthVp * 0.4)
@@ -273,33 +262,38 @@ struct MainPage {
           { smallWidth: miniBarWidthVp, mediumWidth: miniBarWidthVp, largeWidth: miniBarWidthVp } : undefined,
       }
     }
+    let style: HdsTabsFloatingStyle
     // 仅沉浸式样式下发液态玻璃材质；经典样式 systemMaterialEffect 保持 undefined（不挂玻璃），
     // 由 barBackgroundBlurStyle 走磨砂兜底。这样两种样式的布局与组件完全一致，只差底色。
     if (this.tabStyle === 'immersive' && isLiquidGlassAvailable()) {
-      return {
+      style = {
         adaptToHandedness: true,
         gradientMask: { maskColor: 'rgba(0,0,0,0)', maskHeight: 0 },
         systemMaterialEffect: {
           materialType: hdsMaterial.MaterialType.IMMERSIVE,
           materialLevel: level,
         },
-        barBottomMargin: this.bottomSafeHeight > 0 ? 28 : 28,
+        barBottomMargin: 28,
+        lightColor: lightColor,
+        barWidth: (smallScreen || !hasBarWidth) ? undefined :
+          { smallWidth: barWidthVp, mediumWidth: barWidthVp, largeWidth: barWidthVp },
+        miniBar: miniBar,
+      } as HdsTabsFloatingStyle
+    } else {
+      // 经典样式（或设备无液态玻璃）：同布局结构，仅不挂玻璃材质，底色由 barBackgroundBlurStyle 磨砂兜底
+      style = {
+        adaptToHandedness: true,
+        gradientMask: { maskColor: 'rgba(0,0,0,0)', maskHeight: 0 },
+        barBottomMargin: 28,
         lightColor: lightColor,
         barWidth: (smallScreen || !hasBarWidth) ? undefined :
           { smallWidth: barWidthVp, mediumWidth: barWidthVp, largeWidth: barWidthVp },
         miniBar: miniBar,
       } as HdsTabsFloatingStyle
     }
-    // 经典样式（或设备无液态玻璃）：同布局结构，仅不挂玻璃材质，底色由 barBackgroundBlurStyle 磨砂兜底
-    return {
-      adaptToHandedness: true,
-      gradientMask: { maskColor: 'rgba(0,0,0,0)', maskHeight: 0 },
-      barBottomMargin: this.bottomSafeHeight > 0 ? 28 : 28,
-      lightColor: lightColor,
-      barWidth: (smallScreen || !hasBarWidth) ? undefined :
-        { smallWidth: barWidthVp, mediumWidth: barWidthVp, largeWidth: barWidthVp },
-      miniBar: miniBar,
-    } as HdsTabsFloatingStyle
+    this.hdsBarStyleCacheKey = cacheKey
+    this.hdsBarStyleCache = style
+    return style
   }
 
   // 经典样式或 API 26 不可用时的 TabBar 毛玻璃：映射 glassBlurStrength → BlurStyle
@@ -650,15 +644,6 @@ struct MainPage {
 
   // 仅当「玻璃样式 + 设备系统达到 API 26」时启用真·液态玻璃（厚度档位设置已删除，默认开启）；
 
-  onAlbumArtChange(): void {
-    // uplayer_current_album_art 变化无 UI 直接消费点（封面走 AudioMetadataService 缓存），保留空回调
-  }
-
-  // 磨砂层挂载条件（经典 Tab 栏 / 玻璃 Tab 栏 / 播控条三处统一）：
-  // - 模糊强度为 0：从不挂载；明暗模式均挂载（原暗黑关断已删除）
-  // - 无液态玻璃能力的老设备（设置页中开关已隐藏）：保留兜底磨砂层，由模糊强度控制
-  // - 新设备：磨砂层与玻璃厚度/材质状态完全解耦，唯一判据是「磨砂层叠加」开关——
-
   onCurrentSongChange(): void {
     this.loadCurrentLyrics()
   }
@@ -850,10 +835,7 @@ struct MainPage {
             topContentPadding: this.topContentInset(),
             topBandHeight: this.homeHeaderHeight() - this.topContentInset(),
             bottomSafeHeight: this.bottomSafeHeight,
-            smallBreakpoint: this.breakpoint === 'sm' || this.breakpoint === 'md',
-            onNavigateToHome: (): void => {
-              this.onFolderClick()
-            }
+            smallBreakpoint: this.breakpoint === 'sm' || this.breakpoint === 'md'
           }).width('100%').height('100%')
         }
         .tabBar(this.tabLabelBuilder(1, '歌单', $r('app.media.ic_public_view_list')))
@@ -949,15 +931,7 @@ struct MainPage {
   }
 
   private isDarkTheme(): boolean {
-    if (this.themeMode === 'dark') {
-      return true
-    }
-    if (this.themeMode === 'system') {
-      const context: common.UIAbilityContext | undefined =
-        AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
-      return context?.config.colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK
-    }
-    return false
+    return isDarkThemeEffective(this.themeMode)
   }
 
   private indicatorAlpha(base: number): number {
@@ -1040,15 +1014,7 @@ struct MainPage {
     if (context === undefined) {
       return
     }
-    const result: ImportResult = await this.songScanner.importSongs(context, this.dataService)
-    if (result.newCount + result.dupCount > 0) {
-      try {
-        showToastGlassMaterial(this.getUIContext()?.getPromptAction(),
-          `新增 ${result.newCount} 首` + (result.dupCount > 0 ? `，${result.dupCount} 首已存在` : ''))
-      } catch (e) {
-        Logger.error(TAG, 'toast failed')
-      }
-    }
+    await importSongsWithToast(context, this.getUIContext()?.getPromptAction())
   }
 
   // 否则传 undefined 让 lightEffect 完全关闭，便于外层使用系统自带的按压白色蒙版。

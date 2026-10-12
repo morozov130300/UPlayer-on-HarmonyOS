@@ -1,6 +1,6 @@
 import { SongInfo } from '../model/SongInfo'
 
-class DisplayItem {
+export class DisplayItem {
   isHeader: boolean = false
   headerText: string = ''
   song: SongInfo = new SongInfo()

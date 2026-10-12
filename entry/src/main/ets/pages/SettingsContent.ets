@@ -1,7 +1,7 @@
-import { uiAppearance } from '@kit.ArkUI'
 import { deviceInfo } from '@kit.BasicServicesKit'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { ColorHelper } from '../common/utils/ColorHelper'
+import { isDarkThemeEffective } from '../common/utils/ThemeUtil'
 
 const KEY_PRIMARY_COLOR = 'uplayer_primary_color'
 
@@ -43,17 +43,7 @@ export struct SettingsContent {
   }
 
   private isDark(): boolean {
-    if (this.themeMode === 'dark') {
-      return true
-    }
-    if (this.themeMode === 'system') {
-      try {
-        return uiAppearance.getDarkMode() === uiAppearance.DarkMode.ALWAYS_DARK
-      } catch (e) {
-        return false
-      }
-    }
-    return false
+    return isDarkThemeEffective(this.themeMode)
   }
 
   private settingTextColor(): ResourceColor {

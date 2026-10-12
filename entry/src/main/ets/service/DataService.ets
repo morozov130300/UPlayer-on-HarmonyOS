@@ -374,6 +374,20 @@ export class DataService {
     return undefined
   }
 
+  // 统一的「按 id 解析当前播放歌曲」：先在调用方持有的列表（通常是 KEY_SONG_LIST 渲染队列，
+  // 保持对其的渲染依赖，曲库整体刷新时同步重渲染）中查找，被过滤掉时回退全量曲库，最终回退空对象。
+  static currentSongFromList(songList: SongInfo[], songId: string): SongInfo {
+    if (songList !== undefined) {
+      for (let i = 0; i < songList.length; i++) {
+        if (songList[i].id === songId) {
+          return songList[i]
+        }
+      }
+    }
+    const song: SongInfo | undefined = DataService.getInstance().getSongById(songId)
+    return song !== undefined ? song : new SongInfo()
+  }
+
   saveSongs(songs: SongInfo[]): void {
     this.scheduleSaveSongs(songs)
   }
@@ -439,10 +453,6 @@ const result: ImportResult = new ImportResult()
       this.bumpLyricRevision()
     }
 return result
-  }
-
-  removeSong(songId: string): void {
-    this.removeSongsByIds([songId])
   }
 
   // 统一的歌曲删除入口：与 removeSongsByFolders 相同的全链路清理
@@ -984,55 +994,11 @@ return result
     return id
   }
 
-  // ═══════════ Accessibility Check ═══════════
-
-  checkSongsAccessibility(): void {
-    const songs: SongInfo[] = this.getSongs()
-    let changed: boolean = false
-    for (let i: number = 0; i < songs.length; i++) {
-      const prevAvailable: boolean = songs[i].isAvailable
-      const accessPath: string = songs[i].uri.length > 0 ? songs[i].uri : songs[i].filePath
-      // 与封面提取相同的打开校验：外置盘缺失时 accessSync 可能误判存在，openSync 才可靠抛 13900002
-      try {
-        const file: fs.File = fs.openSync(accessPath, fs.OpenMode.READ_ONLY)
-        fs.closeSync(file)
-        songs[i].isAvailable = true
-      } catch (e) {
-        songs[i].isAvailable = false
-      }
-      // ⚠️ 这里绝不能清空 lyricPath / lyricUri。
-      // 这是本 bug 的根因：本函数在 initToAppStorage 中被同步调用，那时持久化授权
-      // （activatePersistedUris）尚未激活，picker docs URI 的 openSync 必然失败；
-      // 一旦据此清空歌词字段，第二次校验（激活完成后）也无法恢复已被销毁的值，
-      // 且 changed 分支会把清空结果落库，造成歌词被永久抹除、播放器显示「无歌词」。
-      // 歌词文件还可能位于临时未挂载的外置存储，删除引用更是不该有的副作用。
-      // 引用是否有效只由导入这个源头决定；文件读不到就如实显示「无歌词」，
-      // 绝不在运行期猜测、推导或改写歌词引用。
-      if (songs[i].isAvailable !== prevAvailable) {
-        changed = true
-      }
-    }
-    let unavailableCount: number = 0
-    for (let j: number = 0; j < songs.length; j++) {
-      if (!songs[j].isAvailable) {
-        unavailableCount++
-      }
-    }
-    if (unavailableCount > 0) {
-      Logger.warn(TAG, `checkSongsAccessibility total=${songs.length} unavailable=${unavailableCount}`)
-    }
-    if (changed) {
-      this.saveSongs(songs)
-      // 启动期的可访问性修复立即落盘，避免残留待写缓存
-      this.flushPendingSongWrites()
-    }
-  }
-
   // ═══════════ Init ═══════════
 
   // 歌词引用发生集合级变化（重新导入覆盖）时通知各个歌词视图重新加载。
   // 只做「通知刷新」，不做任何数据推导或找回：损坏原因不可知，任何自动猜测都是伪命题，
-  // 唯一的正经做法是在源头阻止歌词字段被破坏（见 checkSongsAccessibility）。
+  // 唯一的正经做法是在源头阻止歌词字段被破坏（见 repairAvailabilityAndRefresh）。
   private bumpLyricRevision(): void {
     const revision: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_LYRIC_REVISION) ?? 0
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_LYRIC_REVISION, revision + 1)
@@ -1131,7 +1097,7 @@ return result
       }
     }
     // 持久化授权激活完成后重新校验歌曲可访问性，并刷新 KEY_SONG_LIST 及 LIBRARY_REVISION
-    // 让 UI 感知最新状态（即使 checkSongsAccessibility 未检测到变化也执行刷新）。
+    // 让 UI 感知最新状态（即使可访问性校验未检测到变化也执行刷新）。
     // 注意：歌词字段不再参与该校验（校验里已彻底移除清空逻辑），因此「误判」只影响
     // isAvailable，不会再有数据被销毁。
     this.repairAvailabilityAndRefresh()

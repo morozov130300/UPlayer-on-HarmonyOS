@@ -2,15 +2,15 @@
 import { common } from '@kit.AbilityKit'
 import { FolderInfo } from '../model/FolderInfo'
 import { SongInfo } from '../model/SongInfo'
-import { DataService, AppSettingsData, ImportResult, LibraryDeleteResult } from '../service/DataService'
-import { SongScanner } from '../service/SongScanner'
+import { DataService, AppSettingsData, LibraryDeleteResult } from '../service/DataService'
+import { importSongsWithToast } from '../service/SongScanner'
 import { AVPlayerService } from '../service/AVPlayerService'
 import { AVSessionController } from '../common/utils/mediautils/AVSessionController'
 import { LiveViewService } from '../service/LiveViewService'
 import { ColorHelper } from '../common/utils/ColorHelper'
-import { showToastGlassMaterial } from '../common/utils/GlassUtil'
 import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
+import { StyleConstants } from '../common/constants/StyleConstants'
 import { display } from '@kit.ArkUI'
 import { deviceInfo } from '@kit.BasicServicesKit'
 
@@ -25,7 +25,6 @@ export struct PlaylistContent {
   // 底部让位原始输入（Index 传入），页内自算 bottomOverlayInset() 以实时跟随显示大小
   bottomSafeHeight: number = 0
   smallBreakpoint: boolean = false
-  onNavigateToHome: () => void = (): void => {}
   private context: common.UIAbilityContext | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
   @State folders: FolderInfo[] = []
   @State songs: SongInfo[] = []
@@ -46,7 +45,6 @@ export struct PlaylistContent {
   @StorageLink('uplayer_plus_button_scroll_hide') @Watch('onPlusScrollHideChange')
   plusButtonScrollHide: boolean = true
   private dataService: DataService = DataService.getInstance()
-  private songScanner: SongScanner = SongScanner.getInstance()
   private scroller: Scroller = new Scroller()
   private previousFolderPaths: string[] = []
   private isPC: boolean = deviceInfo.deviceType === '2in1'
@@ -321,16 +319,7 @@ export struct PlaylistContent {
     if (this.context === undefined) {
       return
     }
-    // 增量流式导入：每提取完一批即入库，本页列表经 KEY_LIBRARY_REVISION 的 @Watch 自动逐批刷新
-    const result: ImportResult = await this.songScanner.importSongs(this.context, this.dataService)
-    if (result.newCount + result.dupCount > 0) {
-      try {
-        showToastGlassMaterial(this.getUIContext()?.getPromptAction(),
-          `新增 ${result.newCount} 首` + (result.dupCount > 0 ? `，${result.dupCount} 首已存在` : ''))
-      } catch (e) {
-        Logger.error(TAG, 'toast failed')
-      }
-    }
+    await importSongsWithToast(this.context, this.getUIContext()?.getPromptAction())
   }
 
   getFavoriteCount(): number {
@@ -407,11 +396,15 @@ export struct PlaylistContent {
         .onDidScroll((scrollOffset: number) => {
           // scrollOffset 为本帧带符号偏移：向下滚动为正、向上为负
           if (scrollOffset > 10) {
-            this.isPlusVisible = false
-            this.publishPlusVisible()
+            if (this.isPlusVisible) {
+              this.isPlusVisible = false
+              this.publishPlusVisible()
+            }
           } else if (scrollOffset < 0) {
-            this.isPlusVisible = true
-            this.publishPlusVisible()
+            if (!this.isPlusVisible) {
+              this.isPlusVisible = true
+              this.publishPlusVisible()
+            }
           }
         })
 
@@ -428,7 +421,7 @@ export struct PlaylistContent {
               .onClick(() => { this.exitEditMode() })
             Text('删除')
               .fontSize(Math.round(14 * this.fontSizeScale))
-              .fontColor('#FF3B30')
+              .fontColor(StyleConstants.COLOR_DANGER_RED)
               .onClick(() => {
                 this.deleteEditSelected().catch((err: Error) => {
                   Logger.error(TAG, `delete selected failed: ${JSON.stringify(err)}`)

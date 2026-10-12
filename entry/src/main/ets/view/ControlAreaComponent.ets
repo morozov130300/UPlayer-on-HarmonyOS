@@ -1,6 +1,6 @@
 // ArkUI 26 Beta1: 接口定义变更（误报，本项目已是Stage模型）+ UX视觉布局变更（Text默认开启沉浸式材质，系统行为）
 import {
-  curves, LengthMetrics, PromptAction, uiMaterial, uiAppearance
+  curves, PromptAction, uiMaterial, uiAppearance
 } from '@kit.ArkUI';
 import { DatePickerComponent, DisplayMode, TimeFormat, DatePickerComponentResult } from '@ohos.arkui.advanced.DatePickerComponent';
 
@@ -13,7 +13,6 @@ import { AVPlayerService } from '../service/AVPlayerService';
 import { ColorHelper } from '../common/utils/ColorHelper';
 import { common } from '@kit.AbilityKit';
 import { MediaTools } from '../common/utils/mediautils/MediaTools';
-import { WindowInfo } from '../common/utils/WindowUtil';
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
 import { audio } from '@kit.AudioKit';
 import { AVCastPicker } from '@kit.AVSessionKit';
@@ -23,6 +22,7 @@ import { AlbumCover } from '../component/AlbumCover';
 import { AVSessionController } from '../common/utils/mediautils/AVSessionController';
 import { DataService } from '../service/DataService';
 import { createToastGlassMaterial, DEFAULT_GLASS_STYLE } from '../common/utils/GlassUtil';
+import { isDarkThemeEffective } from '../common/utils/ThemeUtil';
 
 const TAG = 'ControlAreaComponent';
 const SEEK_SETTLE_MS: number = 2000;
@@ -32,14 +32,12 @@ const TIMER_PRESET_MINUTES: number[] = [5, 10, 15, 20, 30, 45, 60];
 @Component
 @SuppressWarnings({rules: [SuppressWarningsType.SYSCAP, SuppressWarningsType.COMPATIBILITY]})
 export struct ControlAreaComponent {
-  @Prop mainWindowInfo: WindowInfo;
   @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) isPlay: boolean = false;
   @StorageLink(AppStorageKeyConstants.KEY_CURRENT_TIME) currentTime: string = '00:00';
   @StorageLink(AppStorageKeyConstants.KEY_TOTAL_TIME) totalTime: string = '00:00';
   @StorageLink(AppStorageKeyConstants.KEY_PROGRESS) value: number = 0;
   @StorageLink(AppStorageKeyConstants.KEY_PROGRESS_MAX) max: number = 0;
   @State playModeIndex: number = 0;
-  @StorageLink(AppStorageKeyConstants.KEY_IMAGE_COLOR) imageColor: string = '';
   @StorageLink(AppStorageKeyConstants.KEY_PAGE_SHOW_TIME) pageShowTime: number = 0;
   @StorageLink(AppStorageKeyConstants.KEY_SONG_LIST) @Watch('onSongListChange') songList: SongInfo[] = [];
   @State isShowPlayList: boolean = false;
@@ -56,7 +54,6 @@ export struct ControlAreaComponent {
   @State songTimeFontColor: ResourceColor = '#B3FFFFFF';
   @State trackThickness: number = 6;
   @State playBtnScale: number = 1.0;
-  @State sliderGlow: number = 0;
   @State isShowMorePanel: boolean = false;
   @State isShowTimerPanel: boolean = false;
   @State isShowSongInfoPanel: boolean = false;
@@ -84,7 +81,6 @@ export struct ControlAreaComponent {
   private songDataSource: SongDataSource = new SongDataSource([]);
   private volumeManager: audio.AudioVolumeManager | undefined = undefined;
   private isVolumeListenerRegistered: boolean = false;
-  private isSeekingTimer: number = -1;
   // 系统媒体音量最大格数（getMaxVolumeByStream，API 20+）：手机常见 15，PC 可能是 20/100，
   // 归一化显示与 AVVolumePanel 档位映射都必须用它，不能硬编码
   @State maxVolumeLevel: number = 15;
@@ -126,14 +122,7 @@ export struct ControlAreaComponent {
     return this.selectedPresetMinutes === min && this.activePresetMinutes !== min
   }
   private isEffectiveDarkMode(): boolean {
-    const themeMode: string = AppStorage.get<string>('uplayer_theme_mode') ?? 'system'
-    if (themeMode === 'dark') { return true }
-    if (themeMode === 'light') { return false }
-    try {
-      return uiAppearance.getDarkMode() === uiAppearance.DarkMode.ALWAYS_DARK
-    } catch (e) {
-      return false
-    }
+    return isDarkThemeEffective(AppStorage.get<string>('uplayer_theme_mode') ?? 'system')
   }
   private streamVolumeChangeCallback = (streamVolumeEvent: audio.StreamVolumeEvent): void => {
     const maxVol: number = this.maxVolumeLevel > 0 ? this.maxVolumeLevel : 15;
@@ -169,10 +158,6 @@ export struct ControlAreaComponent {
   }
 
   aboutToDisappear(): void {
-    if (this.isSeekingTimer !== -1) {
-      clearInterval(this.isSeekingTimer);
-      this.isSeekingTimer = -1;
-    }
     if (this.timerIntervalID !== -1) {
       clearInterval(this.timerIntervalID);
       this.timerIntervalID = -1;
@@ -364,15 +349,7 @@ export struct ControlAreaComponent {
   }
 
   private currentSong(): SongInfo {
-    if (this.songList !== undefined) {
-      for (let i = 0; i < this.songList.length; i++) {
-        if (this.songList[i].id === this.currentSongId) {
-          return this.songList[i]
-        }
-      }
-    }
-    const song: SongInfo | undefined = DataService.getInstance().getSongById(this.currentSongId)
-    return song !== undefined ? song : new SongInfo()
+    return DataService.currentSongFromList(this.songList, this.currentSongId);
   }
 
   private saveEditField(): void {
@@ -1155,9 +1132,9 @@ export struct ControlAreaComponent {
             .width('100%')
             .height(this.scaledSize(40))
             .fontSize(this.scaledFont(14))
-            .fontColor('#FF3B30')
+            .fontColor(StyleConstants.COLOR_DANGER_RED)
             .backgroundColor(Color.Transparent)
-            .border({ width: 1, color: '#FF3B30', radius: this.scaledSize(10) })
+            .border({ width: 1, color: StyleConstants.COLOR_DANGER_RED, radius: this.scaledSize(10) })
             .onClick(() => {
               this.clearTimer()
             })

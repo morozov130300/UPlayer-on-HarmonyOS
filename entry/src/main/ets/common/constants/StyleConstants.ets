@@ -17,6 +17,9 @@
  * Constants for common style.
  */
 export class StyleConstants {
+  // 危险操作/收藏激活红色（删除按钮、收藏红心等）
+  static readonly COLOR_DANGER_RED: string = '#FF3B30';
+
   /**
    * Component width percentage: 100%.
    */
@@ -42,7 +45,6 @@ export class StyleConstants {
   static readonly ANIMATION_BACKGROUND_FADE_DURATION: number = 600;
   static readonly ANIMATION_SETTINGS_ENTER_DURATION: number = 300;
   static readonly ANIMATION_SETTINGS_EXIT_DURATION: number = 250;
-  static readonly ANIMATION_LYRIC_HIGHLIGHT_DURATION: number = 300;
   static readonly ANIMATION_COVER_CROSS_FADE_DURATION: number = 500;
   static readonly ANIMATION_AMBIENT_GLOW_DURATION: number = 3000;
   static readonly ANIMATION_PLAYER_LIGHT_DURATION: number = 1500;
@@ -52,6 +54,5 @@ export class StyleConstants {
   static readonly ANIMATION_MULTI_BAR_ENTER_DURATION: number = 220;
   static readonly ANIMATION_MULTI_BAR_ENTER_DELAY: number = 80;
   static readonly ANIMATION_MULTI_BAR_EXIT_DURATION: number = 160;
-  static readonly ANIMATION_ROTATION_START_DURATION: number = 400;
   static readonly ANIMATION_PLAYER_BACKGROUND_DURATION: number = 800;
 }
