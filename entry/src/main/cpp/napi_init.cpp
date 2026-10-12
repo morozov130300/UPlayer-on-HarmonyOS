@@ -2887,7 +2887,7 @@ private:
                     bool warmupFinished = false;
                     std::lock_guard<std::mutex> lock(effectMutex_);
                     OH_AudioSuite_Result warmupResult = OH_AudioSuiteEngine_RenderFrame(
-                        pipeline_, holdScratch_.data(), audioDataSize,
+                        ActivePipelineHandle(), holdScratch_.data(), audioDataSize,
                         &responseSize, &warmupFinished);
                     if (warmupResult != AUDIOSUITE_SUCCESS) {
                         OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
