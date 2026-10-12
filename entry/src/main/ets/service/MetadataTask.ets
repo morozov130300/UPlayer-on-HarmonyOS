@@ -31,6 +31,9 @@ async function extractMetadataTask(fd: number): Promise<string> {
   let extractor: media.AVMetadataExtractor | undefined = undefined
   try {
     const fileSize: number = fs.statSync(fd).size
+    if (fileSize > 0) {
+      record['fileSize'] = '' + fileSize
+    }
     extractor = await media.createAVMetadataExtractor()
     const avFd: media.AVFileDescriptor = { fd: fd, offset: 0, length: fileSize }
     extractor.fdSrc = avFd
@@ -68,7 +71,8 @@ async function extractMetadataTask(fd: number): Promise<string> {
     if (metadata.trackCount !== undefined) {
       const v: string = '' + metadata.trackCount
       if (v.length > 0) {
-        record['track'] = v
+        // trackCount 是轨道数量，不是音轨号（历史上被误写入 track 字段）
+        record['trackCount'] = v
       }
     }
     if (metadata.sampleRate !== undefined) {
@@ -125,6 +129,62 @@ async function extractMetadataTask(fd: number): Promise<string> {
         record['mimeType'] = v
       }
     }
+    // 轨道级元数据（AVMetadata.tracks，API 20+）：码率/声道数/位深/编码格式，
+    // 其中 MD_KEY_BITRATE / MD_KEY_AUD_SAMPLE_DEPTH 需 API 21+，本项目 API 26 满足
+    if (metadata.tracks !== undefined && metadata.tracks.length > 0) {
+      const tracks: Array<media.MediaDescription> = metadata.tracks
+      let audioTrack: media.MediaDescription | undefined = undefined
+      let fallbackTrack: media.MediaDescription | undefined = undefined
+      for (let i = 0; i < tracks.length; i++) {
+        const desc: media.MediaDescription = tracks[i]
+        const typeVal: Object = desc[media.MediaDescriptionKey.MD_KEY_TRACK_TYPE]
+        if (typeVal !== undefined && Number(typeVal) === media.MediaType.MEDIA_TYPE_AUD) {
+          audioTrack = desc
+          break
+        }
+        if (fallbackTrack === undefined) {
+          fallbackTrack = desc
+        }
+      }
+      const chosenTrack: media.MediaDescription | undefined = audioTrack ?? fallbackTrack
+      if (chosenTrack !== undefined) {
+        const codecVal: Object = chosenTrack[media.MediaDescriptionKey.MD_KEY_CODEC_MIME]
+        if (codecVal !== undefined) {
+          const v: string = '' + codecVal
+          if (v.length > 0) {
+            record['codec'] = v
+          }
+        }
+        const channelsVal: Object = chosenTrack[media.MediaDescriptionKey.MD_KEY_AUD_CHANNEL_COUNT]
+        if (channelsVal !== undefined) {
+          const v: string = '' + channelsVal
+          if (v.length > 0) {
+            record['channels'] = v
+          }
+        }
+        const bitDepthVal: Object = chosenTrack[media.MediaDescriptionKey.MD_KEY_AUD_SAMPLE_DEPTH]
+        if (bitDepthVal !== undefined) {
+          const v: string = '' + bitDepthVal
+          if (v.length > 0) {
+            record['bitDepth'] = v
+          }
+        }
+        const trackBitrateVal: Object = chosenTrack[media.MediaDescriptionKey.MD_KEY_BITRATE]
+        if (trackBitrateVal !== undefined) {
+          const n: number = Number(trackBitrateVal)
+          if (n > 0) {
+            record['bitrate'] = '' + n
+          }
+        }
+        const trackSampleRateVal: Object = chosenTrack[media.MediaDescriptionKey.MD_KEY_AUD_SAMPLE_RATE]
+        if (trackSampleRateVal !== undefined) {
+          const v: string = '' + trackSampleRateVal
+          if (v.length > 0 && record['sampleRate'] === undefined) {
+            record['sampleRate'] = v
+          }
+        }
+      }
+    }
     if (metadata.hasAudio !== undefined) {
       const v: string = '' + metadata.hasAudio
       if (v.length > 0) {
@@ -166,6 +226,14 @@ async function extractMetadataTask(fd: number): Promise<string> {
       const languageVal: string | undefined = custom['language'] ?? custom['TLAN']
       if (languageVal !== undefined && languageVal.length > 0) {
         record['language'] = languageVal
+      }
+      const trackNumVal: string | undefined = custom['tracknumber'] ?? custom['TRCK'] ?? custom['track']
+      if (trackNumVal !== undefined && trackNumVal.length > 0) {
+        record['track'] = trackNumVal
+      }
+      const conductorVal: string | undefined = custom['conductor'] ?? custom['TPE3']
+      if (conductorVal !== undefined && conductorVal.length > 0) {
+        record['conductor'] = conductorVal
       }
     }
     return JSON.stringify(record)
@@ -542,5 +610,39 @@ export function applyMetadataToSong(song: SongInfo, record: Record<string, strin
   const languageVal: string | undefined = record['language']
   if (languageVal !== undefined && languageVal.length > 0) {
     song.language = languageVal
+  }
+  const trackCountVal: string | undefined = record['trackCount']
+  if (trackCountVal !== undefined && trackCountVal.length > 0) {
+    song.trackCount = trackCountVal
+  }
+  const channelsVal: string | undefined = record['channels']
+  if (channelsVal !== undefined && channelsVal.length > 0) {
+    song.channels = channelsVal
+  }
+  const bitDepthVal: string | undefined = record['bitDepth']
+  if (bitDepthVal !== undefined && bitDepthVal.length > 0) {
+    song.bitDepth = bitDepthVal
+  }
+  const codecVal: string | undefined = record['codec']
+  if (codecVal !== undefined && codecVal.length > 0) {
+    song.codec = codecVal
+  }
+  const bitrateVal: string | undefined = record['bitrate']
+  if (bitrateVal !== undefined) {
+    const bitrateNum: number = Number(bitrateVal)
+    if (bitrateNum > 0) {
+      song.bitrate = bitrateNum
+    }
+  }
+  const fileSizeVal: string | undefined = record['fileSize']
+  if (fileSizeVal !== undefined) {
+    const sizeNum: number = Number(fileSizeVal)
+    if (sizeNum > 0) {
+      song.fileSize = sizeNum
+    }
+  }
+  const conductorVal: string | undefined = record['conductor']
+  if (conductorVal !== undefined && conductorVal.length > 0) {
+    song.conductor = conductorVal
   }
 }

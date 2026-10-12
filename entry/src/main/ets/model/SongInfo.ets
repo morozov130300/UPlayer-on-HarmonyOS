@@ -42,6 +42,13 @@ export class SongInfo {
   videoWidth: string = ''
   videoHeight: string = ''
 
+  // 轨道级扩展元数据（从 AVMetadata.tracks 读取，官方 API 20+）
+  channels: string = ''
+  bitDepth: string = ''
+  codec: string = ''
+  trackCount: string = ''
+  fileSize: number = 0
+
   static createId(): string {
     return 'song_' + Date.now() + '_' + Math.floor(Math.random() * 1000000)
   }

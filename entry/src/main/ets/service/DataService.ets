@@ -262,6 +262,11 @@ export class DataService {
     copy.hasVideo = song.hasVideo
     copy.videoWidth = song.videoWidth
     copy.videoHeight = song.videoHeight
+    copy.channels = song.channels
+    copy.bitDepth = song.bitDepth
+    copy.codec = song.codec
+    copy.trackCount = song.trackCount
+    copy.fileSize = song.fileSize
     return copy
   }
 
@@ -276,7 +281,9 @@ export class DataService {
       a.conductor === b.conductor && a.albumArtist === b.albumArtist && a.author === b.author &&
       a.language === b.language && a.mimeType === b.mimeType && a.dateTime === b.dateTime &&
       a.encoder === b.encoder && a.description === b.description && a.hasAudio === b.hasAudio &&
-      a.hasVideo === b.hasVideo && a.videoWidth === b.videoWidth && a.videoHeight === b.videoHeight
+      a.hasVideo === b.hasVideo && a.videoWidth === b.videoWidth && a.videoHeight === b.videoHeight &&
+      a.channels === b.channels && a.bitDepth === b.bitDepth && a.codec === b.codec &&
+      a.trackCount === b.trackCount && a.fileSize === b.fileSize
   }
 
   private scheduleSaveSongs(songs: SongInfo[]): void {
