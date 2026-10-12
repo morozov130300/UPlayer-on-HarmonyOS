@@ -16,7 +16,9 @@ export struct SettingsContent {
   topContentPadding: number = 0
   // 顶部标题带高度（Index 传入，与主页问候语带同源）：标题在带内垂直居中，几何与主页一致
   topBandHeight: number = 72
-  bottomContentPadding: number = 0
+  // 底部让位原始输入（Index 传入），页内自算 bottomOverlayInset() 以实时跟随显示大小
+  bottomSafeHeight: number = 0
+  smallBreakpoint: boolean = false
   private isPC: boolean = deviceInfo.deviceType === '2in1'
   @StorageLink('uplayer_theme_mode') themeMode: string = 'system'
   @StorageLink(KEY_PRIMARY_COLOR) primaryColor: string = '#007DFF'
@@ -32,6 +34,12 @@ export struct SettingsContent {
 
   private scaledSize(size: number): number {
     return Math.round(size * this.displaySizeScale)
+  }
+
+  // 底部让位（原由 Index 算好传入，改为页内自算跟随显示大小）：
+  // 小屏 128≈56(tab)+28(margin)+40(播控)+4；大屏 88≈28+56+4
+  private bottomOverlayInset(): number {
+    return this.scaledSize(this.smallBreakpoint ? 128 : 88) + this.bottomSafeHeight
   }
 
   private isDark(): boolean {
@@ -110,7 +118,7 @@ export struct SettingsContent {
       .margin({ top: this.scaledSize(6) })
       .padding({
         left: this.scaledSize(12), right: this.scaledSize(12),
-        bottom: this.bottomContentPadding
+        bottom: this.bottomOverlayInset()
       })
     }
     .width('100%')
