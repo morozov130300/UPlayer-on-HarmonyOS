@@ -970,6 +970,7 @@ struct SettingsDetailPage {
               .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
               .blockBorderColor(this.primaryColor)
               .blockBorderWidth(3)
+              .sliderInteractionMode(SliderInteraction.SLIDE_ONLY)
               .onChange((value: number, mode: SliderChangeMode) => {
                 this.settings.homeTopBlurStrength = value
                 this.homeTopBlurStrength = value
@@ -1117,6 +1118,7 @@ struct SettingsDetailPage {
               .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
               .blockBorderColor(this.primaryColor)
               .blockBorderWidth(3)
+              .sliderInteractionMode(SliderInteraction.SLIDE_ONLY)
               .onChange((value: number, mode: SliderChangeMode) => {
                 this.settings.fontSizeScale = value / 100
                 this.fontSizeScale = this.settings.fontSizeScale
@@ -1169,6 +1171,7 @@ struct SettingsDetailPage {
               .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
               .blockBorderColor(this.primaryColor)
               .blockBorderWidth(3)
+              .sliderInteractionMode(SliderInteraction.SLIDE_ONLY)
               .onChange((value: number, mode: SliderChangeMode) => {
                 this.settings.displaySizeScale = value / 100
                 this.displaySizeScale = this.settings.displaySizeScale
@@ -1353,6 +1356,7 @@ struct SettingsDetailPage {
                 .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
                 .blockBorderColor(this.primaryColor)
                 .blockBorderWidth(3)
+                .sliderInteractionMode(SliderInteraction.SLIDE_ONLY)
                 .onChange((value: number, mode: SliderChangeMode) => {
                   this.settings.glassBlurStrength = value
                   this.glassBlurStrength = value
@@ -1404,6 +1408,7 @@ struct SettingsDetailPage {
               .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
               .blockBorderColor(this.primaryColor)
               .blockBorderWidth(3)
+              .sliderInteractionMode(SliderInteraction.SLIDE_ONLY)
               .onChange((value: number, mode: SliderChangeMode) => {
                 this.settings.tabIndicatorOpacity = value
                 this.tabIndicatorOpacity = value
@@ -1705,6 +1710,7 @@ struct SettingsDetailPage {
           .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
           .blockBorderColor(this.primaryColor)
           .blockBorderWidth(3)
+          .sliderInteractionMode(SliderInteraction.SLIDE_ONLY)
           .onChange((value: number, mode: SliderChangeMode) => {
             this.onSpeedChange(value, mode)
           })
@@ -1815,6 +1821,7 @@ struct SettingsDetailPage {
                       .blockSize({ width: this.scaledSize(26), height: this.scaledSize(14) })
                       .blockBorderColor(this.primaryColor)
                       .blockBorderWidth(2)
+                      .sliderInteractionMode(SliderInteraction.SLIDE_ONLY)
                       .onChange((value: number, mode: SliderChangeMode) => {
                         this.onEqBandChange(band.index, value, mode)
                       })
@@ -2254,6 +2261,7 @@ struct SettingsDetailPage {
         .blockSize({ width: this.scaledSize(16), height: this.scaledSize(16) })
         .blockBorderColor(this.primaryColor)
         .blockBorderWidth(2)
+        .sliderInteractionMode(SliderInteraction.SLIDE_ONLY)
         .onChange((value: number, mode: SliderChangeMode) => {
           this.onSpaceValueChange(index, value, mode)
         })
