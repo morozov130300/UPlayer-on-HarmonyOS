@@ -523,15 +523,17 @@ export class TagsWriteResult {
   reason: string = ''
 }
 
-// TaskPool 并行 ID3 标签写入：主线程以 READ_WRITE 打开源文件传 fd，
-// 16 个可编辑字段以 JSON 字符串传入（空值 = 删除对应帧），native 返回结果字符串
+// TaskPool 并行音频标签写入：主线程以 READ_WRITE 打开源文件传 fd，
+// 16 个可编辑字段以 JSON 字符串传入（空值 = 删除对应帧），native 按格式分发
+// （MP3/ID3v2、FLAC/Vorbis Comment、M4A/MP4 ilst），返回结果字符串
 @Concurrent
 async function writeTagsTask(fd: number, tagsJson: string): Promise<string> {
   const tags: Record<string, string> = JSON.parse(tagsJson) as Record<string, string>
-  return uplayer.writeId3Tags(fd, tags)
+  return uplayer.writeAudioTags(fd, tags)
 }
 
-// 将歌曲的 16 个可编辑标签真实写入源 MP3 文件的 ID3v2（DB 已先行保存，此处失败仅提示不回滚）
+// 将歌曲的 16 个可编辑标签真实写入源音频文件（MP3/FLAC/M4A）的元数据
+// （DB 已先行保存，此处失败仅提示不回滚）
 export function saveSongTagsToFile(song: SongInfo): Promise<TagsWriteResult> {
   const sourceUri: string = song.uri.length > 0 ? song.uri : song.filePath
   if (sourceUri.length === 0) {
