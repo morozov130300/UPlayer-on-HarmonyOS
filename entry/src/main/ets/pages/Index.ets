@@ -104,11 +104,15 @@ struct MainPage {
   private lyricLoadRequestId: number = 0
 
   aboutToAppear(): void { // AppStorage 已由 EntryAbility 在 loadContent 之前完成初始化（initToAppStorage 幂等）， // 此处不再重复调用，避免重复执行可访问性检查与授权激活竞态
+    Logger.info(TAG, 'aboutToAppear begin')
     ColorConversion.setSysBarLightBackground(this.isDarkTheme())
+    Logger.info(TAG, 'aboutToAppear after isDarkTheme')
     this.updateGreeting()
     this.loadPoetryLine()
     this.logGlassGate() // 玻璃能力诊断（一次性）
+    Logger.info(TAG, 'aboutToAppear before loadCurrentLyrics')
     this.loadCurrentLyrics()
+    Logger.info(TAG, 'aboutToAppear end')
     this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_GREETING_DURATION, curve: Curve.EaseOut },
       () => {
         this.greetingOpacity = 1

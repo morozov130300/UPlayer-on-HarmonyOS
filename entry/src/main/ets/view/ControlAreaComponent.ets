@@ -23,6 +23,7 @@ import { AVSessionController } from '../common/utils/mediautils/AVSessionControl
 import { DataService } from '../service/DataService';
 import { createToastGlassMaterial, DEFAULT_GLASS_STYLE } from '../common/utils/GlassUtil';
 import { isDarkThemeEffective } from '../common/utils/ThemeUtil';
+import { applyMetadataToSong, extractSongMetadata } from '../service/MetadataTask';
 
 const TAG = 'ControlAreaComponent';
 const SEEK_SETTLE_MS: number = 2000;
@@ -350,6 +351,52 @@ export struct ControlAreaComponent {
 
   private currentSong(): SongInfo {
     return DataService.currentSongFromList(this.songList, this.currentSongId);
+  }
+
+  // 文件大小格式化：B/KB/MB
+  private formatFileSize(bytes: number): string {
+    if (bytes <= 0) {
+      return ''
+    }
+    if (bytes >= 1024 * 1024) {
+      return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
+    }
+    if (bytes >= 1024) {
+      return `${(bytes / 1024).toFixed(1)} KB`
+    }
+    return `${bytes} B`
+  }
+
+  // 打开歌曲信息面板时对缺少轨道级元数据的歌曲（旧库导入于扩展字段之前）懒解析补齐：
+  // 标题/歌手/专辑允许用户编辑，解析结果不得覆盖已编辑值，应用后恢复原值
+  private refreshSongMetadataIfNeeded(): void {
+    const song: SongInfo = this.currentSong()
+    if (song.id.length === 0) {
+      return
+    }
+    if (song.bitrate > 0 && song.channels.length > 0 && song.fileSize > 0) {
+      return
+    }
+    const sourceUri: string = song.uri.length > 0 ? song.uri : song.filePath
+    extractSongMetadata(sourceUri).then((record: Record<string, string> | undefined) => {
+      if (record === undefined) {
+        return
+      }
+      const target: SongInfo = this.currentSong()
+      if (target.id !== song.id) {
+        return
+      }
+      const savedTitle: string = target.title
+      const savedArtist: string = target.artist
+      const savedAlbum: string = target.album
+      applyMetadataToSong(target, record)
+      target.title = savedTitle
+      target.artist = savedArtist
+      target.album = savedAlbum
+      DataService.getInstance().updateSongFields(target.id, DataService.getInstance().getSongs())
+    }).catch((err: BusinessError) => {
+      Logger.warn(TAG, `refresh song metadata failed: ${JSON.stringify(err)}`)
+    })
   }
 
   private saveEditField(): void {
@@ -693,6 +740,7 @@ export struct ControlAreaComponent {
       .backgroundColor($r('app.color.player_bg_color'))
       .borderRadius(this.scaledSize(10))
       .onClick(() => {
+        this.refreshSongMetadataIfNeeded()
         this.isShowSongInfoPanel = true
       })
       .bindSheet($$this.isShowSongInfoPanel, this.songInfoPanelBuilder(), {
@@ -916,6 +964,29 @@ export struct ControlAreaComponent {
               this.morePanelInfoRow(0, '标题', this.infoValue(0), true)
               this.morePanelInfoRow(1, '歌手', this.infoValue(1), true)
               this.morePanelInfoRow(2, '专辑', this.infoValue(2), true)
+              this.morePanelInfoRow(3, '流派', this.infoValue(3), false)
+              this.morePanelInfoRow(18, '年份', this.infoValue(18), false)
+              this.morePanelInfoRow(4, '音轨号', this.infoValue(4), false)
+              this.morePanelInfoRow(5, '碟号', this.infoValue(5), false)
+              this.morePanelInfoRow(6, '作曲家', this.infoValue(6), false)
+              this.morePanelInfoRow(7, '专辑艺术家', this.infoValue(7), false)
+              this.morePanelInfoRow(8, '作者', this.infoValue(8), false)
+              this.morePanelInfoRow(24, '语言', this.infoValue(24), false)
+              this.morePanelInfoRow(9, '日期', this.infoValue(9), false)
+              this.morePanelInfoRow(10, '编码器', this.infoValue(10), false)
+              this.morePanelInfoRow(25, '注释', this.infoValue(25), false)
+              this.morePanelInfoRow(11, '描述', this.infoValue(11), false)
+              this.morePanelInfoRow(12, '时长', this.infoValue(12), false)
+              this.morePanelInfoRow(14, '码率', this.infoValue(14), false)
+              this.morePanelInfoRow(13, '采样率', this.infoValue(13), false)
+              this.morePanelInfoRow(20, '位深', this.infoValue(20), false)
+              this.morePanelInfoRow(19, '声道数', this.infoValue(19), false)
+              this.morePanelInfoRow(21, '编码格式', this.infoValue(21), false)
+              this.morePanelInfoRow(22, '音轨数量', this.infoValue(22), false)
+              this.morePanelInfoRow(23, '文件大小', this.infoValue(23), false)
+              this.morePanelInfoRow(15, 'MIME', this.infoValue(15), false)
+              this.morePanelInfoRow(16, '文件路径', this.infoValue(16), false)
+              this.morePanelInfoRow(17, '文件夹', this.infoValue(17), false)
             }
             .width('100%')
             .padding({ left: 16, right: 16, top: 4, bottom: 16 })
@@ -1169,6 +1240,14 @@ export struct ControlAreaComponent {
       case 15: return song.mimeType
       case 16: return song.filePath
       case 17: return song.folderName
+      case 18: return song.year
+      case 19: return song.channels
+      case 20: return song.bitDepth.length > 0 ? `${song.bitDepth} bit` : ''
+      case 21: return song.codec
+      case 22: return song.trackCount
+      case 23: return this.formatFileSize(song.fileSize)
+      case 24: return song.language
+      case 25: return song.comment
       default: return ''
     }
   }
