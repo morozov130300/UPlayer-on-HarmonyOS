@@ -212,7 +212,8 @@ export class SongScanner {
       for (let i = 0; i < uris.length; i++) {
         const policyInfo: fileShare.PolicyInfo = {
           uri: uris[i],
-          operationMode: fileShare.OperationMode.READ_MODE,
+          // 读写一并持久化：编辑歌曲信息时需真实写回源文件（仅读权限会导致写打开 EPERM）
+          operationMode: fileShare.OperationMode.READ_MODE | fileShare.OperationMode.WRITE_MODE,
         }
         policies.push(policyInfo)
       }

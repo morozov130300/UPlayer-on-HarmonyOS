@@ -515,6 +515,84 @@ export function fetchFallbackCoverData(uri: string): Promise<CoverDataResult> {
     })
 }
 
+// 标签写入结果（主线程消费）：ok=true 表示源文件 ID3 标签写入成功
+// 失败 reason 分类：noWritePermission=文件无写权限（旧库仅持久化读权限）
+// unsupported=非 MP3/ID3 不支持；noSource=无源文件；error:*=其他写入失败
+export class TagsWriteResult {
+  ok: boolean = false
+  reason: string = ''
+}
+
+// TaskPool 并行音频标签写入：主线程以 READ_WRITE 打开源文件传 fd，
+// 16 个可编辑字段以 JSON 字符串传入（空值 = 删除对应帧），native 按格式分发
+// （MP3/ID3v2、FLAC/Vorbis Comment、M4A/MP4 ilst），返回结果字符串
+@Concurrent
+async function writeTagsTask(fd: number, tagsJson: string): Promise<string> {
+  const tags: Record<string, string> = JSON.parse(tagsJson) as Record<string, string>
+  return uplayer.writeAudioTags(fd, tags)
+}
+
+// 将歌曲的 16 个可编辑标签真实写入源音频文件（MP3/FLAC/M4A）的元数据
+// （DB 已先行保存，此处失败仅提示不回滚）
+export function saveSongTagsToFile(song: SongInfo): Promise<TagsWriteResult> {
+  const sourceUri: string = song.uri.length > 0 ? song.uri : song.filePath
+  if (sourceUri.length === 0) {
+    const noSource: TagsWriteResult = new TagsWriteResult()
+    noSource.reason = 'noSource'
+    return Promise.resolve(noSource)
+  }
+  let file: fs.File
+  try {
+    file = fs.openSync(sourceUri, fs.OpenMode.READ_WRITE)
+  } catch (err) {
+    Logger.error(TAG, `tags write open failed uri=${sourceUri}: ${JSON.stringify(err)}`)
+    const denied: TagsWriteResult = new TagsWriteResult()
+    denied.reason = 'noWritePermission'
+    return Promise.resolve(denied)
+  }
+  const openedFile: fs.File = file
+  const tags: Record<string, string> = {
+    'title': song.title,
+    'artist': song.artist,
+    'album': song.album,
+    'genre': song.genre,
+    'year': song.year,
+    'track': song.track,
+    'disc': song.disc,
+    'composer': song.composer,
+    'albumArtist': song.albumArtist,
+    'author': song.author,
+    'language': song.language,
+    'dateTime': song.dateTime,
+    'encoder': song.encoder,
+    'comment': song.comment,
+    'conductor': song.conductor,
+    'description': song.description
+  }
+  const tagsJson: string = JSON.stringify(tags)
+  return taskpool.execute(writeTagsTask, openedFile.fd, tagsJson)
+    .then((raw: Object): TagsWriteResult => {
+      const text: string = raw as string
+      const result: TagsWriteResult = new TagsWriteResult()
+      if (text.length === 0) {
+        result.ok = true
+      } else {
+        result.reason = text.startsWith('unsupported') ? 'unsupported' : `error:${text}`
+      }
+      return result
+    }).catch((err: Error): TagsWriteResult => {
+      Logger.error(TAG, `tags write taskpool failed uri=${sourceUri}: ${String(err)}`)
+      const failed: TagsWriteResult = new TagsWriteResult()
+      failed.reason = `error:${String(err)}`
+      return failed
+    }).finally((): void => {
+      try {
+        fs.closeSync(openedFile)
+      } catch (err) {
+      }
+    })
+}
+
 // 将提取结果应用到 SongInfo（仅在主线程调用）
 export function applyMetadataToSong(song: SongInfo, record: Record<string, string>): void {
   const titleVal: string | undefined = record['title']
