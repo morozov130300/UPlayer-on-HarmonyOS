@@ -100,9 +100,8 @@ export class DataService {
   private flushQueued: boolean = false
   // initToAppStorage 幂等标志：EntryAbility 与页面都会调用，重复执行会重复跑可访问性检查
   private appStorageInitialized: boolean = false
-  // 文件夹列表 RDB 缓存：init() 完成前 getFolders 走旧 Preferences 读路径兜底
+  // 文件夹列表 RDB 缓存：init() 完成前 getFolders 返回空列表
   private foldersCache: FolderInfo[] | undefined = undefined
-  private foldersRdbReady: boolean = false
   private saveFoldersChain: Promise<void> = Promise.resolve()
 
   public static getInstance(): DataService {
@@ -132,27 +131,12 @@ export class DataService {
     }
   }
 
-  // 文件夹列表持久化迁移：Preferences JSON → relationalStore folders 表。
-  // 表中已有数据则以表为准；首次启动把旧键迁移进表并删除旧键；
-  // 任何 RDB 异常都回退旧 Preferences 读路径，绝不丢数据。
+  // 从 folders 表加载文件夹列表到内存缓存
   private async initFolders(): Promise<void> {
     try {
-      const stored: FolderInfo[] = await SongDatabase.getInstance().queryAllFolders()
-      if (stored.length > 0) {
-        this.foldersCache = stored
-      } else {
-        const legacy: FolderInfo[] = this.getFoldersLegacy()
-        if (legacy.length > 0) {
-          await SongDatabase.getInstance().replaceFolders(legacy)
-          PreferencesUtil.getInstance().preferencesDelete(KEY_FOLDER_LIST)
-          Logger.info(TAG, `folders migrated to rdb: ${legacy.length} rows`)
-        }
-        this.foldersCache = legacy
-      }
-      this.foldersRdbReady = true
+      this.foldersCache = await SongDatabase.getInstance().queryAllFolders()
     } catch (err) {
-      this.foldersRdbReady = false
-      Logger.error(TAG, `initFolders failed, fallback to preferences: ${JSON.stringify(err)}`)
+      Logger.error(TAG, `initFolders failed: ${JSON.stringify(err)}`)
     }
   }
 
@@ -306,55 +290,8 @@ export class DataService {
     return PreferencesUtil.getInstance()
   }
 
-  // ═══════════ Generic JSON read/write via Preferences ═══════════
-
-  private readJsonArray(key: string): object[] {
-    const raw = this.getPref().getValue(key)
-    if (raw === undefined) {
-      return []
-    }
-    try {
-      return JSON.parse(raw as string) as object[]
-    } catch (e) {
-      Logger.error(TAG, `readJsonArray error for ${key}`)
-      return []
-    }
-  }
-
-  private writeJsonArray(key: string, data: object[]): void {
-    this.getPref().preferencesPut(key, JSON.stringify(data))
-  }
-
   // ═══════════ Song serialization ═══════════
   // 歌曲 ↔ 数据库行 的转换由 SongDatabase 负责
-
-  private folderToRecord(folder: FolderInfo): Record<string, Object> {
-    const r: Record<string, Object> = {}
-    r['id'] = folder.id
-    r['name'] = folder.name
-    r['path'] = folder.path
-    r['songCount'] = folder.songCount
-    r['addedTime'] = folder.addedTime
-    r['isAvailable'] = folder.isAvailable
-    r['isFavorite'] = folder.isFavorite
-    r['sortOrder'] = folder.sortOrder
-    return r
-  }
-
-  private recordToFolder(r: Record<string, Object>): FolderInfo {
-    const folder: FolderInfo = new FolderInfo()
-    folder.id = r['id'] as string
-    folder.name = r['name'] as string
-    folder.path = r['path'] as string
-    folder.songCount = r['songCount'] as number
-    folder.addedTime = r['addedTime'] as number
-    folder.isAvailable = r['isAvailable'] as boolean
-    let rawFav: Object | undefined = r['isFavorite']
-    folder.isFavorite = rawFav !== undefined ? rawFav as boolean : false
-    let rawSort: Object | undefined = r['sortOrder']
-    folder.sortOrder = rawSort !== undefined ? rawSort as number : 0
-    return folder
-  }
 
   // ═══════════ Song CRUD ═══════════
 
@@ -695,50 +632,21 @@ return result
   // ═══════════ Folder CRUD ═══════════
 
   getFolders(): FolderInfo[] {
-    // RDB 就绪后走内存缓存（init 时已从表加载）
     if (this.foldersCache !== undefined) {
       return this.foldersCache
     }
-    // init 未完成 / RDB 异常时兜底：与旧实现完全一致的 Preferences 读路径
-    return this.getFoldersLegacy()
-  }
-
-  private getFoldersLegacy(): FolderInfo[] {
-    const cached: object | undefined = AppStorage.get<FolderInfo[]>(KEY_FOLDER_LIST)
-    if (cached !== undefined) {
-      return cached as FolderInfo[]
-    }
-    const arr: object[] = this.readJsonArray(KEY_FOLDER_LIST)
-    const result: FolderInfo[] = []
-    for (let i = 0; i < arr.length; i++) {
-      result.push(this.recordToFolder(arr[i] as Record<string, Object>))
-    }
-    AppStorage.setOrCreate(KEY_FOLDER_LIST, result)
-    return result
+    // init 未完成时返回空列表
+    return []
   }
 
   saveFolders(folders: FolderInfo[]): void {
-    AppStorage.setOrCreate(KEY_FOLDER_LIST, folders)
     this.foldersCache = folders
-    if (this.foldersRdbReady) {
-      // 串行化全量替换，写失败回退旧 Preferences 键，保证数据不丢
-      this.saveFoldersChain = this.saveFoldersChain.then((): Promise<void> => {
-        return SongDatabase.getInstance().replaceFolders(folders)
-      }).catch((err: BusinessError) => {
-        Logger.error(TAG, `saveFolders to rdb failed, fallback to preferences: ${JSON.stringify(err)}`)
-        this.writeFoldersLegacy(folders)
-      })
-    } else {
-      this.writeFoldersLegacy(folders)
-    }
-  }
-
-  private writeFoldersLegacy(folders: FolderInfo[]): void {
-    const records: Record<string, Object>[] = []
-    for (let i = 0; i < folders.length; i++) {
-      records.push(this.folderToRecord(folders[i]))
-    }
-    this.writeJsonArray(KEY_FOLDER_LIST, records as object[])
+    // 串行化全量替换
+    this.saveFoldersChain = this.saveFoldersChain.then((): Promise<void> => {
+      return SongDatabase.getInstance().replaceFolders(folders)
+    }).catch((err: BusinessError) => {
+      Logger.error(TAG, `saveFolders to rdb failed: ${JSON.stringify(err)}`)
+    })
   }
 
   // ═══════════ Settings ═══════════
@@ -908,40 +816,23 @@ return result
   }
 
   private readFilterState(): FilterStateRecord {
+    const state: FilterStateRecord = new FilterStateRecord()
     const pref: PreferencesUtil = this.getPref()
     const rawState = pref.getValue(KEY_FILTER_STATE)
-    if (rawState !== undefined) {
-      try {
-        const record: Record<string, Object> = JSON.parse(rawState as string) as Record<string, Object>
-        const state: FilterStateRecord = new FilterStateRecord()
-        const rawPaths: Object | undefined = record['selectedFolderPaths']
-        const rawFavorites: Object | undefined = record['favoritesSelected']
-        state.selectedFolderPaths = rawPaths !== undefined ? (rawPaths as string[]).slice() : []
-        state.favoritesSelected = rawFavorites !== undefined ? rawFavorites as boolean : false
-        if (state.favoritesSelected) {
-          state.selectedFolderPaths = []
-        }
-        return state
-      } catch (e) {
-        Logger.error(TAG, 'readFilterState failed, falling back to legacy keys')
-      }
+    if (rawState === undefined) {
+      return state
     }
-    const state: FilterStateRecord = new FilterStateRecord()
-    const rawPaths = pref.getValue(KEY_SELECTED_FOLDERS)
-    if (rawPaths !== undefined) {
-      try {
-        state.selectedFolderPaths = (JSON.parse(rawPaths as string) as string[]).slice()
-      } catch (e) {
+    try {
+      const record: Record<string, Object> = JSON.parse(rawState as string) as Record<string, Object>
+      const rawPaths: Object | undefined = record['selectedFolderPaths']
+      const rawFavorites: Object | undefined = record['favoritesSelected']
+      state.selectedFolderPaths = rawPaths !== undefined ? (rawPaths as string[]).slice() : []
+      state.favoritesSelected = rawFavorites !== undefined ? rawFavorites as boolean : false
+      if (state.favoritesSelected) {
         state.selectedFolderPaths = []
       }
-    }
-    const rawFavorites = pref.getValue(KEY_FAVORITES_SELECTED)
-    state.favoritesSelected = rawFavorites !== undefined ? rawFavorites as boolean : false
-    if (state.favoritesSelected) {
-      state.selectedFolderPaths = []
-    }
-    if (rawPaths !== undefined || rawFavorites !== undefined) {
-      pref.preferencesPut(KEY_FILTER_STATE, JSON.stringify(state))
+    } catch (e) {
+      Logger.error(TAG, 'readFilterState failed')
     }
     return state
   }
