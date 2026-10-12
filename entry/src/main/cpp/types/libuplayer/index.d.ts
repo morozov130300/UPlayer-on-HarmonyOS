@@ -27,3 +27,4 @@ export const getDuration: () => number
 export const getAlbumCover: (fd: number, size: number, cacheKey: string) => ArrayBuffer | undefined
 export const cacheAlbumCover: (cacheKey: string, data: ArrayBuffer) => boolean
 export const clearAlbumCoverCache: () => boolean
+export const writeAudioTags: (fd: number, tags: object) => string
