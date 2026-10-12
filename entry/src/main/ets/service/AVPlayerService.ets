@@ -1140,26 +1140,34 @@ export class AVPlayerService {
 
   // 全量下发 5 类音效状态到原生引擎，ConfigureEffects 按初始态建节点并设 Bypass
   private applyAllEffectsToNative(): void {
+    Logger.info(TAG, 'native apply begin')
     nativeAudio.setEqualizerEnable(this.equalizerEnabled)
+    Logger.info(TAG, 'native eq enable done')
     if (this.equalizerEnabled) {
       nativeAudio.setEqualizerBands(this.equalizerBands)
+      Logger.info(TAG, 'native eq bands done')
     }
     nativeAudio.setSoundFieldEnable(this.soundFieldEnabled)
+    Logger.info(TAG, 'native soundField done')
     if (this.soundFieldEnabled) {
       nativeAudio.setSoundFieldType(this.soundFieldType)
     }
     nativeAudio.setEnvironmentEnable(this.environmentEnabled)
+    Logger.info(TAG, 'native environment done')
     if (this.environmentEnabled) {
       nativeAudio.setEnvironmentType(this.environmentType)
     }
     nativeAudio.setVoiceBeautifierEnable(this.beautifierEnabled)
+    Logger.info(TAG, 'native beautifier done')
     if (this.beautifierEnabled) {
       nativeAudio.setVoiceBeautifierType(this.beautifierType)
     }
     nativeAudio.setSpaceRenderEnable(this.spaceRenderEnabled)
+    Logger.info(TAG, 'native spaceRender done')
     if (this.spaceRenderEnabled) {
       nativeAudio.setSpaceRenderConfig(this.spaceRenderMode, this.spaceRenderValues)
     }
+    Logger.info(TAG, 'native apply end')
   }
 
   // 非原生态下从「关」切到「开」：取实时位置重载播放，切换为原生链路
