@@ -540,45 +540,7 @@ public:
             }
             renderer_ = nullptr;
         }
-        if (pipeline_ != nullptr) {
-            OH_AudioSuiteEngine_StopPipeline(pipeline_);
-        }
-        if (inputNode_ != nullptr) {
-            OH_AudioSuiteEngine_DestroyNode(inputNode_);
-            inputNode_ = nullptr;
-        }
-        if (eqNode_ != nullptr) {
-            OH_AudioSuiteEngine_DestroyNode(eqNode_);
-            eqNode_ = nullptr;
-        }
-        if (soundFieldNode_ != nullptr) {
-            OH_AudioSuiteEngine_DestroyNode(soundFieldNode_);
-            soundFieldNode_ = nullptr;
-        }
-        if (environmentNode_ != nullptr) {
-            OH_AudioSuiteEngine_DestroyNode(environmentNode_);
-            environmentNode_ = nullptr;
-        }
-        if (beautifierNode_ != nullptr) {
-            OH_AudioSuiteEngine_DestroyNode(beautifierNode_);
-            beautifierNode_ = nullptr;
-        }
-        if (spaceRenderNode_ != nullptr) {
-            OH_AudioSuiteEngine_DestroyNode(spaceRenderNode_);
-            spaceRenderNode_ = nullptr;
-        }
-        if (outputNode_ != nullptr) {
-            OH_AudioSuiteEngine_DestroyNode(outputNode_);
-            outputNode_ = nullptr;
-        }
-        if (pipeline_ != nullptr) {
-            OH_AudioSuiteEngine_DestroyPipeline(pipeline_);
-            pipeline_ = nullptr;
-        }
-        if (engine_ != nullptr) {
-            OH_AudioSuiteEngine_Destroy(engine_);
-            engine_ = nullptr;
-        }
+        DestroyPipelineGroups();
         DestroyConverter();
         if (decoder_ != nullptr) {
             OH_AVErrCode destroyResult = OH_AudioCodec_Destroy(decoder_);
@@ -847,10 +809,11 @@ public:
                     std::lround(std::clamp(static_cast<double>(values[1]), 1.0, 359.0)));
                 break;
         }
-        if (spaceRenderNode_ == nullptr || !requestedSpaceRenderEnabled_.load()) {
+        OH_AudioNode* node = ActiveEffectNodes().spaceRender;
+        if (node == nullptr || !requestedSpaceRenderEnabled_.load()) {
             return true;
         }
-        return ApplySpaceRenderParamsLocked(spaceRenderNode_);
+        return ApplySpaceRenderParamsLocked(node);
     }
 
     // ═══ 通用变声（210，主链内，48k/S16/2ch）═══
@@ -1636,6 +1599,46 @@ private:
         return configured && prepareResult == AV_ERR_OK && startResult == AV_ERR_OK;
     }
 
+    // 停止并销毁三组管线的全部节点与管线（引擎由 Stop 在其后统一销毁）
+    void DestroyPipelineGroups()
+    {
+        PipelineGroup* groups[] = { &mainGroup_, &specialGroup_, &sepGroup_ };
+        for (PipelineGroup* group : groups) {
+            if (group->pipeline != nullptr) {
+                OH_AudioSuiteEngine_StopPipeline(group->pipeline);
+            }
+        }
+        for (PipelineGroup* group : groups) {
+            OH_AudioNode* nodes[] = {
+                group->input, group->output, group->effects.eq, group->effects.soundField,
+                group->effects.environment, group->effects.beautifier, group->effects.spaceRender,
+                group->effects.generalVoiceChange, group->effects.noiseReduction,
+                group->effects.pureVoiceChange, group->effects.tempoPitch
+            };
+            for (OH_AudioNode* node : nodes) {
+                if (node != nullptr) {
+                    OH_AudioSuiteEngine_DestroyNode(node);
+                }
+            }
+            group->input = nullptr;
+            group->output = nullptr;
+            group->effects = EffectNodeSet();
+        }
+        if (sepNode_ != nullptr) {
+            OH_AudioSuiteEngine_DestroyNode(sepNode_);
+            sepNode_ = nullptr;
+        }
+        for (PipelineGroup* group : groups) {
+            if (group->pipeline != nullptr) {
+                OH_AudioSuiteEngine_DestroyPipeline(group->pipeline);
+                group->pipeline = nullptr;
+            }
+        }
+        activePipeline_ = ActivePipeline::NONE;
+        specialPipelineUsable_ = false;
+        sepPipelineUsable_ = false;
+    }
+
     // 创建一组实时预览管线：input(48k/S16/2ch) → 效果节点 → output(48k/S16/2ch)。
     // withFormatChanging=true 时额外创建降噪/传统变声/变速变调（输出格式与立体声链路不一致，
     // 仅特殊管线使用）。创建完成后不启动，由 SwitchPipelineLocked 决定活跃组。
@@ -2412,16 +2415,24 @@ private:
             std::memset(audioData, 0, static_cast<size_t>(audioDataSize));
             return true;
         }
+        // 分离管线为多输出（人声/伴奏两路），必须走 MultiRenderFrame 并按输出模式选路/混合
+        {
+            std::lock_guard<std::mutex> lock(effectMutex_);
+            if (activePipeline_ == ActivePipeline::SEP) {
+                return RenderSeparationFrameLocked(audioData, audioDataSize);
+            }
+        }
         bool finished = false;
         int32_t produced = 0;
         {
             std::lock_guard<std::mutex> lock(effectMutex_);
+            OH_AudioSuitePipeline* activePipeline = ActivePipelineHandle();
             int32_t attempt = 0;
             while (produced < audioDataSize) {
                 int32_t responseSize = 0;
                 bool partFinished = false;
                 OH_AudioSuite_Result result = OH_AudioSuiteEngine_RenderFrame(
-                    pipeline_, static_cast<uint8_t*>(audioData) + produced,
+                    activePipeline, static_cast<uint8_t*>(audioData) + produced,
                     audioDataSize - produced, &responseSize, &partFinished);
                 if (result != AUDIOSUITE_SUCCESS) {
                     OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
@@ -2511,6 +2522,113 @@ private:
                 static_cast<unsigned long long>(pipelineInputBytes_.load(
                     std::memory_order_relaxed)));
         }
+        if (finished) {
+            audioSuiteEofReached_ = true;
+            MarkPlaybackCompleted();
+        }
+        return true;
+    }
+
+    // 分离管线渲染：MultiRenderFrame 取人声/伴奏两路，按 separationOutput_ 选路或混合后交付。
+    // 官方示例中两路输出缓冲与输出节点同格式（48k/S16/2ch），requestFrameSize 为单路字节数。
+    // 调用方须已持有 effectMutex_（仅渲染线程调用）。
+    bool RenderSeparationFrameLocked(void* audioData, int32_t audioDataSize)
+    {
+        const size_t requiredBytes = static_cast<size_t>(audioDataSize);
+        if (sepScratchA_.size() * sizeof(int16_t) < requiredBytes ||
+            sepScratchB_.size() * sizeof(int16_t) < requiredBytes) {
+            const size_t samples = (requiredBytes + sizeof(int16_t) - 1) / sizeof(int16_t);
+            sepScratchA_.assign(samples, 0);
+            sepScratchB_.assign(samples, 0);
+        }
+        void* buffers[2] = { sepScratchA_.data(), sepScratchB_.data() };
+        OH_AudioDataArray dataArray = {};
+        dataArray.audioDataArray = buffers;
+        dataArray.arraySize = 2;
+        dataArray.requestFrameSize = audioDataSize;
+
+        bool finished = false;
+        int32_t produced = 0;
+        int32_t attempt = 0;
+        while (produced < audioDataSize) {
+            int32_t responseSize = 0;
+            bool partFinished = false;
+            OH_AudioSuite_Result result = OH_AudioSuiteEngine_MultiRenderFrame(
+                sepGroup_.pipeline, &dataArray, &responseSize, &partFinished);
+            if (result != AUDIOSUITE_SUCCESS) {
+                OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                    "MultiRenderFrame failed result=%{public}d responseSize=%{public}d inputSize=%{public}d",
+                    static_cast<int>(result), responseSize, audioDataSize - produced);
+                if (produced == 0) {
+                    return false;
+                }
+                break;
+            }
+            if (responseSize > audioDataSize - produced) {
+                responseSize = audioDataSize - produced;
+            }
+            if (responseSize > 0) {
+                // 按输出模式合成：1=仅人声 2=仅伴奏 3=人声+伴奏等权平均
+                const int32_t output = separationOutput_.load();
+                const int16_t* vocal = static_cast<const int16_t*>(buffers[0]);
+                const int16_t* accompaniment = static_cast<const int16_t*>(buffers[1]);
+                int16_t* out = static_cast<int16_t*>(audioData) + produced / sizeof(int16_t);
+                const int32_t samples = responseSize / static_cast<int32_t>(sizeof(int16_t));
+                for (int32_t i = 0; i < samples; i++) {
+                    if (output == 2) {
+                        out[i] = accompaniment[i];
+                    } else if (output == 3) {
+                        const int32_t mixed = (static_cast<int32_t>(vocal[i]) +
+                            static_cast<int32_t>(accompaniment[i])) / 2;
+                        out[i] = static_cast<int16_t>(std::clamp(mixed, -32768, 32767));
+                    } else {
+                        out[i] = vocal[i];
+                    }
+                }
+                produced += responseSize;
+            }
+            finished = finished || partFinished;
+            if (partFinished || produced >= audioDataSize) {
+                break;
+            }
+            attempt++;
+            if (attempt > PIPELINE_SHORTFALL_RETRY_MAX) {
+                break;
+            }
+            if (responseSize == 0) {
+                std::this_thread::sleep_for(
+                    std::chrono::milliseconds(PIPELINE_SHORTFALL_RETRY_WAIT_MS));
+            }
+        }
+        ApplyLoudnessCompensation(audioData, produced);
+        const int32_t totalSamples = audioDataSize / static_cast<int32_t>(sizeof(int16_t));
+        const int32_t validSamples = produced / static_cast<int32_t>(sizeof(int16_t));
+        int16_t* outSamples = static_cast<int16_t*>(audioData);
+        if (validSamples < totalSamples) {
+            constexpr int32_t SHORTFALL_FADE_SAMPLES = 128;
+            const int32_t fadeStart = std::max(0, validSamples - SHORTFALL_FADE_SAMPLES);
+            for (int32_t i = fadeStart; i < validSamples; i++) {
+                const double fadeGain = static_cast<double>(validSamples - i) /
+                    static_cast<double>(validSamples - fadeStart);
+                outSamples[i] = static_cast<int16_t>(std::lround(
+                    static_cast<double>(outSamples[i]) * fadeGain));
+            }
+            std::memset(outSamples + validSamples, 0,
+                static_cast<size_t>(totalSamples - validSamples) * sizeof(int16_t));
+            pipelineShortfallPrev_ = true;
+        } else if (pipelineShortfallPrev_) {
+            constexpr int32_t SHORTFALL_FADE_SAMPLES = 128;
+            const int32_t fadeSamples = std::min(SHORTFALL_FADE_SAMPLES, totalSamples);
+            for (int32_t i = 0; i < fadeSamples; i++) {
+                const double fadeGain = static_cast<double>(i + 1) / static_cast<double>(fadeSamples);
+                outSamples[i] = static_cast<int16_t>(std::lround(
+                    static_cast<double>(outSamples[i]) * fadeGain));
+            }
+            pipelineShortfallPrev_ = false;
+        }
+        pipelineRenderCalls_++;
+        pipelineRenderReqBytes_ += static_cast<uint64_t>(audioDataSize);
+        pipelineRenderRespBytes_ += static_cast<uint64_t>(produced);
         if (finished) {
             audioSuiteEofReached_ = true;
             MarkPlaybackCompleted();
