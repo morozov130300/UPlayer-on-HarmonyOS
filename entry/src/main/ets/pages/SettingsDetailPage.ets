@@ -1,5 +1,5 @@
 // ArkUI 26 Beta1: 接口定义变更（误报，本项目已是Stage模型）+ UX视觉布局变更（Text默认开启沉浸式材质，系统行为）
-import { curves, uiAppearance } from '@kit.ArkUI'
+import { curves } from '@kit.ArkUI'
 import { hdsMaterial, HdsTabs, HdsTabsController, HdsTabsFloatingStyle } from '@kit.UIDesignKit'
 import { bundleManager, common, ConfigurationConstant } from '@kit.AbilityKit'
 import { updateManager } from '@kit.AppGalleryKit'
@@ -14,8 +14,8 @@ import { HoldingHandService, KEY_HOLDING_HAND_ENABLED, KEY_HOLDING_HAND_LEFT } f
 import { ColorConversion } from '../common/utils/ColorConversion'
 import { isLiquidGlassAvailable, showToastGlassMaterial, topBlurRadiusFromStrength } from '../common/utils/GlassUtil'
 import { StyleConstants } from '../common/constants/StyleConstants'
-import { refreshPointerDeviceState } from '../common/utils/InputDeviceUtil'
 import { GlassBackButton } from '../view/GlassBackButton'
+import { isDarkThemeEffective } from '../common/utils/ThemeUtil'
 
 const TAG = 'SettingsDetailPage'
 const KEY_PRIMARY_COLOR = 'uplayer_primary_color'
@@ -153,7 +153,7 @@ struct SettingsDetailPage {
   // ═══ 设置项显隐统一动画（所有条件显隐的设置卡片/选项必须完全一致，禁止各自定义）═══
   private colorOptions: ThemeColorOption[] = [
     { name: '鸿蒙蓝', value: '#007DFF' },
-    { name: '绯霞红', value: '#FF3B30' },
+    { name: '绯霞红', value: StyleConstants.COLOR_DANGER_RED },
     { name: '琥珀橙', value: '#FF9500' },
     { name: '典雅金', value: '#C79A3B' },
     { name: '翠微绿', value: '#34C759' },
@@ -186,7 +186,6 @@ struct SettingsDetailPage {
     // 声明处初始值读取的是默认 AppSettingsData（tabStyle 恒为 classic），并非已保存设置；
     // 必须在加载真实设置后重算磨砂强度滑块可见性，否则新设备 + 玻璃样式进页时滑块会错误显示
     this.showClassicBlurStrength = !isLiquidGlassAvailable() || this.settings.tabStyle !== 'immersive'
-    refreshPointerDeviceState()
     const params = this.getUIContext()?.getRouter()
       .getParams() as Record<string, string>
     const route: string = params?.category ?? 'customize'
@@ -488,9 +487,26 @@ struct SettingsDetailPage {
   }
 
   // ═══ 均衡器预设（官方 9 预设一键切换，手动拖滑块后自动回到自定义态无高亮）═══
-  private eqPresetActive(index: number): boolean {
-    const preset: number[] = EqPresetTable.GAINS[index]
+  private eqPresetCacheBands: number[] | undefined = undefined
+  private eqPresetCacheIndex: number = -1
+
+  // 命中的预设下标（-1 为自定义态）：按 eqBands 引用缓存，避免渲染期对每个预设逐帧全量比较
+  private eqActivePresetIndex(): number {
     const current: number[] = this.settings.eqBands
+    if (this.eqPresetCacheBands !== current) {
+      this.eqPresetCacheBands = current
+      this.eqPresetCacheIndex = -1
+      for (let presetIndex = 0; presetIndex < EqPresetTable.NAMES.length; presetIndex++) {
+        if (this.eqPresetMatches(EqPresetTable.GAINS[presetIndex], current)) {
+          this.eqPresetCacheIndex = presetIndex
+          break
+        }
+      }
+    }
+    return this.eqPresetCacheIndex
+  }
+
+  private eqPresetMatches(preset: number[], current: number[]): boolean {
     if (preset.length !== current.length) {
       return false
     }
@@ -500,6 +516,10 @@ struct SettingsDetailPage {
       }
     }
     return true
+  }
+
+  private eqPresetActive(index: number): boolean {
+    return this.eqActivePresetIndex() === index
   }
 
   applyEqPreset(index: number): void {
@@ -2424,17 +2444,7 @@ struct SettingsDetailPage {
   }
 
   private isDark(): boolean {
-    if (this.themeMode === 'dark') {
-      return true
-    }
-    if (this.themeMode === 'system') {
-      try {
-        return uiAppearance.getDarkMode() === uiAppearance.DarkMode.ALWAYS_DARK
-      } catch (e) {
-        return false
-      }
-    }
-    return false
+    return isDarkThemeEffective(this.themeMode)
   }
 
   private settingTextColor(): ResourceColor {

@@ -33,7 +33,6 @@ export struct PlayerInfoComponent {
   @State imageLabelIsFallback: boolean = true;
   @State isBackgroundReady: boolean = false;
   @State isShowControl: boolean = true;
-  @State isShowControlLg: boolean = false;
   @StorageLink(AppStorageKeyConstants.KEY_PAGE_SHOW_TIME) pageShowTime: number = 0;
   @StorageLink('uplayer_theme_mode') themeMode: string = 'system';
   @State intervalID: number = 0;
@@ -176,7 +175,7 @@ export struct PlayerInfoComponent {
             .layoutWeight(1)
             .height('100%')
             Column() {
-              LyricsComponent({ isShowControl: this.isShowControlLg, mainWindowInfo: this.mainWindowInfo })
+              LyricsComponent({ isShowControl: this.isShowControl, mainWindowInfo: this.mainWindowInfo })
             }
             .layoutWeight(1)
             .height('100%')

@@ -41,17 +41,8 @@ export struct MusicInfoComponent {
   }
 
   private currentSong(): SongInfo {
-    // 先在播放队列中按 id 查找（保持对 songList 的渲染依赖，曲库整体刷新时同步重渲染），
-    // 队列中被过滤掉时回退全量曲库
-    if (this.songList !== undefined) {
-      for (let i = 0; i < this.songList.length; i++) {
-        if (this.songList[i].id === this.currentSongId) {
-          return this.songList[i]
-        }
-      }
-    }
-    const song: SongInfo | undefined = this.dataService.getSongById(this.currentSongId)
-    return song !== undefined ? song : new SongInfo()
+    // 保持对 songList 的渲染依赖（曲库整体刷新时同步重渲染），队列中被过滤掉时回退全量曲库
+    return DataService.currentSongFromList(this.songList, this.currentSongId)
   }
 
   updateFavoriteState() {
@@ -102,7 +93,7 @@ export struct MusicInfoComponent {
       this.CoverInfo()
       this.MusicInfo()
       Blank()
-      ControlAreaComponent({ mainWindowInfo: this.mainWindowInfo })
+      ControlAreaComponent()
     }
     .height(StyleConstants.FULL_HEIGHT)
     .width(StyleConstants.FULL_HEIGHT)

@@ -26,7 +26,6 @@ export default struct LrcListView {
   @Prop @Watch('onLyricUpdated') mLrcEntryList: Array<LrcEntry> = [];
   // 三态渲染：加载中 →「正在加载歌词…」；加载完成有歌词 → 列表；加载完成无歌词 →「无歌词」
   @Prop isLyricLoading: boolean = false;
-  @State fontSize: number = 20;
   @State mCurrentLine: number = NONE_LINE;
   private scrollerForList: Scroller = new Scroller();
   @State isHasLyric: boolean = true;

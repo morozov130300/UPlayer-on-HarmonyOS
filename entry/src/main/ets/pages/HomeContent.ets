@@ -2,13 +2,13 @@
 import { common } from '@kit.AbilityKit'
 import { deviceInfo } from '@kit.BasicServicesKit'
 import { SongInfo } from '../model/SongInfo'
-import { DataService, AppSettingsData, ImportResult, LibraryDeleteResult } from '../service/DataService'
-import { SongScanner } from '../service/SongScanner'
+import { DataService, AppSettingsData, LibraryDeleteResult } from '../service/DataService'
+import { importSongsWithToast } from '../service/SongScanner'
 import { AVPlayerService } from '../service/AVPlayerService'
 import { AVSessionController } from '../common/utils/mediautils/AVSessionController'
 import { LiveViewService } from '../service/LiveViewService'
 import { ColorHelper } from '../common/utils/ColorHelper'
-import { DisplayItemDataSource } from '../viewmodel/DisplayItemDataSource'
+import { DisplayItem, DisplayItemDataSource } from '../viewmodel/DisplayItemDataSource'
 import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { AlbumCover } from '../component/AlbumCover'
@@ -24,13 +24,6 @@ const PREFETCH_THROTTLE_MS: number = 50
 const APPROX_ITEM_HEIGHT: number = 72
 // 手柄拖拽：拖拽位移超过该距离（约一行高）时与相邻项交换位置
 const DRAG_SWAP_DISTANCE: number = 60
-
-class DisplayItem {
-  isHeader: boolean = false
-  headerText: string = ''
-  song: SongInfo = new SongInfo()
-  key: string = ''
-}
 
 @Component
 export struct HomeContent {
@@ -70,14 +63,12 @@ export struct HomeContent {
   // 胶囊文字用 @State 缓存：KEY_FILTER_REVISION 变化时由 @Watch 赋值，保证 UI 响应式刷新
   @State filterLabel: string = '全部歌曲'
   @State selectedIds: string[] = []
-  @State failedArtIds: Set<string> = new Set<string>()
   // 手动拖拽排序状态：dragSongId 为被拖拽歌曲 id，空串表示未拖拽。
   // 必须用 id 定位（而非 index）：LazyForEach 数据移动/节点复用后 index 不可靠
   @State dragSongId: string = ''
   @State dragOffsetY: number = 0
   private dragLastY: number = 0
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
-  @StorageLink('uplayer_theme_mode') themeMode: string = 'system'
   // 底部栏样式：经典样式下多选菜单栏不挂任何背景效果（磨砂/液态玻璃）
   @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
   @StorageLink('uplayer_tab_touch_indicator') tabTouchIndicator: string = 'light'
@@ -87,7 +78,6 @@ export struct HomeContent {
   @StorageLink('uplayer_plus_button_scroll_hide') @Watch('onPlusScrollHideChange')
   plusButtonScrollHide: boolean = true
   private dataService: DataService = DataService.getInstance()
-  private songScanner: SongScanner = SongScanner.getInstance()
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
   private scroller: Scroller = new Scroller()
 
@@ -232,7 +222,6 @@ export struct HomeContent {
   }
 
   loadData(): void {
-    this.failedArtIds = new Set<string>()
     this.songs = this.dataService.getSongs()
     this.settings = this.dataService.getSettings()
     this.viewMode = this.dataService.getViewMode()
@@ -399,16 +388,7 @@ export struct HomeContent {
     if (this.context === undefined) {
       return
     }
-    // 增量流式导入：每提取完一批即入库，本页列表经 KEY_LIBRARY_REVISION 的 @Watch 自动逐批刷新
-    const result: ImportResult = await this.songScanner.importSongs(this.context, this.dataService)
-    if (result.newCount + result.dupCount > 0) {
-      try {
-        showToastGlassMaterial(this.getUIContext()?.getPromptAction(),
-          `新增 ${result.newCount} 首` + (result.dupCount > 0 ? `，${result.dupCount} 首已存在` : ''))
-      } catch (e) {
-        Logger.error(TAG, 'toast failed')
-      }
-    }
+    await importSongsWithToast(this.context, this.getUIContext()?.getPromptAction())
   }
 
   toggleFavorite(songId: string): void {
@@ -756,12 +736,16 @@ export struct HomeContent {
           .onDidScroll((scrollOffset: number) => {
             // scrollOffset 为本帧带符号偏移：向下滚动为正、向上为负
             if (scrollOffset > 10) {
-              this.isPlusVisible = false
-              this.publishPlusVisible()
+              if (this.isPlusVisible) {
+                this.isPlusVisible = false
+                this.publishPlusVisible()
+              }
               this.prefetchInScrollDirection(this.scroller.currentOffset().yOffset, true)
             } else if (scrollOffset < 0) {
-              this.isPlusVisible = true
-              this.publishPlusVisible()
+              if (!this.isPlusVisible) {
+                this.isPlusVisible = true
+                this.publishPlusVisible()
+              }
               this.prefetchInScrollDirection(this.scroller.currentOffset().yOffset, false)
             }
           })
@@ -900,10 +884,10 @@ export struct HomeContent {
             Image($r('app.media.ic_public_delete'))
               .width(Math.round(16 * this.fontSizeScale))
               .height(Math.round(16 * this.fontSizeScale))
-              .fillColor('#FF3B30')
+              .fillColor(StyleConstants.COLOR_DANGER_RED)
             Text('删除')
               .fontSize(Math.round(14 * this.fontSizeScale))
-              .fontColor('#FF3B30')
+              .fontColor(StyleConstants.COLOR_DANGER_RED)
           }
           .onClick(() => { this.deleteSelected() })
         }
@@ -1060,7 +1044,7 @@ export struct HomeContent {
 
       Image(item.isFavorite ? $r('app.media.ic_public_favor_filled') : $r('app.media.ic_public_favor'))
         .width(this.scaledSize(22)).height(this.scaledSize(22))
-        .fillColor(item.isFavorite ? '#FF3B30' : $r('app.color.text_sixty_color'))
+        .fillColor(item.isFavorite ? StyleConstants.COLOR_DANGER_RED : $r('app.color.text_sixty_color'))
         .hitTestBehavior(HitTestMode.Block)
         .onClick(() => {
           this.toggleFavorite(item.id)
@@ -1110,7 +1094,7 @@ export struct HomeContent {
       .height(this.scaledSize(36))
       .width(this.scaledSize(36))
       .borderRadius(this.scaledSize(18))
-      .backgroundColor('#FF3B30')
+      .backgroundColor(StyleConstants.COLOR_DANGER_RED)
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
       .margin({ right: this.scaledSize(12) })

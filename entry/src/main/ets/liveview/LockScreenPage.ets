@@ -7,7 +7,6 @@ import { AVPlayerService } from '../service/AVPlayerService';
 struct LockScreenPage {
   @StorageLink('uplayer_current_title') title: string = '';
   @StorageLink('uplayer_current_artist') artist: string = '';
-  @StorageLink('uplayer_current_song_id') songId: string = '';
   @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) isPlay: boolean = false;
 
   private playerService: AVPlayerService = AVPlayerService.getInstance();

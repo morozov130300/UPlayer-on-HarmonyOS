@@ -1,15 +1,31 @@
 import { picker, fileShare } from '@kit.CoreFileKit'
 import { common } from '@kit.AbilityKit'
+import { PromptAction } from '@kit.ArkUI'
 import { SongInfo } from '../model/SongInfo'
-import { FolderInfo } from '../model/FolderInfo'
 import { AUDIO_EXTENSIONS, DataService, ImportResult } from './DataService'
 import { AudioMetadataService } from './AudioMetadataService'
 import { applyMetadataToSong, extractSongMetadata } from './MetadataTask'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { LyricFile } from '../common/constants/LyricConst'
+import { showToastGlassMaterial } from '../common/utils/GlassUtil'
 import Logger from '../common/utils/Logger'
 
 const TAG = 'SongScanner'
+
+// 统一的加号导入入口：选歌 → 分批入库 → toast（首页/歌单页/全局加号共用，禁止各页自行实现）。
+// 两页列表经 KEY_LIBRARY_REVISION 的 @Watch 逐批自动刷新
+export async function importSongsWithToast(context: common.UIAbilityContext,
+  promptAction: PromptAction | undefined): Promise<void> {
+  const result: ImportResult = await SongScanner.getInstance().importSongs(context, DataService.getInstance())
+  if (result.newCount + result.dupCount > 0) {
+    try {
+      showToastGlassMaterial(promptAction,
+        `新增 ${result.newCount} 首` + (result.dupCount > 0 ? `，${result.dupCount} 首已存在` : ''))
+    } catch (e) {
+      Logger.error(TAG, 'toast failed')
+    }
+  }
+}
 
 // TaskPool 并发提取的工人数：PC 多核收益明显，6 路在 fd/CPU 占用与吞吐间平衡
 const METADATA_CONCURRENCY: number = 6
@@ -204,24 +220,6 @@ export class SongScanner {
       Logger.info(TAG, 'persistUris: persistPermission success')
     } catch (err) {
       Logger.error(TAG, `persistUris: persistPermission failed: ${JSON.stringify(err)}`)
-    }
-  }
-
-  public async pickFolder(context: common.UIAbilityContext): Promise<FolderInfo | null> {
-    try {
-      const options: picker.DocumentSelectOptions = new picker.DocumentSelectOptions()
-      const docPicker: picker.DocumentViewPicker = new picker.DocumentViewPicker(context)
-      const uris: string[] = await docPicker.select(options)
-      if (uris.length === 0) {
-        return null
-      }
-      const folderUri: string = uris[0]
-      const folder: FolderInfo = FolderInfo.fromPath(folderUri)
-      Logger.info(TAG, `picked folder: ${folderUri}`)
-      return folder
-    } catch (err) {
-      Logger.error(TAG, `pickFolder error: ${JSON.stringify(err)}`)
-      return null
     }
   }
 

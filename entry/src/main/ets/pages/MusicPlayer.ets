@@ -15,10 +15,7 @@ const TAG = '[MusicPlayer]';
 @Component
 struct MusicPlayer {
   @State isShowPlay: boolean = false;
-  @State bgOpacity: number = 1;
-  @State isLoading: boolean = true;
   @StorageLink(AppStorageKeyConstants.KEY_WINDOW_UTIL) windowUtil: WindowUtil | undefined = undefined;
-  @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF';
   @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) isPlaying: boolean = false;
   @StorageLink(AppStorageKeyConstants.KEY_TOP_HEIGHT) topHeight: number = 0;
   // 显示大小：玻璃标题栏返回键/标题带高度随设置缩放（与其他页返回键一致）
@@ -27,10 +24,6 @@ struct MusicPlayer {
   // 返回按钮玻璃材质只在「Navigation 标题栏」生效区渲染；用空路由栈把本页套进
   // Navigation 仅为取得玻璃生效区，实际返回仍走 router（playerGlassTitleBar.onBack）
   private navStack: NavPathStack = new NavPathStack();
-
-  async aboutToAppear() {
-    this.isLoading = false;
-  }
 
   aboutToDisappear() {
     Logger.info(TAG, 'aboutToDisappear');
@@ -108,34 +101,18 @@ struct MusicPlayer {
   build() {
     Navigation(this.navStack) {
       Stack() {
-        if (this.isLoading) {
-          Stack() {
-            Column()
-              .width('100%')
-              .height('100%')
-              .backgroundColor('#000000')
-            LoadingProgress()
-              .width(48)
-              .height(48)
-              .color(this.primaryColor)
-          }
-          .height('100%')
-          .width('100%')
-        } else {
-          PlayerInfoComponent({
-            isShowPlay: this.isShowPlay,
-            mainWindowInfo: this.windowUtil?.mainWindowInfo,
-            showBackButton: false
-          })
-          .width('100%')
-          .height('100%')
-        }
+        PlayerInfoComponent({
+          isShowPlay: this.isShowPlay,
+          mainWindowInfo: this.windowUtil?.mainWindowInfo,
+          showBackButton: false
+        })
+        .width('100%')
+        .height('100%')
       }
       .height('100%')
       .width('100%')
       .backgroundColor(Color.Black)
       .expandSafeArea()
-      .opacity(this.bgOpacity)
     }
     .title({
       builder: this.playerGlassTitleBar,

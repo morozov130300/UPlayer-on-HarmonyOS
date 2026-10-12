@@ -1,8 +1,7 @@
-import { common, ConfigurationConstant } from '@kit.AbilityKit'
 import { uiMaterial } from '@kit.ArkUI'
-import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import { createTabGlassMaterial, DEFAULT_GLASS_STYLE, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
+import { isDarkThemeEffective } from '../common/utils/ThemeUtil'
 
 // 返回按钮统一组件：可点击区域维持原尺寸，内部套一层「可点击区域 × 0.6」的内切圆形，
 // 圆形的液态玻璃/磨砂/描边/阴影完全与底部 Tab 栏同源同参（同一批 AppStorage 配置驱动），
@@ -37,18 +36,6 @@ export struct GlassBackButton {
     return Math.round(this.iconSize * GlassBackButton.CIRCLE_RATIO)
   }
 
-  private isDarkTheme(): boolean {
-    if (this.themeMode === 'dark') {
-      return true
-    }
-    if (this.themeMode === 'system') {
-      const context: common.UIAbilityContext | undefined = AppStorage.get<common.UIAbilityContext>(
-        AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
-      return context?.config.colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK
-    }
-    return false
-  }
-
   // 与底部 Tab 栏同源的材质选择（返回按钮固定不跟手形变，观感考量）：
   // 玻璃风格(immersive) → createTabGlassMaterial 全参工厂（含 lightEffect/colorInvert/applyShadow）；
   // 经典风格(classic) → 不挂任何材质（systemMaterial=undefined），仅由 backgroundEffect（高斯模糊）提供背景。
@@ -61,7 +48,7 @@ export struct GlassBackButton {
       const useLight: boolean = this.tabTouchIndicator === 'light'
       // 跟手光效颜色设置已删除：暗黑固定白光、明亮固定主题色
       const lightColor: string | undefined = useLight
-        ? (this.isDarkTheme() ? '#FFFFFF' : this.primaryColor)
+        ? (isDarkThemeEffective(this.themeMode) ? '#FFFFFF' : this.primaryColor)
         : undefined
       return createTabGlassMaterial(DEFAULT_GLASS_STYLE, false, lightColor, true, true)
     }
