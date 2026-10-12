@@ -284,6 +284,33 @@ private:
     std::unordered_map<std::string, CoverCacheEntry> entries_;
 };
 
+// 音效管线分组。官方约束（native_audio_suite_base-h，API 23+ 实时预览支持所有效果节点）：
+// - 均衡器/声场/美化/环境/空间渲染/通用变声输出均为 48000Hz/S16LE/2ch，可直接串联；
+// - 降噪/传统变声输出 16000Hz/S16LE/1ch、变速变调输出 48000Hz/S16LE/1ch，与立体声链路
+//   格式不一致，单独放「特殊管线」按需启动，启动失败可回退主管线，不破坏播放；
+// - 音源分离为多输出节点（人声/伴奏两路，F32LE），且只能连接输出节点，单独放「分离管线」，
+//   渲染走 MultiRenderFrame；该节点依赖 NPU，创建前必须 IsNodeTypeSupported 探测。
+enum class ActivePipeline { NONE, MAIN, SPECIAL, SEP };
+
+struct EffectNodeSet {
+    OH_AudioNode* eq = nullptr;
+    OH_AudioNode* soundField = nullptr;
+    OH_AudioNode* environment = nullptr;
+    OH_AudioNode* beautifier = nullptr;
+    OH_AudioNode* spaceRender = nullptr;
+    OH_AudioNode* generalVoiceChange = nullptr;
+    OH_AudioNode* noiseReduction = nullptr;
+    OH_AudioNode* pureVoiceChange = nullptr;
+    OH_AudioNode* tempoPitch = nullptr;
+};
+
+struct PipelineGroup {
+    OH_AudioSuitePipeline* pipeline = nullptr;
+    OH_AudioNode* input = nullptr;
+    OH_AudioNode* output = nullptr;
+    EffectNodeSet effects;
+};
+
 class NativeAudioPlayer {
 public:
     static NativeAudioPlayer& Instance()
@@ -586,45 +613,7 @@ public:
             }
             renderer_ = nullptr;
         }
-        if (pipeline_ != nullptr) {
-            OH_AudioSuiteEngine_StopPipeline(pipeline_);
-        }
-        if (inputNode_ != nullptr) {
-            OH_AudioSuiteEngine_DestroyNode(inputNode_);
-            inputNode_ = nullptr;
-        }
-        if (eqNode_ != nullptr) {
-            OH_AudioSuiteEngine_DestroyNode(eqNode_);
-            eqNode_ = nullptr;
-        }
-        if (soundFieldNode_ != nullptr) {
-            OH_AudioSuiteEngine_DestroyNode(soundFieldNode_);
-            soundFieldNode_ = nullptr;
-        }
-        if (environmentNode_ != nullptr) {
-            OH_AudioSuiteEngine_DestroyNode(environmentNode_);
-            environmentNode_ = nullptr;
-        }
-        if (beautifierNode_ != nullptr) {
-            OH_AudioSuiteEngine_DestroyNode(beautifierNode_);
-            beautifierNode_ = nullptr;
-        }
-        if (spaceRenderNode_ != nullptr) {
-            OH_AudioSuiteEngine_DestroyNode(spaceRenderNode_);
-            spaceRenderNode_ = nullptr;
-        }
-        if (outputNode_ != nullptr) {
-            OH_AudioSuiteEngine_DestroyNode(outputNode_);
-            outputNode_ = nullptr;
-        }
-        if (pipeline_ != nullptr) {
-            OH_AudioSuiteEngine_DestroyPipeline(pipeline_);
-            pipeline_ = nullptr;
-        }
-        if (engine_ != nullptr) {
-            OH_AudioSuiteEngine_Destroy(engine_);
-            engine_ = nullptr;
-        }
+        DestroyPipelineGroups();
         DestroyConverter();
         if (decoder_ != nullptr) {
             OH_AVErrCode destroyResult = OH_AudioCodec_Destroy(decoder_);
@@ -684,23 +673,25 @@ public:
         // 开关瞬间管线拉取模式可能变化：请求直通保持，密度因子重测收敛后再切入管线输出
         pipelineHoldRequested_.store(true);
         // 管线可能被其他效果占用，EQ 节点旁路状态必须与开关同步，避免关闭 EQ 后残留处理
-        if (eqNode_ == nullptr) {
+        OH_AudioNode* node = ActiveEffectNodes().eq;
+        if (node == nullptr) {
             return true;
         }
         if (enabled) {
-            return ApplyBandsLocked(bands_, false);
+            return ApplyBandsLocked(node, bands_, false);
         }
-        return BypassNodeLocked(eqNode_, true);
+        return BypassNodeLocked(node, true);
     }
 
     bool SetBands(const std::array<int32_t, EQUALIZER_BAND_NUM>& bands)
     {
         std::lock_guard<std::mutex> lock(effectMutex_);
         bands_ = bands;
-        if (!requestedEqEnabled_ || eqNode_ == nullptr) {
+        OH_AudioNode* node = ActiveEffectNodes().eq;
+        if (!requestedEqEnabled_ || node == nullptr) {
             return true;
         }
-        return ApplyBandsLocked(bands_, false);
+        return ApplyBandsLocked(node, bands_, false);
     }
 
     std::array<int32_t, EQUALIZER_BAND_NUM> GetBands()
@@ -710,12 +701,14 @@ public:
     }
 
     // 任一效果启用即需要走管线渲染：EQ 用 Play 时的 active 快照，
-    // 4 类新效果节点全建 + Bypass 即时切换，直接用 requested 原子量
+    // 其余效果节点建管时全建 + Bypass 即时切换，直接用 requested 原子量
     bool IsPipelineActive() const
     {
         return activeEqEnabled_.load() || requestedSoundFieldEnabled_.load() ||
             requestedEnvironmentEnabled_.load() || requestedBeautifierEnabled_.load() ||
-            requestedSpaceRenderEnabled_.load();
+            requestedSpaceRenderEnabled_.load() || requestedGeneralVoiceChangeEnabled_.load() ||
+            requestedNoiseReductionEnabled_.load() || requestedPureVoiceChangeEnabled_.load() ||
+            requestedTempoPitchEnabled_.load() || requestedSeparationEnabled_.load();
     }
 
     bool SetSoundFieldEnabled(bool enabled)
@@ -725,13 +718,14 @@ public:
         OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "effect toggle soundField=%{public}d", enabled ? 1 : 0);
         pipelineHoldRequested_.store(true);
-        if (soundFieldNode_ == nullptr) {
+        OH_AudioNode* node = ActiveEffectNodes().soundField;
+        if (node == nullptr) {
             return true;
         }
         if (enabled) {
-            return SetSoundFieldStateLocked();
+            return SetSoundFieldStateLocked(node);
         }
-        return BypassNodeLocked(soundFieldNode_, true);
+        return BypassNodeLocked(node, true);
     }
 
     bool SetSoundFieldType(int32_t type)
@@ -741,11 +735,12 @@ public:
         }
         soundFieldType_ = type;
         std::lock_guard<std::mutex> lock(effectMutex_);
-        if (soundFieldNode_ == nullptr || !requestedSoundFieldEnabled_.load()) {
+        OH_AudioNode* node = ActiveEffectNodes().soundField;
+        if (node == nullptr || !requestedSoundFieldEnabled_.load()) {
             return true;
         }
         OH_AudioSuite_Result result = OH_AudioSuiteEngine_SetSoundFieldType(
-            soundFieldNode_, static_cast<OH_SoundFieldType>(type));
+            node, static_cast<OH_SoundFieldType>(type));
         if (result != AUDIOSUITE_SUCCESS) {
             OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                 "set sound field type failed code=%{public}d type=%{public}d",
@@ -762,13 +757,14 @@ public:
         OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "effect toggle environment=%{public}d", enabled ? 1 : 0);
         pipelineHoldRequested_.store(true);
-        if (environmentNode_ == nullptr) {
+        OH_AudioNode* node = ActiveEffectNodes().environment;
+        if (node == nullptr) {
             return true;
         }
         if (enabled) {
-            return SetEnvironmentStateLocked();
+            return SetEnvironmentStateLocked(node);
         }
-        return BypassNodeLocked(environmentNode_, true);
+        return BypassNodeLocked(node, true);
     }
 
     bool SetEnvironmentType(int32_t type)
@@ -778,11 +774,12 @@ public:
         }
         environmentType_ = type;
         std::lock_guard<std::mutex> lock(effectMutex_);
-        if (environmentNode_ == nullptr || !requestedEnvironmentEnabled_.load()) {
+        OH_AudioNode* node = ActiveEffectNodes().environment;
+        if (node == nullptr || !requestedEnvironmentEnabled_.load()) {
             return true;
         }
         OH_AudioSuite_Result result = OH_AudioSuiteEngine_SetEnvironmentType(
-            environmentNode_, static_cast<OH_EnvironmentType>(type));
+            node, static_cast<OH_EnvironmentType>(type));
         if (result != AUDIOSUITE_SUCCESS) {
             OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                 "set environment type failed code=%{public}d type=%{public}d",
@@ -799,13 +796,14 @@ public:
         OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "effect toggle beautifier=%{public}d", enabled ? 1 : 0);
         pipelineHoldRequested_.store(true);
-        if (beautifierNode_ == nullptr) {
+        OH_AudioNode* node = ActiveEffectNodes().beautifier;
+        if (node == nullptr) {
             return true;
         }
         if (enabled) {
-            return SetBeautifierStateLocked();
+            return SetBeautifierStateLocked(node);
         }
-        return BypassNodeLocked(beautifierNode_, true);
+        return BypassNodeLocked(node, true);
     }
 
     bool SetVoiceBeautifierType(int32_t type)
@@ -815,11 +813,12 @@ public:
         }
         beautifierType_ = type;
         std::lock_guard<std::mutex> lock(effectMutex_);
-        if (beautifierNode_ == nullptr || !requestedBeautifierEnabled_.load()) {
+        OH_AudioNode* node = ActiveEffectNodes().beautifier;
+        if (node == nullptr || !requestedBeautifierEnabled_.load()) {
             return true;
         }
         OH_AudioSuite_Result result = OH_AudioSuiteEngine_SetVoiceBeautifierType(
-            beautifierNode_, static_cast<OH_VoiceBeautifierType>(type));
+            node, static_cast<OH_VoiceBeautifierType>(type));
         if (result != AUDIOSUITE_SUCCESS) {
             OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                 "set voice beautifier type failed code=%{public}d type=%{public}d",
@@ -836,13 +835,14 @@ public:
         OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "effect toggle spaceRender=%{public}d", enabled ? 1 : 0);
         pipelineHoldRequested_.store(true);
-        if (spaceRenderNode_ == nullptr) {
+        OH_AudioNode* node = ActiveEffectNodes().spaceRender;
+        if (node == nullptr) {
             return true;
         }
         if (enabled) {
-            return SetSpaceRenderStateLocked();
+            return SetSpaceRenderStateLocked(node);
         }
-        return BypassNodeLocked(spaceRenderNode_, true);
+        return BypassNodeLocked(node, true);
     }
 
     // mode: 0=固定摆位(values={x,y,z}) 1=旋转({x,y,z,surroundTime,surroundDirection}) 2=扩展({extRadius,extAngle})
@@ -882,10 +882,169 @@ public:
                     std::lround(std::clamp(static_cast<double>(values[1]), 1.0, 359.0)));
                 break;
         }
-        if (spaceRenderNode_ == nullptr || !requestedSpaceRenderEnabled_.load()) {
+        OH_AudioNode* node = ActiveEffectNodes().spaceRender;
+        if (node == nullptr || !requestedSpaceRenderEnabled_.load()) {
             return true;
         }
-        return ApplySpaceRenderParamsLocked();
+        return ApplySpaceRenderParamsLocked(node);
+    }
+
+    // ═══ 通用变声（210，主链内，48k/S16/2ch）═══
+    bool SetGeneralVoiceChangeEnabled(bool enabled)
+    {
+        std::lock_guard<std::mutex> lock(effectMutex_);
+        requestedGeneralVoiceChangeEnabled_ = enabled;
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "effect toggle generalVoiceChange=%{public}d", enabled ? 1 : 0);
+        pipelineHoldRequested_.store(true);
+        OH_AudioNode* node = ActiveEffectNodes().generalVoiceChange;
+        if (node == nullptr) {
+            return true;
+        }
+        if (enabled) {
+            return SetGeneralVoiceChangeStateLocked(node);
+        }
+        return BypassNodeLocked(node, true);
+    }
+
+    bool SetGeneralVoiceChangeType(int32_t type)
+    {
+        if (type < 1 || type > 10) {
+            return false;
+        }
+        generalVoiceChangeType_ = type;
+        std::lock_guard<std::mutex> lock(effectMutex_);
+        OH_AudioNode* node = ActiveEffectNodes().generalVoiceChange;
+        if (node == nullptr || !requestedGeneralVoiceChangeEnabled_.load()) {
+            return true;
+        }
+        OH_AudioSuite_Result result = OH_AudioSuiteEngine_SetGeneralVoiceChangeType(
+            node, static_cast<OH_AudioSuite_GeneralVoiceChangeType>(type));
+        if (result != AUDIOSUITE_SUCCESS) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "set general voice change type failed code=%{public}d type=%{public}d",
+                static_cast<int>(result), type);
+            return false;
+        }
+        return true;
+    }
+
+    // ═══ 降噪（202，特殊管线，16k/S16/1ch 输出）═══
+    bool SetNoiseReductionEnabled(bool enabled)
+    {
+        std::lock_guard<std::mutex> lock(effectMutex_);
+        requestedNoiseReductionEnabled_ = enabled;
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "effect toggle noiseReduction=%{public}d", enabled ? 1 : 0);
+        if (!SwitchPipelineLocked()) {
+            return false;
+        }
+        OH_AudioNode* node = ActiveEffectNodes().noiseReduction;
+        if (node == nullptr) {
+            return true;
+        }
+        // 降噪无参数，仅旁路开关
+        return BypassNodeLocked(node, !enabled);
+    }
+
+    // ═══ 传统变声（209，特殊管线，16k/S16/1ch 输出）═══
+    bool SetPureVoiceChangeEnabled(bool enabled)
+    {
+        std::lock_guard<std::mutex> lock(effectMutex_);
+        requestedPureVoiceChangeEnabled_ = enabled;
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "effect toggle pureVoiceChange=%{public}d", enabled ? 1 : 0);
+        if (!SwitchPipelineLocked()) {
+            return false;
+        }
+        OH_AudioNode* node = ActiveEffectNodes().pureVoiceChange;
+        if (node == nullptr) {
+            return true;
+        }
+        if (enabled) {
+            return SetPureVoiceChangeStateLocked(node);
+        }
+        return BypassNodeLocked(node, true);
+    }
+
+    // gender: 1=女声 2=男声；type: 1..7；pitch: 0=系统推荐，自定义 [0.3, 3.0]
+    bool SetPureVoiceChangeConfig(int32_t gender, int32_t type, float pitch)
+    {
+        if (gender < 1 || gender > 2 || type < 1 || type > 7) {
+            return false;
+        }
+        const float clampedPitch = pitch <= 0.0f ? 0.0f : std::clamp(pitch, 0.3f, 3.0f);
+        pureVoiceChangeGender_ = gender;
+        pureVoiceChangeType_ = type;
+        pureVoiceChangePitch_ = clampedPitch;
+        std::lock_guard<std::mutex> lock(effectMutex_);
+        OH_AudioNode* node = ActiveEffectNodes().pureVoiceChange;
+        if (node == nullptr || !requestedPureVoiceChangeEnabled_.load()) {
+            return true;
+        }
+        return SetPureVoiceChangeStateLocked(node);
+    }
+
+    // ═══ 变速变调（211，特殊管线，48k/S16/1ch 输出）═══
+    bool SetTempoPitchEnabled(bool enabled)
+    {
+        std::lock_guard<std::mutex> lock(effectMutex_);
+        requestedTempoPitchEnabled_ = enabled;
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "effect toggle tempoPitch=%{public}d", enabled ? 1 : 0);
+        if (!SwitchPipelineLocked()) {
+            return false;
+        }
+        OH_AudioNode* node = ActiveEffectNodes().tempoPitch;
+        if (node == nullptr) {
+            return true;
+        }
+        if (enabled) {
+            return SetTempoPitchStateLocked(node);
+        }
+        return BypassNodeLocked(node, true);
+    }
+
+    // speed: [0.5, 10.0]；pitch: [0.1, 5.0]
+    bool SetTempoPitchConfig(float speed, float pitch)
+    {
+        const float clampedSpeed = std::clamp(speed, 0.5f, 10.0f);
+        const float clampedPitch = std::clamp(pitch, 0.1f, 5.0f);
+        tempoSpeed_ = clampedSpeed;
+        tempoPitch_ = clampedPitch;
+        std::lock_guard<std::mutex> lock(effectMutex_);
+        OH_AudioNode* node = ActiveEffectNodes().tempoPitch;
+        if (node == nullptr || !requestedTempoPitchEnabled_.load()) {
+            return true;
+        }
+        return SetTempoPitchStateLocked(node);
+    }
+
+    // ═══ 音源分离（204，分离管线，多输出人声/伴奏）═══
+    bool SetSeparationEnabled(bool enabled)
+    {
+        std::lock_guard<std::mutex> lock(effectMutex_);
+        requestedSeparationEnabled_ = enabled;
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "effect toggle separation=%{public}d usable=%{public}d",
+            enabled ? 1 : 0, sepPipelineUsable_ ? 1 : 0);
+        if (!SwitchPipelineLocked()) {
+            return false;
+        }
+        return true;
+    }
+
+    // output: 1=仅人声 2=仅伴奏 3=人声+伴奏混合
+    bool SetSeparationOutput(int32_t output)
+    {
+        if (output < 1 || output > 3) {
+            return false;
+        }
+        std::lock_guard<std::mutex> lock(effectMutex_);
+        separationOutput_ = output;
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "separation output=%{public}d", output);
+        return true;
     }
 
     bool IsEffectNodeSupported(int32_t nodeType)
@@ -947,19 +1106,19 @@ public:
     }
 
 private:
-    bool ApplyBandsLocked(const std::array<int32_t, EQUALIZER_BAND_NUM>& bands, bool verify)
+    bool ApplyBandsLocked(OH_AudioNode* eqNode, const std::array<int32_t, EQUALIZER_BAND_NUM>& bands, bool verify)
     {
-        if (eqNode_ == nullptr) {
+        if (eqNode == nullptr) {
             return false;
         }
-        OH_AudioSuite_Result bypassResult = OH_AudioSuiteEngine_BypassEffectNode(eqNode_, false);
+        OH_AudioSuite_Result bypassResult = OH_AudioSuiteEngine_BypassEffectNode(eqNode, false);
         if (bypassResult != AUDIOSUITE_SUCCESS) {
             OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                 "enable equalizer processing failed code=%{public}d", bypassResult);
             return false;
         }
         bool bypassed = true;
-        OH_AudioSuite_Result bypassStateResult = OH_AudioSuiteEngine_GetNodeBypassStatus(eqNode_, &bypassed);
+        OH_AudioSuite_Result bypassStateResult = OH_AudioSuiteEngine_GetNodeBypassStatus(eqNode, &bypassed);
         if (bypassStateResult != AUDIOSUITE_SUCCESS || bypassed) {
             OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                 "equalizer bypass verify failed code=%{public}d bypassed=%{public}d",
@@ -970,7 +1129,7 @@ private:
         for (size_t i = 0; i < bands.size(); i++) {
             gains.gains[i] = bands[i];
         }
-        OH_AudioSuite_Result setResult = OH_AudioSuiteEngine_SetEqualizerFrequencyBandGains(eqNode_, gains);
+        OH_AudioSuite_Result setResult = OH_AudioSuiteEngine_SetEqualizerFrequencyBandGains(eqNode, gains);
         if (setResult != AUDIOSUITE_SUCCESS) {
             OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                 "set equalizer bands failed code=%{public}d", setResult);
@@ -980,7 +1139,7 @@ private:
             return true;
         }
         OH_EqualizerFrequencyBandGains current = {};
-        OH_AudioSuite_Result getResult = OH_AudioSuiteEngine_GetEqualizerFrequencyBandGains(eqNode_, &current);
+        OH_AudioSuite_Result getResult = OH_AudioSuiteEngine_GetEqualizerFrequencyBandGains(eqNode, &current);
         if (getResult != AUDIOSUITE_SUCCESS) {
             OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                 "verify equalizer bands failed code=%{public}d", getResult);
@@ -1014,16 +1173,16 @@ private:
         return true;
     }
 
-    bool SetSoundFieldStateLocked()
+    bool SetSoundFieldStateLocked(OH_AudioNode* node)
     {
-        if (soundFieldNode_ == nullptr) {
+        if (node == nullptr) {
             return true;
         }
-        if (!BypassNodeLocked(soundFieldNode_, false)) {
+        if (!BypassNodeLocked(node, false)) {
             return false;
         }
         OH_AudioSuite_Result result = OH_AudioSuiteEngine_SetSoundFieldType(
-            soundFieldNode_, static_cast<OH_SoundFieldType>(soundFieldType_.load()));
+            node, static_cast<OH_SoundFieldType>(soundFieldType_.load()));
         if (result != AUDIOSUITE_SUCCESS) {
             OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                 "set sound field type failed code=%{public}d type=%{public}d",
@@ -1033,16 +1192,16 @@ private:
         return true;
     }
 
-    bool SetEnvironmentStateLocked()
+    bool SetEnvironmentStateLocked(OH_AudioNode* node)
     {
-        if (environmentNode_ == nullptr) {
+        if (node == nullptr) {
             return true;
         }
-        if (!BypassNodeLocked(environmentNode_, false)) {
+        if (!BypassNodeLocked(node, false)) {
             return false;
         }
         OH_AudioSuite_Result result = OH_AudioSuiteEngine_SetEnvironmentType(
-            environmentNode_, static_cast<OH_EnvironmentType>(environmentType_.load()));
+            node, static_cast<OH_EnvironmentType>(environmentType_.load()));
         if (result != AUDIOSUITE_SUCCESS) {
             OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                 "set environment type failed code=%{public}d type=%{public}d",
@@ -1052,16 +1211,16 @@ private:
         return true;
     }
 
-    bool SetBeautifierStateLocked()
+    bool SetBeautifierStateLocked(OH_AudioNode* node)
     {
-        if (beautifierNode_ == nullptr) {
+        if (node == nullptr) {
             return true;
         }
-        if (!BypassNodeLocked(beautifierNode_, false)) {
+        if (!BypassNodeLocked(node, false)) {
             return false;
         }
         OH_AudioSuite_Result result = OH_AudioSuiteEngine_SetVoiceBeautifierType(
-            beautifierNode_, static_cast<OH_VoiceBeautifierType>(beautifierType_.load()));
+            node, static_cast<OH_VoiceBeautifierType>(beautifierType_.load()));
         if (result != AUDIOSUITE_SUCCESS) {
             OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                 "set voice beautifier type failed code=%{public}d type=%{public}d",
@@ -1071,9 +1230,70 @@ private:
         return true;
     }
 
-    bool ApplySpaceRenderParamsLocked()
+    bool SetGeneralVoiceChangeStateLocked(OH_AudioNode* node)
     {
-        if (spaceRenderNode_ == nullptr) {
+        if (node == nullptr) {
+            return true;
+        }
+        if (!BypassNodeLocked(node, false)) {
+            return false;
+        }
+        OH_AudioSuite_Result result = OH_AudioSuiteEngine_SetGeneralVoiceChangeType(
+            node, static_cast<OH_AudioSuite_GeneralVoiceChangeType>(generalVoiceChangeType_.load()));
+        if (result != AUDIOSUITE_SUCCESS) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "set general voice change type failed code=%{public}d type=%{public}d",
+                static_cast<int>(result), generalVoiceChangeType_.load());
+            return false;
+        }
+        return true;
+    }
+
+    bool SetPureVoiceChangeStateLocked(OH_AudioNode* node)
+    {
+        if (node == nullptr) {
+            return true;
+        }
+        if (!BypassNodeLocked(node, false)) {
+            return false;
+        }
+        OH_AudioSuite_PureVoiceChangeOption option = {};
+        option.optionGender = static_cast<OH_AudioSuite_PureVoiceChangeGenderOption>(
+            pureVoiceChangeGender_.load());
+        option.optionType = static_cast<OH_AudioSuite_PureVoiceChangeType>(pureVoiceChangeType_.load());
+        option.pitch = pureVoiceChangePitch_.load();
+        OH_AudioSuite_Result result = OH_AudioSuiteEngine_SetPureVoiceChangeOption(node, option);
+        if (result != AUDIOSUITE_SUCCESS) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "set pure voice change option failed code=%{public}d gender=%{public}d type=%{public}d",
+                static_cast<int>(result), option.optionGender, option.optionType);
+            return false;
+        }
+        return true;
+    }
+
+    bool SetTempoPitchStateLocked(OH_AudioNode* node)
+    {
+        if (node == nullptr) {
+            return true;
+        }
+        if (!BypassNodeLocked(node, false)) {
+            return false;
+        }
+        OH_AudioSuite_Result result = OH_AudioSuiteEngine_SetTempoAndPitch(
+            node, tempoSpeed_.load(), tempoPitch_.load());
+        if (result != AUDIOSUITE_SUCCESS) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "set tempo and pitch failed code=%{public}d speed=%{public}.2f pitch=%{public}.2f",
+                static_cast<int>(result), tempoSpeed_.load(), tempoPitch_.load());
+            return false;
+        }
+        return true;
+    }
+
+    bool ApplySpaceRenderParamsLocked(OH_AudioNode* node)
+    {
+        if (node == nullptr) {
             return true;
         }
         OH_AudioSuite_Result result = AUDIOSUITE_SUCCESS;
@@ -1083,7 +1303,7 @@ private:
                 position.x = spaceX_;
                 position.y = spaceY_;
                 position.z = spaceZ_;
-                result = OH_AudioSuiteEngine_SetSpaceRenderPositionParams(spaceRenderNode_, position);
+                result = OH_AudioSuiteEngine_SetSpaceRenderPositionParams(node, position);
                 break;
             }
             case 1: {
@@ -1094,14 +1314,14 @@ private:
                 rotation.surroundTime = spaceSurroundTime_;
                 rotation.surroundDirection =
                     static_cast<OH_AudioSuite_SurroundDirection>(spaceSurroundDirection_);
-                result = OH_AudioSuiteEngine_SetSpaceRenderRotationParams(spaceRenderNode_, rotation);
+                result = OH_AudioSuiteEngine_SetSpaceRenderRotationParams(node, rotation);
                 break;
             }
             default: {
                 OH_AudioSuite_SpaceRenderExtensionParams extension = {};
                 extension.extRadius = spaceExtRadius_;
                 extension.extAngle = spaceExtAngle_;
-                result = OH_AudioSuiteEngine_SetSpaceRenderExtensionParams(spaceRenderNode_, extension);
+                result = OH_AudioSuiteEngine_SetSpaceRenderExtensionParams(node, extension);
                 break;
             }
         }
@@ -1114,20 +1334,20 @@ private:
         return true;
     }
 
-    bool SetSpaceRenderStateLocked()
+    bool SetSpaceRenderStateLocked(OH_AudioNode* node)
     {
-        if (spaceRenderNode_ == nullptr) {
+        if (node == nullptr) {
             return true;
         }
-        if (!BypassNodeLocked(spaceRenderNode_, false)) {
+        if (!BypassNodeLocked(node, false)) {
             return false;
         }
-        return ApplySpaceRenderParamsLocked();
+        return ApplySpaceRenderParamsLocked(node);
     }
 
     // required=true 时节点创建失败视为致命错误（效果被请求），否则尽力而为跳过该节点
-    bool CreateOptionalEffectNode(OH_AudioNodeBuilder* builder, OH_AudioNode_Type type, bool required,
-        OH_AudioNode** node)
+    bool CreateOptionalEffectNode(OH_AudioSuitePipeline* pipeline, OH_AudioNodeBuilder* builder,
+        OH_AudioNode_Type type, bool required, OH_AudioNode** node)
     {
         bool supported = false;
         OH_AudioSuite_Result probeResult = OH_AudioSuiteEngine_IsNodeTypeSupported(type, &supported);
@@ -1137,7 +1357,7 @@ private:
                 static_cast<int>(type), static_cast<int>(probeResult));
             return !required;
         }
-        OH_AudioSuite_Result createResult = OH_AudioSuiteEngine_CreateNode(pipeline_, builder, node);
+        OH_AudioSuite_Result createResult = OH_AudioSuiteEngine_CreateNode(pipeline, builder, node);
         if (createResult != AUDIOSUITE_SUCCESS) {
             OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                 "create effect node type=%{public}d failed code=%{public}d",
@@ -1149,20 +1369,24 @@ private:
         return true;
     }
 
-    // 动态串联存在的节点：input → eq → soundField → environment → beautifier → spaceRender → output
-    bool ChainNodes()
+    // 动态串联存在的节点：input → 主链效果（EQ/声场/环境/美化/空间渲染/通用变声）
+    // → 特殊效果（降噪/传统变声/变速变调，仅特殊管线有）→ output
+    bool ChainGroupNodes(PipelineGroup& group)
     {
         std::vector<OH_AudioNode*> chain;
-        chain.reserve(7);
-        chain.push_back(inputNode_);
-        OH_AudioNode* effectNodes[] = { eqNode_, soundFieldNode_, environmentNode_, beautifierNode_,
-            spaceRenderNode_ };
+        chain.reserve(12);
+        chain.push_back(group.input);
+        OH_AudioNode* effectNodes[] = {
+            group.effects.eq, group.effects.soundField, group.effects.environment,
+            group.effects.beautifier, group.effects.spaceRender, group.effects.generalVoiceChange,
+            group.effects.noiseReduction, group.effects.pureVoiceChange, group.effects.tempoPitch
+        };
         for (OH_AudioNode* node : effectNodes) {
             if (node != nullptr) {
                 chain.push_back(node);
             }
         }
-        chain.push_back(outputNode_);
+        chain.push_back(group.output);
         for (size_t i = 0; i + 1 < chain.size(); i++) {
             if (OH_AudioSuiteEngine_ConnectNodes(chain[i], chain[i + 1]) != AUDIOSUITE_SUCCESS) {
                 OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
@@ -1173,50 +1397,188 @@ private:
         return true;
     }
 
+    // 当前活跃管线的效果节点组：分离管线无效果节点（返回空的 main 组，调用方判 activePipeline_）
+    EffectNodeSet& ActiveEffectNodes()
+    {
+        if (activePipeline_ == ActivePipeline::SPECIAL) {
+            return specialGroup_.effects;
+        }
+        return mainGroup_.effects;
+    }
+
+    OH_AudioSuitePipeline* ActivePipelineHandle()
+    {
+        switch (activePipeline_) {
+            case ActivePipeline::MAIN:
+                return mainGroup_.pipeline;
+            case ActivePipeline::SPECIAL:
+                return specialGroup_.pipeline;
+            case ActivePipeline::SEP:
+                return sepGroup_.pipeline;
+            default:
+                return nullptr;
+        }
+    }
+
+    PipelineGroup& GroupFor(ActivePipeline pipeline)
+    {
+        switch (pipeline) {
+            case ActivePipeline::SPECIAL:
+                return specialGroup_;
+            case ActivePipeline::SEP:
+                return sepGroup_;
+            default:
+                return mainGroup_;
+        }
+    }
+
+    bool NeedSpecialPipeline() const
+    {
+        return requestedNoiseReductionEnabled_.load() || requestedPureVoiceChangeEnabled_.load() ||
+            requestedTempoPitchEnabled_.load();
+    }
+
+    // 按当前效果开关选择活跃管线：分离 > 特殊（降噪/传统变声/变速变调）> 主管线。
+    // 切换 = 停旧管线 → 起新管线 → 全量重放状态 → 请求直通保持（密度因子重测）。
+    // 失败时回退旧管线：目标效果不生效，但播放链路不被破坏。调用方须持有 effectMutex_。
+    bool SwitchPipelineLocked()
+    {
+        if (mainGroup_.pipeline == nullptr) {
+            return true; // 管线尚未创建（设置项在 Play 前下发）：仅记录状态，ConfigureEffects 按初始态选管线
+        }
+        ActivePipeline target = ActivePipeline::MAIN;
+        if (requestedSeparationEnabled_.load() && sepPipelineUsable_) {
+            target = ActivePipeline::SEP;
+        } else if (NeedSpecialPipeline() && specialPipelineUsable_) {
+            target = ActivePipeline::SPECIAL;
+        }
+        if (requestedSeparationEnabled_.load() && !sepPipelineUsable_) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "separation requested but pipeline unavailable (NPU unsupported)");
+        }
+        if (NeedSpecialPipeline() && !specialPipelineUsable_) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "special effects requested but pipeline unavailable");
+        }
+        if (target == activePipeline_) {
+            return true;
+        }
+        OH_AudioSuitePipeline* oldPipeline = ActivePipelineHandle();
+        if (oldPipeline != nullptr) {
+            OH_AudioSuiteEngine_StopPipeline(oldPipeline);
+        }
+        PipelineGroup& nextGroup = GroupFor(target);
+        if (nextGroup.pipeline == nullptr) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "switch target pipeline missing target=%{public}d", static_cast<int>(target));
+            if (oldPipeline != nullptr) {
+                OH_AudioSuiteEngine_StartPipeline(oldPipeline);
+            }
+            return false;
+        }
+        OH_AudioSuite_Result startResult = OH_AudioSuiteEngine_StartPipeline(nextGroup.pipeline);
+        if (startResult != AUDIOSUITE_SUCCESS) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "switch start pipeline failed target=%{public}d code=%{public}d",
+                static_cast<int>(target), static_cast<int>(startResult));
+            if (oldPipeline != nullptr) {
+                OH_AudioSuiteEngine_StartPipeline(oldPipeline);
+            }
+            return false;
+        }
+        activePipeline_ = target;
+        ApplyEffectStatesLocked();
+        // 新管线节点数不同 → 拉取密度可能变化，走直通保持重测，避免开关瞬间变调
+        pipelineHoldRequested_.store(true);
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "active pipeline switched target=%{public}d", static_cast<int>(target));
+        return true;
+    }
+
     bool ApplyEffectStatesLocked()
     {
-        if (eqNode_ != nullptr) {
+        if (activePipeline_ == ActivePipeline::SEP) {
+            return true; // 分离管线仅有分离节点（无旁路参数）
+        }
+        EffectNodeSet& nodes = ActiveEffectNodes();
+        if (nodes.eq != nullptr) {
             if (activeEqEnabled_.load()) {
-                if (!ApplyBandsLocked(bands_, true)) {
+                if (!ApplyBandsLocked(nodes.eq, bands_, true)) {
                     return false;
                 }
-            } else if (!BypassNodeLocked(eqNode_, true)) {
+            } else if (!BypassNodeLocked(nodes.eq, true)) {
                 return false;
             }
         }
-        if (soundFieldNode_ != nullptr) {
+        if (nodes.soundField != nullptr) {
             if (requestedSoundFieldEnabled_.load()) {
-                if (!SetSoundFieldStateLocked()) {
+                if (!SetSoundFieldStateLocked(nodes.soundField)) {
                     return false;
                 }
-            } else if (!BypassNodeLocked(soundFieldNode_, true)) {
+            } else if (!BypassNodeLocked(nodes.soundField, true)) {
                 return false;
             }
         }
-        if (environmentNode_ != nullptr) {
+        if (nodes.environment != nullptr) {
             if (requestedEnvironmentEnabled_.load()) {
-                if (!SetEnvironmentStateLocked()) {
+                if (!SetEnvironmentStateLocked(nodes.environment)) {
                     return false;
                 }
-            } else if (!BypassNodeLocked(environmentNode_, true)) {
+            } else if (!BypassNodeLocked(nodes.environment, true)) {
                 return false;
             }
         }
-        if (beautifierNode_ != nullptr) {
+        if (nodes.beautifier != nullptr) {
             if (requestedBeautifierEnabled_.load()) {
-                if (!SetBeautifierStateLocked()) {
+                if (!SetBeautifierStateLocked(nodes.beautifier)) {
                     return false;
                 }
-            } else if (!BypassNodeLocked(beautifierNode_, true)) {
+            } else if (!BypassNodeLocked(nodes.beautifier, true)) {
                 return false;
             }
         }
-        if (spaceRenderNode_ != nullptr) {
+        if (nodes.spaceRender != nullptr) {
             if (requestedSpaceRenderEnabled_.load()) {
-                if (!SetSpaceRenderStateLocked()) {
+                if (!SetSpaceRenderStateLocked(nodes.spaceRender)) {
                     return false;
                 }
-            } else if (!BypassNodeLocked(spaceRenderNode_, true)) {
+            } else if (!BypassNodeLocked(nodes.spaceRender, true)) {
+                return false;
+            }
+        }
+        if (nodes.generalVoiceChange != nullptr) {
+            if (requestedGeneralVoiceChangeEnabled_.load()) {
+                if (!SetGeneralVoiceChangeStateLocked(nodes.generalVoiceChange)) {
+                    return false;
+                }
+            } else if (!BypassNodeLocked(nodes.generalVoiceChange, true)) {
+                return false;
+            }
+        }
+        if (nodes.noiseReduction != nullptr) {
+            if (requestedNoiseReductionEnabled_.load()) {
+                if (!BypassNodeLocked(nodes.noiseReduction, false)) {
+                    return false;
+                }
+            } else if (!BypassNodeLocked(nodes.noiseReduction, true)) {
+                return false;
+            }
+        }
+        if (nodes.pureVoiceChange != nullptr) {
+            if (requestedPureVoiceChangeEnabled_.load()) {
+                if (!SetPureVoiceChangeStateLocked(nodes.pureVoiceChange)) {
+                    return false;
+                }
+            } else if (!BypassNodeLocked(nodes.pureVoiceChange, true)) {
+                return false;
+            }
+        }
+        if (nodes.tempoPitch != nullptr) {
+            if (requestedTempoPitchEnabled_.load()) {
+                if (!SetTempoPitchStateLocked(nodes.tempoPitch)) {
+                    return false;
+                }
+            } else if (!BypassNodeLocked(nodes.tempoPitch, true)) {
                 return false;
             }
         }
@@ -1310,12 +1672,55 @@ private:
         return configured && prepareResult == AV_ERR_OK && startResult == AV_ERR_OK;
     }
 
-    bool ConfigureEffects()
+    // 停止并销毁三组管线的全部节点与管线（引擎由 Stop 在其后统一销毁）
+    void DestroyPipelineGroups()
     {
-        if (!IsEqualizerSupported() || OH_AudioSuiteEngine_Create(&engine_) != AUDIOSUITE_SUCCESS ||
-            OH_AudioSuiteEngine_CreatePipeline(engine_, &pipeline_, AUDIOSUITE_PIPELINE_REALTIME_MODE) !=
-                AUDIOSUITE_SUCCESS) {
-            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG, "effect engine setup failed");
+        PipelineGroup* groups[] = { &mainGroup_, &specialGroup_, &sepGroup_ };
+        for (PipelineGroup* group : groups) {
+            if (group->pipeline != nullptr) {
+                OH_AudioSuiteEngine_StopPipeline(group->pipeline);
+            }
+        }
+        for (PipelineGroup* group : groups) {
+            OH_AudioNode* nodes[] = {
+                group->input, group->output, group->effects.eq, group->effects.soundField,
+                group->effects.environment, group->effects.beautifier, group->effects.spaceRender,
+                group->effects.generalVoiceChange, group->effects.noiseReduction,
+                group->effects.pureVoiceChange, group->effects.tempoPitch
+            };
+            for (OH_AudioNode* node : nodes) {
+                if (node != nullptr) {
+                    OH_AudioSuiteEngine_DestroyNode(node);
+                }
+            }
+            group->input = nullptr;
+            group->output = nullptr;
+            group->effects = EffectNodeSet();
+        }
+        if (sepNode_ != nullptr) {
+            OH_AudioSuiteEngine_DestroyNode(sepNode_);
+            sepNode_ = nullptr;
+        }
+        for (PipelineGroup* group : groups) {
+            if (group->pipeline != nullptr) {
+                OH_AudioSuiteEngine_DestroyPipeline(group->pipeline);
+                group->pipeline = nullptr;
+            }
+        }
+        activePipeline_ = ActivePipeline::NONE;
+        specialPipelineUsable_ = false;
+        sepPipelineUsable_ = false;
+    }
+
+    // 创建一组实时预览管线：input(48k/S16/2ch) → 效果节点 → output(48k/S16/2ch)。
+    // withFormatChanging=true 时额外创建降噪/传统变声/变速变调（输出格式与立体声链路不一致，
+    // 仅特殊管线使用）。创建完成后不启动，由 SwitchPipelineLocked 决定活跃组。
+    bool BuildPipelineGroup(PipelineGroup& group, bool withFormatChanging)
+    {
+        if (OH_AudioSuiteEngine_CreatePipeline(engine_, &group.pipeline,
+            AUDIOSUITE_PIPELINE_REALTIME_MODE) != AUDIOSUITE_SUCCESS) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "create pipeline failed formatChanging=%{public}d", withFormatChanging ? 1 : 0);
             return false;
         }
         OH_AudioNodeBuilder* builder = nullptr;
@@ -1332,27 +1737,45 @@ private:
         OH_AudioSuiteNodeBuilder_SetNodeType(builder, INPUT_NODE_TYPE_DEFAULT);
         OH_AudioSuiteNodeBuilder_SetFormat(builder, inputFormat);
         OH_AudioSuiteNodeBuilder_SetRequestDataCallback(builder, InputDataCallback, this);
-        bool success = OH_AudioSuiteEngine_CreateNode(pipeline_, builder, &inputNode_) == AUDIOSUITE_SUCCESS;
+        bool success = OH_AudioSuiteEngine_CreateNode(group.pipeline, builder, &group.input) == AUDIOSUITE_SUCCESS;
         OH_AudioSuiteNodeBuilder_Reset(builder);
         OH_AudioSuiteNodeBuilder_SetNodeType(builder, EFFECT_NODE_TYPE_EQUALIZER);
-        success = success && CreateOptionalEffectNode(builder, EFFECT_NODE_TYPE_EQUALIZER,
-            activeEqEnabled_.load(), &eqNode_);
+        success = success && CreateOptionalEffectNode(group.pipeline, builder, EFFECT_NODE_TYPE_EQUALIZER,
+            false, &group.effects.eq);
         OH_AudioSuiteNodeBuilder_Reset(builder);
         OH_AudioSuiteNodeBuilder_SetNodeType(builder, EFFECT_NODE_TYPE_SOUND_FIELD);
-        success = success && CreateOptionalEffectNode(builder, EFFECT_NODE_TYPE_SOUND_FIELD, false,
-            &soundFieldNode_);
+        success = success && CreateOptionalEffectNode(group.pipeline, builder, EFFECT_NODE_TYPE_SOUND_FIELD,
+            false, &group.effects.soundField);
         OH_AudioSuiteNodeBuilder_Reset(builder);
         OH_AudioSuiteNodeBuilder_SetNodeType(builder, EFFECT_NODE_TYPE_ENVIRONMENT_EFFECT);
-        success = success && CreateOptionalEffectNode(builder, EFFECT_NODE_TYPE_ENVIRONMENT_EFFECT, false,
-            &environmentNode_);
+        success = success && CreateOptionalEffectNode(group.pipeline, builder,
+            EFFECT_NODE_TYPE_ENVIRONMENT_EFFECT, false, &group.effects.environment);
         OH_AudioSuiteNodeBuilder_Reset(builder);
         OH_AudioSuiteNodeBuilder_SetNodeType(builder, EFFECT_NODE_TYPE_VOICE_BEAUTIFIER);
-        success = success && CreateOptionalEffectNode(builder, EFFECT_NODE_TYPE_VOICE_BEAUTIFIER, false,
-            &beautifierNode_);
+        success = success && CreateOptionalEffectNode(group.pipeline, builder,
+            EFFECT_NODE_TYPE_VOICE_BEAUTIFIER, false, &group.effects.beautifier);
         OH_AudioSuiteNodeBuilder_Reset(builder);
         OH_AudioSuiteNodeBuilder_SetNodeType(builder, EFFECT_NODE_TYPE_SPACE_RENDER);
-        success = success && CreateOptionalEffectNode(builder, EFFECT_NODE_TYPE_SPACE_RENDER, false,
-            &spaceRenderNode_);
+        success = success && CreateOptionalEffectNode(group.pipeline, builder,
+            EFFECT_NODE_TYPE_SPACE_RENDER, false, &group.effects.spaceRender);
+        OH_AudioSuiteNodeBuilder_Reset(builder);
+        OH_AudioSuiteNodeBuilder_SetNodeType(builder, EFFECT_NODE_TYPE_GENERAL_VOICE_CHANGE);
+        success = success && CreateOptionalEffectNode(group.pipeline, builder,
+            EFFECT_NODE_TYPE_GENERAL_VOICE_CHANGE, false, &group.effects.generalVoiceChange);
+        if (withFormatChanging) {
+            OH_AudioSuiteNodeBuilder_Reset(builder);
+            OH_AudioSuiteNodeBuilder_SetNodeType(builder, EFFECT_NODE_TYPE_NOISE_REDUCTION);
+            success = success && CreateOptionalEffectNode(group.pipeline, builder,
+                EFFECT_NODE_TYPE_NOISE_REDUCTION, false, &group.effects.noiseReduction);
+            OH_AudioSuiteNodeBuilder_Reset(builder);
+            OH_AudioSuiteNodeBuilder_SetNodeType(builder, EFFECT_NODE_TYPE_PURE_VOICE_CHANGE);
+            success = success && CreateOptionalEffectNode(group.pipeline, builder,
+                EFFECT_NODE_TYPE_PURE_VOICE_CHANGE, false, &group.effects.pureVoiceChange);
+            OH_AudioSuiteNodeBuilder_Reset(builder);
+            OH_AudioSuiteNodeBuilder_SetNodeType(builder, EFFECT_NODE_TYPE_TEMPO_PITCH);
+            success = success && CreateOptionalEffectNode(group.pipeline, builder,
+                EFFECT_NODE_TYPE_TEMPO_PITCH, false, &group.effects.tempoPitch);
+        }
         OH_AudioSuiteNodeBuilder_Reset(builder);
         OH_AudioFormat outputFormat = {};
         outputFormat.samplingRate = SAMPLE_RATE_48000;
@@ -1362,18 +1785,132 @@ private:
         outputFormat.sampleFormat = AUDIO_SAMPLE_S16LE;
         OH_AudioSuiteNodeBuilder_SetNodeType(builder, OUTPUT_NODE_TYPE_DEFAULT);
         OH_AudioSuiteNodeBuilder_SetFormat(builder, outputFormat);
-        success = success && OH_AudioSuiteEngine_CreateNode(pipeline_, builder, &outputNode_) == AUDIOSUITE_SUCCESS;
+        success = success &&
+            OH_AudioSuiteEngine_CreateNode(group.pipeline, builder, &group.output) == AUDIOSUITE_SUCCESS;
         OH_AudioSuiteNodeBuilder_Destroy(builder);
-        if (!success || !ChainNodes()) {
+        if (!success || !ChainGroupNodes(group)) {
             return false;
         }
+        return true;
+    }
+
+    // 分离管线：input(48k/S16/2ch) → 音源分离(多输出) → output(48k/S16/2ch)。
+    // 官方约束：音源分离节点只能连接输出节点，且每个管线不超过 1 个；依赖 NPU 需先探测。
+    bool BuildSeparationPipeline()
+    {
+        bool supported = false;
+        OH_AudioSuite_Result probeResult = OH_AudioSuiteEngine_IsNodeTypeSupported(
+            EFFECT_MULTII_OUTPUT_NODE_TYPE_AUDIO_SEPARATION, &supported);
+        if (probeResult != AUDIOSUITE_SUCCESS || !supported) {
+            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "audio separation unsupported code=%{public}d", static_cast<int>(probeResult));
+            return false;
+        }
+        if (OH_AudioSuiteEngine_CreatePipeline(engine_, &sepGroup_.pipeline,
+            AUDIOSUITE_PIPELINE_REALTIME_MODE) != AUDIOSUITE_SUCCESS) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "create separation pipeline failed");
+            return false;
+        }
+        OH_AudioNodeBuilder* builder = nullptr;
+        if (OH_AudioSuiteNodeBuilder_Create(&builder) != AUDIOSUITE_SUCCESS) {
+            return false;
+        }
+        OH_AudioFormat inputFormat = {};
+        inputFormat.samplingRate = SAMPLE_RATE_48000;
+        inputFormat.channelLayout = CH_LAYOUT_STEREO;
+        inputFormat.channelCount = 2;
+        inputFormat.encodingType = AUDIO_ENCODING_TYPE_RAW;
+        inputFormat.sampleFormat = AUDIO_SAMPLE_S16LE;
+        OH_AudioSuiteNodeBuilder_SetNodeType(builder, INPUT_NODE_TYPE_DEFAULT);
+        OH_AudioSuiteNodeBuilder_SetFormat(builder, inputFormat);
+        OH_AudioSuiteNodeBuilder_SetRequestDataCallback(builder, InputDataCallback, this);
+        bool success = OH_AudioSuiteEngine_CreateNode(sepGroup_.pipeline, builder, &sepGroup_.input) ==
+            AUDIOSUITE_SUCCESS;
+        OH_AudioSuiteNodeBuilder_Reset(builder);
+        OH_AudioSuiteNodeBuilder_SetNodeType(builder, EFFECT_MULTII_OUTPUT_NODE_TYPE_AUDIO_SEPARATION);
+        success = success && OH_AudioSuiteEngine_CreateNode(sepGroup_.pipeline, builder, &sepNode_) ==
+            AUDIOSUITE_SUCCESS;
+        OH_AudioSuiteNodeBuilder_Reset(builder);
+        OH_AudioFormat outputFormat = {};
+        outputFormat.samplingRate = SAMPLE_RATE_48000;
+        outputFormat.channelLayout = CH_LAYOUT_STEREO;
+        outputFormat.channelCount = 2;
+        outputFormat.encodingType = AUDIO_ENCODING_TYPE_RAW;
+        outputFormat.sampleFormat = AUDIO_SAMPLE_S16LE;
+        OH_AudioSuiteNodeBuilder_SetNodeType(builder, OUTPUT_NODE_TYPE_DEFAULT);
+        OH_AudioSuiteNodeBuilder_SetFormat(builder, outputFormat);
+        success = success && OH_AudioSuiteEngine_CreateNode(sepGroup_.pipeline, builder, &sepGroup_.output) ==
+            AUDIOSUITE_SUCCESS;
+        OH_AudioSuiteNodeBuilder_Destroy(builder);
+        if (!success || sepNode_ == nullptr || sepGroup_.input == nullptr || sepGroup_.output == nullptr) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "separation node chain setup failed");
+            return false;
+        }
+        if (OH_AudioSuiteEngine_ConnectNodes(sepGroup_.input, sepNode_) != AUDIOSUITE_SUCCESS ||
+            OH_AudioSuiteEngine_ConnectNodes(sepNode_, sepGroup_.output) != AUDIOSUITE_SUCCESS) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "connect separation nodes failed");
+            return false;
+        }
+        return true;
+    }
+
+    bool ConfigureEffects()
+    {
+        if (!IsEqualizerSupported() || OH_AudioSuiteEngine_Create(&engine_) != AUDIOSUITE_SUCCESS) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG, "effect engine setup failed");
+            return false;
+        }
+        // 主管线为播放基本盘：创建失败视为致命（回归 AVPlayer 直通）
+        if (!BuildPipelineGroup(mainGroup_, false)) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG, "main pipeline setup failed");
+            return false;
+        }
+        // 特殊/分离管线尽力而为：设备不支持时置不可用，效果开关静默保持主管线
+        specialPipelineUsable_ = BuildPipelineGroup(specialGroup_, true);
+        sepPipelineUsable_ = BuildSeparationPipeline();
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "pipelines built main=1 special=%{public}d separation=%{public}d",
+            specialPipelineUsable_ ? 1 : 0, sepPipelineUsable_ ? 1 : 0);
         {
             std::lock_guard<std::mutex> lock(effectMutex_);
+            // 初始活跃管线按持久化设置选择（分离 > 特殊 > 主管线）
+            ActivePipeline initial = ActivePipeline::MAIN;
+            if (requestedSeparationEnabled_.load() && sepPipelineUsable_) {
+                initial = ActivePipeline::SEP;
+            } else if (NeedSpecialPipeline() && specialPipelineUsable_) {
+                initial = ActivePipeline::SPECIAL;
+            }
+            activePipeline_ = initial;
             if (!ApplyEffectStatesLocked()) {
+                OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                    "apply initial effect states failed");
                 return false;
             }
+            PipelineGroup& group = GroupFor(initial);
+            if (OH_AudioSuiteEngine_StartPipeline(group.pipeline) != AUDIOSUITE_SUCCESS) {
+                OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                    "start initial pipeline failed initial=%{public}d", static_cast<int>(initial));
+                // 特殊/分离管线启动失败 → 回退主管线（主管线为基本盘）
+                if (initial != ActivePipeline::MAIN) {
+                    activePipeline_ = ActivePipeline::MAIN;
+                    if (initial == ActivePipeline::SEP) {
+                        sepPipelineUsable_ = false;
+                    } else {
+                        specialPipelineUsable_ = false;
+                    }
+                    ApplyEffectStatesLocked();
+                    if (OH_AudioSuiteEngine_StartPipeline(mainGroup_.pipeline) != AUDIOSUITE_SUCCESS) {
+                        return false;
+                    }
+                } else {
+                    return false;
+                }
+            }
         }
-        return OH_AudioSuiteEngine_StartPipeline(pipeline_) == AUDIOSUITE_SUCCESS;
+        return true;
     }
 
     bool ConfigureRenderer()
@@ -2056,16 +2593,24 @@ private:
             std::memset(audioData, 0, static_cast<size_t>(audioDataSize));
             return true;
         }
+        // 分离管线为多输出（人声/伴奏两路），必须走 MultiRenderFrame 并按输出模式选路/混合
+        {
+            std::lock_guard<std::mutex> lock(effectMutex_);
+            if (activePipeline_ == ActivePipeline::SEP) {
+                return RenderSeparationFrameLocked(audioData, audioDataSize);
+            }
+        }
         bool finished = false;
         int32_t produced = 0;
         {
             std::lock_guard<std::mutex> lock(effectMutex_);
+            OH_AudioSuitePipeline* activePipeline = ActivePipelineHandle();
             int32_t attempt = 0;
             while (produced < audioDataSize) {
                 int32_t responseSize = 0;
                 bool partFinished = false;
                 OH_AudioSuite_Result result = OH_AudioSuiteEngine_RenderFrame(
-                    pipeline_, static_cast<uint8_t*>(audioData) + produced,
+                    activePipeline, static_cast<uint8_t*>(audioData) + produced,
                     audioDataSize - produced, &responseSize, &partFinished);
                 if (result != AUDIOSUITE_SUCCESS) {
                     OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
@@ -2155,6 +2700,113 @@ private:
                 static_cast<unsigned long long>(pipelineInputBytes_.load(
                     std::memory_order_relaxed)));
         }
+        if (finished) {
+            audioSuiteEofReached_ = true;
+            MarkPlaybackCompleted();
+        }
+        return true;
+    }
+
+    // 分离管线渲染：MultiRenderFrame 取人声/伴奏两路，按 separationOutput_ 选路或混合后交付。
+    // 官方示例中两路输出缓冲与输出节点同格式（48k/S16/2ch），requestFrameSize 为单路字节数。
+    // 调用方须已持有 effectMutex_（仅渲染线程调用）。
+    bool RenderSeparationFrameLocked(void* audioData, int32_t audioDataSize)
+    {
+        const size_t requiredBytes = static_cast<size_t>(audioDataSize);
+        if (sepScratchA_.size() * sizeof(int16_t) < requiredBytes ||
+            sepScratchB_.size() * sizeof(int16_t) < requiredBytes) {
+            const size_t samples = (requiredBytes + sizeof(int16_t) - 1) / sizeof(int16_t);
+            sepScratchA_.assign(samples, 0);
+            sepScratchB_.assign(samples, 0);
+        }
+        void* buffers[2] = { sepScratchA_.data(), sepScratchB_.data() };
+        OH_AudioDataArray dataArray = {};
+        dataArray.audioDataArray = buffers;
+        dataArray.arraySize = 2;
+        dataArray.requestFrameSize = audioDataSize;
+
+        bool finished = false;
+        int32_t produced = 0;
+        int32_t attempt = 0;
+        while (produced < audioDataSize) {
+            int32_t responseSize = 0;
+            bool partFinished = false;
+            OH_AudioSuite_Result result = OH_AudioSuiteEngine_MultiRenderFrame(
+                sepGroup_.pipeline, &dataArray, &responseSize, &partFinished);
+            if (result != AUDIOSUITE_SUCCESS) {
+                OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                    "MultiRenderFrame failed result=%{public}d responseSize=%{public}d inputSize=%{public}d",
+                    static_cast<int>(result), responseSize, audioDataSize - produced);
+                if (produced == 0) {
+                    return false;
+                }
+                break;
+            }
+            if (responseSize > audioDataSize - produced) {
+                responseSize = audioDataSize - produced;
+            }
+            if (responseSize > 0) {
+                // 按输出模式合成：1=仅人声 2=仅伴奏 3=人声+伴奏等权平均
+                const int32_t output = separationOutput_.load();
+                const int16_t* vocal = static_cast<const int16_t*>(buffers[0]);
+                const int16_t* accompaniment = static_cast<const int16_t*>(buffers[1]);
+                int16_t* out = static_cast<int16_t*>(audioData) + produced / sizeof(int16_t);
+                const int32_t samples = responseSize / static_cast<int32_t>(sizeof(int16_t));
+                for (int32_t i = 0; i < samples; i++) {
+                    if (output == 2) {
+                        out[i] = accompaniment[i];
+                    } else if (output == 3) {
+                        const int32_t mixed = (static_cast<int32_t>(vocal[i]) +
+                            static_cast<int32_t>(accompaniment[i])) / 2;
+                        out[i] = static_cast<int16_t>(std::clamp(mixed, -32768, 32767));
+                    } else {
+                        out[i] = vocal[i];
+                    }
+                }
+                produced += responseSize;
+            }
+            finished = finished || partFinished;
+            if (partFinished || produced >= audioDataSize) {
+                break;
+            }
+            attempt++;
+            if (attempt > PIPELINE_SHORTFALL_RETRY_MAX) {
+                break;
+            }
+            if (responseSize == 0) {
+                std::this_thread::sleep_for(
+                    std::chrono::milliseconds(PIPELINE_SHORTFALL_RETRY_WAIT_MS));
+            }
+        }
+        ApplyLoudnessCompensation(audioData, produced);
+        const int32_t totalSamples = audioDataSize / static_cast<int32_t>(sizeof(int16_t));
+        const int32_t validSamples = produced / static_cast<int32_t>(sizeof(int16_t));
+        int16_t* outSamples = static_cast<int16_t*>(audioData);
+        if (validSamples < totalSamples) {
+            constexpr int32_t SHORTFALL_FADE_SAMPLES = 128;
+            const int32_t fadeStart = std::max(0, validSamples - SHORTFALL_FADE_SAMPLES);
+            for (int32_t i = fadeStart; i < validSamples; i++) {
+                const double fadeGain = static_cast<double>(validSamples - i) /
+                    static_cast<double>(validSamples - fadeStart);
+                outSamples[i] = static_cast<int16_t>(std::lround(
+                    static_cast<double>(outSamples[i]) * fadeGain));
+            }
+            std::memset(outSamples + validSamples, 0,
+                static_cast<size_t>(totalSamples - validSamples) * sizeof(int16_t));
+            pipelineShortfallPrev_ = true;
+        } else if (pipelineShortfallPrev_) {
+            constexpr int32_t SHORTFALL_FADE_SAMPLES = 128;
+            const int32_t fadeSamples = std::min(SHORTFALL_FADE_SAMPLES, totalSamples);
+            for (int32_t i = 0; i < fadeSamples; i++) {
+                const double fadeGain = static_cast<double>(i + 1) / static_cast<double>(fadeSamples);
+                outSamples[i] = static_cast<int16_t>(std::lround(
+                    static_cast<double>(outSamples[i]) * fadeGain));
+            }
+            pipelineShortfallPrev_ = false;
+        }
+        pipelineRenderCalls_++;
+        pipelineRenderReqBytes_ += static_cast<uint64_t>(audioDataSize);
+        pipelineRenderRespBytes_ += static_cast<uint64_t>(produced);
         if (finished) {
             audioSuiteEofReached_ = true;
             MarkPlaybackCompleted();
@@ -2463,14 +3115,20 @@ private:
     OH_AVFormat* trackFormat_ = nullptr;
     OH_AudioRenderer* renderer_ = nullptr;
     OH_AudioSuiteEngine* engine_ = nullptr;
-    OH_AudioSuitePipeline* pipeline_ = nullptr;
-    OH_AudioNode* inputNode_ = nullptr;
-    OH_AudioNode* eqNode_ = nullptr;
-    OH_AudioNode* soundFieldNode_ = nullptr;
-    OH_AudioNode* environmentNode_ = nullptr;
-    OH_AudioNode* beautifierNode_ = nullptr;
-    OH_AudioNode* spaceRenderNode_ = nullptr;
-    OH_AudioNode* outputNode_ = nullptr;
+    // 三组管线：主管线（6 个全格式兼容效果节点，始终可用）、
+    // 特殊管线（主链 + 降噪/传统变声/变速变调，按需启动）、分离管线（音源分离多输出节点）。
+    // activePipeline_ 标记当前活跃组，渲染线程与效果开关线程均在 effectMutex_ 保护下读写。
+    PipelineGroup mainGroup_;
+    PipelineGroup specialGroup_;
+    PipelineGroup sepGroup_;
+    OH_AudioNode* sepNode_ = nullptr;
+    ActivePipeline activePipeline_ = ActivePipeline::NONE;
+    // 特殊/分离管线是否创建成功（设备不支持对应节点时置 false，启用时静默保持主管线）
+    bool specialPipelineUsable_ = false;
+    bool sepPipelineUsable_ = false;
+    // 音源分离双路输出暂存（MultiRenderFrame 的人声/伴奏缓冲，字节宽度同渲染帧）
+    std::vector<int16_t> sepScratchA_;
+    std::vector<int16_t> sepScratchB_;
     uint32_t trackIndex_ = 0;
     int32_t sampleRate_ = 48000;
     int32_t channelCount_ = 2;
@@ -2521,6 +3179,19 @@ private:
     std::atomic<int32_t> environmentType_ = 1;
     std::atomic<int32_t> beautifierType_ = 1;
     std::atomic<int32_t> spaceRenderMode_ = 0;
+    // 新增效果节点状态（通用变声/降噪/传统变声/变速变调/音源分离）
+    std::atomic<bool> requestedGeneralVoiceChangeEnabled_ = false;
+    std::atomic<int32_t> generalVoiceChangeType_ = 1;      // 1..10，见 OH_AudioSuite_GeneralVoiceChangeType
+    std::atomic<bool> requestedNoiseReductionEnabled_ = false;
+    std::atomic<bool> requestedPureVoiceChangeEnabled_ = false;
+    std::atomic<int32_t> pureVoiceChangeGender_ = 1;       // 1=女声 2=男声
+    std::atomic<int32_t> pureVoiceChangeType_ = 1;         // 1..7，见 OH_AudioSuite_PureVoiceChangeType
+    std::atomic<float> pureVoiceChangePitch_ = 0.0f;       // 0=系统推荐（OH_PURE_VOICE_DEFAULT_PITCH），自定义 [0.3,3.0]
+    std::atomic<bool> requestedTempoPitchEnabled_ = false;
+    std::atomic<float> tempoSpeed_ = 1.0f;                 // [0.5,10.0]
+    std::atomic<float> tempoPitch_ = 1.0f;                 // [0.1,5.0]
+    std::atomic<bool> requestedSeparationEnabled_ = false;
+    std::atomic<int32_t> separationOutput_ = 1;            // 1=仅人声 2=仅伴奏 3=人声+伴奏混合
     // JS 线程 SetSpeed 写、渲染回调 MeasureInputDensity 读，必须原子
     std::atomic<float> playbackSpeed_ = 1.0f;
     float volume_ = 1.0f;
