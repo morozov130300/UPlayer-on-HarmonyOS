@@ -2053,13 +2053,14 @@ struct SettingsDetailPage {
   aboutInfoRow(label: string, value: string): void {
     Row() {
       Text(label)
-        .fontSize(this.scaledFont(13))
+        .fontSize(this.scaledFont(14))
         .fontColor(this.settingTextColor())
-        .textAlign(TextAlign.Start)
+        .fontWeight(FontWeight.Medium)
+        .maxLines(1)
         .flexShrink(0)
       Blank()
       Text(value)
-        .fontSize(this.scaledFont(13))
+        .fontSize(this.scaledFont(14))
         .fontColor(this.settingTextColor())
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -2068,7 +2069,7 @@ struct SettingsDetailPage {
     }
     .width('100%')
     .constraintSize({ minWidth: 0, maxWidth: '100%' })
-    .height(this.scaledSize(40))
+    .height(this.scaledSize(44))
     .alignItems(VerticalAlign.Center)
     .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
     .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
@@ -2149,13 +2150,14 @@ struct SettingsDetailPage {
   checkUpdateRow(): void {
     Row() {
       Text('检查更新')
-        .fontSize(this.scaledFont(13))
+        .fontSize(this.scaledFont(14))
         .fontColor(this.settingTextColor())
-        .textAlign(TextAlign.Start)
+        .fontWeight(FontWeight.Medium)
+        .maxLines(1)
         .flexShrink(0)
       Blank()
       Text(this.checkingUpdate ? '正在检查…' : '检查新版本')
-        .fontSize(this.scaledFont(13))
+        .fontSize(this.scaledFont(14))
         .fontColor(this.checkingUpdate ? this.settingInactiveTextColor() : this.primaryColor)
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -2164,7 +2166,7 @@ struct SettingsDetailPage {
     }
     .width('100%')
     .constraintSize({ minWidth: 0, maxWidth: '100%' })
-    .height(this.scaledSize(40))
+    .height(this.scaledSize(44))
     .alignItems(VerticalAlign.Center)
     .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
     .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
