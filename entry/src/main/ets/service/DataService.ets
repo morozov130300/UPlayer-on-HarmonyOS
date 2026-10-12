@@ -1076,8 +1076,15 @@ return result
     for (let offset = 0; offset < uris.length; offset += batchSize) {
       const batch: string[] = uris.slice(offset, offset + batchSize)
       const policies: fileShare.PolicyInfo[] = []
+      // 读写授权单独一组：新导入歌曲已持久化 READ|WRITE（编辑歌曲信息需真实写回源文件），
+      // 旧库歌曲只持久化过读权限时该组 check 不过、自动跳过，不影响原有读激活
+      const rwPolicies: fileShare.PolicyInfo[] = []
       for (let i = 0; i < batch.length; i++) {
         policies.push({ uri: batch[i], operationMode: fileShare.OperationMode.READ_MODE })
+        rwPolicies.push({
+          uri: batch[i],
+          operationMode: fileShare.OperationMode.READ_MODE | fileShare.OperationMode.WRITE_MODE
+        })
       }
       try {
         const persistent: boolean[] = await fileShare.checkPersistentPermission(policies)
@@ -1088,6 +1095,15 @@ return result
         if (authorized.length > 0) {
           await fileShare.activatePermission(authorized)
           Logger.info(TAG, `activatePersistedUris: activated ${authorized.length} URIs`)
+        }
+        const persistentRw: boolean[] = await fileShare.checkPersistentPermission(rwPolicies)
+        const authorizedRw: fileShare.PolicyInfo[] = []
+        for (let i = 0; i < rwPolicies.length; i++) {
+          if (persistentRw[i]) authorizedRw.push(rwPolicies[i])
+        }
+        if (authorizedRw.length > 0) {
+          await fileShare.activatePermission(authorizedRw)
+          Logger.info(TAG, `activatePersistedUris: activated rw ${authorizedRw.length} URIs`)
         }
       } catch (err) {
         const error: BusinessError<Array<fileShare.PolicyErrorResult>> =

@@ -9,12 +9,14 @@
 #include <deque>
 #include <list>
 #include <limits>
+#include <map>
 #include <mutex>
 #include <string>
 #include <thread>
 #include <unordered_map>
 #include <vector>
 #include <unistd.h>
+#include <sys/stat.h>
 #include "napi/native_api.h"
 #include "hilog/log.h"
 #include "multimedia/native_audio_channel_layout.h"
@@ -66,6 +68,18 @@ constexpr int64_t DENSITY_HOLD_COOLDOWN_MS = 2000;       // 播放中自动保�
 // 短响应时在回调预算内重试拉取剩余字节，用真实数据补满帧，而非补零遮蔽。
 constexpr int32_t PIPELINE_SHORTFALL_RETRY_MAX = 4;      // 短响应重试上限（单帧总调用 ≤5 次）
 constexpr int32_t PIPELINE_SHORTFALL_RETRY_WAIT_MS = 1;  // 零产出时的微等待，给效果服务补块时间
+
+// 渲染工作线程 + 环形缓冲解耦：官方文档明示 RenderFrame 处理时长与链上效果节点数相关（本
+// 项目 7 节点），直接在 RT 回调内执行时效果服务 IPC 抖动会超出低时延回调预算（≈13ms），
+// 造成随机欠载卡顿。渲染全部迁到专用工作线程，RT 回调退化为纯环形缓冲 memcpy 读取，
+// IPC/参数调节抖动由环形缓冲吸收。
+constexpr int32_t RING_CAPACITY_MS = 400;               // 环形缓冲容量（吸收 IPC/滑条调节抖动）
+constexpr int32_t RING_CHUNK_MS = 10;                   // 工作线程单次渲染块时长
+constexpr int32_t RING_PREFILL_MS = 40;                 // 启动 renderer 前的预填充时长
+constexpr int32_t RING_PREFILL_TIMEOUT_MS = 200;        // 预填充等待超时（解码器出数据即可填满）
+constexpr int64_t RING_UNDERRUN_LOG_INTERVAL_MS = 1000; // 欠载日志限速
+constexpr int64_t RENDER_CHUNK_WARN_MS = 30;            // 单块渲染耗时告警阈值（工作线程）
+constexpr int32_t RING_SAMPLES_PER_MS = 96;             // 48kHz 立体声 int16 每毫秒采样数
 
 // 官方 OH_AudioConverter 单次输入回调允许返回的最大字节数（官方上限 400KB，留出余量）。
 constexpr size_t CONVERTER_INPUT_MAX_BYTES = 256 * 1024;
@@ -414,6 +428,43 @@ public:
             "native track sampleRate=%{public}d channels=%{public}d resampleTo=%{public}d",
             sampleRate_, channelCount_, resampleOutputRate_);
         decoderThread_ = std::thread(&NativeAudioPlayer::DecoderLoop, this);
+        // 渲染架构：RenderFrame（含效果服务 IPC）、转换器、hold、响度补偿全部在工作线程执行；
+        // RT 回调只做环形缓冲 memcpy。启动 renderer 前先预填充，消除起播欠载。
+        RingReset();
+        renderStopRequested_.store(false);
+        ringUnderrunCount_.store(0);
+        ringUnderrunLastLogMs_ = 0;
+        ringUnderrunLastSample_ = 0;
+        renderChunkSlowCount_ = 0;
+        if (ringBuffer_.size() != static_cast<size_t>(RING_CAPACITY_MS) * RING_SAMPLES_PER_MS) {
+            ringBuffer_.assign(static_cast<size_t>(RING_CAPACITY_MS) * RING_SAMPLES_PER_MS, 0);
+        }
+        if (renderChunkBuf_.size() != static_cast<size_t>(RING_CHUNK_MS) * RING_SAMPLES_PER_MS) {
+            renderChunkBuf_.assign(static_cast<size_t>(RING_CHUNK_MS) * RING_SAMPLES_PER_MS, 0);
+        }
+        renderThread_ = std::thread(&NativeAudioPlayer::RenderLoop, this);
+        {
+            const size_t prefillSamples = static_cast<size_t>(RING_PREFILL_MS) * RING_SAMPLES_PER_MS;
+            const auto prefillDeadline = std::chrono::steady_clock::now() +
+                std::chrono::milliseconds(RING_PREFILL_TIMEOUT_MS);
+            bool prefillReached = false;
+            while (std::chrono::steady_clock::now() < prefillDeadline) {
+                if (decoderFailed_.load() || renderStopRequested_.load()) {
+                    break;
+                }
+                {
+                    std::lock_guard<std::mutex> lock(ringMutex_);
+                    prefillReached = ringFilled_ >= prefillSamples;
+                }
+                if (prefillReached) {
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            }
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "native startup stage=render-thread elapsedMs=%{public}lld prefillReached=%{public}d",
+                elapsedMs(), prefillReached ? 1 : 0);
+        }
         if (OH_AudioRenderer_Start(renderer_) != AUDIOSTREAM_SUCCESS) {
             OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG, "renderer start failed");
             Stop();
@@ -451,7 +502,10 @@ public:
         seekPositionMs_ = std::max<int64_t>(0, positionMs);
         seekRequestSequence_.fetch_add(1);
         seekRequested_ = true;
+        // 冲刷环形缓冲：丢弃 seek 前已渲染的残留音频（最多 400ms），seek 后新音频即时起播
+        RingReset();
         queueCondition_.notify_all();
+        ringCondition_.notify_all();
         return true;
     }
 
@@ -460,7 +514,13 @@ public:
         decoderLifecycle_ = DecoderLifecycle::STOPPING;
         stopRequested_ = true;
         seekRequested_ = false;
+        // 必须持 ringMutex_ 置位：避免工作线程「谓词判定→阻塞」窗口内错过唤醒导致短暂挂起
+        {
+            std::lock_guard<std::mutex> lock(ringMutex_);
+            renderStopRequested_ = true;
+        }
         queueCondition_.notify_all();
+        ringCondition_.notify_all();
     }
 
     void Stop()
@@ -484,6 +544,18 @@ public:
                 std::chrono::steady_clock::now() - joinStart).count();
             OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                 "decoder thread joined elapsedMs=%{public}lld", static_cast<long long>(joinMs));
+        }
+        // 渲染工作线程必须在销毁管线/节点前 join：它可能正在 RenderFrame（持 effectMutex_）
+        if (renderThread_.joinable()) {
+            const auto joinStart = std::chrono::steady_clock::now();
+            renderThread_.join();
+            const auto joinMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - joinStart).count();
+            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "render thread joined elapsedMs=%{public}lld underruns=%{public}llu slowChunks=%{public}llu",
+                static_cast<long long>(joinMs),
+                static_cast<unsigned long long>(ringUnderrunCount_.load()),
+                static_cast<unsigned long long>(renderChunkSlowCount_));
         }
         if (decoder_ != nullptr) {
             OH_AVErrCode stopResult = OH_AudioCodec_Stop(decoder_);
@@ -1849,17 +1921,122 @@ private:
             return AUDIO_DATA_CALLBACK_RESULT_INVALID;
         }
         NativeAudioPlayer* player = static_cast<NativeAudioPlayer*>(userData);
-        bool usePipeline = player->IsPipelineActive();
-        if (!player->RenderAudio(audioData, audioDataSize, usePipeline)) {
-            std::memset(audioData, 0, static_cast<size_t>(audioDataSize));
-            player->decoderFailed_ = true;
-            player->paused_ = true;
-            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                "render frame failed; marked native playback failed");
-            return AUDIO_DATA_CALLBACK_RESULT_VALID;
-        }
+        // RT 回调退化为纯环形缓冲读取：不执行 RenderFrame/IPC、不持 effectMutex_，
+        // 渲染失败语义由工作线程（RenderLoop）置 decoderFailed_ 处理
+        player->ReadRingInto(audioData, audioDataSize);
         player->MeasureOutput(audioData, audioDataSize, player->activeEqEnabled_.load());
         return AUDIO_DATA_CALLBACK_RESULT_VALID;
+    }
+
+    // RT 回调专用：从环形缓冲读取，绝不阻塞；欠载时从最后真实采样线性衰减到 0，
+    // 避免直接补零的静音爆点。欠载计数 + 每秒最多 1 条限速日志。
+    void ReadRingInto(void* audioData, int32_t audioDataSize)
+    {
+        int16_t* outSamples = static_cast<int16_t*>(audioData);
+        const int32_t totalSamples = audioDataSize / static_cast<int32_t>(sizeof(int16_t));
+        size_t copied = 0;
+        {
+            std::lock_guard<std::mutex> lock(ringMutex_);
+            copied = std::min(ringFilled_, static_cast<size_t>(totalSamples));
+            const size_t capacity = ringBuffer_.size();
+            for (size_t i = 0; i < copied; i++) {
+                outSamples[i] = ringBuffer_[ringReadPos_];
+                ringReadPos_ = (ringReadPos_ + 1) % capacity;
+            }
+            ringFilled_ -= copied;
+            if (copied > 0) {
+                ringUnderrunLastSample_ = outSamples[copied - 1];
+            }
+            // 释放了空间，唤醒工作线程继续渲染（wait morphing，开销极小）
+            ringCondition_.notify_one();
+        }
+        if (copied < static_cast<size_t>(totalSamples)) {
+            ringUnderrunCount_.fetch_add(1, std::memory_order_relaxed);
+            const int32_t validSamples = static_cast<int32_t>(copied);
+            const int16_t lastSample = validSamples > 0 ? outSamples[validSamples - 1] : ringUnderrunLastSample_;
+            const int32_t missing = totalSamples - validSamples;
+            for (int32_t i = 0; i < missing; i++) {
+                const double fadeGain = static_cast<double>(missing - i) / static_cast<double>(missing);
+                outSamples[validSamples + i] = static_cast<int16_t>(std::lround(
+                    static_cast<double>(lastSample) * fadeGain));
+            }
+            const int64_t nowMs = SteadyNowMs();
+            if (nowMs - ringUnderrunLastLogMs_ >= RING_UNDERRUN_LOG_INTERVAL_MS) {
+                ringUnderrunLastLogMs_ = nowMs;
+                OH_LOG_Print(LOG_APP, LOG_WARN, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                    "ring underrun (rt) valid=%{public}d total=%{public}d count=%{public}llu",
+                    validSamples, totalSamples,
+                    static_cast<unsigned long long>(ringUnderrunCount_.load()));
+            }
+        }
+    }
+
+    // 环形缓冲复位：Play 起播 / Seek 时丢弃残留音频
+    void RingReset()
+    {
+        std::lock_guard<std::mutex> lock(ringMutex_);
+        ringReadPos_ = 0;
+        ringWritePos_ = 0;
+        ringFilled_ = 0;
+    }
+
+    // 工作线程写入环形缓冲（持 ringMutex_ 仅做拷贝，绝不与 effectMutex_/queueMutex_ 嵌套）
+    void RingWrite(const int16_t* data, size_t samples)
+    {
+        std::lock_guard<std::mutex> lock(ringMutex_);
+        const size_t capacity = ringBuffer_.size();
+        if (capacity == 0) {
+            return;
+        }
+        const size_t writable = std::min(samples, capacity - ringFilled_);
+        for (size_t i = 0; i < writable; i++) {
+            ringBuffer_[ringWritePos_] = data[i];
+            ringWritePos_ = (ringWritePos_ + 1) % capacity;
+        }
+        ringFilled_ += writable;
+    }
+
+    // 渲染工作线程主循环：环形缓冲有空位即按 10ms 块渲染写入。RenderAudio 全套逻辑
+    // （RenderFrame 含效果服务 IPC、转换器、hold、密度、响度补偿、直通）在本线程执行，
+    // 与 RT 回调无共享锁路径；效果参数 IPC（effectMutex_）只剩 NAPI 线程与本线程竞争。
+    void RenderLoop()
+    {
+        const size_t chunkSamples = static_cast<size_t>(RING_CHUNK_MS) * RING_SAMPLES_PER_MS;
+        const int32_t chunkBytes = static_cast<int32_t>(chunkSamples * sizeof(int16_t));
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "render worker started chunkSamples=%{public}zu", chunkSamples);
+        while (true) {
+            {
+                std::unique_lock<std::mutex> lock(ringMutex_);
+                // 20ms 超时兜底：任何一处无锁原子写 + 通知的丢唤醒窗口最多延迟一个周期自愈
+                ringCondition_.wait_for(lock, std::chrono::milliseconds(20), [this, chunkSamples]() {
+                    return renderStopRequested_.load() || decoderFailed_.load() ||
+                        ringBuffer_.size() - ringFilled_ >= chunkSamples;
+                });
+                if (renderStopRequested_.load() || decoderFailed_.load()) {
+                    break;
+                }
+            }
+            const auto chunkStart = std::chrono::steady_clock::now();
+            if (!RenderAudio(renderChunkBuf_.data(), chunkBytes, IsPipelineActive())) {
+                decoderFailed_ = true;
+                paused_ = true;
+                OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                    "render frame failed; marked native playback failed");
+                break;
+            }
+            RingWrite(renderChunkBuf_.data(), chunkSamples);
+            const int64_t chunkMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - chunkStart).count();
+            if (chunkMs > RENDER_CHUNK_WARN_MS) {
+                renderChunkSlowCount_++;
+                OH_LOG_Print(LOG_APP, LOG_WARN, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                    "render chunk slow elapsedMs=%{public}lld (worker)", static_cast<long long>(chunkMs));
+            }
+        }
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "render worker exiting stop=%{public}d failed=%{public}d",
+            renderStopRequested_.load() ? 1 : 0, decoderFailed_.load() ? 1 : 0);
     }
 
     static int64_t SteadyNowMs()
@@ -2131,10 +2308,13 @@ private:
         for (int32_t i = 0; i < sampleCount; i++) {
             const double value = static_cast<double>(samples[i]);
             squareSum += value * value;
-            inputPositiveFullScaleCount_ += samples[i] == std::numeric_limits<int16_t>::max() ? 1 : 0;
-            inputNegativeFullScaleCount_ += samples[i] == std::numeric_limits<int16_t>::min() ? 1 : 0;
+            inputPositiveFullScaleCount_.fetch_add(
+                samples[i] == std::numeric_limits<int16_t>::max() ? 1 : 0, std::memory_order_relaxed);
+            inputNegativeFullScaleCount_.fetch_add(
+                samples[i] == std::numeric_limits<int16_t>::min() ? 1 : 0, std::memory_order_relaxed);
         }
-        inputMeasurementSampleCount_ += static_cast<uint64_t>(sampleCount);
+        inputMeasurementSampleCount_.fetch_add(static_cast<uint64_t>(sampleCount),
+            std::memory_order_relaxed);
         // 闭环响度补偿的参考电平：重采样后、未做任何衰减的源电平
         loudnessInputSumSquares_ += squareSum;
         loudnessInputSampleCount_ += static_cast<uint64_t>(sampleCount);
@@ -2238,12 +2418,14 @@ private:
         measurementSampleCount_ += static_cast<uint64_t>(sampleCount);
         measurementPeak_ = std::max(measurementPeak_, peak);
         if (measurementSampleCount_ >= 48000 * 2) {
-            const uint64_t inputClipped = inputPositiveFullScaleCount_ + inputNegativeFullScaleCount_;
+            const uint64_t inputClipped = inputPositiveFullScaleCount_.load(std::memory_order_relaxed) +
+                inputNegativeFullScaleCount_.load(std::memory_order_relaxed);
             const uint64_t outputClipped = outputPositiveFullScaleCount_ + outputNegativeFullScaleCount_;
             const double rms = std::sqrt(
                 measurementSquareSum_ / static_cast<double>(measurementSampleCount_));
-            const double inputClipRatio = inputMeasurementSampleCount_ == 0 ? 0.0 :
-                static_cast<double>(inputClipped) * 100.0 / static_cast<double>(inputMeasurementSampleCount_);
+            const uint64_t inputMeasured = inputMeasurementSampleCount_.load(std::memory_order_relaxed);
+            const double inputClipRatio = inputMeasured == 0 ? 0.0 :
+                static_cast<double>(inputClipped) * 100.0 / static_cast<double>(inputMeasured);
             const double outputClipRatio = static_cast<double>(outputClipped) * 100.0 /
                 static_cast<double>(measurementSampleCount_);
             OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
@@ -2257,9 +2439,9 @@ private:
             measurementSquareSum_ = 0.0;
             measurementSampleCount_ = 0;
             measurementPeak_ = 0;
-            inputMeasurementSampleCount_ = 0;
-            inputPositiveFullScaleCount_ = 0;
-            inputNegativeFullScaleCount_ = 0;
+            inputMeasurementSampleCount_.store(0, std::memory_order_relaxed);
+            inputPositiveFullScaleCount_.store(0, std::memory_order_relaxed);
+            inputNegativeFullScaleCount_.store(0, std::memory_order_relaxed);
             outputPositiveFullScaleCount_ = 0;
             outputNegativeFullScaleCount_ = 0;
         }
@@ -2294,6 +2476,21 @@ private:
     int64_t durationUs_ = 0;
     std::string mime_;
     std::thread decoderThread_;
+    std::thread renderThread_;
+    // 渲染工作线程 + 环形缓冲（SPSC：工作线程写、RT 回调读）。ringMutex_ 只保护指针
+    // 移动与数据拷贝，绝不为等待 IPC/队列而持有，也绝不与 effectMutex_/queueMutex_ 嵌套。
+    std::mutex ringMutex_;
+    std::condition_variable ringCondition_;
+    std::vector<int16_t> ringBuffer_;
+    std::vector<int16_t> renderChunkBuf_;
+    size_t ringWritePos_ = 0;
+    size_t ringReadPos_ = 0;
+    size_t ringFilled_ = 0;
+    std::atomic<bool> renderStopRequested_ = true;
+    std::atomic<uint64_t> ringUnderrunCount_ = 0;
+    int64_t ringUnderrunLastLogMs_ = 0;
+    int16_t ringUnderrunLastSample_ = 0;
+    uint64_t renderChunkSlowCount_ = 0;
     std::mutex queueMutex_;
     std::condition_variable queueCondition_;
     std::deque<uint8_t> pcmQueue_;
@@ -2328,9 +2525,11 @@ private:
     float volume_ = 1.0f;
     double measurementSquareSum_ = 0.0;
     uint64_t measurementSampleCount_ = 0;
-    uint64_t inputMeasurementSampleCount_ = 0;
-    uint64_t inputPositiveFullScaleCount_ = 0;
-    uint64_t inputNegativeFullScaleCount_ = 0;
+    // 输入测量由渲染工作线程写（InputDataCallback→MeasureInput），RT 回调读+复位
+    // （MeasureOutput），跨线程必须原子；其余测量字段单线程私有
+    std::atomic<uint64_t> inputMeasurementSampleCount_ = 0;
+    std::atomic<uint64_t> inputPositiveFullScaleCount_ = 0;
+    std::atomic<uint64_t> inputNegativeFullScaleCount_ = 0;
     uint64_t outputPositiveFullScaleCount_ = 0;
     uint64_t outputNegativeFullScaleCount_ = 0;
     int32_t measurementPeak_ = 0;
@@ -2818,6 +3017,487 @@ napi_value CacheAlbumCover(napi_env env, napi_callback_info info)
     return BooleanValue(env, true);
 }
 
+// ===== ID3 标签写入：编辑歌曲信息时真实修改源 MP3 文件的 ID3v2 标签 =====
+// 官方 AVMetadataExtractor 只读不写，故在 native 层实现 ID3v2 标签重建：
+// 解析旧标签保留未编辑帧（含封面，v2.2 PIC 自动转 v2.3 APIC），
+// 按 16 个可编辑字段重建 ID3v2.3 标签后整区域替换，音频数据按位移平。
+constexpr uint32_t ID3_MAX_TAG_BYTES = 32 * 1024 * 1024;
+
+struct Id3Frame {
+    std::string id;
+    std::vector<uint8_t> content;
+};
+
+struct Id3TagMapping {
+    const char* key;
+    const char* frameId;
+    uint8_t kind; // 0=文本帧 1=COMM(空描述) 2=TXXX(固定描述 "description")
+};
+
+constexpr Id3TagMapping ID3_TAG_MAPPINGS[] = {
+    { "title", "TIT2", 0 },    { "artist", "TPE1", 0 },    { "album", "TALB", 0 },
+    { "genre", "TCON", 0 },    { "year", "TYER", 0 },      { "track", "TRCK", 0 },
+    { "disc", "TPOS", 0 },     { "composer", "TCOM", 0 },  { "albumArtist", "TPE2", 0 },
+    { "author", "TEXT", 0 },   { "language", "TLAN", 0 },  { "dateTime", "TDRC", 0 },
+    { "encoder", "TSSE", 0 },  { "comment", "COMM", 1 },   { "conductor", "TPE3", 0 },
+    { "description", "TXXX", 2 },
+};
+
+napi_value StringValue(napi_env env, const std::string& value)
+{
+    napi_value result = nullptr;
+    napi_create_string_utf8(env, value.c_str(), value.size(), &result);
+    return result;
+}
+
+static uint32_t Id3SyncSafeDecode(const uint8_t* value)
+{
+    return (static_cast<uint32_t>(value[0]) << 21) | (static_cast<uint32_t>(value[1]) << 14) |
+        (static_cast<uint32_t>(value[2]) << 7) | static_cast<uint32_t>(value[3]);
+}
+
+static void AppendU32Be(std::vector<uint8_t>& out, uint32_t value)
+{
+    out.push_back(static_cast<uint8_t>((value >> 24) & 0xFF));
+    out.push_back(static_cast<uint8_t>((value >> 16) & 0xFF));
+    out.push_back(static_cast<uint8_t>((value >> 8) & 0xFF));
+    out.push_back(static_cast<uint8_t>(value & 0xFF));
+}
+
+// UTF-8 → UTF-16LE（带 BOM）：完整处理代理对，非法序列替换 U+FFFD
+static void AppendUtf16Le(std::vector<uint8_t>& out, const std::string& text)
+{
+    out.push_back(0xFF);
+    out.push_back(0xFE);
+    size_t i = 0;
+    while (i < text.size()) {
+        const unsigned char lead = static_cast<unsigned char>(text[i]);
+        uint32_t codePoint = 0xFFFD;
+        uint32_t extra = 0;
+        if (lead < 0x80) {
+            codePoint = lead;
+        } else if ((lead & 0xE0) == 0xC0) {
+            codePoint = lead & 0x1F;
+            extra = 1;
+        } else if ((lead & 0xF0) == 0xE0) {
+            codePoint = lead & 0x0F;
+            extra = 2;
+        } else if ((lead & 0xF8) == 0xF0) {
+            codePoint = lead & 0x07;
+            extra = 3;
+        }
+        if (extra > 0) {
+            if (i + extra >= text.size()) {
+                codePoint = 0xFFFD;
+                extra = 0;
+            } else {
+                for (uint32_t k = 1; k <= extra; k++) {
+                    if ((static_cast<unsigned char>(text[i + k]) & 0xC0) != 0x80) {
+                        codePoint = 0xFFFD;
+                        extra = 0;
+                        break;
+                    }
+                    codePoint = (codePoint << 6) | (static_cast<unsigned char>(text[i + k]) & 0x3F);
+                }
+            }
+        }
+        if (codePoint > 0x10FFFF || (codePoint >= 0xD800 && codePoint <= 0xDFFF)) {
+            codePoint = 0xFFFD;
+        }
+        if (codePoint <= 0xFFFF) {
+            out.push_back(static_cast<uint8_t>(codePoint & 0xFF));
+            out.push_back(static_cast<uint8_t>((codePoint >> 8) & 0xFF));
+        } else {
+            const uint32_t offset = codePoint - 0x10000;
+            const uint32_t high = 0xD800 + (offset >> 10);
+            const uint32_t low = 0xDC00 + (offset & 0x3FF);
+            out.push_back(static_cast<uint8_t>(high & 0xFF));
+            out.push_back(static_cast<uint8_t>((high >> 8) & 0xFF));
+            out.push_back(static_cast<uint8_t>(low & 0xFF));
+            out.push_back(static_cast<uint8_t>((low >> 8) & 0xFF));
+        }
+        i += extra + 1;
+    }
+}
+
+// 读取以编码对应终止符结尾的字符串（COMM/TXXX 描述字段），仅保留 ASCII 近似值用于比较
+static bool ReadTerminatedStringAscii(const uint8_t* data, size_t size, size_t start, uint8_t encoding,
+    std::string& out, size_t& endOffset)
+{
+    out.clear();
+    if (start > size) {
+        return false;
+    }
+    if (encoding == 0 || encoding == 3) {
+        size_t cursor = start;
+        while (cursor < size && data[cursor] != 0) {
+            if (out.size() < 128) {
+                out.push_back(static_cast<char>(data[cursor]));
+            }
+            cursor++;
+        }
+        if (cursor >= size) {
+            return false;
+        }
+        endOffset = cursor + 1;
+        return true;
+    }
+    if (encoding == 1 || encoding == 2) {
+        size_t cursor = start;
+        while (cursor + 1 < size && !(data[cursor] == 0 && data[cursor + 1] == 0)) {
+            const uint16_t unit = encoding == 1
+                ? static_cast<uint16_t>(data[cursor] | (static_cast<uint16_t>(data[cursor + 1]) << 8))
+                : static_cast<uint16_t>((static_cast<uint16_t>(data[cursor]) << 8) | data[cursor + 1]);
+            if (out.size() < 128) {
+                out.push_back(unit < 0x80 ? static_cast<char>(unit) : '?');
+            }
+            cursor += 2;
+        }
+        if (cursor + 1 >= size) {
+            return false;
+        }
+        endOffset = cursor + 2;
+        return true;
+    }
+    return false;
+}
+
+// COMM 帧是否为空描述（语言 3 字节后的描述字段为空）
+static bool CommentDescriptionEmpty(const uint8_t* content, uint32_t size)
+{
+    if (size < 4) {
+        return false;
+    }
+    std::string description;
+    size_t endOffset = 0;
+    return ReadTerminatedStringAscii(content, size, 4, content[0], description, endOffset) &&
+        description.empty();
+}
+
+// v2.2 PIC → v2.3 APIC：保留封面（图像格式 JPG/PNG → MIME）
+static bool ConvertPicToApic(const uint8_t* frame, uint32_t frameSize, std::vector<uint8_t>& content)
+{
+    if (frameSize < 6) {
+        return false;
+    }
+    const uint8_t* payload = frame + 6;
+    const uint32_t size = frameSize - 6;
+    if (size < 5) {
+        return false;
+    }
+    const uint8_t encoding = payload[0];
+    const std::string mime = (payload[1] == 'P' && payload[2] == 'N' && payload[3] == 'G')
+        ? "image/png" : "image/jpeg";
+    size_t cursor = 4; // encoding(1) + 图像格式(3)
+    if (encoding == 1 || encoding == 2) {
+        while (cursor + 1 < size && !(payload[cursor] == 0 && payload[cursor + 1] == 0)) {
+            cursor += 2;
+        }
+        cursor += 2;
+    } else {
+        while (cursor < size && payload[cursor] != 0) {
+            cursor++;
+        }
+        cursor++;
+    }
+    if (cursor > size) {
+        return false;
+    }
+    content.push_back(encoding);
+    content.insert(content.end(), mime.begin(), mime.end());
+    content.push_back(0);
+    content.push_back(payload[4]); // 图片类型
+    content.insert(content.end(), payload + 5, payload + cursor); // 原描述（含终止符）
+    content.insert(content.end(), payload + cursor, payload + size); // 图片数据
+    return true;
+}
+
+// 按 delta 平移 [regionStart, fileSize) 音频数据（1MB 分块 pread/pwrite），调用方负责 ftruncate
+static bool ShiftRegion(int32_t fd, uint64_t regionStart, uint64_t fileSize, int64_t delta)
+{
+    if (delta == 0 || regionStart >= fileSize) {
+        return true;
+    }
+    constexpr size_t CHUNK_BYTES = 1024 * 1024;
+    std::vector<uint8_t> buffer(CHUNK_BYTES);
+    if (delta > 0) {
+        uint64_t remaining = fileSize - regionStart;
+        while (remaining > 0) {
+            const size_t chunk = remaining < CHUNK_BYTES ? static_cast<size_t>(remaining) : CHUNK_BYTES;
+            const uint64_t source = regionStart + remaining - chunk;
+            if (pread(fd, buffer.data(), chunk, source) != static_cast<ssize_t>(chunk) ||
+                pwrite(fd, buffer.data(), chunk, source + delta) != static_cast<ssize_t>(chunk)) {
+                return false;
+            }
+            remaining -= chunk;
+        }
+        return true;
+    }
+    uint64_t remaining = fileSize - regionStart;
+    uint64_t offset = regionStart;
+    while (remaining > 0) {
+        const size_t chunk = remaining < CHUNK_BYTES ? static_cast<size_t>(remaining) : CHUNK_BYTES;
+        if (pread(fd, buffer.data(), chunk, offset) != static_cast<ssize_t>(chunk) ||
+            pwrite(fd, buffer.data(), chunk, offset + delta) != static_cast<ssize_t>(chunk)) {
+            return false;
+        }
+        remaining -= chunk;
+        offset += chunk;
+    }
+    return true;
+}
+
+static void AppendFrameHeader(std::vector<uint8_t>& out, const char* frameId, size_t contentSize)
+{
+    for (const char* p = frameId; *p != '\0'; p++) {
+        out.push_back(static_cast<uint8_t>(*p));
+    }
+    AppendU32Be(out, static_cast<uint32_t>(contentSize));
+    out.push_back(0);
+    out.push_back(0);
+}
+
+static void BuildTextFrame(std::vector<uint8_t>& out, const char* frameId, const std::string& value)
+{
+    std::vector<uint8_t> content;
+    content.push_back(0x01); // UTF-16 编码
+    AppendUtf16Le(content, value);
+    content.push_back(0x00);
+    content.push_back(0x00); // 文本终止符
+    AppendFrameHeader(out, frameId, content.size());
+    out.insert(out.end(), content.begin(), content.end());
+}
+
+static void BuildCommentFrame(std::vector<uint8_t>& out, const std::string& value)
+{
+    std::vector<uint8_t> content;
+    content.push_back(0x01);
+    content.push_back('e');
+    content.push_back('n');
+    content.push_back('g');
+    content.push_back(0x00);
+    content.push_back(0x00); // 空描述终止符
+    AppendUtf16Le(content, value);
+    AppendFrameHeader(out, "COMM", content.size());
+    out.insert(out.end(), content.begin(), content.end());
+}
+
+static void BuildUserTextFrame(std::vector<uint8_t>& out, const std::string& description,
+    const std::string& value)
+{
+    std::vector<uint8_t> content;
+    content.push_back(0x01);
+    AppendUtf16Le(content, description);
+    content.push_back(0x00);
+    content.push_back(0x00); // 描述终止符
+    AppendUtf16Le(content, value);
+    AppendFrameHeader(out, "TXXX", content.size());
+    out.insert(out.end(), content.begin(), content.end());
+}
+
+// 核心写入：返回空串 = 成功；"unsupported" 开头 = 文件格式不支持；其他 = 错误描述
+static std::string WriteId3TagsToFd(int32_t fd, const std::map<std::string, std::string>& tags)
+{
+    struct stat fileStat = {};
+    if (fd < 0 || fstat(fd, &fileStat) != 0 || fileStat.st_size < 4) {
+        return "stat failed";
+    }
+    const uint64_t fileSize = static_cast<uint64_t>(fileStat.st_size);
+    uint8_t header[10] = {};
+    const bool hasId3 = fileSize >= 10 && pread(fd, header, sizeof(header), 0) == sizeof(header) &&
+        std::memcmp(header, "ID3", 3) == 0;
+    uint64_t oldRegionEnd = 0;
+    std::vector<Id3Frame> keptFrames;
+    if (hasId3) {
+        const uint8_t version = header[3];
+        const uint8_t flags = header[5];
+        const uint32_t tagSize = Id3SyncSafeDecode(header + 6);
+        if (version != 2 && version != 3 && version != 4) {
+            return "unsupported: id3v2." + std::to_string(version);
+        }
+        if (tagSize == 0 || tagSize > ID3_MAX_TAG_BYTES ||
+            static_cast<uint64_t>(tagSize) + 10 > fileSize) {
+            return "corrupt tag size";
+        }
+        if ((flags & 0x80) != 0) {
+            return "unsupported: unsynchronized tag";
+        }
+        oldRegionEnd = 10 + tagSize + ((flags & 0x10) != 0 ? 10 : 0); // footer 计入旧区域
+        if (oldRegionEnd > fileSize) {
+            return "corrupt tag region";
+        }
+        std::vector<uint8_t> tag(tagSize);
+        if (pread(fd, tag.data(), tag.size(), 10) != static_cast<ssize_t>(tag.size())) {
+            return "read tag failed";
+        }
+        size_t offset = 0;
+        if ((flags & 0x40) != 0 && tag.size() >= 4) {
+            // 扩展头：跳过（重建后的标签不再生成）
+            const uint32_t extendedSize = version == 4 ? Id3SyncSafeDecode(tag.data()) :
+                (static_cast<uint32_t>(tag[0]) << 24) | (static_cast<uint32_t>(tag[1]) << 16) |
+                    (static_cast<uint32_t>(tag[2]) << 8) | static_cast<uint32_t>(tag[3]);
+            offset = version == 4 ? extendedSize : extendedSize + 4;
+        }
+        const size_t frameHeaderSize = version == 2 ? 6 : 10;
+        while (offset + frameHeaderSize <= tag.size()) {
+            const uint8_t* frame = tag.data() + offset;
+            if (frame[0] == 0) {
+                break;
+            }
+            const uint32_t frameSize = version == 2 ?
+                (static_cast<uint32_t>(frame[3]) << 16) | (static_cast<uint32_t>(frame[4]) << 8) |
+                    static_cast<uint32_t>(frame[5]) :
+                (version == 4 ? Id3SyncSafeDecode(frame + 4) :
+                    (static_cast<uint32_t>(frame[4]) << 24) | (static_cast<uint32_t>(frame[5]) << 16) |
+                        (static_cast<uint32_t>(frame[6]) << 8) | static_cast<uint32_t>(frame[7]));
+            if (frameSize == 0 || offset + frameHeaderSize + frameSize > tag.size()) {
+                break;
+            }
+            if (version == 2) {
+                // v2.2 仅保留封面（PIC → APIC），其余旧格式帧丢弃
+                if (std::memcmp(frame, "PIC", 3) == 0) {
+                    Id3Frame apic;
+                    apic.id = "APIC";
+                    if (ConvertPicToApic(frame, frameSize, apic.content)) {
+                        keptFrames.push_back(apic);
+                    }
+                }
+            } else {
+                const std::string id(reinterpret_cast<const char*>(frame), 4);
+                const uint8_t* content = frame + 10;
+                bool replaced = false;
+                for (const Id3TagMapping& mapping : ID3_TAG_MAPPINGS) {
+                    if (std::memcmp(mapping.frameId, frame, 4) != 0) {
+                        continue;
+                    }
+                    if (tags.find(mapping.key) == tags.end()) {
+                        break; // 未提供的键不动旧帧
+                    }
+                    if (mapping.kind == 0) {
+                        replaced = true;
+                    } else if (mapping.kind == 1) {
+                        replaced = CommentDescriptionEmpty(content, frameSize);
+                    } else {
+                        std::string description;
+                        size_t endOffset = 0;
+                        replaced = ReadTerminatedStringAscii(content, frameSize, 1, content[0],
+                            description, endOffset) && description == "description";
+                    }
+                    break;
+                }
+                if (!replaced) {
+                    keptFrames.push_back(
+                        { id, std::vector<uint8_t>(content, content + frameSize) });
+                }
+            }
+            offset += frameHeaderSize + frameSize;
+        }
+    } else {
+        // 无 ID3 头：仅当疑似 MPEG 音频帧同步时前置新标签，避免误写 FLAC/M4A 等
+        uint8_t probe[4] = {};
+        const size_t probeSize = fileSize < 4 ? static_cast<size_t>(fileSize) : 4;
+        if (pread(fd, probe, probeSize, 0) != static_cast<ssize_t>(probeSize)) {
+            return "read file failed";
+        }
+        if (probe[0] != 0xFF || (probe[1] & 0xE0) != 0xE0) {
+            return "unsupported: not mp3";
+        }
+    }
+
+    // 重建 ID3v2.3 标签：保留帧在前，16 个编辑键按映射顺序追加
+    std::vector<uint8_t> body;
+    for (const Id3Frame& kept : keptFrames) {
+        body.insert(body.end(), kept.id.begin(), kept.id.end());
+        AppendU32Be(body, static_cast<uint32_t>(kept.content.size()));
+        body.push_back(0);
+        body.push_back(0);
+        body.insert(body.end(), kept.content.begin(), kept.content.end());
+    }
+    for (const Id3TagMapping& mapping : ID3_TAG_MAPPINGS) {
+        const auto found = tags.find(mapping.key);
+        if (found == tags.end() || found->second.empty()) {
+            continue; // 空值 = 删除对应帧
+        }
+        if (mapping.kind == 0) {
+            BuildTextFrame(body, mapping.frameId, found->second);
+        } else if (mapping.kind == 1) {
+            BuildCommentFrame(body, found->second);
+        } else {
+            BuildUserTextFrame(body, "description", found->second);
+        }
+    }
+    if (body.size() > 0x0FFFFFFF) {
+        return "tag too large";
+    }
+    std::vector<uint8_t> newTag;
+    newTag.push_back('I');
+    newTag.push_back('D');
+    newTag.push_back('3');
+    newTag.push_back(3); // ID3v2.3
+    newTag.push_back(0);
+    newTag.push_back(0); // flags：无 unsync/扩展头/footer
+    newTag.push_back(static_cast<uint8_t>((body.size() >> 21) & 0x7F));
+    newTag.push_back(static_cast<uint8_t>((body.size() >> 14) & 0x7F));
+    newTag.push_back(static_cast<uint8_t>((body.size() >> 7) & 0x7F));
+    newTag.push_back(static_cast<uint8_t>(body.size() & 0x7F));
+    newTag.insert(newTag.end(), body.begin(), body.end());
+
+    const int64_t delta = static_cast<int64_t>(newTag.size()) - static_cast<int64_t>(oldRegionEnd);
+    if (delta != 0) {
+        if (!ShiftRegion(fd, oldRegionEnd, fileSize, delta)) {
+            return "shift audio data failed";
+        }
+        if (ftruncate(fd, static_cast<off_t>(fileSize) + delta) != 0) {
+            return "truncate failed";
+        }
+    }
+    if (pwrite(fd, newTag.data(), newTag.size(), 0) != static_cast<ssize_t>(newTag.size())) {
+        return "write tag failed";
+    }
+    if (fsync(fd) != 0) {
+        return "fsync failed";
+    }
+    return "";
+}
+
+// 写入 ID3 标签：writeId3Tags(fd, tags) → 空串=成功；"unsupported"开头=格式不支持；其他=错误描述
+napi_value WriteId3Tags(napi_env env, napi_callback_info info)
+{
+    size_t argc = 2;
+    napi_value args[2] = { nullptr, nullptr };
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    int32_t fd = -1;
+    napi_valuetype tagsType = napi_undefined;
+    if (argc != 2 || napi_get_value_int32(env, args[0], &fd) != napi_ok || fd < 0 ||
+        napi_typeof(env, args[1], &tagsType) != napi_ok || tagsType != napi_object) {
+        return StringValue(env, "invalid arguments");
+    }
+    std::map<std::string, std::string> tags;
+    for (const Id3TagMapping& mapping : ID3_TAG_MAPPINGS) {
+        napi_value key = nullptr;
+        napi_value value = nullptr;
+        bool has = false;
+        napi_valuetype valueType = napi_undefined;
+        if (napi_create_string_utf8(env, mapping.key, NAPI_AUTO_LENGTH, &key) != napi_ok ||
+            napi_has_own_property(env, args[1], key, &has) != napi_ok || !has ||
+            napi_get_property(env, args[1], key, &value) != napi_ok ||
+            napi_typeof(env, value, &valueType) != napi_ok || valueType != napi_string) {
+            continue;
+        }
+        size_t length = 0;
+        if (napi_get_value_string_utf8(env, value, nullptr, 0, &length) != napi_ok) {
+            continue;
+        }
+        std::string text(length + 1, '\0');
+        if (napi_get_value_string_utf8(env, value, text.data(), text.size(), &length) != napi_ok) {
+            continue;
+        }
+        text.resize(length);
+        tags[mapping.key] = text;
+    }
+    return StringValue(env, WriteId3TagsToFd(fd, tags));
+}
+
 napi_value Init(napi_env env, napi_value exports)
 {
     napi_property_descriptor descriptors[] = {
@@ -2849,7 +3529,8 @@ napi_value Init(napi_env env, napi_value exports)
         { "getDuration", nullptr, GetDuration, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "getAlbumCover", nullptr, GetAlbumCover, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "cacheAlbumCover", nullptr, CacheAlbumCover, nullptr, nullptr, nullptr, napi_default, nullptr },
-        { "clearAlbumCoverCache", nullptr, ClearAlbumCoverCache, nullptr, nullptr, nullptr, napi_default, nullptr }
+        { "clearAlbumCoverCache", nullptr, ClearAlbumCoverCache, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "writeId3Tags", nullptr, WriteId3Tags, nullptr, nullptr, nullptr, napi_default, nullptr }
     };
     napi_define_properties(env, exports, sizeof(descriptors) / sizeof(descriptors[0]), descriptors);
     return exports;

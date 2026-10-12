@@ -21,9 +21,9 @@ import { BusinessError, SuppressWarnings, SuppressWarningsType } from '@kit.Basi
 import { AlbumCover } from '../component/AlbumCover';
 import { AVSessionController } from '../common/utils/mediautils/AVSessionController';
 import { DataService } from '../service/DataService';
-import { createToastGlassMaterial, DEFAULT_GLASS_STYLE } from '../common/utils/GlassUtil';
+import { createToastGlassMaterial, DEFAULT_GLASS_STYLE, showToastGlassMaterial } from '../common/utils/GlassUtil';
 import { isDarkThemeEffective } from '../common/utils/ThemeUtil';
-import { applyMetadataToSong, extractSongMetadata } from '../service/MetadataTask';
+import { applyMetadataToSong, extractSongMetadata, saveSongTagsToFile, TagsWriteResult } from '../service/MetadataTask';
 
 const TAG = 'ControlAreaComponent';
 const SEEK_SETTLE_MS: number = 2000;
@@ -368,7 +368,7 @@ export struct ControlAreaComponent {
   }
 
   // 打开歌曲信息面板时对缺少轨道级元数据的歌曲（旧库导入于扩展字段之前）懒解析补齐：
-  // 标题/歌手/专辑允许用户编辑，解析结果不得覆盖已编辑值，应用后恢复原值
+  // 16 个可编辑字段允许用户编辑，解析结果不得覆盖已编辑值，应用后恢复原值
   private refreshSongMetadataIfNeeded(): void {
     const song: SongInfo = this.currentSong()
     if (song.id.length === 0) {
@@ -389,13 +389,157 @@ export struct ControlAreaComponent {
       const savedTitle: string = target.title
       const savedArtist: string = target.artist
       const savedAlbum: string = target.album
+      const savedGenre: string = target.genre
+      const savedYear: string = target.year
+      const savedTrack: string = target.track
+      const savedDisc: string = target.disc
+      const savedComposer: string = target.composer
+      const savedAlbumArtist: string = target.albumArtist
+      const savedAuthor: string = target.author
+      const savedLanguage: string = target.language
+      const savedDateTime: string = target.dateTime
+      const savedEncoder: string = target.encoder
+      const savedComment: string = target.comment
+      const savedDescription: string = target.description
+      const savedConductor: string = target.conductor
       applyMetadataToSong(target, record)
       target.title = savedTitle
       target.artist = savedArtist
       target.album = savedAlbum
+      target.genre = savedGenre
+      target.year = savedYear
+      target.track = savedTrack
+      target.disc = savedDisc
+      target.composer = savedComposer
+      target.albumArtist = savedAlbumArtist
+      target.author = savedAuthor
+      target.language = savedLanguage
+      target.dateTime = savedDateTime
+      target.encoder = savedEncoder
+      target.comment = savedComment
+      target.description = savedDescription
+      target.conductor = savedConductor
       DataService.getInstance().updateSongFields(target.id, DataService.getInstance().getSongs())
     }).catch((err: BusinessError) => {
       Logger.warn(TAG, `refresh song metadata failed: ${JSON.stringify(err)}`)
+    })
+  }
+
+  // 将编辑值应用到歌曲的对应可编辑字段；有变更返回 true
+  private applyEditToSong(song: SongInfo, index: number, value: string): boolean {
+    switch (index) {
+      case 0:
+        if (song.title !== value) {
+          song.title = value
+          return true
+        }
+        return false
+      case 1:
+        if (song.artist !== value) {
+          song.artist = value
+          return true
+        }
+        return false
+      case 2:
+        if (song.album !== value) {
+          song.album = value
+          return true
+        }
+        return false
+      case 3:
+        if (song.genre !== value) {
+          song.genre = value
+          return true
+        }
+        return false
+      case 4:
+        if (song.track !== value) {
+          song.track = value
+          return true
+        }
+        return false
+      case 5:
+        if (song.disc !== value) {
+          song.disc = value
+          return true
+        }
+        return false
+      case 6:
+        if (song.composer !== value) {
+          song.composer = value
+          return true
+        }
+        return false
+      case 7:
+        if (song.albumArtist !== value) {
+          song.albumArtist = value
+          return true
+        }
+        return false
+      case 8:
+        if (song.author !== value) {
+          song.author = value
+          return true
+        }
+        return false
+      case 9:
+        if (song.dateTime !== value) {
+          song.dateTime = value
+          return true
+        }
+        return false
+      case 10:
+        if (song.encoder !== value) {
+          song.encoder = value
+          return true
+        }
+        return false
+      case 11:
+        if (song.description !== value) {
+          song.description = value
+          return true
+        }
+        return false
+      case 18:
+        if (song.year !== value) {
+          song.year = value
+          return true
+        }
+        return false
+      case 24:
+        if (song.language !== value) {
+          song.language = value
+          return true
+        }
+        return false
+      case 25:
+        if (song.comment !== value) {
+          song.comment = value
+          return true
+        }
+        return false
+      default:
+        return false
+    }
+  }
+
+  // 编辑结果异步真实写回源 MP3 文件（DB 已先行保存，此处失败仅提示不回滚）
+  private writeTagsToFileWithToast(song: SongInfo): void {
+    saveSongTagsToFile(song).then((result: TagsWriteResult) => {
+      if (result.ok || result.reason === 'noSource') {
+        return
+      }
+      if (result.reason === 'noWritePermission') {
+        showToastGlassMaterial(this.promptAction, '无文件写权限，修改已保存在应用内（重新导入歌曲后可写入文件）')
+        return
+      }
+      if (result.reason === 'unsupported') {
+        showToastGlassMaterial(this.promptAction, '该文件格式暂不支持写入标签，修改已保存在应用内')
+        return
+      }
+      showToastGlassMaterial(this.promptAction, '写入文件失败，修改已保存在应用内')
+    }).catch((err: BusinessError) => {
+      Logger.warn(TAG, `write tags to file failed: ${JSON.stringify(err)}`)
     })
   }
 
@@ -407,21 +551,9 @@ export struct ControlAreaComponent {
     }
     // songList 可能是过滤后的播放队列子集，持久化必须基于完整曲库，避免覆盖丢歌
     const allSongs: SongInfo[] = DataService.getInstance().getSongs();
-    if (this.edittingFieldIndex === 0) {
-      if (song.title !== this.edittingValue) {
-        song.title = this.edittingValue;
-        DataService.getInstance().updateSongFields(song.id, allSongs);
-      }
-    } else if (this.edittingFieldIndex === 1) {
-      if (song.artist !== this.edittingValue) {
-        song.artist = this.edittingValue;
-        DataService.getInstance().updateSongFields(song.id, allSongs);
-      }
-    } else if (this.edittingFieldIndex === 2) {
-      if (song.album !== this.edittingValue) {
-        song.album = this.edittingValue;
-        DataService.getInstance().updateSongFields(song.id, allSongs);
-      }
+    if (this.applyEditToSong(song, this.edittingFieldIndex, this.edittingValue)) {
+      DataService.getInstance().updateSongFields(song.id, allSongs);
+      this.writeTagsToFileWithToast(song);
     }
     this.cancelEditField();
   }
@@ -960,22 +1092,28 @@ export struct ControlAreaComponent {
             .alignItems(VerticalAlign.Center)
             .padding({ left: 16, right: 16 })
 
+            // 可编辑元数据组置顶：编辑交互与原有条目一致（点行内联编辑 + 确定/取消）
             Column({ space: 0 }) {
               this.morePanelInfoRow(0, '标题', this.infoValue(0), true)
               this.morePanelInfoRow(1, '歌手', this.infoValue(1), true)
               this.morePanelInfoRow(2, '专辑', this.infoValue(2), true)
-              this.morePanelInfoRow(3, '流派', this.infoValue(3), false)
-              this.morePanelInfoRow(18, '年份', this.infoValue(18), false)
-              this.morePanelInfoRow(4, '音轨号', this.infoValue(4), false)
-              this.morePanelInfoRow(5, '碟号', this.infoValue(5), false)
-              this.morePanelInfoRow(6, '作曲家', this.infoValue(6), false)
-              this.morePanelInfoRow(7, '专辑艺术家', this.infoValue(7), false)
-              this.morePanelInfoRow(8, '作者', this.infoValue(8), false)
-              this.morePanelInfoRow(24, '语言', this.infoValue(24), false)
-              this.morePanelInfoRow(9, '日期', this.infoValue(9), false)
-              this.morePanelInfoRow(10, '编码器', this.infoValue(10), false)
-              this.morePanelInfoRow(25, '注释', this.infoValue(25), false)
-              this.morePanelInfoRow(11, '描述', this.infoValue(11), false)
+              this.morePanelInfoRow(3, '流派', this.infoValue(3), true)
+              this.morePanelInfoRow(18, '年份', this.infoValue(18), true)
+              this.morePanelInfoRow(4, '音轨号', this.infoValue(4), true)
+              this.morePanelInfoRow(5, '碟号', this.infoValue(5), true)
+              this.morePanelInfoRow(6, '作曲家', this.infoValue(6), true)
+              this.morePanelInfoRow(7, '专辑艺术家', this.infoValue(7), true)
+              this.morePanelInfoRow(8, '作者', this.infoValue(8), true)
+              this.morePanelInfoRow(24, '语言', this.infoValue(24), true)
+              this.morePanelInfoRow(9, '日期', this.infoValue(9), true)
+              this.morePanelInfoRow(10, '编码器', this.infoValue(10), true)
+              this.morePanelInfoRow(25, '注释', this.infoValue(25), true)
+              this.morePanelInfoRow(11, '描述', this.infoValue(11), true)
+            }
+            .width('100%')
+
+            // 只读技术信息组
+            Column({ space: 0 }) {
               this.morePanelInfoRow(12, '时长', this.infoValue(12), false)
               this.morePanelInfoRow(14, '码率', this.infoValue(14), false)
               this.morePanelInfoRow(13, '采样率', this.infoValue(13), false)
@@ -989,6 +1127,7 @@ export struct ControlAreaComponent {
               this.morePanelInfoRow(17, '文件夹', this.infoValue(17), false)
             }
             .width('100%')
+            .margin({ top: 12 })
             .padding({ left: 16, right: 16, top: 4, bottom: 16 })
           }
           .width(StyleConstants.FULL_WIDTH)
