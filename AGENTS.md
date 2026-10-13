@@ -193,11 +193,11 @@ HarmonyOS图标库/
 截图验证：`devecocli ui screenshot --device "<设备名>" --path "D:\UPlayer\check.png"`
 清理截图：`Remove-Item D:\UPlayer\check.png`
 
-### ⚠️ 交付物禁止擅自落盘（2026-10-13 用户明确）
+### ⚠️ 交付物禁止擅自落盘
 
 **！！！！！！所有！！！！！！** 更新日志、简介、说明文字等交付物**只输出到对话**，未经用户明确指令**严禁写成任何文件**（包括 .workbuddy/memory/ 下的存档）。存哪里由用户说了算，擅自落盘视为违反「用户让做的才做」。
 
-### 记忆唯一载体是 AGENTS.md（2026-10-13 用户明确）
+### 记忆唯一载体是 AGENTS.md
 
 **！！！！！！所有！！！！！！** 智能体的项目记忆**只认 AGENTS.md 这一份**。.workbuddy/memory/（MEMORY.md、每日日志）、工作区 SOUL.md/IDENTITY.md/USER.md 等**一律不是记忆**，不读、不写、不更新。本文件是项目级智能体指令，更新它属于规范维护、非代码交付物，**可直接编辑**，无需用户逐条授权。
 
