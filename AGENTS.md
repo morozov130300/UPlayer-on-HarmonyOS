@@ -144,9 +144,6 @@ HarmonyOS图标库/
 
 **每次调试前必须先编译！** 智能体完成代码修改后，**必须调用devecocli！强制！！！**
 
-截图验证：`devecocli ui screenshot --device "<设备名>" --path "D:\UPlayer\check.png"`
-清理截图：`Remove-Item D:\UPlayer\check.png`
-
 ### ⚠️ 交付物禁止擅自落盘
 
 **！！！！！！所有！！！！！！** 更新日志、简介、说明文字等交付物**只输出到对话**，未经用户明确指令**严禁写成任何文件**（包括 .workbuddy/memory/ 下的存档）。存哪里由用户说了算，擅自落盘视为违反「用户让做的才做」。
