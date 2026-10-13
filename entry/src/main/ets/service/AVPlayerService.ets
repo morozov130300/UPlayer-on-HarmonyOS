@@ -1285,22 +1285,30 @@ export class AVPlayerService {
       nativeAudio.setSpaceRenderConfig(this.spaceRenderMode, this.spaceRenderValues)
     }
     nativeAudio.setGeneralVoiceChangeEnable(this.generalVoiceChangeEnabled)
+    Logger.info(TAG, 'native generalVoiceChange done')
     if (this.generalVoiceChangeEnabled) {
       nativeAudio.setGeneralVoiceChangeType(this.generalVoiceChangeType)
     }
     nativeAudio.setNoiseReductionEnable(this.noiseReductionEnabled)
+    Logger.info(TAG, 'native noiseReduction done')
     nativeAudio.setPureVoiceChangeEnable(this.pureVoiceChangeEnabled)
+    Logger.info(TAG, 'native pureVoiceChange done')
     if (this.pureVoiceChangeEnabled) {
       nativeAudio.setPureVoiceChangeConfig(this.pureVoiceChangeGender, this.pureVoiceChangeType,
         this.pureVoiceChangePitch)
+      Logger.info(TAG, 'native pureVoiceChange config done')
     }
     nativeAudio.setTempoPitchEnable(this.tempoPitchEnabled)
+    Logger.info(TAG, 'native tempoPitch done')
     if (this.tempoPitchEnabled) {
       nativeAudio.setTempoPitchConfig(this.tempoSpeed, this.tempoPitch)
+      Logger.info(TAG, 'native tempoPitch config done')
     }
     nativeAudio.setSeparationEnable(this.separationEnabled)
+    Logger.info(TAG, 'native separation done')
     if (this.separationEnabled) {
       nativeAudio.setSeparationOutput(this.separationOutput)
+      Logger.info(TAG, 'native separation output done')
     }
     Logger.info(TAG, 'native apply end')
   }
