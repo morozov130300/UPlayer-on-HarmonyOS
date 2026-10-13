@@ -120,6 +120,9 @@ export class DataService {
   // 文件夹列表 RDB 缓存：init() 完成前 getFolders 返回空列表
   private foldersCache: FolderInfo[] | undefined = undefined
   private saveFoldersChain: Promise<void> = Promise.resolve()
+  // activatePersistedUris 幂等标志：曲库缓存未就绪时跳过（等 init 完成后由 init 补跑），
+  // 已执行过一次后不再重复，避免可访问性检查跑两遍制造授权竞态
+  private persistedUrisActivated: boolean = false
 
   public static getInstance(): DataService {
     return DataService.instance
@@ -140,10 +143,18 @@ export class DataService {
       // init 完成后缓存已就绪：收敛历史脏筛选状态（initToAppStorage 可能先于 init 完成，
       // 之前因缓存未就绪被守卫跳过），保证启动后胶囊不残留已删文件夹
       this.pruneFilterAndFolders(songs)
+      // UI 可能已在 init 完成前加载（开屏超时降级路径）：bump 修订号让首页/歌单
+      // 经 @Watch(KEY_LIBRARY_REVISION) 自动重载；补跑授权激活（降级路径下
+      // initToAppStorage 先执行时被「缓存未就绪」守卫跳过）
+      this.bumpLibraryRevision()
+      void this.activatePersistedUris()
       Logger.info(TAG, `init: loaded ${songs.length} songs from database`)
     } catch (err) {
       this.songsCache = []
       this.dbSnapshot = new Map<string, SongInfo>()
+      // 失败同样可能发生在降级路径（initToAppStorage 已先跑完）：缓存已置空即可就绪，
+      // 补跑一次授权激活，放行 notifyFileAccessReady 封面门禁
+      void this.activatePersistedUris()
       Logger.error(TAG, `init failed: ${JSON.stringify(err)}`)
     }
   }
@@ -957,6 +968,11 @@ return result
   // 歌词引用发生集合级变化（重新导入覆盖）时通知各个歌词视图重新加载。
   // 只做「通知刷新」，不做任何数据推导或找回：损坏原因不可知，任何自动猜测都是伪命题，
   // 唯一的正经做法是在源头阻止歌词字段被破坏（见 repairAvailabilityAndRefresh）。
+  private bumpLibraryRevision(): void {
+    const revision: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_LIBRARY_REVISION) ?? 0
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_LIBRARY_REVISION, revision + 1)
+  }
+
   private bumpLyricRevision(): void {
     const revision: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_LYRIC_REVISION) ?? 0
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_LYRIC_REVISION, revision + 1)
@@ -1011,6 +1027,13 @@ return result
   }
 
   async activatePersistedUris(): Promise<void> {
+    // 曲库缓存未就绪时跳过：此时无 URI 可激活，且 repairAvailabilityAndRefresh 会以空曲库为
+    // 基准空跑，可能把有权限歌曲误标不可用并落库；等 init 完成缓存就绪后由 init 补跑。
+    // persistedUrisActivated 保证整体只成功执行一次（initToAppStorage 与 init 补跑二选一）
+    if (this.songsCache === undefined || this.persistedUrisActivated) {
+      return
+    }
+    this.persistedUrisActivated = true
     if (!canIUse('SystemCapability.FileManagement.AppFileService.FolderAuthorization')) {
       Logger.info(TAG, 'activatePersistedUris: FolderAuthorization not supported')
       AudioMetadataService.getInstance().notifyFileAccessReady()
