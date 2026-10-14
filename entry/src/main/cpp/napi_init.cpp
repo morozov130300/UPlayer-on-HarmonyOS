@@ -614,6 +614,7 @@ public:
             renderer_ = nullptr;
         }
         DestroyPipelineGroups();
+        DestroyEffectEngine();
         DestroyConverter();
         if (decoder_ != nullptr) {
             OH_AVErrCode destroyResult = OH_AudioCodec_Destroy(decoder_);
@@ -660,6 +661,21 @@ public:
         ResetLoudnessCompensation();
     }
 
+    // 效果节点缺失时该开关 setter 该返回什么：
+    // 管线尚未创建（设置项在 Play 前下发）→ 仅记录 requested 状态返回 true，
+    //   ConfigureEffects 会按初始态建管并重放，属正常路径；
+    // 管线已建但节点为 nullptr → 说明该效果节点未成功创建，此时「开启」是真实故障，
+    //   必须报错并返回 false，绝不能静默返回 true 让上层以为已生效。
+    bool HandleMissingEffectNode(bool enabled, const char* effectName)
+    {
+        if (mainGroup_.pipeline == nullptr || !enabled) {
+            return true;
+        }
+        OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "effect node missing, enable ignored name=%{public}s", effectName);
+        return false;
+    }
+
     bool SetEnabled(bool enabled)
     {
         if (enabled && !IsEqualizerSupported()) {
@@ -675,7 +691,7 @@ public:
         // 管线可能被其他效果占用，EQ 节点旁路状态必须与开关同步，避免关闭 EQ 后残留处理
         OH_AudioNode* node = ActiveEffectNodes().eq;
         if (node == nullptr) {
-            return true;
+            return HandleMissingEffectNode(enabled, "equalizer");
         }
         if (enabled) {
             return ApplyBandsLocked(node, bands_, false);
@@ -720,7 +736,7 @@ public:
         pipelineHoldRequested_.store(true);
         OH_AudioNode* node = ActiveEffectNodes().soundField;
         if (node == nullptr) {
-            return true;
+            return HandleMissingEffectNode(enabled, "soundField");
         }
         if (enabled) {
             return SetSoundFieldStateLocked(node);
@@ -759,7 +775,7 @@ public:
         pipelineHoldRequested_.store(true);
         OH_AudioNode* node = ActiveEffectNodes().environment;
         if (node == nullptr) {
-            return true;
+            return HandleMissingEffectNode(enabled, "environment");
         }
         if (enabled) {
             return SetEnvironmentStateLocked(node);
@@ -798,7 +814,7 @@ public:
         pipelineHoldRequested_.store(true);
         OH_AudioNode* node = ActiveEffectNodes().beautifier;
         if (node == nullptr) {
-            return true;
+            return HandleMissingEffectNode(enabled, "beautifier");
         }
         if (enabled) {
             return SetBeautifierStateLocked(node);
@@ -837,7 +853,7 @@ public:
         pipelineHoldRequested_.store(true);
         OH_AudioNode* node = ActiveEffectNodes().spaceRender;
         if (node == nullptr) {
-            return true;
+            return HandleMissingEffectNode(enabled, "spaceRender");
         }
         if (enabled) {
             return SetSpaceRenderStateLocked(node);
@@ -899,7 +915,7 @@ public:
         pipelineHoldRequested_.store(true);
         OH_AudioNode* node = ActiveEffectNodes().generalVoiceChange;
         if (node == nullptr) {
-            return true;
+            return HandleMissingEffectNode(enabled, "generalVoiceChange");
         }
         if (enabled) {
             return SetGeneralVoiceChangeStateLocked(node);
@@ -941,7 +957,7 @@ public:
         }
         OH_AudioNode* node = ActiveEffectNodes().noiseReduction;
         if (node == nullptr) {
-            return true;
+            return HandleMissingEffectNode(enabled, "noiseReduction");
         }
         // 降噪无参数，仅旁路开关
         return BypassNodeLocked(node, !enabled);
@@ -959,7 +975,7 @@ public:
         }
         OH_AudioNode* node = ActiveEffectNodes().pureVoiceChange;
         if (node == nullptr) {
-            return true;
+            return HandleMissingEffectNode(enabled, "pureVoiceChange");
         }
         if (enabled) {
             return SetPureVoiceChangeStateLocked(node);
@@ -997,7 +1013,7 @@ public:
         }
         OH_AudioNode* node = ActiveEffectNodes().tempoPitch;
         if (node == nullptr) {
-            return true;
+            return HandleMissingEffectNode(enabled, "tempoPitch");
         }
         if (enabled) {
             return SetTempoPitchStateLocked(node);
@@ -1352,8 +1368,10 @@ private:
         bool supported = false;
         OH_AudioSuite_Result probeResult = OH_AudioSuiteEngine_IsNodeTypeSupported(type, &supported);
         if (probeResult != AUDIOSUITE_SUCCESS || !supported) {
-            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                "effect node type=%{public}d unsupported code=%{public}d",
+            // 用 ERROR 级别：这类节点缺失会让对应效果开关「能开但无任何效果」，
+            // INFO 会被 hilog 默认级别过滤掉，导致故障无从追查
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "effect node type=%{public}d unsupported code=%{public}d (effect will not take effect)",
                 static_cast<int>(type), static_cast<int>(probeResult));
             return !required;
         }
@@ -1672,7 +1690,7 @@ private:
         return configured && prepareResult == AV_ERR_OK && startResult == AV_ERR_OK;
     }
 
-    // 停止并销毁三组管线的全部节点与管线（引擎由 Stop 在其后统一销毁）
+    // 停止并销毁三组管线的全部节点与管线；引擎由随后的 DestroyEffectEngine() 销毁
     void DestroyPipelineGroups()
     {
         PipelineGroup* groups[] = { &mainGroup_, &specialGroup_, &sepGroup_ };
@@ -1710,6 +1728,22 @@ private:
         activePipeline_ = ActivePipeline::NONE;
         specialPipelineUsable_ = false;
         sepPipelineUsable_ = false;
+    }
+
+    // 销毁 AudioSuite 引擎句柄。必须在所有管线与节点销毁之后调用。
+    // ConfigureEffects 每次 Play 都会 OH_AudioSuiteEngine_Create 一个引擎，若不在此处配对销毁，
+    // 引擎句柄会随起播次数持续泄漏，最终导致 Create 失败 → ConfigureEffects 返回 false →
+    // Play 返回 false → 上层静默回退官方 AVPlayer，表现为「所有音效开关都不生效、歌却照放」。
+    void DestroyEffectEngine()
+    {
+        if (engine_ == nullptr) {
+            return;
+        }
+        OH_AudioSuite_Result result = OH_AudioSuiteEngine_Destroy(engine_);
+        OH_LOG_Print(LOG_APP, result == AUDIOSUITE_SUCCESS ? LOG_INFO : LOG_ERROR,
+            UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "effect engine destroy result=%{public}d", static_cast<int>(result));
+        engine_ = nullptr;
     }
 
     // 创建一组实时预览管线：input(48k/S16/2ch) → 效果节点 → output(48k/S16/2ch)。
@@ -1859,13 +1893,25 @@ private:
 
     bool ConfigureEffects()
     {
-        if (!IsEqualizerSupported() || OH_AudioSuiteEngine_Create(&engine_) != AUDIOSUITE_SUCCESS) {
-            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG, "effect engine setup failed");
+        // 分阶段打日志：音效失效时从 hilog 一眼即可分出是「设备不支持 / 引擎创建失败 /
+        // 管线建失败 / 效果状态应用失败 / 管线起播失败」，无需逐层猜
+        const bool eqSupported = IsEqualizerSupported();
+        if (!eqSupported) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "cfg stage=engine eqSupported=0");
+            return false;
+        }
+        const OH_AudioSuite_Result engineResult = OH_AudioSuiteEngine_Create(&engine_);
+        OH_LOG_Print(LOG_APP, engineResult == AUDIOSUITE_SUCCESS ? LOG_INFO : LOG_ERROR,
+            UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "cfg stage=engine eqSupported=1 createResult=%{public}d", static_cast<int>(engineResult));
+        if (engineResult != AUDIOSUITE_SUCCESS) {
             return false;
         }
         // 主管线为播放基本盘：创建失败视为致命（回归 AVPlayer 直通）
         if (!BuildPipelineGroup(mainGroup_, false)) {
-            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG, "main pipeline setup failed");
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "cfg stage=mainPipeline failed");
             return false;
         }
         // 特殊/分离管线尽力而为：设备不支持时置不可用，效果开关静默保持主管线
@@ -1886,13 +1932,15 @@ private:
             activePipeline_ = initial;
             if (!ApplyEffectStatesLocked()) {
                 OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                    "apply initial effect states failed");
+                    "cfg stage=applyStates failed initial=%{public}d", static_cast<int>(initial));
                 return false;
             }
             PipelineGroup& group = GroupFor(initial);
-            if (OH_AudioSuiteEngine_StartPipeline(group.pipeline) != AUDIOSUITE_SUCCESS) {
+            const OH_AudioSuite_Result startResult = OH_AudioSuiteEngine_StartPipeline(group.pipeline);
+            if (startResult != AUDIOSUITE_SUCCESS) {
                 OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                    "start initial pipeline failed initial=%{public}d", static_cast<int>(initial));
+                    "cfg stage=startPipeline failed initial=%{public}d code=%{public}d",
+                    static_cast<int>(initial), static_cast<int>(startResult));
                 // 特殊/分离管线启动失败 → 回退主管线（主管线为基本盘）
                 if (initial != ActivePipeline::MAIN) {
                     activePipeline_ = ActivePipeline::MAIN;
@@ -1910,6 +1958,9 @@ private:
                 }
             }
         }
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "cfg ok active=%{public}d special=%{public}d separation=%{public}d",
+            static_cast<int>(activePipeline_), specialPipelineUsable_ ? 1 : 0, sepPipelineUsable_ ? 1 : 0);
         return true;
     }
 
