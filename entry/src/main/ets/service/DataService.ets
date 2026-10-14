@@ -123,6 +123,10 @@ export class DataService {
   // activatePersistedUris 幂等标志：曲库缓存未就绪时跳过（等 init 完成后由 init 补跑），
   // 已执行过一次后不再重复，避免可访问性检查跑两遍制造授权竞态
   private persistedUrisActivated: boolean = false
+  // 曲库加载失败标志：init() 异常时置位。init 降级会把 songsCache 置空以便放行授权激活与封面门禁，
+  // 但「加载失败」与「曲库为空」在缓存里长得一样。pruneFilterAndFolders 必须靠本标志区分二者，
+  // 否则一次读取失败就会被当成"文件夹都不存在"从而清空 folders 表
+  private libraryLoadFailed: boolean = false
 
   public static getInstance(): DataService {
     return DataService.instance
@@ -130,6 +134,7 @@ export class DataService {
 
   // 初始化曲库数据库并加载全量歌曲到内存缓存；EntryAbility 在 UI 加载前调用
   public async init(context: common.UIAbilityContext): Promise<void> {
+    this.libraryLoadFailed = false
     try {
       await SongDatabase.getInstance().init(context)
       const songs: SongInfo[] = await SongDatabase.getInstance().queryAllSongs()
@@ -152,6 +157,9 @@ export class DataService {
     } catch (err) {
       this.songsCache = []
       this.dbSnapshot = new Map<string, SongInfo>()
+      // 加载失败：置位标志，pruneFilterAndFolders 据此拒绝收敛（缓存被置空只是为放行授权激活与封面门禁，
+      // 不代表曲库真的为空）
+      this.libraryLoadFailed = true
       // 失败同样可能发生在降级路径（initToAppStorage 已先跑完）：缓存已置空即可就绪，
       // 补跑一次授权激活，放行 notifyFileAccessReady 封面门禁
       void this.activatePersistedUris()
@@ -504,15 +512,29 @@ return result
   // 只清「空文件夹」——多文件夹筛选下部分删除不能误清仍有歌曲的选中项；
   // setSelectedFolderPaths 内部会 bump KEY_FILTER_REVISION，首页胶囊经 @Watch 自动刷新。
   // songsCache 未就绪（init 前）时不做收敛：以空曲库为基准会误清持久化的筛选状态。
+  //
+  // 两条拒绝收敛的判据（收敛会落盘删除 folders 表，不可逆）：
+  //   1) init() 加载失败（libraryLoadFailed）：降级时 songsCache 被置空，与"曲库真空"同形，无法区分；
+  //   2) 曲库非空但存在 folderPath 读不出来的歌：folderPath 由 SongDatabase.rsGetString 读取，
+  //      列缺失或值为 NULL 时返回空串，此时 livePaths 会变成空集，让"文件夹全都不存在"成为误判。
+  // 真正的空曲库（remainingSongs 为空）不在此列，仍按原逻辑清理，行为不变。
   private pruneFilterAndFolders(remainingSongs: SongInfo[]): void {
-    if (this.songsCache === undefined) {
+    if (this.songsCache === undefined || this.libraryLoadFailed) {
       return
     }
     const livePaths: Set<string> = new Set<string>()
+    let missingFolderPath: number = 0
     for (let i = 0; i < remainingSongs.length; i++) {
       if (remainingSongs[i].folderPath.length > 0) {
         livePaths.add(remainingSongs[i].folderPath)
+      } else {
+        missingFolderPath++
       }
+    }
+    if (missingFolderPath > 0) {
+      Logger.error(TAG, `prune skipped: folderPath unreadable songs=${remainingSongs.length}` +
+        ` missing=${missingFolderPath} folders=${this.getFolders().length}`)
+      return
     }
     const selectedPaths: string[] = this.getSelectedFolderPaths()
     const remainingSelected: string[] = []
@@ -679,6 +701,80 @@ return result
 
   // ═══════════ Settings ═══════════
 
+  // 设置读取统一取值助手：持久化 JSON 由历史版本写入，可能缺键 / 类型不符 / 值非法。
+  // 禁止再写 `r['x'] as T` 裸强转——历史缺陷正是 5 个字段漏了兜底，读到 undefined 后被
+  // 设置页的 playSpeed.toFixed() / ColorHelper.hexToRgb().replace() 直接抛错整页崩掉。
+  // 命中兜底或修正时打 warn 并带字段名与实测值，便于真机一次确认命中点。
+  private pickBool(r: Record<string, Object>, key: string, def: boolean): boolean {
+    const v: Object | undefined = r[key]
+    if (typeof v === 'boolean') {
+      return v
+    }
+    if (v !== undefined) {
+      Logger.warn(TAG, `settings ${key} invalid(${typeof v}), fallback ${def}`)
+    }
+    return def
+  }
+
+  private pickNum(r: Record<string, Object>, key: string, def: number, min: number, max: number): number {
+    const v: Object | undefined = r[key]
+    if (typeof v !== 'number' || !Number.isFinite(v)) {
+      if (v !== undefined) {
+        Logger.warn(TAG, `settings ${key} invalid(${typeof v}), fallback ${def}`)
+      }
+      return def
+    }
+    const clamped: number = Math.min(max, Math.max(min, v))
+    if (clamped !== v) {
+      Logger.warn(TAG, `settings ${key} out of range(${v}), clamped ${clamped}`)
+    }
+    return clamped
+  }
+
+  private pickStr(r: Record<string, Object>, key: string, def: string): string {
+    const v: Object | undefined = r[key]
+    if (typeof v === 'string') {
+      return v
+    }
+    if (v !== undefined) {
+      Logger.warn(TAG, `settings ${key} invalid(${typeof v}), fallback ${def}`)
+    }
+    return def
+  }
+
+  // 颜色必须是 #RRGGBB：消费侧一律交给 ColorHelper.hexToRgb（内部 hex.replace('#','')），
+  // 非字符串或格式不符会抛 TypeError，而 primaryColor 被设置页四个分区全部使用
+  private pickColor(r: Record<string, Object>, key: string, def: string): string {
+    const v: Object | undefined = r[key]
+    if (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v)) {
+      return v
+    }
+    if (v !== undefined) {
+      Logger.warn(TAG, `settings ${key} invalid color(${v}), fallback ${def}`)
+    }
+    return def
+  }
+
+  // 定长数值数组（spaceRenderValues）：非数组时整体回退默认，元素逐个校验有限性
+  private pickNumArray(r: Record<string, Object>, key: string, def: number[]): number[] {
+    const out: number[] = def.slice()
+    const v: Object | undefined = r[key]
+    if (!Array.isArray(v)) {
+      if (v !== undefined) {
+        Logger.warn(TAG, `settings ${key} invalid(not array), fallback [${out.join(',')}]`)
+      }
+      return out
+    }
+    const arr: Object[] = v as Object[]
+    for (let i = 0; i < arr.length && i < out.length; i++) {
+      const item: Object = arr[i]
+      if (typeof item === 'number' && Number.isFinite(item)) {
+        out[i] = item
+      }
+    }
+    return out
+  }
+
   getSettings(): AppSettingsData {
     const raw = this.getPref().getValue(KEY_SETTINGS)
     if (raw === undefined) {
@@ -687,10 +783,10 @@ return result
     try {
       const r: Record<string, Object> = JSON.parse(raw as string) as Record<string, Object>
       const s: AppSettingsData = new AppSettingsData()
-      s.plusButtonScrollHide = r['plusButtonScrollHide'] as boolean
-      s.themeMode = r['themeMode'] as string
-      s.primaryColor = r['primaryColor'] as string
-      s.eqEnabled = r['eqEnabled'] as boolean
+      s.plusButtonScrollHide = this.pickBool(r, 'plusButtonScrollHide', true)
+      s.themeMode = this.pickStr(r, 'themeMode', 'system')
+      s.primaryColor = this.pickColor(r, 'primaryColor', '#007DFF')
+      s.eqEnabled = this.pickBool(r, 'eqEnabled', false)
       let rawEqBands: Object | undefined = r['eqBands']
       let eqBandsMigrated: boolean = false
       if (rawEqBands !== undefined) {
@@ -702,7 +798,7 @@ return result
           eqBandsMigrated = eqBandsMigrated || normalized !== bands[i]
         }
       }
-      s.playSpeed = r['playSpeed'] as number
+      s.playSpeed = this.pickNum(r, 'playSpeed', 1, 0.5, 3)
       let rawSoundFieldEnabled: Object | undefined = r['soundFieldEnabled']
       s.soundFieldEnabled = rawSoundFieldEnabled !== undefined ? rawSoundFieldEnabled as boolean : false
       let rawSoundFieldType: Object | undefined = r['soundFieldType']
@@ -717,12 +813,10 @@ return result
       s.beautifierType = rawBeautifierType !== undefined ? rawBeautifierType as number : 1
       let rawSpaceRenderEnabled: Object | undefined = r['spaceRenderEnabled']
       s.spaceRenderEnabled = rawSpaceRenderEnabled !== undefined ? rawSpaceRenderEnabled as boolean : false
-      let rawSpaceRenderMode: Object | undefined = r['spaceRenderMode']
-      s.spaceRenderMode = rawSpaceRenderMode !== undefined ? rawSpaceRenderMode as number : 0
-      let rawSpaceRenderValues: Object | undefined = r['spaceRenderValues']
-      if (rawSpaceRenderValues !== undefined) {
-        s.spaceRenderValues = rawSpaceRenderValues as number[]
-      }
+      // 空间渲染模式必须是 SpaceRenderTable.MODE_DEFAULTS 的合法下标（0/1/2）：
+      // 越界会让设置页 MODE_DEFAULTS[mode] 取到 undefined 再取 .length 抛错
+      s.spaceRenderMode = Math.round(this.pickNum(r, 'spaceRenderMode', 0, 0, 2))
+      s.spaceRenderValues = this.pickNumArray(r, 'spaceRenderValues', s.spaceRenderValues)
       let rawGeneralVoiceChangeEnabled: Object | undefined = r['generalVoiceChangeEnabled']
       s.generalVoiceChangeEnabled = rawGeneralVoiceChangeEnabled !== undefined ?
         rawGeneralVoiceChangeEnabled as boolean : false

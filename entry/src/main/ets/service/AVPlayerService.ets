@@ -30,6 +30,19 @@ enum BackendState {
   RELEASING = 'releasing'
 }
 
+// 设备音效节点能力探测结果（OHAudioSuite 各类效果节点是否受支持）
+export class EffectNodeSupport {
+  soundField: boolean = false
+  environment: boolean = false
+  beautifier: boolean = false
+  spaceRender: boolean = false
+  generalVoiceChange: boolean = false
+  noiseReduction: boolean = false
+  pureVoiceChange: boolean = false
+  tempoPitch: boolean = false
+  separation: boolean = false
+}
+
 @SuppressWarnings({rules: [SuppressWarningsType.SYSCAP]})
 export class AVPlayerService {
   private static instance: AVPlayerService = new AVPlayerService()
@@ -78,6 +91,8 @@ export class AVPlayerService {
   private tempoPitch: number = 1
   private separationEnabled: boolean = false
   private separationOutput: number = 1
+  // 音效节点能力探测缓存（undefined = 尚未探测）：见 ensureEffectNodeSupport()
+  private effectNodeSupport: EffectNodeSupport | undefined = undefined
   private nativeProgressTimer: number = -1
   private nativeStartupTimer: number = -1
   private playRequestId: number = 0
@@ -1096,40 +1111,27 @@ export class AVPlayerService {
     this.applyAllEffectsToNative()
   }
 
-  isSoundFieldSupported(): boolean {
-    return nativeAudio.isEffectNodeSupported(203)
-  }
-
-  isEnvironmentSupported(): boolean {
-    return nativeAudio.isEffectNodeSupported(206)
-  }
-
-  isVoiceBeautifierSupported(): boolean {
-    return nativeAudio.isEffectNodeSupported(205)
-  }
-
-  isSpaceRenderSupported(): boolean {
-    return nativeAudio.isEffectNodeSupported(208)
-  }
-
-  isGeneralVoiceChangeSupported(): boolean {
-    return nativeAudio.isEffectNodeSupported(210)
-  }
-
-  isNoiseReductionSupported(): boolean {
-    return nativeAudio.isEffectNodeSupported(202)
-  }
-
-  isPureVoiceChangeSupported(): boolean {
-    return nativeAudio.isEffectNodeSupported(209)
-  }
-
-  isTempoPitchSupported(): boolean {
-    return nativeAudio.isEffectNodeSupported(211)
-  }
-
-  isSeparationSupported(): boolean {
-    return nativeAudio.isEffectNodeSupported(204)
+  // 设备音效节点能力：首次调用才打 native（同步系统 IPC，9 个节点类型 9 次调用），
+  // 之后一律返回缓存。设置页只在「音效」分区按需调用一次，不再由页面打开路径无条件触发。
+  ensureEffectNodeSupport(): EffectNodeSupport {
+    if (this.effectNodeSupport === undefined) {
+      const support: EffectNodeSupport = new EffectNodeSupport()
+      support.soundField = nativeAudio.isEffectNodeSupported(203)
+      support.environment = nativeAudio.isEffectNodeSupported(206)
+      support.beautifier = nativeAudio.isEffectNodeSupported(205)
+      support.spaceRender = nativeAudio.isEffectNodeSupported(208)
+      support.generalVoiceChange = nativeAudio.isEffectNodeSupported(210)
+      support.noiseReduction = nativeAudio.isEffectNodeSupported(202)
+      support.pureVoiceChange = nativeAudio.isEffectNodeSupported(209)
+      support.tempoPitch = nativeAudio.isEffectNodeSupported(211)
+      support.separation = nativeAudio.isEffectNodeSupported(204)
+      this.effectNodeSupport = support
+      Logger.info(TAG, `effect node support probed: sf=${support.soundField} env=${support.environment}` +
+        ` bf=${support.beautifier} sr=${support.spaceRender} gvc=${support.generalVoiceChange}` +
+        ` nr=${support.noiseReduction} pvc=${support.pureVoiceChange} tp=${support.tempoPitch}` +
+        ` sep=${support.separation}`)
+    }
+    return this.effectNodeSupport
   }
 
   async applyGeneralVoiceChange(enabled: boolean, type: number = 1): Promise<void> {
