@@ -288,8 +288,13 @@ export class AVPlayerService {
     // 若当前处于播放状态，本次是切歌（播放中切到下一首），stop/reset 期间不应把播放状态置为暂停
     const wasPlaying: boolean = AppStorage.get<boolean>(AppStorageKeyConstants.KEY_IS_PLAY) ?? false
     this.isSwitchingTrack = wasPlaying
-    const useNativePlayer: boolean = this.anyEffectEnabled() && nativeAudio.isEqualizerSupported()
-    Logger.error(TAG, `play useNativePlayer=${useNativePlayer} eqEnabled=${this.equalizerEnabled} nativeMode=${this.nativeMode}`)
+    // 两个条件分开打日志：合成一个布尔后无法区分「用户没开任何音效」与「原生音效能力探测为假」，
+    // 而后者会让所有音效静默回退到 AVPlayer（歌照放、音效全无）
+    const anyEffectOn: boolean = this.anyEffectEnabled()
+    const eqSupported: boolean = nativeAudio.isEqualizerSupported()
+    const useNativePlayer: boolean = anyEffectOn && eqSupported
+    Logger.error(TAG, `play gate anyEffectOn=${anyEffectOn} eqSupported=${eqSupported} ` +
+      `useNativePlayer=${useNativePlayer} eqEnabled=${this.equalizerEnabled} nativeMode=${this.nativeMode}`)
     if (useNativePlayer) {
       if (this.nativeMode && this.currentFilePath === fileUri && !nativeAudio.isCompleted() &&
         !nativeAudio.hasFailed()) {
