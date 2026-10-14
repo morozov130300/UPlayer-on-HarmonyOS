@@ -2299,6 +2299,13 @@ private:
         if (converter_ != nullptr && converterInputRate_ == inputRate && converterOutputRate_ == outputRate) {
             return true;
         }
+        if (converter_ != nullptr) {
+            // 重建会丢弃转换器内部缓存（已从 pcmQueue_ 移除、尚未输出的源数据）。
+            // 效果切换时若出现本日志，说明仍有一条路径在两者目标率之间来回切。
+            OH_LOG_Print(LOG_APP, LOG_WARN, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "converter rebuild in=%{public}d out=%{public}d",
+                converterInputRate_, converterOutputRate_);
+        }
         DestroyConverter();
         OH_AudioConverter_Format inputFormat = {};
         inputFormat.encodingType = AUDIO_ENCODING_TYPE_RAW;
@@ -2387,6 +2394,43 @@ private:
             queueCondition_.notify_all();
         }
         return outputSize;
+    }
+
+    // 直通/保持期统一从 48000×density 的转换器取数，再按 density 整数抽取回 48000 交给渲染器。
+    // 与 ReadPcm(usePipeline=false) 的区别：后者会把转换器目标率设为 48000，于是在 48000↔96000
+    // 之间反复重建转换器 → 丢弃其内部已从 pcmQueue_ 移除的源缓存 → 效果切换必然丢一段音频、累积时移。
+    // 统一走管线目标率后，转换器输出率只随 density 变化，效果切换不再触发重建。
+    int32_t ReadPcmDirect(void* audioData, int32_t audioDataSize, bool* finished)
+    {
+        const int32_t density = inputDensityFactor_.load();
+        if (density <= 1) {
+            // 目标率与直通一致，无需抽取
+            return ReadPcm(audioData, audioDataSize, finished, true);
+        }
+        const int32_t need = audioDataSize * density;
+        if (static_cast<int32_t>(convertScratch_.size()) < need) {
+            convertScratch_.resize(static_cast<size_t>(need));
+        }
+        int32_t got = ReadPcm(convertScratch_.data(), need, finished, true);
+        if (got < 0) {
+            got = 0;
+        }
+        // 按帧（4 字节，L/R S16LE）抽取，保证左右声道同步
+        const int32_t inFrames = got / 4;
+        const int32_t outFrames = std::min(inFrames / density, audioDataSize / 4);
+        const int16_t* in = reinterpret_cast<const int16_t*>(convertScratch_.data());
+        int16_t* out = static_cast<int16_t*>(audioData);
+        for (int32_t i = 0; i < outFrames; i++) {
+            const int32_t src = i * density;
+            out[i * 2] = in[src * 2];
+            out[i * 2 + 1] = in[src * 2 + 1];
+        }
+        const int32_t producedBytes = outFrames * 4;
+        if (producedBytes < audioDataSize) {
+            std::memset(static_cast<uint8_t*>(audioData) + producedBytes, 0,
+                static_cast<size_t>(audioDataSize - producedBytes));
+        }
+        return producedBytes;
     }
 
     void MeasureInputDensity(int32_t audioDataSize)
@@ -2883,7 +2927,7 @@ private:
             holdCarrySamples_ = 0;
             densityRetarget_ = 0;
             bool finished = false;
-            int32_t readSize = ReadPcm(audioData, audioDataSize, &finished, false);
+            int32_t readSize = ReadPcmDirect(audioData, audioDataSize, &finished);
             if (readSize < audioDataSize) {
                 std::memset(static_cast<uint8_t*>(audioData) + readSize, 0,
                     static_cast<size_t>(audioDataSize - readSize));
@@ -2897,7 +2941,10 @@ private:
         // 管线激活翻转或效果开关请求 → 进入/延长直通保持期：可听输出走直通（音调恒定正确），
         // 管线喂静音完成拉取密度重测，收敛后交叉淡化切回管线输出，
         // 消除开关瞬间按旧密度因子喂源导致的倍速高音调/慢速低音调。
-        if (pipelineActivated || pipelineHoldRequested_.exchange(false)) {
+        // 无条件读取并清除请求位：原先写成 `pipelineActivated || pipelineHoldRequested_.exchange(false)`
+        // 会因 || 短路在激活时跳过 exchange，导致请求位残留、多触发一整轮保持
+        const bool holdRequested = pipelineHoldRequested_.exchange(false);
+        if (pipelineActivated || holdRequested) {
             if (!pipelineHoldActive_.exchange(true)) {
                 OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                     "pipeline hold start (activation=%{public}d)", pipelineActivated ? 1 : 0);
@@ -2913,7 +2960,7 @@ private:
                 // 末段存入 carry 供释放帧交叉淡化；管线预热渲染由 InputDataCallback
                 // 的 hold 分支喂静音，只用于维持拉取节奏供密度测量
                 bool finished = false;
-                int32_t readSize = ReadPcm(audioData, audioDataSize, &finished, false);
+                int32_t readSize = ReadPcmDirect(audioData, audioDataSize, &finished);
                 if (readSize < audioDataSize) {
                     std::memset(static_cast<uint8_t*>(audioData) + readSize, 0,
                         static_cast<size_t>(audioDataSize - readSize));
@@ -3338,6 +3385,8 @@ private:
     int32_t converterInputRate_ = 0;
     int32_t converterOutputRate_ = 0;
     std::vector<uint8_t> converterInputBuf_ = {};
+    // 直通/保持期抽取用的 48000×density 中转缓冲（仅渲染线程访问）
+    std::vector<uint8_t> convertScratch_ = {};
     std::atomic<bool> converterInputFinished_ = false;
     bool converterRateWarned_ = false;
 };
