@@ -4,7 +4,7 @@ import { hdsMaterial, HdsTabs, HdsTabsController, HdsTabsFloatingStyle } from '@
 import { bundleManager, common, ConfigurationConstant } from '@kit.AbilityKit'
 import { updateManager } from '@kit.AppGalleryKit'
 import { AppSettingsData, DataService } from '../service/DataService'
-import { AVPlayerService } from '../service/AVPlayerService'
+import { AVPlayerService, EffectNodeSupport } from '../service/AVPlayerService'
 import { AudioFocusService } from '../service/AudioFocusService'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { ColorHelper } from '../common/utils/ColorHelper'
@@ -145,6 +145,8 @@ struct SettingsDetailPage {
   @State pureVoiceChangeSupported: boolean = false
   @State tempoPitchSupported: boolean = false
   @State separationSupported: boolean = false
+  // 音效节点能力是否已探测（只在「音效」分区按需探测一次，见 probeEffectNodeSupport）
+  private effectSupportProbed: boolean = false
   private context: common.UIAbilityContext
     | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
   // Tab 栏实时预览：直接使用 HdsTabs 系统组件，与 Index 完全一致的渲染管线
@@ -231,16 +233,30 @@ struct SettingsDetailPage {
       this.settings.holdingHandEnabled = true
       AppStorage.setOrCreate(KEY_HOLDING_HAND_ENABLED, true)
     }
-    // 设备音效节点能力探测：不支持的卡片禁用开关并提示
-    this.soundFieldSupported = this.avPlayerService.isSoundFieldSupported()
-    this.environmentSupported = this.avPlayerService.isEnvironmentSupported()
-    this.beautifierSupported = this.avPlayerService.isVoiceBeautifierSupported()
-    this.spaceRenderSupported = this.avPlayerService.isSpaceRenderSupported()
-    this.generalVoiceChangeSupported = this.avPlayerService.isGeneralVoiceChangeSupported()
-    this.noiseReductionSupported = this.avPlayerService.isNoiseReductionSupported()
-    this.pureVoiceChangeSupported = this.avPlayerService.isPureVoiceChangeSupported()
-    this.tempoPitchSupported = this.avPlayerService.isTempoPitchSupported()
-    this.separationSupported = this.avPlayerService.isSeparationSupported()
+    // 设备音效节点能力探测已移出共享打开路径：它是 9 次同步 native 系统 IPC，
+    // 只有「音效」分区消费，却会让定制/播放/关于 也付出同样代价。改为进入音效分区时按需探测一次。
+    if (this.pageTitle === '音效') {
+      this.probeEffectNodeSupport()
+    }
+  }
+
+  // 设备音效节点能力探测（按需、一次）：结果写入 9 个 @State 驱动对应卡片开关的禁用与提示。
+  // probeEffectNodeSupport 只在「音效」分区调用，其余分区完全不触碰 native。
+  private probeEffectNodeSupport(): void {
+    if (this.effectSupportProbed) {
+      return
+    }
+    this.effectSupportProbed = true
+    const support: EffectNodeSupport = this.avPlayerService.ensureEffectNodeSupport()
+    this.soundFieldSupported = support.soundField
+    this.environmentSupported = support.environment
+    this.beautifierSupported = support.beautifier
+    this.spaceRenderSupported = support.spaceRender
+    this.generalVoiceChangeSupported = support.generalVoiceChange
+    this.noiseReductionSupported = support.noiseReduction
+    this.pureVoiceChangeSupported = support.pureVoiceChange
+    this.tempoPitchSupported = support.tempoPitch
+    this.separationSupported = support.separation
   }
 
   // 预览器说明：
