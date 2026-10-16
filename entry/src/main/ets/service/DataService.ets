@@ -6,6 +6,7 @@ import { common } from '@kit.AbilityKit'
 import { fileIo as fs, fileShare } from '@kit.CoreFileKit'
 import { SongDatabase } from './SongDatabase'
 import Logger from '../common/utils/Logger'
+import { LegacyDataCleaner } from './LegacyDataCleaner'
 import { BusinessError } from '@kit.BasicServicesKit'
 import { MusicPlayMode } from '../common/constants/PlayerConstants'
 import { AudioMetadataService } from './AudioMetadataService'
@@ -135,6 +136,10 @@ export class DataService {
   // 初始化曲库数据库并加载全量歌曲到内存缓存；EntryAbility 在 UI 加载前调用
   public async init(context: common.UIAbilityContext): Promise<void> {
     this.libraryLoadFailed = false
+    // v1.0.7 起不跨版本兼容：加载曲库前先清除旧版本遗留 preferences 键
+    // （旧版歌曲/文件夹 JSON 等，键名未知的按「非当前键即废弃」整体删除）；
+    // 数据库旧表的整表重建在 SongDatabase.init 内完成。详见 LegacyDataCleaner。
+    LegacyDataCleaner.getInstance().purgeLegacyPreferences()
     try {
       await SongDatabase.getInstance().init(context)
       const songs: SongInfo[] = await SongDatabase.getInstance().queryAllSongs()
@@ -867,9 +872,10 @@ return result
       let rawHoldingHandEnabled: Object | undefined = r['holdingHandEnabled']
       s.holdingHandEnabled = rawHoldingHandEnabled !== undefined ? rawHoldingHandEnabled as boolean : true
       let rawTabTouchIndicator: Object | undefined = r['tabTouchIndicator']
-      let tabTouchIndicator: string = rawTabTouchIndicator !== undefined ? rawTabTouchIndicator as string : 'light'
-      // 「白色蒙版」选项已删除，底部栏触摸指示全面改为跟手光效：旧值 'mask' 迁移为 'light'
-      s.tabTouchIndicator = tabTouchIndicator === 'mask' ? 'light' : tabTouchIndicator
+      // v1.0.7 起删除旧值 'mask' 的兼容迁移（不跨版本兼容）：「白色蒙版」选项
+      // 早已删除，遗留 'mask' 值在所有消费侧均按 === 'light' 比较，行为等价于
+      // 'off'（关闭跟手光效），无崩溃风险，不再做旧值转换
+      s.tabTouchIndicator = rawTabTouchIndicator !== undefined ? rawTabTouchIndicator as string : 'light'
       let rawTabLightColor: Object | undefined = r['tabLightColor']
       s.tabLightColor = rawTabLightColor !== undefined ? rawTabLightColor as string : 'theme'
       let rawContinuePlayOnHeadsetUnplug: Object | undefined = r['continuePlayOnHeadsetUnplug']
