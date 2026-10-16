@@ -70,6 +70,24 @@ const SQL_CREATE_FOLDERS: string = 'CREATE TABLE IF NOT EXISTS folders (' +
   'sortOrder INTEGER NOT NULL DEFAULT 0,' +
   'orderIndex INTEGER NOT NULL DEFAULT 0)'
 
+// 当前 schema 的列名清单（v1.0.7 旧表检测用）：必须与上面两条 CREATE TABLE
+// 的列定义保持同步。任何一列缺失即判定为旧版本遗留表，整表删除重建
+// （不跨版本兼容，见文件末尾 enforceCurrentSchema 的版本注释）。
+export const SONGS_COLUMNS: string[] = [
+  'id', 'name', 'title', 'artist', 'album', 'filePath', 'uri', 'fileName',
+  'folderPath', 'folderName', 'duration', 'bitrate', 'sampleRate', 'addedTime',
+  'sortOrder', 'isFavorite', 'isAvailable', 'lyricPath', 'lyricUri', 'genre',
+  'year', 'track', 'disc', 'comment', 'composer', 'conductor', 'albumArtist',
+  'author', 'language', 'mimeType', 'dateTime', 'encoder', 'description',
+  'hasAudio', 'hasVideo', 'videoWidth', 'videoHeight', 'channels', 'bitDepth',
+  'codec', 'trackCount', 'fileSize'
+]
+
+export const FOLDERS_COLUMNS: string[] = [
+  'id', 'name', 'path', 'songCount', 'addedTime', 'isAvailable', 'isFavorite',
+  'sortOrder', 'orderIndex'
+]
+
 // 曲库关系型数据库封装：所有写入均为增量 SQL（批量 INSERT / 单行 UPDATE / 批量 DELETE），
 // 禁止全表重写；批量插入使用 batchInsert（内部自带事务），更新走显式事务。
 export class SongDatabase {
@@ -92,6 +110,9 @@ export class SongDatabase {
       }
       relationalStore.getRdbStore(context, config).then(async (store: relationalStore.RdbStore) => {
         this.store = store
+        // v1.0.7 起不跨版本兼容：先检测并清除旧版本遗留表，再执行建表
+        // （CREATE TABLE IF NOT EXISTS 对已存在的旧表无效，必须先 DROP）
+        await this.enforceCurrentSchema(store)
         await store.executeSql(SQL_CREATE_SONGS)
         await store.executeSql(SQL_INDEX_URI)
         await store.executeSql(SQL_INDEX_FOLDER)
@@ -105,6 +126,61 @@ export class SongDatabase {
       })
     })
     return this.initPromise
+  }
+
+  // ═══════════ 旧版本 schema 检测与清除（v1.0.7 起不跨版本兼容） ═══════════
+  //
+  // 【版本记录】v1.0.7 移除旧版本数据库兼容逻辑：v1.0.6 及更早版本若曾以
+  // 不同列结构创建过 'uplayer.db'，覆盖安装后 CREATE TABLE IF NOT EXISTS 不会
+  // 修正旧表，后续 batchInsert/UPDATE 会因缺列持续失败。自 v1.0.7 起不再
+  // 兼容任何旧结构：检测到列不符的旧表即整表 DROP，由随后的 CREATE 重建，
+  // 旧表数据一律视为废弃数据，不做迁移。
+  //
+  // 安全约束：仅当 PRAGMA 成功返回列清单且确实缺列时才 DROP；PRAGMA 本身
+  // 失败（无法确认结构）时绝不动表，避免误删当前版本数据。
+  private async enforceCurrentSchema(store: relationalStore.RdbStore): Promise<void> {
+    const songsColumns: string[] | undefined = await this.queryTableColumns(store, TABLE_SONGS)
+    if (songsColumns !== undefined && songsColumns.length > 0) {
+      const missing: string[] = SONGS_COLUMNS.filter((column: string) => !songsColumns.includes(column))
+      if (missing.length > 0) {
+        Logger.warn(TAG, `legacy songs table detected, missing columns [${missing.join(', ')}], drop & recreate`)
+        await store.executeSql(`DROP TABLE IF EXISTS ${TABLE_SONGS}`)
+        // songs 为旧结构时 folders 必然同源，一并删除，避免残留旧 folders 表
+        await store.executeSql(`DROP TABLE IF EXISTS ${TABLE_FOLDERS}`)
+        return
+      }
+    }
+    const foldersColumns: string[] | undefined = await this.queryTableColumns(store, TABLE_FOLDERS)
+    if (foldersColumns !== undefined && foldersColumns.length > 0) {
+      const missing: string[] = FOLDERS_COLUMNS.filter((column: string) => !foldersColumns.includes(column))
+      if (missing.length > 0) {
+        Logger.warn(TAG, `legacy folders table detected, missing columns [${missing.join(', ')}], drop & recreate`)
+        await store.executeSql(`DROP TABLE IF EXISTS ${TABLE_FOLDERS}`)
+      }
+    }
+  }
+
+  // 读取表的实际列名；表不存在时返回空数组，PRAGMA 执行失败时返回 undefined
+  // （调用方据此区分「无表」与「无法确认」，后者不许触发 DROP）
+  private async queryTableColumns(store: relationalStore.RdbStore, table: string): Promise<string[] | undefined> {
+    try {
+      const resultSet: relationalStore.ResultSet = await store.querySql(`PRAGMA table_info(${table})`)
+      const columns: string[] = []
+      try {
+        while (resultSet.goToNextRow()) {
+          const idx: number = resultSet.getColumnIndex('name')
+          if (idx >= 0 && !resultSet.isColumnNull(idx)) {
+            columns.push(resultSet.getString(idx))
+          }
+        }
+      } finally {
+        resultSet.close()
+      }
+      return columns
+    } catch (err) {
+      Logger.warn(TAG, `PRAGMA table_info(${table}) failed, schema check skipped: ${JSON.stringify(err)}`)
+      return undefined
+    }
   }
 
   public async queryAllSongs(): Promise<SongInfo[]> {

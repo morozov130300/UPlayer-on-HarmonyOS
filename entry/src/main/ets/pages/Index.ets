@@ -43,7 +43,6 @@ struct MainPage {
   @State plusTabMounted: boolean = true
   @State greetingTitle: string = '加载中……'
   @State greetingOpacity: number = 0
-  @State greetingOffset: number = 20
   // 主页多选状态（由 HomeContent 写入）：进入多选时问候语整体上滑淡出，退出时回落淡入
   @StorageLink(AppStorageKeyConstants.KEY_HOME_MULTI_SELECT) @Watch(
     'onHomeMultiSelectChange') homeMultiSelect: boolean = false
@@ -116,7 +115,6 @@ struct MainPage {
     this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_GREETING_DURATION, curve: Curve.EaseOut },
       () => {
         this.greetingOpacity = 1
-        this.greetingOffset = 0
       })
   }
 

@@ -110,4 +110,20 @@ export class PreferencesUtil {
       Logger.error(TAG, `preferencesDelete failed: ${JSON.stringify(err)}`);
     }
   }
+
+  // 枚举当前 store 全部键值（v1.0.7 旧版本遗留键清理用，见 LegacyDataCleaner）；
+  // store 不可用或读取失败时返回 undefined，由调用方跳过清理
+  getAllEntries(): Record<string, Object> | undefined {
+    if (!this.preferences) {
+      Logger.info(TAG, 'preferences is undefined');
+      return undefined;
+    }
+    try {
+      const all: Object = this.preferences.getAllSync();
+      return all as Record<string, Object>;
+    } catch (err) {
+      Logger.error(TAG, `getAllEntries failed: ${JSON.stringify(err)}`);
+      return undefined;
+    }
+  }
 }
