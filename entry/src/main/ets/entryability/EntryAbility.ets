@@ -13,6 +13,7 @@ import Logger from '../common/utils/Logger';
 import { AudioMetadataService } from '../service/AudioMetadataService';
 import { HoldingHandService } from '../service/HoldingHandService';
 import { AudioRoutingService } from '../service/AudioRoutingService';
+import { AudioSpatialService } from '../service/AudioSpatialService';
 import { AudioFocusService } from '../service/AudioFocusService';
 import { SongDatabase } from '../service/SongDatabase';
 import { ShareService } from '../service/ShareService';
@@ -154,6 +155,10 @@ export default class EntryAbility extends UIAbility {
         // 音频输出设备路由监听（耳机断开自动暂停 / 输出设备切换入口）
         safeRun('AudioRoutingService.init', () => {
           AudioRoutingService.getInstance().init();
+        });
+        // 系统空间音频状态（只读：开关由系统设置控制，应用订阅变化供设置页展示）
+        safeRun('AudioSpatialService.init', () => {
+          AudioSpatialService.getInstance().init();
         });
         // 通知/提示音不压低音量：按落库设置激活或去激活「并发播放」AudioSession
         safeRun('applyIgnoreNotificationDuck', () => {

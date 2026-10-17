@@ -147,6 +147,9 @@ struct SettingsDetailPage {
   @State separationSupported: boolean = false
   // 音效节点能力是否已探测（只在「音效」分区按需探测一次，见 probeEffectNodeSupport）
   private effectSupportProbed: boolean = false
+  // 系统空间音频只读状态（AudioSpatializationManager 无 setter，开关由系统设置控制）
+  @StorageProp(AppStorageKeyConstants.KEY_SPATIALIZATION_SUPPORTED) spatializationSupported: boolean = false
+  @StorageProp(AppStorageKeyConstants.KEY_SPATIALIZATION_ENABLED) spatializationEnabled: boolean = false
   private context: common.UIAbilityContext
     | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
   // Tab 栏实时预览：直接使用 HdsTabs 系统组件，与 Index 完全一致的渲染管线
@@ -2413,9 +2416,43 @@ struct SettingsDetailPage {
         .borderRadius(this.scaledSize(10))
         .transition(this.settingCardTransition())
       }
+
+      // ═══ 系统空间音频（只读状态展示：API 无 setter，开关由系统设置控制）═══
+      Row() {
+        Column({ space: this.scaledSize(4) }) {
+          Text('系统空间音频')
+            .fontSize(this.scaledFont(14))
+            .fontColor(this.settingTextColor())
+            .fontWeight(FontWeight.Medium)
+          Text('系统级空间音频渲染状态，可在系统设置中开启或关闭')
+            .fontSize(this.scaledFont(12))
+            .fontColor(this.settingSubTextColor())
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+
+        Text(this.spatialStatusText())
+          .fontSize(this.scaledFont(13))
+          .fontColor(this.spatializationSupported && this.spatializationEnabled ?
+            this.primaryColor : this.settingSubTextColor())
+          .fontWeight(FontWeight.Medium)
+          .alignSelf(ItemAlign.Center)
+      }
+      .width('100%')
+      .padding({ left: this.scaledSize(14), right: this.scaledSize(14), top: this.scaledSize(10), bottom: this.scaledSize(10) })
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
     }
     .width('100%')
     .constraintSize({ minWidth: 0, maxWidth: '100%' })
+  }
+
+  // 系统空间音频状态文案：设备不支持 / 已开启 / 已关闭
+  private spatialStatusText(): string {
+    if (!this.spatializationSupported) {
+      return '当前设备不支持'
+    }
+    return this.spatializationEnabled ? '已开启' : '已关闭'
   }
 
   @Builder
