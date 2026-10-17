@@ -46,13 +46,14 @@ export struct MusicInfoComponent {
   }
 
   // 封面左下角音质标签：码率优先，编码格式已知时一并展示（如「FLAC · 992 kbps」）；
-  // 元数据缺码率时返回空串，标签整体隐藏
+  // 轨道码率缺失时按文件大小/时长计算真实平均码率，元数据完全不可用时返回空串隐藏
   private audioQualityBadge(): string {
     const song: SongInfo = this.currentSong()
-    if (song.bitrate <= 0) {
+    const bitrate: number = song.effectiveBitrate()
+    if (bitrate <= 0) {
       return ''
     }
-    const rateText: string = `${Math.round(song.bitrate / 1000)} kbps`
+    const rateText: string = `${Math.round(bitrate / 1000)} kbps`
     const codec: string = song.codec.trim()
     return codec.length > 0 ? `${codec} · ${rateText}` : rateText
   }

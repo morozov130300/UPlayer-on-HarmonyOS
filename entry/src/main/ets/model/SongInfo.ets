@@ -53,6 +53,18 @@ export class SongInfo {
     return 'song_' + Date.now() + '_' + Math.floor(Math.random() * 1000000)
   }
 
+  // 有效码率：优先轨道声明码率（CBR 准确、VBR 为标称值）；FLAC 等格式解封装器
+  // 不上报码率时，按 文件大小×8÷时长(秒) 计算真实平均码率，保证任何格式都能展示
+  effectiveBitrate(): number {
+    if (this.bitrate > 0) {
+      return this.bitrate
+    }
+    if (this.fileSize > 0 && this.duration > 0) {
+      return Math.round(this.fileSize * 8 / (this.duration / 1000))
+    }
+    return 0
+  }
+
   static fromFile(filePath: string, fileName: string): SongInfo {
     const song: SongInfo = new SongInfo()
     song.id = SongInfo.createId()
