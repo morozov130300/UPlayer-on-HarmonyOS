@@ -139,7 +139,7 @@ export class DataService {
     // v1.0.7 起不跨版本兼容：加载曲库前先清除旧版本遗留 preferences 键
     // （旧版歌曲/文件夹 JSON 等，键名未知的按「非当前键即废弃」整体删除）；
     // 数据库旧表的整表重建在 SongDatabase.init 内完成。详见 LegacyDataCleaner。
-    LegacyDataCleaner.getInstance().purgeLegacyPreferences()
+    LegacyDataCleaner.purgeLegacyPreferences()
     try {
       await SongDatabase.getInstance().init(context)
       const songs: SongInfo[] = await SongDatabase.getInstance().queryAllSongs()
@@ -793,16 +793,13 @@ return result
       s.primaryColor = this.pickColor(r, 'primaryColor', '#007DFF')
       s.eqEnabled = this.pickBool(r, 'eqEnabled', false)
       let rawEqBands: Object | undefined = r['eqBands']
-      let eqBandsMigrated: boolean = false
-      if (rawEqBands !== undefined) {
-        const bands: number[] = rawEqBands as number[]
-        for (let i = 0; i < bands.length && i < 10; i++) {
-          const normalized: number = Math.max(EQUALIZER_MIN_GAIN_DB,
-            Math.min(EQUALIZER_MAX_GAIN_DB, Math.round(bands[i])))
-          s.eqBands[i] = normalized
-          eqBandsMigrated = eqBandsMigrated || normalized !== bands[i]
-        }
-      }
+      // eqBands 与 spaceRenderValues 统一走 pickNumArray 两级校验（数组类型 + 逐元素
+      // 有限性）：旧版本数据曾以字符串 / null / 含非数字元素落盘，此前的裸强转会让 NaN
+      // 直达原生引擎 setEqualizerBands（潜在崩溃），null 更会使 .length 抛错、被外层
+      // catch 吞掉后整份设置静默重置——v1.0.7 修复
+      s.eqBands = this.pickNumArray(r, 'eqBands', s.eqBands)
+      let eqBandsMigrated: boolean = rawEqBands !== undefined &&
+        JSON.stringify(rawEqBands) !== JSON.stringify(s.eqBands)
       s.playSpeed = this.pickNum(r, 'playSpeed', 1, 0.5, 3)
       let rawSoundFieldEnabled: Object | undefined = r['soundFieldEnabled']
       s.soundFieldEnabled = rawSoundFieldEnabled !== undefined ? rawSoundFieldEnabled as boolean : false
@@ -895,8 +892,11 @@ return result
   saveSettings(settings: AppSettingsData, immediate: boolean = true): void {
     const normalizedBands: number[] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     for (let i = 0; i < settings.eqBands.length && i < normalizedBands.length; i++) {
-      normalizedBands[i] = Math.max(EQUALIZER_MIN_GAIN_DB,
-        Math.min(EQUALIZER_MAX_GAIN_DB, Math.round(settings.eqBands[i])))
+      const raw: number = settings.eqBands[i]
+      // 非有限数回落 0，避免 NaN 落盘成 null 后再读——v1.0.7 修复
+      normalizedBands[i] = Number.isFinite(raw) ?
+        Math.max(EQUALIZER_MIN_GAIN_DB,
+          Math.min(EQUALIZER_MAX_GAIN_DB, Math.round(raw))) : 0
     }
     settings.eqBands = normalizedBands
     const r: Record<string, Object> = {}

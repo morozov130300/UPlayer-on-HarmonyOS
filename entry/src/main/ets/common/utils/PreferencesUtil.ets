@@ -111,6 +111,23 @@ export class PreferencesUtil {
     }
   }
 
+  // Batch deletion with a single unified flush (used in v1.0.7 for cleaning up legacy keys, see LegacyDataCleaner):
+  // after deleting each key individually with deleteSync, flushNow is only triggered once,
+  // avoiding N chained flushes from N legacy keys
+  deleteKeys(keys: string[]): void {
+    if (!this.preferences || keys.length === 0) {
+      return;
+    }
+    try {
+      for (let i = 0; i < keys.length; i++) {
+        this.preferences.deleteSync(keys[i]);
+      }
+      this.flushNow();
+    } catch (err) {
+      Logger.error(TAG, `deleteKeys failed: ${JSON.stringify(err)}`);
+    }
+  }
+
   // 枚举当前 store 全部键值（v1.0.7 旧版本遗留键清理用，见 LegacyDataCleaner）；
   // store 不可用或读取失败时返回 undefined，由调用方跳过清理
   getAllEntries(): Record<string, Object> | undefined {
