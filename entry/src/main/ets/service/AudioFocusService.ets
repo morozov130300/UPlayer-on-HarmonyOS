@@ -24,9 +24,40 @@ const TAG = 'AudioFocusService'
 export class AudioFocusService {
   private static instance: AudioFocusService = new AudioFocusService()
   private sessionManager: audio.AudioSessionManager | undefined = undefined
+  private listenersRegistered: boolean = false
 
   public static getInstance(): AudioFocusService {
     return AudioFocusService.instance
+  }
+
+  // 幂等注册会话事件监听（EntryAbility 启动期调用一次）：
+  // - audioSessionDeactivated：会话被系统去激活（如「已激活但无音频流运行」超时）时回调，
+  //   仅记录日志；下次播放前 ensureStrategy 会按需补激活，无需在此即时重试
+  // - audioSessionStateChanged：会话焦点状态变更（API 20）跟踪
+  init(): void {
+    if (this.listenersRegistered) {
+      return
+    }
+    const manager: audio.AudioSessionManager | undefined = this.getSessionManager()
+    if (manager === undefined) {
+      return
+    }
+    try {
+      manager.on('audioSessionDeactivated', this.sessionDeactivatedCallback)
+      manager.on('audioSessionStateChanged', this.sessionStateChangedCallback)
+      this.listenersRegistered = true
+      Logger.info(TAG, 'session event listeners registered')
+    } catch (err) {
+      Logger.error(TAG, `register session listeners failed: ${JSON.stringify(err)}`)
+    }
+  }
+
+  private sessionDeactivatedCallback = (event: audio.AudioSessionDeactivatedEvent): void => {
+    Logger.info(TAG, `audio session deactivated by system: ${JSON.stringify(event)}`)
+  }
+
+  private sessionStateChangedCallback = (event: audio.AudioSessionStateChangedEvent): void => {
+    Logger.info(TAG, `audio session state changed: ${JSON.stringify(event)}`)
   }
 
   private getSessionManager(): audio.AudioSessionManager | undefined {

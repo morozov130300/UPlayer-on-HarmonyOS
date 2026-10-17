@@ -160,6 +160,10 @@ export default class EntryAbility extends UIAbility {
         safeRun('AudioSpatialService.init', () => {
           AudioSpatialService.getInstance().init();
         });
+        // 音频会话事件订阅（会话被系统去激活/焦点状态变化可观测，日志跟踪）
+        safeRun('AudioFocusService.init', () => {
+          AudioFocusService.getInstance().init();
+        });
         // 通知/提示音不压低音量：按落库设置激活或去激活「并发播放」AudioSession
         safeRun('applyIgnoreNotificationDuck', () => {
           AudioFocusService.getInstance().applyIgnoreNotificationDuck(settings.ignoreNotificationDuck);
