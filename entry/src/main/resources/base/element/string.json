@@ -52,6 +52,10 @@
     {
       "name": "reason_internet",
       "value": "获取随机诗句用于主页问候语展示"
+    },
+    {
+      "name": "reason_bluetooth",
+      "value": "查看已连接蓝牙音频设备状态，用于「更多」面板展示"
     }
   ]
 }

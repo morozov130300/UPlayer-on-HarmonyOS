@@ -17,6 +17,7 @@ import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstan
 import { audio } from '@kit.AudioKit';
 import { AVCastPicker } from '@kit.AVSessionKit';
 import { AudioRoutingService } from '../service/AudioRoutingService';
+import { BluetoothAudioService } from '../service/BluetoothAudioService';
 import { BusinessError, SuppressWarnings, SuppressWarningsType } from '@kit.BasicServicesKit';
 import { AlbumCover } from '../component/AlbumCover';
 import { AVSessionController } from '../common/utils/mediautils/AVSessionController';
@@ -92,6 +93,13 @@ export struct ControlAreaComponent {
   @StorageProp(AppStorageKeyConstants.KEY_OUTPUT_DEVICE_REVISION) @Watch('onOutputDeviceRevision')
   private outputDeviceRevision: number = 0;
   private audioRoutingService: AudioRoutingService = AudioRoutingService.getInstance();
+  // 「更多」面板：蓝牙音频（A2DP）状态行；首次打开面板申请 ACCESS_BLUETOOTH
+  @StorageProp(AppStorageKeyConstants.KEY_BLUETOOTH_AUDIO_REVISION) @Watch('refreshBluetoothAudioInfo')
+  private bluetoothAudioRevision: number = 0;
+  @State bluetoothAudioSubtitle: string = '';
+  @State bluetoothAudioNeedsGrant: boolean = false;
+  @State bluetoothAudioUnavailable: boolean = false;
+  private bluetoothAudioService: BluetoothAudioService = BluetoothAudioService.getInstance();
 
   private settingTextColor(): ResourceColor {
     const themeMode: string = AppStorage.get<string>('uplayer_theme_mode') ?? 'system'
@@ -220,6 +228,43 @@ export struct ControlAreaComponent {
   refreshOutputDeviceInfo(): void {
     this.currentOutputDeviceLabel = this.audioRoutingService.getCurrentOutputDeviceLabel();
     this.outputDeviceList = this.audioRoutingService.getAvailableOutputDevices();
+  }
+
+  // ─── 蓝牙音频（A2DP Source 只读状态，首次打开「更多」面板申请权限） ───
+
+  refreshBluetoothAudioInfo(): void {
+    this.bluetoothAudioNeedsGrant = !this.bluetoothAudioService.isPermissionGranted();
+    this.bluetoothAudioUnavailable = this.bluetoothAudioService.isPermissionGranted() &&
+      !this.bluetoothAudioService.isSupported();
+    if (!this.bluetoothAudioService.isPermissionGranted()) {
+      this.bluetoothAudioSubtitle = '未授权，点击授权蓝牙权限';
+      return;
+    }
+    if (!this.bluetoothAudioService.isSupported()) {
+      this.bluetoothAudioSubtitle = '当前设备不支持蓝牙音频';
+      return;
+    }
+    if (!this.bluetoothAudioService.isBluetoothEnabled()) {
+      this.bluetoothAudioSubtitle = '蓝牙已关闭';
+      return;
+    }
+    if (!this.bluetoothAudioService.isConnectedDevice()) {
+      this.bluetoothAudioSubtitle = '未连接蓝牙音频设备';
+      return;
+    }
+    const name: string = this.bluetoothAudioService.getDeviceName();
+    const playState: string = this.bluetoothAudioService.isPlaying() ? '播放中' : '已连接';
+    this.bluetoothAudioSubtitle = name.length > 0 ? `${name} · ${playState}` : playState;
+  }
+
+  requestBluetoothAudioIfNeeded(): void {
+    this.refreshBluetoothAudioInfo();
+    if (this.bluetoothAudioService.isPermissionGranted()) {
+      return;
+    }
+    this.bluetoothAudioService.ensurePermissionAndInit(this.context).catch((err: BusinessError): void => {
+      Logger.error(TAG, `ensurePermissionAndInit rejected: code=${err.code}, message=${err.message}`);
+    });
   }
 
   private syncPlayModeIndex(): void {
@@ -822,6 +867,7 @@ export struct ControlAreaComponent {
               });
             }, StyleConstants.ANIMATION_PRESS_DELAY_MEDIUM);
             this.isShowMorePanel = true;
+            this.requestBluetoothAudioIfNeeded();
           })
           .bindSheet($$this.isShowMorePanel, this.morePanelBuilder(), {
             detents: [SheetSize.MEDIUM],
@@ -996,6 +1042,38 @@ export struct ControlAreaComponent {
       .padding({ left: 16, right: 16 })
       .backgroundColor($r('app.color.player_bg_color'))
       .borderRadius(this.scaledSize(10))
+
+      // 蓝牙音频行：A2DP Source 只读状态（授权 / 蓝牙开关 / 连接设备与播放状态）
+      Row() {
+        Column({ space: 2 }) {
+          Text('蓝牙音频')
+            .fontSize(this.scaledFont(14))
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.settingTextColor())
+          Text(this.bluetoothAudioSubtitle)
+            .fontSize(this.scaledFont(12))
+            .fontColor(this.bluetoothAudioNeedsGrant ? this.primaryColor : $r('app.color.text_sixty_color'))
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+        Blank()
+        Image($r('app.media.ic_public_arrow_right'))
+          .width(this.scaledSize(18))
+          .height(this.scaledSize(18))
+          .fillColor($r('app.color.text_twenty_color'))
+          .visibility(this.bluetoothAudioNeedsGrant ? Visibility.Visible : Visibility.None)
+      }
+      .width('100%')
+      .height(52)
+      .padding({ left: 16, right: 16 })
+      .backgroundColor($r('app.color.player_bg_color'))
+      .borderRadius(this.scaledSize(10))
+      .onClick(() => {
+        // 拒绝过授权时提供「行内重试」入口；已授权则仅刷新一次状态
+        this.requestBluetoothAudioIfNeeded();
+      })
     }
     .width(StyleConstants.FULL_WIDTH)
   }
