@@ -1,5 +1,6 @@
 // 诗词服务：从诗泉 API（https://poetry.palemoky.com/）获取随机诗句，用于主页问候语小字展示
 import { rcp } from '@kit.RemoteCommunicationKit'
+import { util } from '@kit.ArkTS'
 import Logger from '../common/utils/Logger'
 
 const TAG = 'PoetryService'
@@ -14,6 +15,7 @@ const PUNCTUATION_REGEX: RegExp = /[，。、；：？！“”‘’《》（�
 export class PoetryService {
   private static instance: PoetryService = new PoetryService()
   private session: rcp.Session | undefined = undefined
+  private decoder: util.TextDecoder = util.TextDecoder.create('utf-8')
 
   public static getInstance(): PoetryService {
     return PoetryService.instance
@@ -36,31 +38,24 @@ export class PoetryService {
     return this.session
   }
 
-  // 应用退出时关闭会话释放资源
+  // 应用退出时由 EntryAbility 调用，释放会话资源
   public closeSession(): void {
     if (this.session !== undefined) {
-      try {
-        this.session.close()
-      } catch (e) {
-        Logger.error(TAG, `close session failed: ${JSON.stringify(e)}`)
-      }
+      this.session.close()
       this.session = undefined
     }
   }
 
   public async fetchRandomLine(): Promise<string> {
+    const session: rcp.Session = this.getSession()
     try {
-      const session: rcp.Session = this.getSession()
       // 随机接口无法指定类型，取到不满足“唐诗/宋词/元曲/五言/七言”的篇目时重试
       for (let attempt = 0; attempt < MAX_FETCH_ATTEMPTS; attempt++) {
         const resp: rcp.Response = await session.get(POETRY_RANDOM_URL)
-        if (resp.statusCode !== 200) {
+        if (resp.statusCode !== 200 || resp.body === undefined) {
           return ''
         }
-        const body: string | null = resp.toString()
-        if (body === null || body.length === 0) {
-          return ''
-        }
+        const body: string = this.decoder.decodeToString(new Uint8Array(resp.body))
         const line: string = this.pickLine(body)
         if (line !== '') {
           return line

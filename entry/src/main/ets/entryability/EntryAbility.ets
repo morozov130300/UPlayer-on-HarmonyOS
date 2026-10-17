@@ -55,6 +55,11 @@ export default class EntryAbility extends UIAbility {
       hilog.error(DOMAIN, 'testTag', 'clearMemoryCache failed: %{public}s', JSON.stringify(err));
     }
     try {
+      PoetryService.getInstance().closeSession();
+    } catch (err) {
+      hilog.error(DOMAIN, 'testTag', 'PoetryService closeSession failed: %{public}s', JSON.stringify(err));
+    }
+    try {
       AVPlayerService.getInstance().release();
     } catch (err) {
       hilog.error(DOMAIN, 'testTag', 'AVPlayerService release failed: %{public}s', JSON.stringify(err));
@@ -63,11 +68,6 @@ export default class EntryAbility extends UIAbility {
       AVSessionController.getInstance().unregisterSessionListener();
     } catch (err) {
       hilog.error(DOMAIN, 'testTag', 'unregisterSessionListener failed: %{public}s', JSON.stringify(err));
-    }
-    try {
-      PoetryService.getInstance().closeSession();
-    } catch (err) {
-      hilog.error(DOMAIN, 'testTag', 'PoetryService closeSession failed: %{public}s', JSON.stringify(err));
     }
     try {
       BackgroundUtil.stopContinuousTask(this.context);
