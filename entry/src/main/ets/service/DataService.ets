@@ -6,7 +6,6 @@ import { common } from '@kit.AbilityKit'
 import { fileIo as fs, fileShare } from '@kit.CoreFileKit'
 import { SongDatabase } from './SongDatabase'
 import Logger from '../common/utils/Logger'
-import { LegacyDataCleaner } from './LegacyDataCleaner'
 import { BusinessError } from '@kit.BasicServicesKit'
 import { MusicPlayMode } from '../common/constants/PlayerConstants'
 import { AudioMetadataService } from './AudioMetadataService'
@@ -136,10 +135,11 @@ export class DataService {
   // 初始化曲库数据库并加载全量歌曲到内存缓存；EntryAbility 在 UI 加载前调用
   public async init(context: common.UIAbilityContext): Promise<void> {
     this.libraryLoadFailed = false
-    // v1.0.7 起不跨版本兼容：加载曲库前先清除旧版本遗留 preferences 键
-    // （旧版歌曲/文件夹 JSON 等，键名未知的按「非当前键即废弃」整体删除）；
-    // 数据库旧表的整表重建在 SongDatabase.init 内完成。详见 LegacyDataCleaner。
-    LegacyDataCleaner.purgeLegacyPreferences()
+    // 旧版本遗留的 preferences 键一律保留、不再清理：当前版本只按固定键名读取
+    // 自己的数据，旧键不存在读取路径，留着不影响任何行为；删除它们只会连带丢掉
+    // 旧版文件夹列表 / 收藏筛选状态等用户数据（旧版键：uplayer_folder_list、
+    // uplayer_selected_folders、uplayer_favorites_selected）。
+    // 数据库旧表缺列由 SongDatabase.init 内 ALTER 补列完成，同样不做删表。
     try {
       await SongDatabase.getInstance().init(context)
       const songs: SongInfo[] = await SongDatabase.getInstance().queryAllSongs()
