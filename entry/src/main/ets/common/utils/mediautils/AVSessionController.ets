@@ -35,6 +35,9 @@ export class AVSessionController {
   private lastQueueRevision: number = -1;
   private coverRetryAttempt: number = 0;
   private coverRetryTimer: number = -1;
+  // 投播控制器（AVCastController）：投播建立后由 outputDeviceChange 触发获取，
+  // 用于监听远端播放状态（playbackStateChange）、远端播完（endOfStream）与错误
+  private avCastController: avSession.AVCastController | undefined = undefined;
 
   private getAvPlayerService(): AVPlayerService {
     if (this.avPlayerService === undefined) {
@@ -86,6 +89,9 @@ export class AVSessionController {
         Logger.warn(TAG, `setExtras url-cast failed: ${JSON.stringify(e)}`);
       }
       this.setAVQueueItems();
+      // 投播：用户经 AVCastPicker 切换设备时收到 outputDeviceChange，
+      // 连接成功后获取 AVCastController 监听远端状态；断开时释放控制器
+      this.AVSession.on('outputDeviceChange', this.onOutputDeviceChange);
       Logger.info(TAG, `session create succeeded : sessionId : ${this.AVSession.sessionId}`);
     } catch (err) {
       this.sessionAvailable = false;
@@ -485,6 +491,99 @@ export class AVSessionController {
     }
   }
 
+  // ─── 投播（AVCastController）：outputDeviceChange → 建立时获取控制器，断开时释放 ───
+
+  private onOutputDeviceChange = (state: avSession.ConnectionState,
+    _device: avSession.OutputDeviceInfo): void => {
+    if (state === avSession.ConnectionState.STATE_CONNECTED) {
+      this.setupCastController();
+    } else if (state === avSession.ConnectionState.STATE_DISCONNECTED) {
+      this.teardownCastController();
+    }
+  }
+
+  private async setupCastController(): Promise<void> {
+    const session: avSession.AVSession | undefined = this.AVSession;
+    if (!this.sessionAvailable || !session) {
+      return;
+    }
+    try {
+      const controller: avSession.AVCastController = await session.getAVCastController();
+      if (this.AVSession !== session) {
+        return;
+      }
+      this.teardownCastController();
+      this.avCastController = controller;
+      controller.on('playbackStateChange', 'all', this.onCastPlaybackStateChange);
+      controller.on('endOfStream', this.onCastEndOfStream);
+      controller.on('error', this.onCastError);
+      Logger.info(TAG, 'AVCastController created');
+    } catch (err) {
+      Logger.error(TAG, `getAVCastController failed: ${JSON.stringify(err)}`);
+    }
+  }
+
+  private teardownCastController(): void {
+    const controller: avSession.AVCastController | undefined = this.avCastController;
+    this.avCastController = undefined;
+    if (!controller) {
+      return;
+    }
+    try {
+      controller.off('playbackStateChange');
+      controller.off('endOfStream');
+      controller.off('error');
+      controller.release().catch((err: BusinessError): void => {
+        Logger.warn(TAG, `AVCastController release failed: ${JSON.stringify(err)}`);
+      });
+    } catch (err) {
+      Logger.warn(TAG, `AVCastController teardown failed: ${JSON.stringify(err)}`);
+    }
+  }
+
+  // 当前是否处于投播中（投播控制器已建立）
+  public isCasting(): boolean {
+    return this.avCastController !== undefined;
+  }
+
+  // 向远端发送投播控制命令（play/pause/playNext/playPrevious/seek 等，parameter 为命令参数）
+  public async sendCastControlCommand(command: avSession.AVCastControlCommandType,
+    parameter?: number): Promise<void> {
+    const controller: avSession.AVCastController | undefined = this.avCastController;
+    if (!controller) {
+      return;
+    }
+    const cmd: avSession.AVCastControlCommand = { command: command };
+    if (parameter !== undefined) {
+      cmd.parameter = parameter;
+    }
+    try {
+      await controller.sendControlCommand(cmd);
+    } catch (err) {
+      Logger.error(TAG, `sendCastControlCommand(${command}) failed: ${JSON.stringify(err)}`);
+    }
+  }
+
+  // 远端播放状态变化（Cast+ Stream / DLNA 模式有回调；PCM 模式无回调、远端跟随本地）
+  private onCastPlaybackStateChange = (state: avSession.AVPlaybackState): void => {
+    if (state.state === undefined) {
+      return;
+    }
+    const playing: boolean = state.state === avSession.PlaybackState.PLAYBACK_STATE_PLAY;
+    AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, playing);
+    Logger.info(TAG, `cast playback state changed: ${state.state}`);
+  }
+
+  // 远端资源播完：与本地播完一致推进下一首（元数据随队列更新同步到远端）
+  private onCastEndOfStream = (): void => {
+    Logger.info(TAG, 'cast endOfStream, play next');
+    this.getAvPlayerService().playNextSong();
+  }
+
+  private onCastError = (err: BusinessError): void => {
+    Logger.error(TAG, `cast error: code=${err.code}, message=${err.message}`);
+  }
+
   private onPlay: () => void = () => {
     Logger.info(TAG, `on play , do play task`);
     this.getAvPlayerService().resume();
@@ -650,6 +749,8 @@ export class AVSessionController {
     const session: avSession.AVSession | undefined = this.AVSession;
     this.sessionAvailable = false;
     this.playbackGeneration++;
+    // 先释放投播控制器与监听，再销毁会话
+    this.teardownCastController();
     if (this.playbackRetryTimer !== -1) {
       clearTimeout(this.playbackRetryTimer);
       this.playbackRetryTimer = -1;
@@ -672,6 +773,7 @@ export class AVSessionController {
       session.off('setLoopMode');
       session.off('seek');
       session.off('toggleFavorite');
+      session.off('outputDeviceChange');
       await session.destroy();
     } catch (err) {
       Logger.error(TAG, `unregisterSessionListener failed: ${JSON.stringify(err)}`);
