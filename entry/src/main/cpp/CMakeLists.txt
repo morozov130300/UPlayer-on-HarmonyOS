@@ -17,6 +17,7 @@ target_link_libraries(uplayer PUBLIC
   libnative_media_acodec.so
   libnative_media_avdemuxer.so
   libnative_media_avsource.so
+  liblowpower_avsink.so
 )
 
 # 体积裁剪：函数/数据分节 + 链接期回收未引用段（--gc-sections），并对内联函数合并去重。

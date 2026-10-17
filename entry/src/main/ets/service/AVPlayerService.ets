@@ -566,6 +566,20 @@ export class AVPlayerService {
     nativeAudio.setSpeed(speed)
   }
 
+  // 低功耗播放模式（OH_LowPowerAudioSink 压缩帧直通）：设置页开关入口。
+  // 播放中切换：从当前位置重启当前曲目，让新链路立即生效
+  applyLowPowerPlayback(enabled: boolean): void {
+    nativeAudio.setLowPowerMode(enabled)
+    const isPlaying: boolean = AppStorage.get<boolean>(AppStorageKeyConstants.KEY_IS_PLAY) ?? false
+    if (!isPlaying || this.currentFilePath.length === 0) {
+      return
+    }
+    const position: number = this.getCurrentPositionMs()
+    this.play(this.currentFilePath, position).catch((err: Error): void => {
+      Logger.error(TAG, `low-power mode switch replay failed: ${JSON.stringify(err)}`)
+    })
+  }
+
   async release(): Promise<void> {
     const generation: number = ++this.playRequestId
     await this.enqueueOperation(async (): Promise<void> => {
@@ -912,6 +926,8 @@ export class AVPlayerService {
       file = fs.openSync(fileUri, fs.OpenMode.READ_ONLY)
       const size: number = fs.statSync(file.fd).size
       this.applyAllEffectsToNative()
+      // 低功耗链路开关在每次起播前同步进原生引擎（下次 Play 生效的策略）
+      nativeAudio.setLowPowerMode(DataService.getInstance().getSettings().lowPowerPlayback)
       const fadeInOutOnStart: boolean = !startPaused && (AppStorage.get<boolean>('uplayer_fade_in_out') ?? false)
       if (startPaused || fadeInOutOnStart) {
         nativeAudio.setVolume(0)

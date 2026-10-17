@@ -89,6 +89,9 @@ export class AppSettingsData {
   continuePlayOnHeadsetUnplug: boolean = false
   // 通知/提示音响起时保持本应用音量不被系统压低（AudioSession 并发策略，默认关）
   ignoreNotificationDuck: boolean = false
+  // 低功耗播放（OH_LowPowerAudioSink 压缩帧直通链路，默认关）：开启时解码渲染卸载至
+  // 低功耗硬件降低功耗，与均衡器等 AP 侧效果链互斥；设备/格式不支持时自动回退正常管线
+  lowPowerPlayback: boolean = false
   fontSizeScale: number = 1.0
   displaySizeScale: number = 1.0
   tabStyle: string = 'classic'
@@ -875,6 +878,8 @@ return result
       s.continuePlayOnHeadsetUnplug = rawContinuePlayOnHeadsetUnplug !== undefined ? rawContinuePlayOnHeadsetUnplug as boolean : false
       let rawIgnoreNotificationDuck: Object | undefined = r['ignoreNotificationDuck']
       s.ignoreNotificationDuck = rawIgnoreNotificationDuck !== undefined ? rawIgnoreNotificationDuck as boolean : false
+      let rawLowPowerPlayback: Object | undefined = r['lowPowerPlayback']
+      s.lowPowerPlayback = rawLowPowerPlayback !== undefined ? rawLowPowerPlayback as boolean : false
       if (eqBandsMigrated) {
         this.saveSettings(s)
       }
@@ -937,6 +942,7 @@ return result
     r['tabLightColor'] = settings.tabLightColor
     r['continuePlayOnHeadsetUnplug'] = settings.continuePlayOnHeadsetUnplug
     r['ignoreNotificationDuck'] = settings.ignoreNotificationDuck
+    r['lowPowerPlayback'] = settings.lowPowerPlayback
     SettingsStore.getInstance().set(KEY_SETTINGS, JSON.stringify(r), immediate)
     // 跨页实时联动只推"有独立消费键"的字段（整份 settings 对象无消费者，不再推送，避免死广播）
     AppStorage.setOrCreate('uplayer_fade_in_out', settings.fadeInOut)
