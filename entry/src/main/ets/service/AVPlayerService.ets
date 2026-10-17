@@ -1046,8 +1046,12 @@ export class AVPlayerService {
   private normalizeEqualizerBands(bands: number[]): number[] {
     const normalized: number[] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     for (let i = 0; i < bands.length && i < normalized.length; i++) {
-      normalized[i] = Math.max(AVPlayerService.EQUALIZER_MIN_GAIN_DB,
-        Math.min(AVPlayerService.EQUALIZER_MAX_GAIN_DB, Math.round(bands[i])))
+      const raw: number = bands[i]
+      // 双保险：非有限数（NaN/Infinity，旧版本畸形数据可能的出口）回落 0，
+      // 绝不下发原生引擎——v1.0.7 修复
+      normalized[i] = Number.isFinite(raw) ?
+        Math.max(AVPlayerService.EQUALIZER_MIN_GAIN_DB,
+          Math.min(AVPlayerService.EQUALIZER_MAX_GAIN_DB, Math.round(raw))) : 0
     }
     return normalized
   }
