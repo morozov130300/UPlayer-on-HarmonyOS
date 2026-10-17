@@ -45,6 +45,18 @@ export struct MusicInfoComponent {
     return DataService.currentSongFromList(this.songList, this.currentSongId)
   }
 
+  // 封面左下角音质标签：码率优先，编码格式已知时一并展示（如「FLAC · 992 kbps」）；
+  // 元数据缺码率时返回空串，标签整体隐藏
+  private audioQualityBadge(): string {
+    const song: SongInfo = this.currentSong()
+    if (song.bitrate <= 0) {
+      return ''
+    }
+    const rateText: string = `${Math.round(song.bitrate / 1000)} kbps`
+    const codec: string = song.codec.trim()
+    return codec.length > 0 ? `${codec} · ${rateText}` : rateText
+  }
+
   updateFavoriteState() {
     const song: SongInfo = this.currentSong()
     this.isFavorite = song.id.length > 0 && song.isFavorite
@@ -125,6 +137,28 @@ export struct MusicInfoComponent {
           .constraintSize({ maxWidth: '100%', maxHeight: '50%' })
           .shadow({ radius: 12, color: 'rgba(0,0,0,0.15)', offsetX: 0, offsetY: 4 })
           .animation({ duration: StyleConstants.ANIMATION_COVER_CROSS_FADE_DURATION, curve: Curve.EaseInOut })
+
+        // 封面左下角音质标签（码率/编码格式）：半透明黑底白字小胶囊，无码率数据时不渲染
+        if (this.audioQualityBadge().length > 0) {
+          Column() {
+            Blank()
+            Row() {
+              Text(this.audioQualityBadge())
+                .fontSize(Math.round(10 * this.fontSizeScale))
+                .fontColor(Color.White)
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .constraintSize({ maxWidth: '70%' })
+            }
+            .padding({ left: 6, right: 6, top: 3, bottom: 3 })
+            .borderRadius(8)
+            .backgroundColor('rgba(0, 0, 0, 0.45)')
+            .margin({ left: 8, bottom: 8 })
+          }
+          .width('100%')
+          .aspectRatio(1)
+          .hitTestBehavior(HitTestMode.None)
+        }
       }
       .width('100%')
       .constraintSize({ maxWidth: '100%', maxHeight: '50%' })
