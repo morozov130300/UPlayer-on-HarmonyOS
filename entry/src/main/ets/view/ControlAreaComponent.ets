@@ -1454,7 +1454,7 @@ export struct ControlAreaComponent {
       case 11: return song.description
       case 12: return MediaTools.msToCountdownTime(song.duration)
       case 13: return song.sampleRate > 0 ? `${song.sampleRate} Hz` : ''
-      case 14: return song.bitrate > 0 ? `${Math.round(song.bitrate / 1000)} kbps` : ''
+      case 14: return song.effectiveBitrate() > 0 ? `${Math.round(song.effectiveBitrate() / 1000)} kbps` : ''
       case 15: return song.mimeType
       case 16: return song.filePath
       case 17: return song.folderName
