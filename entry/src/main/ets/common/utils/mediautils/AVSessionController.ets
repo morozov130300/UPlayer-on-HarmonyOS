@@ -466,13 +466,13 @@ export class AVSessionController {
       return;
     }
     try {
-      this.AVSession.on('play', this.onPlay.bind(this));
-      this.AVSession.on('pause', this.onPause.bind(this));
-      this.AVSession.on('playNext', this.onPlayNext.bind(this));
-      this.AVSession.on('playPrevious', this.onPlayPrevious.bind(this));
-      this.AVSession.on('seek', this.onSeek.bind(this));
-      this.AVSession.on('setLoopMode', this.onSetLoopMode.bind(this));
-      this.AVSession.on('toggleFavorite', this.onToggleFavorite.bind(this));
+      this.AVSession.on('play', () => this.onPlay());
+      this.AVSession.on('pause', () => this.onPause());
+      this.AVSession.on('playNext', () => this.onPlayNext());
+      this.AVSession.on('playPrevious', () => this.onPlayPrevious());
+      this.AVSession.on('seek', (curMs: number) => this.onSeek(curMs));
+      this.AVSession.on('setLoopMode', (loopMode: avSession.LoopMode) => this.onSetLoopMode(loopMode));
+      this.AVSession.on('toggleFavorite', (assetId: string) => this.onToggleFavorite(assetId));
     } catch (err) {
       Logger.error(TAG, `setListenerForMesFromController failed: ${JSON.stringify(err)}`);
     }
