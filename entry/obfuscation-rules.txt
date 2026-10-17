@@ -1,65 +1,7 @@
-# Define project specific obfuscation rules here.
-# You can include the obfuscation configuration files in the current module's build-profile.json5.
+# 混淆已整体禁用（build-profile.json5 中 ruleOptions.enable=false，本文件内容不再生效）。
 #
-# For more details, see
-#   https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/source-obfuscation
-
-# Obfuscation options:
-# -disable-obfuscation: disable all obfuscations
-# -enable-property-obfuscation: obfuscate the property names
-# -enable-toplevel-obfuscation: obfuscate the names in the global scope
-# -compact: remove unnecessary blank spaces and all line feeds
-# -remove-log: remove all console.* statements
-# -print-namecache: print the name cache that contains the mapping from the old names to new names
-# -apply-namecache: reuse the given cache file
-
-# Keep options:
-# -keep-property-name: specifies property names that you want to keep
-# -keep-global-name: specifies names that you want to keep in the global scope
-
--enable-property-obfuscation
--enable-toplevel-obfuscation
--enable-filename-obfuscation
--enable-export-obfuscation
-# 去空白/换行，进一步压缩字节码体积（仅 release 构建生效）
--compact
-# 移除 console.* 语句；本项目日志统一走 hilog，不受影响
--remove-log
-
-# libuplayer.so 原生模块接口名（属性混淆会改名导致 native 侧找不到接口：
-# 封面 getAlbumCover/cacheAlbumCover 与 native 播放 play/pause 等全部失效，
-# 曾表现为 "d48 is not callable" / "n30 is not callable"），必须全局保留
--keep-property-name
-play
-resume
-pause
-stop
-seek
-setEqualizerEnable
-setEqualizerEnabled
-isEqualizerEnabled
-setEqualizerBands
-getEqualizerBands
-setPcmCaptureCallback
-clearPcmCaptureCallback
-setSpeed
-setVolume
-isEqualizerSupported
-isPlaying
-isCompleted
-isReady
-hasFailed
-getPosition
-getDuration
-getAlbumCover
-cacheAlbumCover
-clearAlbumCoverCache
-
-# TaskPool @Concurrent 任务函数及跨模块导出的封面提取入口：
-# taskpool 跨线程按名序列化，混淆改名存在失效风险，按官方推荐保留
--keep-global-name
-extractMetadataTask
-extractCoverDataTask
-fetchFallbackCoverTask
-extractCoverData
-fetchFallbackCoverData
+# 历史教训：曾开启 -enable-property-obfuscation，会把对 libuplayer.so 原生模块的
+# 接口名一并混淆（如 isEffectNodeSupported -> j40），而 .so 运行时只认真名，
+# 导致 "xx is not callable, xx is undefined" 类闪退三次（d48 / n30 / j40）。
+# 本项目为开源应用，混淆无防逆向价值，故彻底关闭；如确需重新开启，
+# 必须同步维护 -keep-property-name 白名单覆盖 index.d.ts 全部原生接口。
