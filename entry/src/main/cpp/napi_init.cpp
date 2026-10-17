@@ -338,7 +338,6 @@ public:
                 std::chrono::steady_clock::now() - startedAt).count();
         };
         Stop();
-        lpFallbackSize_.store(size);
         pipelineInputCalls_.store(0);
         pipelineInputBytes_.store(0);
         pipelineInputFirstLogged_.store(false);
@@ -405,7 +404,7 @@ public:
             "native startup stage=track elapsedMs=%{public}lld", elapsedMs());
         // 低功耗链路（OH_LowPowerAudioSink）：压缩帧直通，解码+渲染卸载至低功耗硬件，
         // 与 AP 侧效果链互斥。创建/配置失败（设备/格式不支持）自动回退下方正常管线。
-        if (lowPowerRequested_.load() && StartLowPowerSink(startPositionMs)) {
+        if (lowPowerRequested_.load() && !lpRuntimeError_.load() && StartLowPowerSink(startPositionMs)) {
             OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                 "native startup stage=low-power-started elapsedMs=%{public}lld", elapsedMs());
             return true;
@@ -547,6 +546,11 @@ public:
             if (lpSink_ == nullptr || demuxer_ == nullptr || stopRequested_.load()) {
                 return false;
             }
+            // 与 DataNeeded 回调线程（FeedLowPowerSamples）互斥：两者并发操作同一 demuxer
+            std::lock_guard<std::mutex> feedLock(lpFeedMutex_);
+            if (lpSink_ == nullptr || demuxer_ == nullptr || !lpActive_.load() || stopRequested_.load()) {
+                return false;
+            }
             const int64_t targetMs = std::max<int64_t>(0, std::min(positionMs, durationMs_.load()));
             OH_AVErrCode seekResult = OH_AVDemuxer_SeekToTime(demuxer_, targetMs, SEEK_MODE_CLOSEST_SYNC);
             if (seekResult != AV_ERR_OK) {
@@ -557,7 +561,8 @@ public:
             }
             // Flush 后 sink 内已缓存的解码/渲染数据清空，需重新喂数据：
             // lpEosFed_/lpPendingFrame_ 复位，DataNeeded 回调从 seek 目标位置重新回灌
-            OH_AVErrCode flushResult = OH_LowPowerAudioSink_Flush(lpSink_);
+            OH_LowPowerAudioSink* sink = lpSink_;
+            OH_AVErrCode flushResult = OH_LowPowerAudioSink_Flush(sink);
             if (flushResult != AV_ERR_OK) {
                 OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                     "low-power seek flush failed code=%{public}d", flushResult);
@@ -1756,6 +1761,16 @@ public:
     void SetLowPowerMode(bool enabled)
     {
         lowPowerRequested_.store(enabled);
+        // 用户重新打开开关 = 明确重试低功耗链路
+        if (enabled) {
+            lpRuntimeError_.store(false);
+        }
+    }
+
+    // ArkTS 轮询消费运行期错误，返回后标志复位（下次重新打开开关才再次启用低功耗）
+    bool ConsumeLowPowerRuntimeError()
+    {
+        return lpRuntimeError_.exchange(false);
     }
 
     bool IsLowPowerSinkActive() const
@@ -1773,6 +1788,11 @@ private:
     void TeardownLowPowerSink()
     {
         lpActive_ = false;
+        // 排空在途 FeedLowPowerSamples（其内部检查 lpActive_ 后不再触碰 sink），
+        // 之后不再持锁调用 Stop/Destroy：sink 回调若同步重入抢锁会死锁
+        {
+            std::lock_guard<std::mutex> feedLock(lpFeedMutex_);
+        }
         if (lpSink_ != nullptr) {
             OH_AVErrCode stopResult = OH_LowPowerAudioSink_Stop(lpSink_);
             OH_AVErrCode destroyResult = OH_LowPowerAudioSink_Destroy(lpSink_);
@@ -1837,16 +1857,16 @@ private:
             OH_LowPowerAudioSink_Prepare(sink) != AV_ERR_OK) {
             OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                 "low-power sink register/prepare failed");
-            OH_LowPowerAudioSinkCallback_Destroy(callback);
             OH_LowPowerAudioSink_Destroy(sink);
+            OH_LowPowerAudioSinkCallback_Destroy(callback);
             return false;
         }
         // demux 压缩帧中转缓冲：压缩单帧远小于 1MB，一次创建会话内复用
         if (lpFrameBuffer_ == nullptr) {
             lpFrameBuffer_ = OH_AVBuffer_Create(1024 * 1024);
             if (lpFrameBuffer_ == nullptr) {
-                OH_LowPowerAudioSinkCallback_Destroy(callback);
                 OH_LowPowerAudioSink_Destroy(sink);
+                OH_LowPowerAudioSinkCallback_Destroy(callback);
                 return false;
             }
         }
@@ -1854,36 +1874,43 @@ private:
         if (targetMs > 0 && OH_AVDemuxer_SeekToTime(demuxer_, targetMs, SEEK_MODE_CLOSEST_SYNC) != AV_ERR_OK) {
             OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                 "low-power initial seek failed position=%{public}lld", static_cast<long long>(targetMs));
-            OH_LowPowerAudioSinkCallback_Destroy(callback);
             OH_LowPowerAudioSink_Destroy(sink);
+            OH_LowPowerAudioSinkCallback_Destroy(callback);
             return false;
         }
         stopRequested_ = false;
         paused_ = false;
         completed_ = false;
         decoderFailed_ = false;
-        firstPcmReady_ = false;
         lpEosFed_ = false;
         lpPendingFrame_ = false;
         currentPositionMs_ = targetMs;
-        if (OH_LowPowerAudioSink_Start(sink) != AV_ERR_OK) {
-            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG, "low-power sink start failed");
-            OH_LowPowerAudioSinkCallback_Destroy(callback);
-            OH_LowPowerAudioSink_Destroy(sink);
-            return false;
-        }
+        // 先发布指针并置 active 再 Start：Start 后首个 DataNeeded 回调可能早于
+        // 函数返回到达，届时 sink/缓冲必须已就绪，否则回调空返回违反 ReturnSamples 契约
         lpSink_ = sink;
         lpCallback_ = callback;
         lpActive_ = true;
+        if (OH_LowPowerAudioSink_Start(sink) != AV_ERR_OK) {
+            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG, "low-power sink start failed");
+            TeardownLowPowerSink();
+            return false;
+        }
         OH_LowPowerAudioSink_SetVolume(lpSink_, volume_);
         OH_LowPowerAudioSink_SetPlaybackSpeed(lpSink_, playbackSpeed_.load(std::memory_order_relaxed));
         firstPcmReady_ = true;
         return true;
     }
 
-    // OnDataNeeded：从 demuxer 循环读压缩帧灌入 samples，容量不足/ EOS 停止后统一 ReturnSamples
+    // OnDataNeeded：从 demuxer 循环读压缩帧灌入 samples，容量不足/EOS 停止后统一 ReturnSamples。
+    // 与 Seek（demuxer+Flush）和 Teardown（排空）经 lpFeedMutex_ 互斥
     void FeedLowPowerSamples(OH_AVSamplesBuffer* samples)
     {
+        std::lock_guard<std::mutex> feedLock(lpFeedMutex_);
+        OH_LowPowerAudioSink* sink = lpSink_;
+        if (sink == nullptr || !lpActive_.load() || demuxer_ == nullptr ||
+            lpFrameBuffer_ == nullptr) {
+            return;
+        }
         while (!stopRequested_.load() && !lpEosFed_.load()) {
             if (!lpPendingFrame_) {
                 OH_AVErrCode readResult = OH_AVDemuxer_ReadSampleBuffer(demuxer_, trackIndex_, lpFrameBuffer_);
@@ -1917,15 +1944,14 @@ private:
                 break;
             }
         }
-        OH_LowPowerAudioSink_ReturnSamples(lpSink_, samples);
+        OH_LowPowerAudioSink_ReturnSamples(sink, samples);
     }
 
     static void LowPowerOnDataNeeded(OH_LowPowerAudioSink* sink, OH_AVSamplesBuffer* samples, void* userData)
     {
         (void)sink;
         auto* self = static_cast<NativeAudioPlayer*>(userData);
-        if (self == nullptr || !self->lpActive_.load() || self->stopRequested_.load() ||
-            self->lpSink_ == nullptr || self->demuxer_ == nullptr) {
+        if (self == nullptr) {
             return;
         }
         self->FeedLowPowerSamples(samples);
@@ -1980,36 +2006,20 @@ private:
             "low-power device changed reason=%{public}d", static_cast<int>(reason));
     }
 
-    // 运行期错误：关闭低功耗链路，从当前位置回退正常管线重播（一次性，线程内完成避免回调栈重入）
+    // 运行期错误：置运行期错误标志并停喂（lpActive_=false），由 ArkTS 轮询
+    // ConsumeLowPowerRuntimeError 后在 napi 线程重启正常管线。
+    // 此处不 detach 线程重播：detached 线程与 napi 线程并发 Play/Stop 会竞态销毁资源
     static void LowPowerOnError(OH_LowPowerAudioSink* sink, OH_AVErrCode errCode, const char* errorMsg, void* userData)
     {
         (void)sink;
         auto* self = static_cast<NativeAudioPlayer*>(userData);
-        if (self == nullptr || !self->lpActive_.exchange(false)) {
+        if (self == nullptr) {
             return;
         }
         OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "low-power sink error code=%{public}d msg=%{public}s", errCode, errorMsg != nullptr ? errorMsg : "");
-        std::thread([self]() {
-            // sourceFd_ 在 Stop 内关闭，先 dup 供回退重播使用
-            const int fallbackFd = dup(self->sourceFd_);
-            const int64_t fallbackSize = self->lpFallbackSize_.load();
-            const int64_t position = self->currentPositionMs_.load();
-            self->TeardownLowPowerSink();
-            self->Stop();
-            if (fallbackFd < 0) {
-                self->decoderFailed_ = true;
-                return;
-            }
-            const uint64_t requestId = latestPlayRequest.fetch_add(1) + 1;
-            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                "low-power fallback to full pipeline position=%{public}lld",
-                static_cast<long long>(position));
-            if (!self->Play(fallbackFd, fallbackSize, position, requestId)) {
-                self->decoderFailed_ = true;
-            }
-            close(fallbackFd);
-        }).detach();
+        self->lpRuntimeError_.store(true);
+        self->lpActive_.store(false);
     }
 
     // 停止并销毁三组管线的全部节点与管线；引擎由随后的 DestroyEffectEngine() 销毁
@@ -3584,7 +3594,12 @@ private:
     OH_AVBuffer* lpFrameBuffer_ = nullptr;
     std::atomic<bool> lpEosFed_ = false;
     std::atomic<bool> lpPendingFrame_ = false;
-    std::atomic<int64_t> lpFallbackSize_ = 0;
+    // 运行期 sink OnError 置位：Play 跳过低功耗分支（防止回退重播无限循环），
+    // ArkTS 轮询 ConsumeLowPowerRuntimeError 后从 napi 线程安全重播
+    std::atomic<bool> lpRuntimeError_ = false;
+    // 保护 demuxer 喂入路径（FeedLowPowerSamples）与 Seek/Teardown 的 demuxer 并发访问。
+    // 绝不跨 sink Stop/Destroy 持有：sink 回调可能同步重入并抢锁导致死锁
+    std::mutex lpFeedMutex_;
     std::thread decoderThread_;
     std::thread renderThread_;
     // 渲染工作线程 + 环形缓冲（SPSC：工作线程写、RT 回调读）。ringMutex_ 只保护指针
@@ -5422,6 +5437,11 @@ napi_value IsLowPowerSupported(napi_env env, napi_callback_info)
     return BooleanValue(env, NativeAudioPlayer::IsLowPowerSupported());
 }
 
+napi_value ConsumeLowPowerRuntimeError(napi_env env, napi_callback_info)
+{
+    return BooleanValue(env, NativeAudioPlayer::Instance().ConsumeLowPowerRuntimeError());
+}
+
 napi_value Init(napi_env env, napi_value exports)
 {
     napi_property_descriptor descriptors[] = {
@@ -5456,6 +5476,7 @@ napi_value Init(napi_env env, napi_value exports)
         { "setLowPowerMode", nullptr, SetLowPowerMode, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "isLowPowerSinkActive", nullptr, IsLowPowerSinkActive, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "isLowPowerSupported", nullptr, IsLowPowerSupported, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "consumeLowPowerRuntimeError", nullptr, ConsumeLowPowerRuntimeError, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "isEqualizerSupported", nullptr, IsSupported, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "isPlaying", nullptr, IsPlaying, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "isCompleted", nullptr, IsCompleted, nullptr, nullptr, nullptr, napi_default, nullptr },
