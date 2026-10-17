@@ -70,36 +70,46 @@ const SQL_CREATE_FOLDERS: string = 'CREATE TABLE IF NOT EXISTS folders (' +
   'sortOrder INTEGER NOT NULL DEFAULT 0,' +
   'orderIndex INTEGER NOT NULL DEFAULT 0)'
 
-// 当前 schema 的列名清单：从上面的 CREATE TABLE SQL 常量解析生成（单一事实源）。
-// v1.0.7 起不再手工维护第二份列清单——两份清单一旦漂移（给 SQL 加列忘同步数组），
-// 当前 schema 的表会被误判为旧版本遗留表整表 DROP，升级用户的曲库将被清空。
+// 单列的完整定义：name 为列名，definition 为「类型 + 约束」（不含列名本身），
+// 后者直接用于 ALTER TABLE ADD COLUMN 补列，保证补出的列与新建表完全一致。
+interface ColumnDef {
+  name: string
+  definition: string
+}
+
+// 当前 schema 的列定义：从上面的 CREATE TABLE SQL 常量解析生成（单一事实源）。
+// 起不再手工维护第二份列清单——两份清单一旦漂移（给 SQL 加列忘同步数组），
+// 当前 schema 的表会被误判为旧版本遗留表，触发不必要的补列动作。
 // 解析结果为空说明 SQL 格式失配，直接抛错，绝不允许静默通过
 // （空清单会使缺列检测永远不触发，那是反向的坑）。
-function parseTableColumns(createSql: string): string[] {
+function parseColumnDefs(createSql: string): ColumnDef[] {
   const open: number = createSql.indexOf('(')
   const close: number = createSql.lastIndexOf(')')
   if (open < 0 || close <= open) {
-    throw new Error('parseTableColumns failed: malformed CREATE TABLE sql')
+    throw new Error('parseColumnDefs failed: malformed CREATE TABLE sql')
   }
-  const columns: string[] = []
+  const defs: ColumnDef[] = []
   for (const segment of createSql.substring(open + 1, close).split(',')) {
-    const matched = segment.trim().match(/^(\w+)\s+(?:TEXT|INTEGER)/)
+    const trimmed: string = segment.trim()
+    const matched = trimmed.match(/^(\w+)\s+((?:TEXT|INTEGER)[\s\S]*)$/)
     if (matched !== null) {
-      columns.push(matched[1])
+      defs.push({ name: matched[1], definition: matched[2].trim() })
     }
   }
-  if (columns.length === 0) {
-    throw new Error('parseTableColumns failed: no column parsed from CREATE TABLE sql')
+  if (defs.length === 0) {
+    throw new Error('parseColumnDefs failed: no column parsed from CREATE TABLE sql')
   }
-  return columns
+  return defs
 }
 
-const SONGS_COLUMNS: string[] = parseTableColumns(SQL_CREATE_SONGS)
-const FOLDERS_COLUMNS: string[] = parseTableColumns(SQL_CREATE_FOLDERS)
+const SONGS_COLUMN_DEFS: ColumnDef[] = parseColumnDefs(SQL_CREATE_SONGS)
+const FOLDERS_COLUMN_DEFS: ColumnDef[] = parseColumnDefs(SQL_CREATE_FOLDERS)
+const SONGS_COLUMNS: string[] = SONGS_COLUMN_DEFS.map((def: ColumnDef) => def.name)
+const FOLDERS_COLUMNS: string[] = FOLDERS_COLUMN_DEFS.map((def: ColumnDef) => def.name)
 
 // 表结构探测结果：
 //   current = 列齐全，当前 schema，原样保留
-//   legacy  = 缺列，旧版本遗留表，整表 DROP 重建
+//   legacy  = 缺列，旧版本遗留表，按当前列定义 ALTER TABLE ADD COLUMN 补齐（数据全部保留）
 //   absent  = 表不存在，交给 CREATE TABLE
 //   unknown = 无法得出结论（探测手段全部失败），绝不动表
 interface TableProbe {
@@ -129,8 +139,8 @@ export class SongDatabase {
       }
       relationalStore.getRdbStore(context, config).then(async (store: relationalStore.RdbStore) => {
         this.store = store
-        // v1.0.7 起不跨版本兼容：先检测并清除旧版本遗留表，再执行建表
-        // （CREATE TABLE IF NOT EXISTS 对已存在的旧表无效，必须先 DROP）
+        // 先补齐旧版本遗留表缺失的列，再执行建表
+        // （CREATE TABLE IF NOT EXISTS 对已存在的旧表无效，缺列必须显式补，但绝不删表）
         await this.enforceCurrentSchema(store)
         await store.executeSql(SQL_CREATE_SONGS)
         await store.executeSql(SQL_INDEX_URI)
@@ -147,43 +157,60 @@ export class SongDatabase {
     return this.initPromise
   }
 
-  // ═══════════ 旧版本 schema 检测与清除（v1.0.7 起不跨版本兼容） ═══════════
+  // ═══════════ 旧版本 schema 检测与补列 ═══════════
   //
-  // 【版本记录】v1.0.7 移除旧版本数据库兼容逻辑：v1.0.6 及更早版本若曾以
-  // 不同列结构创建过 'uplayer.db'，覆盖安装后 CREATE TABLE IF NOT EXISTS 不会
-  // 修正旧表，后续 batchInsert/UPDATE 会因缺列持续失败。自 v1.0.7 起不再
-  // 兼容任何旧结构：检测到列不符的旧表即整表 DROP，由随后的 CREATE 重建，
-  // 旧表数据一律视为废弃数据，不做迁移。
+  // 【版本记录】旧版本若以不同列结构创建过 'uplayer.db'，覆盖安装后
+  // CREATE TABLE IF NOT EXISTS 不会修正旧表，后续 batchInsert/UPDATE 会因缺列持续失败。
+  // 此前的做法是「缺列即整表 DROP 重建」，等于覆盖安装即清空用户曲库与收藏 ——
+  // 已改为按当前 CREATE TABLE 解析出的列定义逐列 ALTER TABLE ADD COLUMN：
+  // 旧表的所有行、所有已有列数据原样保留，只补上缺失的列（新列取其 DEFAULT）。
   //
-  // 安全约束（v1.0.7 加固）：
-  //   1) songs 与 folders 独立判定、独立处理，不再假设两者必然同源；
-  //   2) 仅当确认真缺列时才 DROP；探测无法得出结论（unknown）时绝不动表；
-  //   3) DROP 失败只记日志继续走 CREATE——schema 维护失败不应让 initPromise
-  //      永久 rejected（init 失败不重试），把新安装/普通路径一起拖下水。
+  // 安全约束：
+  //   1) songs 与 folders 独立判定、独立处理，不假设两者必然同源；
+  //   2) 仅对确认缺失的列执行 ALTER，绝不再 DROP 任何用户表；
+  //   3) 补列失败只记日志继续走 CREATE——schema 维护失败不应让 initPromise
+  //      永久 rejected（init 失败不重试），把新安装/普通路径一起拖下水；
+  //   4) PRIMARY KEY 列无法通过 ALTER 追加：遇到只记错误、不动表，
+  //      由后续建表与写入暴露问题，绝不为了「结构一致」牺牲数据。
   private async enforceCurrentSchema(store: relationalStore.RdbStore): Promise<void> {
     const songsProbe: TableProbe = await this.probeTable(store, TABLE_SONGS, SONGS_COLUMNS)
     if (songsProbe.status === 'legacy') {
-      Logger.warn(TAG, `legacy songs table detected, missing columns [${songsProbe.missing.join(', ')}], drop & recreate`)
-      await this.dropTableSafely(store, TABLE_SONGS)
+      Logger.warn(TAG, `legacy songs table detected, missing columns [${songsProbe.missing.join(', ')}], alter table to add them`)
+      await this.addMissingColumns(store, TABLE_SONGS, songsProbe.missing, SONGS_COLUMN_DEFS)
     } else if (songsProbe.status === 'unknown') {
       Logger.warn(TAG, 'songs schema probe inconclusive, table kept untouched')
     }
     const foldersProbe: TableProbe = await this.probeTable(store, TABLE_FOLDERS, FOLDERS_COLUMNS)
     if (foldersProbe.status === 'legacy') {
-      Logger.warn(TAG, `legacy folders table detected, missing columns [${foldersProbe.missing.join(', ')}], drop & recreate`)
-      await this.dropTableSafely(store, TABLE_FOLDERS)
+      Logger.warn(TAG, `legacy folders table detected, missing columns [${foldersProbe.missing.join(', ')}], alter table to add them`)
+      await this.addMissingColumns(store, TABLE_FOLDERS, foldersProbe.missing, FOLDERS_COLUMN_DEFS)
     } else if (foldersProbe.status === 'unknown') {
       Logger.warn(TAG, 'folders schema probe inconclusive, table kept untouched')
     }
     Logger.info(TAG, `schema check: songs=${songsProbe.status}, folders=${foldersProbe.status}`)
   }
 
-  // DROP 失败不向上抛：记录错误后由调用方继续 CREATE 流程
-  private async dropTableSafely(store: relationalStore.RdbStore, table: string): Promise<void> {
-    try {
-      await store.executeSql(`DROP TABLE IF EXISTS ${table}`)
-    } catch (err) {
-      Logger.error(TAG, `DROP TABLE ${table} failed: ${JSON.stringify(err)}`)
+  // 逐列补齐缺失列：定义取自当前 CREATE TABLE SQL，保证补出的列与新建表一致。
+  // 单列失败不影响其余列（记日志后继续），也绝不回退到删表。
+  private async addMissingColumns(store: relationalStore.RdbStore, table: string,
+    missing: string[], defs: ColumnDef[]): Promise<void> {
+    for (let i = 0; i < missing.length; i++) {
+      const column: string = missing[i]
+      const def: ColumnDef | undefined = defs.find((item: ColumnDef) => item.name === column)
+      if (def === undefined) {
+        Logger.warn(TAG, `column ${table}.${column} missing but no definition found, skipped`)
+        continue
+      }
+      if (def.definition.toUpperCase().includes('PRIMARY KEY')) {
+        Logger.error(TAG, `column ${table}.${column} is PRIMARY KEY, cannot be added by ALTER, table kept untouched`)
+        continue
+      }
+      try {
+        await store.executeSql(`ALTER TABLE ${table} ADD COLUMN ${column} ${def.definition}`)
+        Logger.warn(TAG, `legacy column added: ${table}.${column} ${def.definition}`)
+      } catch (err) {
+        Logger.error(TAG, `ALTER TABLE ${table} ADD COLUMN ${column} failed: ${JSON.stringify(err)}`)
+      }
     }
   }
 
@@ -192,7 +219,7 @@ export class SongDatabase {
   //   1) PRAGMA table_info：返回 0 行 = 表不存在；缺列 = legacy；
   //   2) SELECT 当前全部列：成功 = current；抛错含 no such column = legacy；
   //      含 no such table = absent。
-  // 两种手段都无法得出结论时返回 unknown——调用方绝不允许据此 DROP。
+  // 两种手段都无法得出结论时返回 unknown——调用方绝不允许据此改动表结构。
   private async probeTable(store: relationalStore.RdbStore, table: string,
     expectedColumns: string[]): Promise<TableProbe> {
     try {
@@ -223,7 +250,9 @@ export class SongDatabase {
       const err: Error = selectErr as Error
       const msg: string = `${err?.message ?? ''} ${JSON.stringify(selectErr)}`
       if (msg.includes('no such column')) {
-        return { status: 'legacy', missing: [] }
+        // 只有「缺列」能触发补列，必须定位到具体列名，否则无法 ALTER
+        const missing: string[] = await this.probeMissingColumns(store, table, expectedColumns)
+        return { status: missing.length === 0 ? 'unknown' : 'legacy', missing: missing }
       }
       if (msg.includes('no such table')) {
         return { status: 'absent', missing: [] }
@@ -231,6 +260,30 @@ export class SongDatabase {
       Logger.warn(TAG, `probe ${table} inconclusive: ${msg}`)
       return { status: 'unknown', missing: [] }
     }
+  }
+
+  // PRAGMA 不可用时的缺失列定位：逐列试探 SELECT col LIMIT 1。
+  // 仅「no such column」判定为缺失；其他错误一律保守视为存在（绝不据此乱补列）。
+  private async probeMissingColumns(store: relationalStore.RdbStore, table: string,
+    expectedColumns: string[]): Promise<string[]> {
+    const missing: string[] = []
+    for (let i = 0; i < expectedColumns.length; i++) {
+      const column: string = expectedColumns[i]
+      try {
+        const resultSet: relationalStore.ResultSet =
+          await store.querySql(`SELECT ${column} FROM ${table} LIMIT 1`)
+        resultSet.close()
+      } catch (err) {
+        const msg: string = `${(err as Error)?.message ?? ''} ${JSON.stringify(err)}`
+        if (msg.includes('no such column')) {
+          missing.push(column)
+        } else {
+          Logger.warn(TAG, `probe column ${table}.${column} inconclusive: ${msg}`)
+        }
+      }
+    }
+    Logger.warn(TAG, `missing columns located by column probe: ${table} [${missing.join(', ')}]`)
+    return missing
   }
 
   public async queryAllSongs(): Promise<SongInfo[]> {
