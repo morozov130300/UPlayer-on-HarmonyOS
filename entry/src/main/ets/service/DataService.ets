@@ -1,6 +1,6 @@
 import { SongInfo } from '../model/SongInfo'
 import { FolderInfo } from '../model/FolderInfo'
-import { PreferencesUtil } from '../common/utils/PreferencesUtil'
+import { SettingsStore } from '../common/utils/SettingsStore'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { common } from '@kit.AbilityKit'
 import { fileIo as fs, fileShare } from '@kit.CoreFileKit'
@@ -325,10 +325,6 @@ export class DataService {
       this.saveSongsTimer = -1
       this.flushPendingSongWrites()
     }, this.SAVE_SONGS_DEBOUNCE_MS)
-  }
-
-  private getPref(): PreferencesUtil {
-    return PreferencesUtil.getInstance()
   }
 
   // ═══════════ Song serialization ═══════════
@@ -781,12 +777,12 @@ return result
   }
 
   getSettings(): AppSettingsData {
-    const raw = this.getPref().getValue(KEY_SETTINGS)
-    if (raw === undefined) {
+    const raw = SettingsStore.getInstance().get(KEY_SETTINGS, '')
+    if (raw.length === 0) {
       return new AppSettingsData()
     }
     try {
-      const r: Record<string, Object> = JSON.parse(raw as string) as Record<string, Object>
+      const r: Record<string, Object> = JSON.parse(raw) as Record<string, Object>
       const s: AppSettingsData = new AppSettingsData()
       s.plusButtonScrollHide = this.pickBool(r, 'plusButtonScrollHide', true)
       s.themeMode = this.pickStr(r, 'themeMode', 'system')
@@ -941,7 +937,7 @@ return result
     r['tabLightColor'] = settings.tabLightColor
     r['continuePlayOnHeadsetUnplug'] = settings.continuePlayOnHeadsetUnplug
     r['ignoreNotificationDuck'] = settings.ignoreNotificationDuck
-    this.getPref().preferencesPut(KEY_SETTINGS, JSON.stringify(r), immediate)
+    SettingsStore.getInstance().set(KEY_SETTINGS, JSON.stringify(r), immediate)
     // 跨页实时联动只推"有独立消费键"的字段（整份 settings 对象无消费者，不再推送，避免死广播）
     AppStorage.setOrCreate('uplayer_fade_in_out', settings.fadeInOut)
     AppStorage.setOrCreate('uplayer_plus_button_scroll_hide', settings.plusButtonScrollHide)
@@ -952,49 +948,51 @@ return result
   // ═══════════ Simple string flags ═══════════
 
   getSortMode(): string {
-    const raw = this.getPref().getValue(KEY_SORT_MODE)
-    if (raw === undefined) return 'name'
-    return raw as string
+    return SettingsStore.getInstance().get(KEY_SORT_MODE, 'name')
   }
 
   setSortMode(mode: string): void {
-    this.getPref().preferencesPut(KEY_SORT_MODE, mode)
+    SettingsStore.getInstance().set(KEY_SORT_MODE, mode)
     AppStorage.setOrCreate(KEY_SORT_MODE, mode)
   }
 
   getViewMode(): string {
-    const raw = this.getPref().getValue(KEY_VIEW_MODE)
-    if (raw === undefined) return 'flat'
-    return raw as string
+    return SettingsStore.getInstance().get(KEY_VIEW_MODE, 'flat')
   }
 
   setViewMode(mode: string): void {
-    this.getPref().preferencesPut(KEY_VIEW_MODE, mode)
+    SettingsStore.getInstance().set(KEY_VIEW_MODE, mode)
     AppStorage.setOrCreate(KEY_VIEW_MODE, mode)
   }
 
   getPlayMode(): MusicPlayMode {
-    const raw = this.getPref().getValue(KEY_PLAY_MODE)
-    if (raw === MusicPlayMode.SINGLE_CYCLE || raw === MusicPlayMode.ORDER || raw === MusicPlayMode.RANDOM) {
-      return raw as MusicPlayMode
+    const raw = SettingsStore.getInstance().get(KEY_PLAY_MODE, '')
+    if (raw.length === 0) {
+      return MusicPlayMode.ORDER
+    }
+    const n: number = Number(raw)
+    if (!Number.isFinite(n)) {
+      return MusicPlayMode.ORDER
+    }
+    if (n === MusicPlayMode.SINGLE_CYCLE || n === MusicPlayMode.ORDER || n === MusicPlayMode.RANDOM) {
+      return n
     }
     return MusicPlayMode.ORDER
   }
 
   setPlayMode(mode: MusicPlayMode): void {
-    this.getPref().preferencesPut(KEY_PLAY_MODE, mode)
+    SettingsStore.getInstance().set(KEY_PLAY_MODE, String(mode))
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PLAY_MODE, mode)
   }
 
   private readFilterState(): FilterStateRecord {
     const state: FilterStateRecord = new FilterStateRecord()
-    const pref: PreferencesUtil = this.getPref()
-    const rawState = pref.getValue(KEY_FILTER_STATE)
-    if (rawState === undefined) {
+    const rawState = SettingsStore.getInstance().get(KEY_FILTER_STATE, '')
+    if (rawState.length === 0) {
       return state
     }
     try {
-      const record: Record<string, Object> = JSON.parse(rawState as string) as Record<string, Object>
+      const record: Record<string, Object> = JSON.parse(rawState) as Record<string, Object>
       const rawPaths: Object | undefined = record['selectedFolderPaths']
       const rawFavorites: Object | undefined = record['favoritesSelected']
       state.selectedFolderPaths = rawPaths !== undefined ? (rawPaths as string[]).slice() : []
@@ -1016,7 +1014,7 @@ return result
     const state: FilterStateRecord = new FilterStateRecord()
     state.selectedFolderPaths = favoritesSelected ? [] : paths.slice()
     state.favoritesSelected = favoritesSelected
-    this.getPref().preferencesPut(KEY_FILTER_STATE, JSON.stringify(state))
+    SettingsStore.getInstance().set(KEY_FILTER_STATE, JSON.stringify(state))
     AppStorage.setOrCreate(KEY_SELECTED_FOLDERS, state.selectedFolderPaths.slice())
     AppStorage.setOrCreate(KEY_FAVORITES_SELECTED, state.favoritesSelected)
     const revision: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_FILTER_REVISION) ?? 0
@@ -1034,17 +1032,17 @@ return result
   // ═══════════ Play Next Queue ═══════════
 
   getPlayNextQueue(): string[] {
-    const raw = this.getPref().getValue(KEY_PLAY_NEXT_QUEUE)
-    if (raw === undefined) return []
+    const raw = SettingsStore.getInstance().get(KEY_PLAY_NEXT_QUEUE, '')
+    if (raw.length === 0) return []
     try {
-      return JSON.parse(raw as string) as string[]
+      return JSON.parse(raw) as string[]
     } catch (e) {
       return []
     }
   }
 
   setPlayNextQueue(queue: string[]): void {
-    this.getPref().preferencesPut(KEY_PLAY_NEXT_QUEUE, JSON.stringify(queue))
+    SettingsStore.getInstance().set(KEY_PLAY_NEXT_QUEUE, JSON.stringify(queue))
     AppStorage.setOrCreate(KEY_PLAY_NEXT_QUEUE, queue)
   }
 
@@ -1078,6 +1076,39 @@ return result
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_LYRIC_REVISION, revision + 1)
     // 歌词引用集合变化：清掉内存缓存，各歌词视图 Watch 重载时重新读盘
     clearLyricCache()
+  }
+
+  // 预置 initToAppStorage 管理的全部 AppStorage 键的默认值：PersistenceV2 硬性要求
+  // connect 晚于 loadContent，真实持久化值只能在 loadContent 之后读取；而组件绑定
+  // 要求键先于组件创建存在，否则绑定静默失败。故 EntryAbility 在 loadContent 之前
+  // 先用默认值占位，loadContent 之后由 initToAppStorage 用真实持久化值覆盖。
+  // ⚠️ 默认值必须与 initToAppStorage / AppSettingsData 的字段默认值保持一致
+  presetAppStorageDefaults(): void {
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_LIBRARY_REVISION, 0)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_FILTER_REVISION, 0)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_LYRIC_REVISION, 0)
+    AppStorage.setOrCreate(KEY_SORT_MODE, 'name')
+    AppStorage.setOrCreate(KEY_VIEW_MODE, 'flat')
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PLAY_MODE, MusicPlayMode.ORDER)
+    AppStorage.setOrCreate(KEY_FOLDER_LIST, this.getFolders())
+    AppStorage.setOrCreate(KEY_SELECTED_FOLDERS, [])
+    AppStorage.setOrCreate(KEY_FAVORITES_SELECTED, false)
+    AppStorage.setOrCreate(KEY_PLAY_NEXT_QUEUE, [])
+    AppStorage.setOrCreate('uplayer_primary_color', '#007DFF')
+    AppStorage.setOrCreate('uplayer_theme_mode', 'system')
+    AppStorage.setOrCreate('uplayer_fade_in_out', false)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CONTINUE_PLAY_ON_UNPLUG, false)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_IGNORE_NOTIFICATION_DUCK, false)
+    AppStorage.setOrCreate('uplayer_font_size_scale', 1.0)
+    AppStorage.setOrCreate('uplayer_display_size_scale', 1.0)
+    AppStorage.setOrCreate('uplayer_tab_style', 'classic')
+    AppStorage.setOrCreate('uplayer_glass_blur_strength', 25)
+    AppStorage.setOrCreate('uplayer_home_top_blur_strength', 25)
+    AppStorage.setOrCreate('uplayer_tab_indicator_opacity', 50)
+    AppStorage.setOrCreate('uplayer_plus_button_scroll_hide', true)
+    AppStorage.setOrCreate('uplayer_holding_hand_enabled', true)
+    AppStorage.setOrCreate('uplayer_tab_touch_indicator', 'light')
+    AppStorage.setOrCreate('uplayer_tab_light_color', 'theme')
   }
 
   initToAppStorage(): AppSettingsData {

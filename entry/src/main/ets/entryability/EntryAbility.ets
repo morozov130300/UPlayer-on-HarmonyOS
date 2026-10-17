@@ -17,7 +17,8 @@ import { AudioFocusService } from '../service/AudioFocusService';
 import { SongDatabase } from '../service/SongDatabase';
 import { ShareService } from '../service/ShareService';
 import { ColorConversion } from '../common/utils/ColorConversion';
-import { PreferencesUtil } from '../common/utils/PreferencesUtil';
+import { preferences } from '@kit.ArkData';
+import { SettingsStore } from '../common/utils/SettingsStore';
 import { PoetryService } from '../service/PoetryService';
 
 const DOMAIN = 0x0000;
@@ -45,9 +46,9 @@ export default class EntryAbility extends UIAbility {
       hilog.error(DOMAIN, 'testTag', 'flushPendingSongWrites failed: %{public}s', JSON.stringify(err));
     }
     try {
-      PreferencesUtil.getInstance().flushNow();
+      SettingsStore.getInstance().flushPendingSaves();
     } catch (err) {
-      hilog.error(DOMAIN, 'testTag', 'PreferencesUtil flushNow failed: %{public}s', JSON.stringify(err));
+      hilog.error(DOMAIN, 'testTag', 'SettingsStore flushPendingSaves failed: %{public}s', JSON.stringify(err));
     }
     try {
       AudioMetadataService.getInstance().clearMemoryCache();
@@ -115,43 +116,18 @@ export default class EntryAbility extends UIAbility {
         }
       };
 
-      let settings: AppSettingsData = new AppSettingsData();
-      safeRun('initToAppStorage', () => {
-        settings = DataService.getInstance().initToAppStorage();
-      });
-      // 音频输出设备路由监听（耳机断开自动暂停 / 输出设备切换入口）
-      safeRun('AudioRoutingService.init', () => {
-        AudioRoutingService.getInstance().init();
-      });
-      // 通知/提示音不压低音量：按落库设置激活或去激活「并发播放」AudioSession
-      safeRun('applyIgnoreNotificationDuck', () => {
-        AudioFocusService.getInstance().applyIgnoreNotificationDuck(settings.ignoreNotificationDuck);
-      });
-      // 智感握姿：按落库设置决定是否订阅 holdingHandChanged（首页加号与设置页预览共用同一份结果）
-      safeRun('HoldingHandService.syncWithSetting', () => {
-        HoldingHandService.getInstance().syncWithSetting();
-      });
-      safeRun('AVSessionController.initAVSession', () => {
-        AVSessionController.getInstance().initAVSession();
-      });
-
-      try {
-        if (settings.themeMode === 'light') {
-          this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT);
-        } else if (settings.themeMode === 'dark') {
-          this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_DARK);
-        } else {
-          this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
-        }
-      } catch (e) {
-        Logger.error(TAG, 'applyThemeMode failed: ' + JSON.stringify(e));
-      }
-
       // 预置 AppStorage 键：@StorageProp/@StorageLink 要求键在组件创建前已存在，
       // 否则绑定静默失败（音量联动 KEY_CURRENT_VOLUME / KEY_VOL_PANEL_MAX 同理）
       safeRun('presetAppStorageKeys', () => {
         AppStorage.setOrCreate<number>(AppStorageKeyConstants.KEY_VOL_PANEL_MAX, 15);
         AppStorage.setOrCreate<number>(AppStorageKeyConstants.KEY_CURRENT_VOLUME, 1);
+      });
+      // 偏好存储已迁移 PersistenceV2：其 connect 硬性要求晚于 loadContent，
+      // 真实持久化设置只能在 loadContent 之后读取；此处先用默认值占位全部
+      // 设置相关 AppStorage 键保证组件绑定成立，loadContent 回调里再由
+      // initToAppStorage 用真实持久化值覆盖
+      safeRun('presetSettingsDefaults', () => {
+        DataService.getInstance().presetAppStorageDefaults();
       });
 
       // loadContent 不置于任何 try 内：任何初始化故障都不再阻止主界面加载
@@ -162,6 +138,46 @@ export default class EntryAbility extends UIAbility {
           return;
         }
         hilog.info(DOMAIN, 'testTag', 'Succeeded in loading the content.');
+
+        // ── 以下初始化依赖持久化设置，全部后移到 loadContent 之后执行 ──
+        let settings: AppSettingsData = new AppSettingsData();
+        safeRun('initToAppStorage', () => {
+          settings = DataService.getInstance().initToAppStorage();
+        });
+        // 旧 preferences('myStore') 数据已废弃不迁移（用户确认现有设置整体重置）：
+        // 读取链路已全部切换 PersistenceV2，此处一次性删除旧 store 文件
+        safeRun('purgeLegacyPreferences', () => {
+          preferences.deletePreferences(this.context, { name: 'myStore' }).catch((purgeErr: BusinessError) => {
+            Logger.error(TAG, `purgeLegacyPreferences failed: ${JSON.stringify(purgeErr)}`);
+          });
+        });
+        // 音频输出设备路由监听（耳机断开自动暂停 / 输出设备切换入口）
+        safeRun('AudioRoutingService.init', () => {
+          AudioRoutingService.getInstance().init();
+        });
+        // 通知/提示音不压低音量：按落库设置激活或去激活「并发播放」AudioSession
+        safeRun('applyIgnoreNotificationDuck', () => {
+          AudioFocusService.getInstance().applyIgnoreNotificationDuck(settings.ignoreNotificationDuck);
+        });
+        // 智感握姿：按落库设置决定是否订阅 holdingHandChanged（首页加号与设置页预览共用同一份结果）
+        safeRun('HoldingHandService.syncWithSetting', () => {
+          HoldingHandService.getInstance().syncWithSetting();
+        });
+        safeRun('AVSessionController.initAVSession', () => {
+          AVSessionController.getInstance().initAVSession();
+        });
+
+        try {
+          if (settings.themeMode === 'light') {
+            this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT);
+          } else if (settings.themeMode === 'dark') {
+            this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_DARK);
+          } else {
+            this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
+          }
+        } catch (e) {
+          hilog.error(DOMAIN, 'testTag', 'applyThemeMode failed: ' + JSON.stringify(e));
+        }
 
         windowStage.getMainWindow().then((mainWindow: window.Window) => {
           let uiContext = windowStage.getMainWindowSync().getUIContext();
@@ -221,7 +237,7 @@ export default class EntryAbility extends UIAbility {
 
   onBackground(): void {
     DataService.getInstance().flushPendingSongWrites();
-    PreferencesUtil.getInstance().flushNow();
+    SettingsStore.getInstance().flushPendingSaves();
     // 退到后台时收敛一次数据库 WAL，避免 wal 文件长期只增不减撑大本地数据
     void SongDatabase.getInstance().checkpoint();
     // 退到后台即退订握姿监听，避免后台持续占用传感器；回到前台由 onForeground 重新订阅。
