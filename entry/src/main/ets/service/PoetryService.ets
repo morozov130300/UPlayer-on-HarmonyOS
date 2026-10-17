@@ -1,5 +1,5 @@
 // 诗词服务：从诗泉 API（https://poetry.palemoky.com/）获取随机诗句，用于主页问候语小字展示
-import { http } from '@kit.NetworkKit'
+import { rcp } from '@kit.RemoteCommunicationKit'
 import Logger from '../common/utils/Logger'
 
 const TAG = 'PoetryService'
@@ -13,26 +13,55 @@ const PUNCTUATION_REGEX: RegExp = /[，。、；：？！“”‘’《》（�
 
 export class PoetryService {
   private static instance: PoetryService = new PoetryService()
+  private session: rcp.Session | undefined = undefined
 
   public static getInstance(): PoetryService {
     return PoetryService.instance
   }
 
+  private getSession(): rcp.Session {
+    if (this.session === undefined) {
+      const sessionConfig: rcp.SessionConfiguration = {
+        requestConfiguration: {
+          transfer: {
+            timeout: {
+              connectMs: REQUEST_TIMEOUT_MS,
+              transferMs: REQUEST_TIMEOUT_MS
+            }
+          }
+        }
+      }
+      this.session = rcp.createSession(sessionConfig)
+    }
+    return this.session
+  }
+
+  // 应用退出时关闭会话释放资源
+  public closeSession(): void {
+    if (this.session !== undefined) {
+      try {
+        this.session.close()
+      } catch (e) {
+        Logger.error(TAG, `close session failed: ${JSON.stringify(e)}`)
+      }
+      this.session = undefined
+    }
+  }
+
   public async fetchRandomLine(): Promise<string> {
-    const httpRequest: http.HttpRequest = http.createHttp()
     try {
+      const session: rcp.Session = this.getSession()
       // 随机接口无法指定类型，取到不满足“唐诗/宋词/元曲/五言/七言”的篇目时重试
       for (let attempt = 0; attempt < MAX_FETCH_ATTEMPTS; attempt++) {
-        const resp: http.HttpResponse = await httpRequest.request(POETRY_RANDOM_URL, {
-          method: http.RequestMethod.GET,
-          expectDataType: http.HttpDataType.STRING,
-          connectTimeout: REQUEST_TIMEOUT_MS,
-          readTimeout: REQUEST_TIMEOUT_MS
-        })
-        if (resp.responseCode !== 200 || typeof resp.result !== 'string') {
+        const resp: rcp.Response = await session.get(POETRY_RANDOM_URL)
+        if (resp.statusCode !== 200) {
           return ''
         }
-        const line: string = this.pickLine(resp.result)
+        const body: string | null = resp.toString()
+        if (body === null || body.length === 0) {
+          return ''
+        }
+        const line: string = this.pickLine(body)
         if (line !== '') {
           return line
         }
@@ -41,8 +70,6 @@ export class PoetryService {
     } catch (e) {
       Logger.error(TAG, `fetch random poem failed: ${JSON.stringify(e)}`)
       return ''
-    } finally {
-      httpRequest.destroy()
     }
   }
 
