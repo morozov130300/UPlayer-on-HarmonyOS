@@ -5,6 +5,7 @@ import { bundleManager, common, ConfigurationConstant } from '@kit.AbilityKit'
 import { updateManager } from '@kit.AppGalleryKit'
 import { AppSettingsData, DataService } from '../service/DataService'
 import { AVPlayerService, EffectNodeSupport } from '../service/AVPlayerService'
+import nativeAudio from 'libuplayer.so'
 import { AudioFocusService } from '../service/AudioFocusService'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { ColorHelper } from '../common/utils/ColorHelper'
@@ -150,6 +151,8 @@ struct SettingsDetailPage {
   // 系统空间音频只读状态（AudioSpatializationManager 无 setter，开关由系统设置控制）
   @StorageProp(AppStorageKeyConstants.KEY_SPATIALIZATION_SUPPORTED) spatializationSupported: boolean = false
   @StorageProp(AppStorageKeyConstants.KEY_SPATIALIZATION_ENABLED) spatializationEnabled: boolean = false
+  // 低功耗播放：设备是否支持 OH_LowPowerAudioSink 链路（进入「播放」分区时探测一次）
+  @State lowPowerSupported: boolean = true
   private context: common.UIAbilityContext
     | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
   // Tab 栏实时预览：直接使用 HdsTabs 系统组件，与 Index 完全一致的渲染管线
@@ -240,6 +243,10 @@ struct SettingsDetailPage {
     // 只有「音效」分区消费，却会让定制/播放/关于 也付出同样代价。改为进入音效分区时按需探测一次。
     if (this.pageTitle === '音效') {
       this.probeEffectNodeSupport()
+    }
+    // 低功耗链路能力探测：「播放」分区消费，其余分区不付出 native IPC 代价
+    if (this.pageTitle === '播放') {
+      this.lowPowerSupported = nativeAudio.isLowPowerSupported()
     }
   }
 
@@ -1853,6 +1860,43 @@ struct SettingsDetailPage {
       }
       .width('100%')
       .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
+
+      Row() {
+        Column({ space: this.scaledSize(6) }) {
+          Text('低功耗播放')
+            .fontSize(this.scaledFont(14))
+            .fontColor(this.settingTextColor())
+            .fontWeight(FontWeight.Medium)
+          Text(this.lowPowerSupported ?
+            '开启后解码与渲染卸载至低功耗硬件，降低播放功耗、延长续航；期间均衡器等音效不可用，播放中切换将从当前位置重播当前曲目' :
+            '当前设备不支持低功耗音频链路，开关不会生效')
+            .fontSize(this.scaledFont(12))
+            .fontColor(this.settingSubTextColor())
+        }
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Start)
+
+        Toggle({ type: ToggleType.Switch, isOn: this.settings.lowPowerPlayback })
+          .selectedColor(this.primaryColor)
+          .alignSelf(ItemAlign.Center)
+          .margin({ left: this.scaledSize(10) })
+          .enabled(this.lowPowerSupported)
+          .onChange((isOn: boolean) => {
+            this.settings.lowPowerPlayback = isOn
+            this.updateSetting()
+            this.avPlayerService.applyLowPowerPlayback(isOn)
+          })
+      }
+      .width('100%')
+      .padding({
+        left: this.scaledSize(14),
+        right: this.scaledSize(14),
+        top: this.scaledSize(10),
+        bottom: this.scaledSize(10)
+      })
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(this.scaledSize(10))
     }
