@@ -29,6 +29,7 @@ export const setVolume: (volume: number) => boolean
 export const setLowPowerMode: (enabled: boolean) => boolean
 export const isLowPowerSinkActive: () => boolean
 export const isLowPowerSupported: () => boolean
+export const consumeLowPowerRuntimeError: () => boolean
 export const isEqualizerSupported: () => boolean
 export const isPlaying: () => boolean
 export const isCompleted: () => boolean

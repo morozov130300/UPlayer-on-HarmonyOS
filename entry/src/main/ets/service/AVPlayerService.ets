@@ -89,6 +89,8 @@ export class AVPlayerService {
   private operationQueue: Promise<void> = Promise.resolve()
   private backendState: BackendState = BackendState.IDLE
   private pendingSeekMs: number | undefined = undefined
+  // 强制下次 play 绕过同文件复用分支重建管线（低功耗开关切换/运行期回退时使用）
+  private forcePipelineRebuild: boolean = false
   private desiredVolume: number = 1
   private desiredSpeed: number = 1
   private isSeeking: boolean = false
@@ -145,9 +147,9 @@ export class AVPlayerService {
     // 若当前处于播放状态，本次是切歌（播放中切到下一首），stop/reset 期间不应把播放状态置为暂停
     const wasPlaying: boolean = AppStorage.get<boolean>(AppStorageKeyConstants.KEY_IS_PLAY) ?? false
     this.isSwitchingTrack = wasPlaying
-    // 同一文件且引擎仍在途：seek + resume 复用，不重建管线
-    if (this.isEngineLoaded() && this.currentFilePath === fileUri && !nativeAudio.isCompleted() &&
-      !nativeAudio.hasFailed()) {
+    // 同一文件且引擎仍在途：seek + resume 复用，不重建管线（低功耗切换/运行期回退要求重建时跳过）
+    if (!this.forcePipelineRebuild && this.isEngineLoaded() && this.currentFilePath === fileUri &&
+      !nativeAudio.isCompleted() && !nativeAudio.hasFailed()) {
       if (startPositionMs > 0) {
         nativeAudio.seek(startPositionMs)
       }
@@ -172,6 +174,7 @@ export class AVPlayerService {
       return
     }
     this.backendState = BackendState.STARTING
+    this.forcePipelineRebuild = false
     nativeAudio.stop()
     this.stopNativeProgressTimer()
     this.stopNativeStartupCheck()
@@ -567,13 +570,14 @@ export class AVPlayerService {
   }
 
   // 低功耗播放模式（OH_LowPowerAudioSink 压缩帧直通）：设置页开关入口。
-  // 播放中切换：从当前位置重启当前曲目，让新链路立即生效
+  // 播放中切换：绕过同文件复用分支，从当前位置重建管线，让新链路立即生效
   applyLowPowerPlayback(enabled: boolean): void {
     nativeAudio.setLowPowerMode(enabled)
     const isPlaying: boolean = AppStorage.get<boolean>(AppStorageKeyConstants.KEY_IS_PLAY) ?? false
     if (!isPlaying || this.currentFilePath.length === 0) {
       return
     }
+    this.forcePipelineRebuild = true
     const position: number = this.getCurrentPositionMs()
     this.play(this.currentFilePath, position).catch((err: Error): void => {
       Logger.error(TAG, `low-power mode switch replay failed: ${JSON.stringify(err)}`)
@@ -1040,6 +1044,20 @@ export class AVPlayerService {
           clearTimeout(this.seekingClearTimer)
           this.seekingClearTimer = -1
         }
+      }
+      // 低功耗链路运行期报错：native 侧已停喂并阻止低功耗重启，这里重建正常管线续播
+      if (nativeAudio.consumeLowPowerRuntimeError()) {
+        this.stopNativeProgressTimer()
+        Logger.warn(TAG, 'low-power sink runtime error, rebuilding full pipeline')
+        const fallbackUri: string = this.currentFilePath
+        const fallbackPosition: number = position
+        if (fallbackUri.length > 0) {
+          this.forcePipelineRebuild = true
+          this.play(fallbackUri, fallbackPosition).catch((err: Error): void => {
+            Logger.error(TAG, `low-power runtime error fallback replay failed: ${JSON.stringify(err)}`)
+          })
+        }
+        return
       }
       if (nativeAudio.hasFailed()) {
         this.stopNativeProgressTimer()
