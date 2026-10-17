@@ -77,4 +77,10 @@ export class AppStorageKeyConstants {
   public static readonly KEY_IGNORE_NOTIFICATION_DUCK: string = BaseConstants.KEY_PREFIX + 'IgnoreNotificationDuck'
   // 系统媒体音量最大格数（getMaxVolumeByStream 结果，AVVolumePanel.volumeLevel 换算用）
   public static readonly KEY_VOL_PANEL_MAX: string = BaseConstants.KEY_PREFIX + 'VolPanelMax'
+  // 系统空间音频（AudioSpatializationManager，API 只读无 setter）：
+  // enabled 为当前设备空间音频渲染开关状态（订阅系统变化实时刷新），
+  // supported 为当前发声设备是否具备空间音频渲染能力（随首选输出设备变化刷新）；
+  // 两者仅供设置页「音效」分区只读展示，开关本身由系统设置控制
+  public static readonly KEY_SPATIALIZATION_ENABLED: string = BaseConstants.KEY_PREFIX + 'SpatializationEnabled'
+  public static readonly KEY_SPATIALIZATION_SUPPORTED: string = BaseConstants.KEY_PREFIX + 'SpatializationSupported'
 }

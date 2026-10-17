@@ -1109,6 +1109,8 @@ return result
     AppStorage.setOrCreate('uplayer_holding_hand_enabled', true)
     AppStorage.setOrCreate('uplayer_tab_touch_indicator', 'light')
     AppStorage.setOrCreate('uplayer_tab_light_color', 'theme')
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SPATIALIZATION_ENABLED, false)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SPATIALIZATION_SUPPORTED, false)
   }
 
   initToAppStorage(): AppSettingsData {
