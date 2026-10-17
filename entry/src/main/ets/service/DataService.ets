@@ -1117,6 +1117,7 @@ return result
     AppStorage.setOrCreate('uplayer_tab_light_color', 'theme')
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SPATIALIZATION_ENABLED, false)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SPATIALIZATION_SUPPORTED, false)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_BLUETOOTH_AUDIO_REVISION, 0)
   }
 
   initToAppStorage(): AppSettingsData {

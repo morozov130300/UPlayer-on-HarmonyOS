@@ -83,4 +83,7 @@ export class AppStorageKeyConstants {
   // 两者仅供设置页「音效」分区只读展示，开关本身由系统设置控制
   public static readonly KEY_SPATIALIZATION_ENABLED: string = BaseConstants.KEY_PREFIX + 'SpatializationEnabled'
   public static readonly KEY_SPATIALIZATION_SUPPORTED: string = BaseConstants.KEY_PREFIX + 'SpatializationSupported'
+  // 蓝牙 A2DP 音频状态变化计数器：BluetoothAudioService 在连接/播放状态刷新时 +1，
+  // 「更多」面板的「蓝牙音频」行 @StorageProp @Watch 到变化后刷新展示
+  public static readonly KEY_BLUETOOTH_AUDIO_REVISION: string = BaseConstants.KEY_PREFIX + 'BluetoothAudioRevision'
 }
