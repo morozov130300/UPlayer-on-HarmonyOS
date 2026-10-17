@@ -1189,6 +1189,7 @@ export struct ControlAreaComponent {
               this.morePanelInfoRow(11, '描述', this.infoValue(11), true)
             }
             .width('100%')
+            .padding({ left: 16, right: 16 })
 
             // 只读技术信息组
             Column({ space: 0 }) {
