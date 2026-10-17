@@ -18,6 +18,7 @@ import { SongDatabase } from '../service/SongDatabase';
 import { ShareService } from '../service/ShareService';
 import { ColorConversion } from '../common/utils/ColorConversion';
 import { PreferencesUtil } from '../common/utils/PreferencesUtil';
+import { PoetryService } from '../service/PoetryService';
 
 const DOMAIN = 0x0000;
 const TAG = '[EntryAbility]';
@@ -62,6 +63,11 @@ export default class EntryAbility extends UIAbility {
       AVSessionController.getInstance().unregisterSessionListener();
     } catch (err) {
       hilog.error(DOMAIN, 'testTag', 'unregisterSessionListener failed: %{public}s', JSON.stringify(err));
+    }
+    try {
+      PoetryService.getInstance().closeSession();
+    } catch (err) {
+      hilog.error(DOMAIN, 'testTag', 'PoetryService closeSession failed: %{public}s', JSON.stringify(err));
     }
     try {
       BackgroundUtil.stopContinuousTask(this.context);
