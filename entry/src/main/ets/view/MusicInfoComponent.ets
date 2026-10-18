@@ -12,12 +12,15 @@ import { ControlAreaComponent } from './ControlAreaComponent';
 
 import { AlbumCover } from '../component/AlbumCover';
 import { ScaleButton } from '../component/ScaleButton';
+import { audioQualityBadgeText } from '../common/utils/AudioQualityUtil';
 
 const TAG = 'MusicInfoComponent';
 
 @Component
 export struct MusicInfoComponent {
   @Prop mainWindowInfo: WindowInfo;
+  // 手机断点下一镜到底启用时，封面由 PlayerFlyingCover 浮层渲染，本页只保留同尺寸透明占位
+  @Prop isCoverFloating: boolean = false;
   @StorageLink(AppStorageKeyConstants.KEY_SONG_LIST) songList: SongInfo[] = [];
   @StorageProp(AppStorageKeyConstants.KEY_SELECT_INDEX) @Watch('onSongChange') selectIndex: number = 0;
   // 当前播放歌曲 id：显示信息一律按 id 从全量曲库解析，不依赖队列下标，
@@ -106,60 +109,6 @@ export struct MusicInfoComponent {
     return DataService.currentSongFromList(this.songList, this.currentSongId)
   }
 
-  // 音质等级缩写（显示在标签最前），按采样率/位深/码率从高到低判定：
-  // 母带：24bit 且（采样率 ≥176.4kHz 或码率 >900kbps）；Hi-Res：位深 ≥24bit（超越 CD 的 16bit）；
-  // SQ：无损编码或码率 ≥512kbps；HQ：码率 ≥256kbps（320kbps 有损）；Standard：其余有码率数据的有损
-  private audioQualityTier(): string {
-    const song: SongInfo = this.currentSong()
-    const depthRaw: string = song.bitDepth.trim()
-    const depth: number = depthRaw.length > 0 && !isNaN(Number(depthRaw)) ? Number(depthRaw) : 0
-    const sampleRate: number = song.sampleRate
-    const bitrate: number = song.effectiveBitrate()
-    const losslessCodecs: string[] = ['FLAC', 'APE', 'WAV', 'ALAC', 'AIFF', 'DSD', 'PCM']
-    const codec: string = song.codec.trim().toUpperCase()
-    if (depth >= 24 && (sampleRate >= 176400 || bitrate > 900000)) {
-      return '母带'
-    }
-    if (depth >= 24) {
-      return 'Hi-Res'
-    }
-    if (losslessCodecs.some((item: string): boolean => codec.length > 0 && codec.includes(item))) {
-      return 'SQ'
-    }
-    if (bitrate >= 512000) {
-      return 'SQ'
-    }
-    if (bitrate >= 256000) {
-      return 'HQ'
-    }
-    if (bitrate > 0) {
-      return 'Standard'
-    }
-    return ''
-  }
-
-  // 封面左下角音质标签：等级缩写在前，码率/采样率/位深跟随；完全无数据时不渲染
-  private audioQualityBadge(): string {
-    const song: SongInfo = this.currentSong()
-    const parts: string[] = []
-    const tier: string = this.audioQualityTier()
-    if (tier.length > 0) {
-      parts.push(tier)
-    }
-    const bitrate: number = song.effectiveBitrate()
-    if (bitrate > 0) {
-      parts.push(`${Math.round(bitrate / 1000)} kbps`)
-    }
-    if (song.sampleRate > 0) {
-      parts.push(`${(song.sampleRate / 1000).toFixed(1).replace(/\.0$/, '')} kHz`)
-    }
-    const depth: string = song.bitDepth.trim()
-    if (depth.length > 0) {
-      parts.push(`${depth} bit`)
-    }
-    return parts.join(' · ')
-  }
-
   updateFavoriteState() {
     const song: SongInfo = this.currentSong()
     this.isFavorite = song.id.length > 0 && song.isFavorite
@@ -223,7 +172,7 @@ export struct MusicInfoComponent {
             ]
           })
           .rotate({ angle: this.glowRotation })
-          .opacity(this.isPlay ? 0.8 : 0)
+          .opacity(this.isPlay && !this.isCoverFloating ? 0.8 : 0)
           .animation({ duration: StyleConstants.ANIMATION_COVER_CROSS_FADE_DURATION, curve: Curve.EaseInOut })
         // 封面尺寸与定位容器：左下角音质标签通过与封面同盒的 BottomStart 对齐，只关联封面本身
         Stack({ alignContent: Alignment.BottomStart }) {
@@ -231,11 +180,13 @@ export struct MusicInfoComponent {
             decodeSize: 640 })
             .width('100%')
             .aspectRatio(1)
+            .opacity(this.isCoverFloating ? 0 : 1)
 
           // 封面左下角音质标签（码率/编码格式）：半透明黑底白字小胶囊，无码率数据时不渲染
-          if (this.audioQualityBadge().length > 0) {
+          // 浮层模式下标签随封面一起搬到 PlayerFlyingCover，本页不再渲染，避免被浮层遮挡或双份
+          if (!this.isCoverFloating && audioQualityBadgeText(this.currentSong()).length > 0) {
             Row() {
-              Text(this.audioQualityBadge())
+              Text(audioQualityBadgeText(this.currentSong()))
                 .fontSize(Math.round(10 * this.fontSizeScale))
                 .fontColor(Color.White)
                 .maxLines(1)
@@ -254,6 +205,8 @@ export struct MusicInfoComponent {
         .constraintSize({ maxWidth: '100%', maxHeight: '50%' })
         .shadow({ radius: 12, color: 'rgba(0,0,0,0.15)', offsetX: 0, offsetY: 4 })
         .animation({ duration: StyleConstants.ANIMATION_COVER_CROSS_FADE_DURATION, curve: Curve.EaseInOut })
+        // 一镜到底起点：PlayerInfoComponent 通过该 id 测量大封面矩形
+        .id('cover_origin')
       }
       .width('100%')
       .constraintSize({ maxWidth: '100%', maxHeight: '50%' })

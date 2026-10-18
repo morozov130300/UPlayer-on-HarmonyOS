@@ -16,6 +16,8 @@ import { AlbumCover } from '../component/AlbumCover';
 @Component
 export struct LyricsComponent {
   @Prop mainWindowInfo: WindowInfo;
+  // 手机断点下一镜到底启用时，小封面由 PlayerFlyingCover 浮层渲染，此处仅保留透明占位
+  @Prop isCoverFloating: boolean = false;
   @StorageLink(AppStorageKeyConstants.KEY_PROGRESS) time: number = 0;
   @State mLrcEntryList: Array<LrcEntry> = [];
   // 歌词加载态：加载中显示「正在加载歌词…」，与「无歌词」区分，避免解析前误占位
@@ -69,6 +71,9 @@ export struct LyricsComponent {
           AlbumCover({ song: this.currentSong(), coverWidth: 48, coverHeight: 48,
             coverRadius: $r('app.float.label_border') })
             .margin({ right: 16 })
+            // 一镜到底终点：手机断点下封面由 PlayerFlyingCover 浮层渲染，此处仅保留 48×48 透明占位
+            .opacity(this.isCoverFloating ? 0 : 1)
+            .id('cover_target')
           Column() {
             Text(this.currentSong().title)
               .fontSize(Math.round(20 * this.fontSizeScale)).fontColor(Color.White)

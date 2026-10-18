@@ -56,8 +56,9 @@ export struct ControlAreaComponent {
   @State songTimeFontColor: ResourceColor = '#B3FFFFFF';
   @State trackThickness: number = 6;
   @State isShowMorePanel: boolean = false;
-  @State isShowTimerPanel: boolean = false;
-  @State isShowSongInfoPanel: boolean = false;
+  // 「更多」面板内部层级：0 主列表 / 1 歌曲信息 / 2 定时关闭 / 3 输出设备。
+  // 二级页在同一 sheet 内原地覆盖显示，不另开弹窗
+  @State morePanelLevel: number = 0;
   @State timerRemainingSeconds: number = 0;
   @State timerIntervalID: number = -1;
   @State activePresetMinutes: number = -1;
@@ -80,7 +81,6 @@ export struct ControlAreaComponent {
   // 归一化显示与 AVVolumePanel 档位映射都必须用它，不能硬编码
   @State maxVolumeLevel: number = 15;
   // 「更多」面板：输出设备选择（AudioRoutingManager + AudioDeviceEnhanceManager 系统接口）
-  @State isShowOutputDevicePanel: boolean = false;
   @State outputDeviceList: audio.AudioDeviceDescriptors = [];
   @State currentOutputDeviceLabel: string = '';
   @StorageProp(AppStorageKeyConstants.KEY_OUTPUT_DEVICE_REVISION) @Watch('onOutputDeviceRevision')
@@ -800,6 +800,11 @@ export struct ControlAreaComponent {
               preferType: SheetType.CENTER,
               onWillDisappear: () => {
                 this.isShowMorePanel = false;
+                // 关闭后回到主列表，下次打开不从二级页恢复
+                this.cancelEditField();
+                this.morePanelLevel = 0;
+                this.selectedPresetMinutes = -1;
+                this.isShowCustomPicker = false;
               }
             })
         }
@@ -824,8 +829,22 @@ export struct ControlAreaComponent {
     .alignContent(Alignment.End)
   }
 
+  // 「更多」sheet 内容入口：按层级切换，二级页在同一个 sheet 内原地覆盖，不再弹新窗口
   @Builder
   morePanelBuilder() {
+    if (this.morePanelLevel === 1) {
+      this.songInfoPanelBuilder()
+    } else if (this.morePanelLevel === 2) {
+      this.timerPanelBuilder()
+    } else if (this.morePanelLevel === 3) {
+      this.outputDevicePanelBuilder()
+    } else {
+      this.morePanelMainBuilder()
+    }
+  }
+
+  @Builder
+  morePanelMainBuilder() {
     Column({ space: 8 }) {
       // 歌曲信息入口行（二级弹窗）
       Row() {
@@ -857,18 +876,7 @@ export struct ControlAreaComponent {
       .borderRadius(this.scaledSize(10))
       .onClick(() => {
         this.refreshSongMetadataIfNeeded()
-        this.isShowSongInfoPanel = true
-      })
-      .bindSheet($$this.isShowSongInfoPanel, this.songInfoPanelBuilder(), {
-        detents: [SheetSize.MEDIUM],
-        dragBar: false,
-        title: { title: '歌曲信息' },
-        showClose: true,
-        preferType: SheetType.CENTER,
-        onWillDisappear: () => {
-          this.cancelEditField()
-          this.isShowSongInfoPanel = false
-        }
+        this.morePanelLevel = 1
       })
 
       // 定时关闭入口行
@@ -897,19 +905,7 @@ export struct ControlAreaComponent {
       .backgroundColor($r('app.color.player_bg_color'))
       .borderRadius(this.scaledSize(10))
       .onClick(() => {
-        this.isShowTimerPanel = true
-      })
-      .bindSheet($$this.isShowTimerPanel, this.timerPanelBuilder(), {
-        detents: [SheetSize.MEDIUM],
-        dragBar: false,
-        title: { title: '定时关闭' },
-        showClose: true,
-        preferType: SheetType.CENTER,
-        onWillDisappear: () => {
-          this.isShowTimerPanel = false
-          this.selectedPresetMinutes = -1
-          this.isShowCustomPicker = false
-        }
+        this.morePanelLevel = 2
       })
 
       // 输出设备行：显示系统首选输出设备，点击打开系统设备列表（AudioRoutingManager + 增强路由）
@@ -939,17 +935,7 @@ export struct ControlAreaComponent {
       .borderRadius(this.scaledSize(10))
       .onClick(() => {
         this.refreshOutputDeviceInfo()
-        this.isShowOutputDevicePanel = true
-      })
-      .bindSheet($$this.isShowOutputDevicePanel, this.outputDevicePanelBuilder(), {
-        detents: [SheetSize.MEDIUM],
-        dragBar: false,
-        title: { title: '输出设备' },
-        showClose: true,
-        preferType: SheetType.CENTER,
-        onWillDisappear: () => {
-          this.isShowOutputDevicePanel = false
-        }
+        this.morePanelLevel = 3
       })
 
       // 投送设备行：系统 AVCastPicker 组件（设备发现/连接/认证/切换全部系统接管）
@@ -1506,14 +1492,63 @@ export struct ControlAreaComponent {
       .width('100%')
   }
 
+  // 二级页不另开弹窗：标题栏左侧加返回箭头，点回主列表
+  // 热区：图标 20vp，外层容器 44×44vp（不小于最小可点尺寸），点击落在容器上
   @Builder
   morePanelTitle() {
-    Text('更多')
-      .maxLines(1)
-      .fontColor($r('app.color.text_primary'))
-      .fontWeight(FontWeight.Bold)
-      .fontSize(20)
-      .width('100%')
+    Row() {
+      if (this.morePanelLevel > 0) {
+        Row() {
+          Image($r('app.media.ic_public_arrow_right'))
+            .width(this.scaledSize(20))
+            .height(this.scaledSize(20))
+            .fillColor($r('app.color.text_primary'))
+            .rotate({ angle: 180 })
+            .hitTestBehavior(HitTestMode.None)
+        }
+        .width(this.scaledSize(44))
+        .height(this.scaledSize(44))
+        .margin({ left: this.scaledSize(-10), right: this.scaledSize(8) })
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .borderRadius(this.scaledSize(22))
+        .onClick(() => {
+          this.backToMorePanelRoot()
+        })
+      }
+      Text(this.morePanelTitleText())
+        .maxLines(1)
+        .fontColor($r('app.color.text_primary'))
+        .fontWeight(FontWeight.Bold)
+        .fontSize(this.scaledFont(20))
+    }
+    .width('100%')
+    .height(this.scaledSize(44))
+    .alignItems(VerticalAlign.Center)
+  }
+
+  private morePanelTitleText(): string {
+    switch (this.morePanelLevel) {
+      case 1:
+        return '歌曲信息'
+      case 2:
+        return '定时关闭'
+      case 3:
+        return '输出设备'
+      default:
+        return '更多'
+    }
+  }
+
+  private backToMorePanelRoot(): void {
+    if (this.morePanelLevel === 1) {
+      this.cancelEditField()
+    }
+    if (this.morePanelLevel === 2) {
+      this.selectedPresetMinutes = -1
+      this.isShowCustomPicker = false
+    }
+    this.morePanelLevel = 0
   }
 }
 

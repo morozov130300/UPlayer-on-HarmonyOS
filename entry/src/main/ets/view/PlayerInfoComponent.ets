@@ -17,8 +17,20 @@ import { AlbumCoverLease, AlbumCoverSize, AudioMetadataService } from '../servic
 import { DataService } from '../service/DataService';
 import { GlassBackButton } from './GlassBackButton';
 import { MediaTools } from '../common/utils/mediautils/MediaTools';
+import { PlayerFlyingCover } from './PlayerFlyingCover';
 
 const TAG = 'PlayerInfoComponent'
+
+// 两端封面矩形测量：布局首帧内可能拿不到第二页，有限次重试（20 × 60ms ≈ 1.2s）
+const GEOMETRY_RETRY_MAX: number = 20
+const GEOMETRY_RETRY_INTERVAL_MS: number = 60
+
+interface CoverRect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
 
 @Component
 export struct PlayerInfoComponent {
@@ -36,6 +48,22 @@ export struct PlayerInfoComponent {
   @StorageLink(AppStorageKeyConstants.KEY_PAGE_SHOW_TIME) pageShowTime: number = 0;
   @StorageLink('uplayer_theme_mode') themeMode: string = 'system';
   @State intervalID: number = 0;
+  // 手机断点一镜到底：0 = 大封面页，1 = 歌词页；由 Swiper 逐帧回调驱动浮层封面插值
+  @State swipeProgress: number = 0;
+  // 两端封面矩形是否测量成功；未成功时浮层不启用，两页各自正常渲染封面（降级为原样）
+  @State isCoverGeometryReady: boolean = false;
+  @State coverOriginX: number = 0;
+  @State coverOriginY: number = 0;
+  @State coverOriginWidth: number = 0;
+  @State coverOriginHeight: number = 0;
+  @State coverTargetX: number = 0;
+  @State coverTargetY: number = 0;
+  @State coverTargetWidth: number = 0;
+  @State coverTargetHeight: number = 0;
+  private layerWidth: number = 0;
+  private layerHeight: number = 0;
+  private geometryRetryTimer: number = -1;
+  private geometryRetryCount: number = 0;
   // 系统音量写通道：底栏音量 Slider 弹层经 KEY_CURRENT_VOLUME 联动驱动 volumeLevel，
   // AVVolumePanel 常驻挂载，不做显隐切换
   @StorageProp(AppStorageKeyConstants.KEY_VOL_PANEL_MAX) volPanelMax: number = 15;
@@ -61,15 +89,19 @@ export struct PlayerInfoComponent {
   mainWindowInfoChange() {
     Logger.info(
       `windowUtil is change,current width breakpoint is ${this.mainWindowInfo?.widthBp},height breakpoint is ${this.mainWindowInfo?.heightBp}`)
+    // 断点在手机/宽屏之间切换后，封面矩形必须重新测量（宽屏分支不使用浮层）
+    this.scheduleGeometryMeasure()
   }
 
   aboutToAppear(): void {
     ColorConversion.setSysBarLightBackground(this.isBackgroundDark(this.imageColor));
     this.getImageColor();
+    this.scheduleGeometryMeasure();
   }
 
   aboutToDisappear(): void {
     clearInterval(this.intervalID);
+    this.clearGeometryRetry();
     this.imageLoadRequestId++;
     this.backgroundCoverLease?.release();
     this.backgroundCoverLease = undefined;
@@ -185,66 +217,111 @@ export struct PlayerInfoComponent {
           .layoutWeight(1)
           .width('100%')
         } else {
-          Swiper() {
-            Stack() {
-              Column() {
-                MusicInfoComponent({ mainWindowInfo: this.mainWindowInfo })
+          // 一镜到底容器：Swiper 内的封面被页边界裁剪且两页同时挂载，无法跨页共享，
+          // 因此把封面提升到本 Stack 顶层（PlayerFlyingCover），两页内只保留透明占位
+          Stack({ alignContent: Alignment.TopStart }) {
+            Swiper() {
+              Stack() {
+                Column() {
+                  MusicInfoComponent({
+                    mainWindowInfo: this.mainWindowInfo,
+                    isCoverFloating: this.isCoverGeometryReady
+                  })
+                }
+                .padding({
+                  top: $r('app.float.music_component_top'),
+                  bottom: $r('app.float.music_component_bottom'),
+                  left: $r('app.float.common_padding'),
+                  right: $r('app.float.common_padding')
+                })
+                .width('100%')
+                .height('100%')
               }
-              .padding({
-                top: $r('app.float.music_component_top'),
-                bottom: $r('app.float.music_component_bottom'),
-                left: $r('app.float.common_padding'),
-                right: $r('app.float.common_padding')
-              })
-              .width('100%')
-              .height('100%')
-            }
 
-            Stack() {
-              Column() {
-                LyricsComponent({ isShowControl: this.isShowControl, mainWindowInfo: this.mainWindowInfo })
+              Stack() {
+                Column() {
+                  LyricsComponent({
+                    isShowControl: this.isShowControl,
+                    mainWindowInfo: this.mainWindowInfo,
+                    isCoverFloating: this.isCoverGeometryReady
+                  })
+                }
+                .padding({
+                  top: $r('app.float.music_component_top'),
+                  left: $r('app.float.common_padding'),
+                  right: $r('app.float.common_padding'),
+                  bottom: $r('app.float.music_component_bottom'),
+                })
+                .width('100%')
+                .height('100%')
               }
-              .padding({
-                top: $r('app.float.music_component_top'),
-                left: $r('app.float.common_padding'),
-                right: $r('app.float.common_padding'),
-                bottom: $r('app.float.music_component_bottom'),
+            }
+            .width('100%')
+            .height('100%')
+            .loop(false)
+            .curve(curves.springMotion(0.5, 0.8))
+            .indicator(
+              new DotIndicator()
+                .top(8)
+                .color(this.getDotColor(false))
+                .selectedColor(this.getDotColor(true))
+                .itemWidth(6)
+                .itemHeight(6)
+                .selectedItemWidth(14)
+                .selectedItemHeight(6)
+            )
+            // 逐帧滑动进度：position 为当前页相对 index 页的归一化偏移，index + position 即跨页进度
+            .onContentDidScroll((index: number, position: number, _mainAxisLength: number) => {
+              this.updateSwipeProgress(index, position)
+            })
+            .onChange((index: number) => {
+              // 尾帧对齐：动画结束必须落到 0/1，避免浮层停在插值中途
+              this.swipeProgress = index === 1 ? 1 : 0
+              if (index === 1) {
+                this.getUIContext()?.animateTo({ curve: curves.springMotion(0.5, 0.8) }, () => {
+                  this.isShowControl = true;
+                })
+                this.intervalID = setInterval(() => {
+                  this.pageShowTime += 1;
+                  if (this.pageShowTime > 5) {
+                    this.getUIContext()?.animateTo({ curve: curves.springMotion(0.5, 0.8) }, () => {
+                      this.isShowControl = false;
+                    })
+                    clearInterval(this.intervalID);
+                  }
+                }, 1000);
+              } else {
+                this.pageShowTime = 0;
+                clearInterval(this.intervalID);
+              }
+            })
+
+            if (this.isCoverGeometryReady) {
+              PlayerFlyingCover({
+                progress: this.swipeProgress,
+                originX: this.coverOriginX,
+                originY: this.coverOriginY,
+                originWidth: this.coverOriginWidth,
+                originHeight: this.coverOriginHeight,
+                targetX: this.coverTargetX,
+                targetY: this.coverTargetY,
+                targetWidth: this.coverTargetWidth,
+                targetHeight: this.coverTargetHeight
               })
-              .width('100%')
-              .height('100%')
             }
           }
           .layoutWeight(1)
-          .loop(false)
-          .curve(curves.springMotion(0.5, 0.8))
-          .indicator(
-            new DotIndicator()
-              .top(8)
-              .color(this.getDotColor(false))
-              .selectedColor(this.getDotColor(true))
-              .itemWidth(6)
-              .itemHeight(6)
-              .selectedItemWidth(14)
-              .selectedItemHeight(6)
-          )
-          .onChange((index: number) => {
-            if (index === 1) {
-              this.getUIContext()?.animateTo({ curve: curves.springMotion(0.5, 0.8) }, () => {
-                this.isShowControl = true;
-              })
-              this.intervalID = setInterval(() => {
-                this.pageShowTime += 1;
-                if (this.pageShowTime > 5) {
-                  this.getUIContext()?.animateTo({ curve: curves.springMotion(0.5, 0.8) }, () => {
-                    this.isShowControl = false;
-                  })
-                  clearInterval(this.intervalID);
-                }
-              }, 1000);
-            } else {
-              this.pageShowTime = 0;
-              clearInterval(this.intervalID);
+          .width('100%')
+          .id('cover_layer')
+          .onAreaChange((oldArea: Area, newArea: Area) => {
+            const width: number = Number(newArea.width)
+            const height: number = Number(newArea.height)
+            if (Math.abs(width - this.layerWidth) < 0.5 && Math.abs(height - this.layerHeight) < 0.5) {
+              return
             }
+            this.layerWidth = width
+            this.layerHeight = height
+            this.scheduleGeometryMeasure()
           })
         }
       }
@@ -310,6 +387,103 @@ export struct PlayerInfoComponent {
       return 0.2126 * r + 0.7152 * g + 0.0722 * b > 140;
     }
     return false;
+  }
+
+  // 逐帧滑动进度：0 = 大封面页，1 = 歌词页。position 为当前页相对 index 页的归一化偏移，
+  // 两者相加即跨页进度；方向若与预期相反（真机表现为封面反向飞），改为 index - position
+  private updateSwipeProgress(index: number, position: number): void {
+    if (this.mainWindowInfo?.widthBp !== WidthBreakpoint.WIDTH_SM) {
+      return
+    }
+    let progress: number = index + position
+    if (progress < 0) {
+      progress = 0
+    }
+    if (progress > 1) {
+      progress = 1
+    }
+    if (Math.abs(progress - this.swipeProgress) < 0.001) {
+      return
+    }
+    this.swipeProgress = progress
+  }
+
+  private scheduleGeometryMeasure(): void {
+    this.geometryRetryCount = 0
+    this.clearGeometryRetry()
+    // 等一帧让布局完成，否则首次测量拿不到两端封面矩形
+    this.geometryRetryTimer = setTimeout(() => {
+      this.geometryRetryTimer = -1
+      this.measureCoverGeometry()
+    }, 0)
+  }
+
+  private clearGeometryRetry(): void {
+    if (this.geometryRetryTimer !== -1) {
+      clearTimeout(this.geometryRetryTimer)
+      this.geometryRetryTimer = -1
+    }
+  }
+
+  // 两端封面矩形在首次布局时可能尚未就绪（Swiper 第二页延迟挂载），按固定间隔有限次重试
+  private retryGeometryMeasure(): void {
+    if (this.geometryRetryCount >= GEOMETRY_RETRY_MAX) {
+      return
+    }
+    this.geometryRetryCount++
+    this.clearGeometryRetry()
+    this.geometryRetryTimer = setTimeout(() => {
+      this.geometryRetryTimer = -1
+      this.measureCoverGeometry()
+    }, GEOMETRY_RETRY_INTERVAL_MS)
+  }
+
+  private measureCoverGeometry(): void {
+    if (this.mainWindowInfo?.widthBp !== WidthBreakpoint.WIDTH_SM) {
+      if (this.isCoverGeometryReady) {
+        this.isCoverGeometryReady = false
+      }
+      return
+    }
+    const layer: CoverRect | undefined = this.readRect('cover_layer')
+    const origin: CoverRect | undefined = this.readRect('cover_origin')
+    const target: CoverRect | undefined = this.readRect('cover_target')
+    if (layer === undefined || origin === undefined || target === undefined || layer.width <= 0) {
+      if (this.isCoverGeometryReady) {
+        this.isCoverGeometryReady = false
+      }
+      this.retryGeometryMeasure()
+      return
+    }
+    // 第 1 页的小封面位于 Swiper 第二屏，需按页宽回退到当前视口坐标系
+    const pageWidth: number = layer.width
+    this.coverOriginX = origin.x - layer.x
+    this.coverOriginY = origin.y - layer.y
+    this.coverOriginWidth = origin.width
+    this.coverOriginHeight = origin.height
+    this.coverTargetX = target.x - layer.x - pageWidth
+    this.coverTargetY = target.y - layer.y
+    this.coverTargetWidth = target.width
+    this.coverTargetHeight = target.height
+    this.isCoverGeometryReady = this.coverOriginWidth > 0 && this.coverTargetWidth > 0
+  }
+
+  private readRect(id: string): CoverRect | undefined {
+    try {
+      const uiContext = this.getUIContext()
+      // 组件不存在时 getRectangleById 会抛异常，由 catch 兜住并返回 undefined
+      const info = uiContext.getComponentUtils().getRectangleById(id)
+      // getRectangleById 返回 px，统一换算成 vp 与布局单位对齐
+      const rect: CoverRect = {
+        x: uiContext.px2vp(info.windowOffset.x),
+        y: uiContext.px2vp(info.windowOffset.y),
+        width: uiContext.px2vp(info.size.width),
+        height: uiContext.px2vp(info.size.height)
+      }
+      return rect
+    } catch (_) {
+      return undefined
+    }
   }
 
   private getDotColor(isSelected: boolean): ResourceColor {
