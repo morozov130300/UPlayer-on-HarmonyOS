@@ -407,9 +407,9 @@ struct MainPage {
           .pointLight({
             options: {
               color: this.followLightColor(),
-              intensity: this.spikeBarLightOn && this.tabLightColor !== 'none' ? 0.9 : 0,
+              intensity: this.spikeBarLightOn && this.tabLightColor !== 'none' ? 1.0 : 0,
               height: 75,
-              bloom: 0.4
+              bloom: 0.9
             }
           })
           .buildEffect())
@@ -597,9 +597,9 @@ struct MainPage {
           .pointLight({
             options: {
               color: this.followLightColor(),
-              intensity: this.spikeMiniLightOn && this.tabLightColor !== 'none' ? 0.9 : 0,
+              intensity: this.spikeMiniLightOn && this.tabLightColor !== 'none' ? 1.0 : 0,
               height: 75,
-              bloom: 0.4
+              bloom: 0.9
             }
           })
           .buildEffect())
