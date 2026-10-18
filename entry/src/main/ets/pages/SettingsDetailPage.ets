@@ -11,7 +11,11 @@ import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstan
 import { ColorHelper } from '../common/utils/ColorHelper'
 import Logger from '../common/utils/Logger'
 import { BusinessError, deviceInfo, pasteboard, SuppressWarnings, SuppressWarningsType } from '@kit.BasicServicesKit'
-import { HoldingHandService, KEY_HOLDING_HAND_ENABLED, KEY_HOLDING_HAND_LEFT } from '../service/HoldingHandService'
+import { HoldingHandService, HOLDING_HAND_CONFIRM_WINDOW_MAX_MS, HOLDING_HAND_CONFIRM_WINDOW_MIN_MS,
+  HOLDING_HAND_CONFIRM_WINDOW_STEP_MS, HOLDING_HAND_SOFT_FALLBACK_MAX_MS,
+  HOLDING_HAND_SOFT_FALLBACK_MIN_MS, HOLDING_HAND_SOFT_FALLBACK_STEP_MS,
+  KEY_HOLDING_HAND_CONFIRM_WINDOW_MS, KEY_HOLDING_HAND_ENABLED, KEY_HOLDING_HAND_LEFT,
+  KEY_HOLDING_HAND_SOFT_FALLBACK_MS } from '../service/HoldingHandService'
 import { ColorConversion } from '../common/utils/ColorConversion'
 import { isLiquidGlassAvailable, showToastGlassMaterial, topBlurRadiusFromStrength } from '../common/utils/GlassUtil'
 import { StyleConstants } from '../common/constants/StyleConstants'
@@ -177,10 +181,18 @@ struct SettingsDetailPage {
     { label: '经典', value: 'classic' },
     { label: '玻璃', value: 'immersive' }
   ]
-  // 跟手光效颜色选项：白光 / 主题色
+  // 跟手光效颜色选项：无（=关）/ 白光 / 主题色
   private lightColorOptions: TouchIndicatorOption[] = [
+    { label: '无', value: 'none' },
     { label: '白光', value: 'white' },
     { label: '主题色', value: 'theme' }
+  ]
+  // Tab 栏材质等级选项（玻璃样式）：→ hdsMaterial.MaterialLevel
+  private materialLevelOptions: TouchIndicatorOption[] = [
+    { label: '自适应', value: 'adaptive' },
+    { label: '精美', value: 'exquisite' },
+    { label: '轻柔', value: 'gentle' },
+    { label: '流畅', value: 'smooth' }
   ]
   // ═══ 设置项显隐统一动画（所有条件显隐的设置卡片/选项必须完全一致，禁止各自定义）═══
   private colorOptions: ThemeColorOption[] = [
@@ -362,7 +374,7 @@ struct SettingsDetailPage {
       .width('100%')
       .height(this.scaledSize(100))
       .onAreaChange((_oldArea: Area, newArea: Area) => {
-        // 与真机同公式：barWidth = 主容器宽 × 0.4（≥600vp 才下发，小屏交给系统胶囊默认值）
+        // 与真机同公式：barWidth = 主容器宽 × 宽度占比%（≥600vp 才下发，小屏交给系统胶囊默认值）
         const w: number = newArea.width as number
         if (w > 0 && w !== this.previewBarWidthVp) {
           this.previewBarWidthVp = w
@@ -1035,6 +1047,129 @@ struct SettingsDetailPage {
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
         .borderRadius(this.scaledSize(10))
         .transition(this.settingCardTransition())
+
+        // 灵敏度滑轨：仅在握姿开关开启时显示
+        if (this.settings.holdingHandEnabled) {
+          Column({ space: this.scaledSize(6) }) {
+            Row() {
+              this.subTitleRow('切换确认窗')
+              Blank()
+              Text(`${this.settings.holdingHandConfirmWindowMs} ms`)
+                .fontSize(this.scaledFont(12))
+                .fontColor(this.primaryColor)
+                .fontWeight(FontWeight.Medium)
+            }
+            .width('100%')
+
+            Text('握姿切换滤波的确认时间：检测到换手后需持续该时长无回摆才真正切边。值越小换手贴边越快，但越易被瞬时误报带偏；值越大越稳，但换手响应越慢。')
+              .fontSize(this.scaledFont(12))
+              .fontColor(this.settingSubTextColor())
+              .width('100%')
+
+            Row({ space: this.scaledSize(8) }) {
+              Text('快')
+                .fontSize(this.scaledFont(11))
+                .fontColor(this.settingTextColor())
+                .margin({ right: this.scaledSize(4) })
+              Slider({
+                value: this.settings.holdingHandConfirmWindowMs,
+                min: HOLDING_HAND_CONFIRM_WINDOW_MIN_MS,
+                max: HOLDING_HAND_CONFIRM_WINDOW_MAX_MS,
+                step: HOLDING_HAND_CONFIRM_WINDOW_STEP_MS,
+                style: SliderStyle.OutSet
+              })
+                .layoutWeight(1)
+                .selectedColor(this.primaryColor)
+                .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+                .blockColor('#FFFFFF')
+                .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
+                .blockBorderColor(this.primaryColor)
+                .blockBorderWidth(3)
+                .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
+                .onChange((value: number, mode: SliderChangeMode) => {
+                  this.settings.holdingHandConfirmWindowMs = value
+                  AppStorage.setOrCreate(KEY_HOLDING_HAND_CONFIRM_WINDOW_MS, value)
+                  this.updateSetting(this.isSliderSettled(mode))
+                })
+              Text('稳')
+                .fontSize(this.scaledFont(11))
+                .fontColor(this.settingTextColor())
+                .margin({ left: this.scaledSize(4) })
+            }
+            .width('100%')
+            .alignItems(VerticalAlign.Center)
+          }
+          .width('100%')
+          .padding({
+            top: this.scaledSize(10),
+            left: this.scaledSize(14),
+            right: this.scaledSize(14),
+            bottom: this.scaledSize(10)
+          })
+          .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+          .borderRadius(this.scaledSize(10))
+          .transition(this.settingCardTransition())
+
+          Column({ space: this.scaledSize(6) }) {
+            Row() {
+              this.subTitleRow('不确定回落窗')
+              Blank()
+              Text(`${this.settings.holdingHandSoftFallbackMs} ms`)
+                .fontSize(this.scaledFont(12))
+                .fontColor(this.primaryColor)
+                .fontWeight(FontWeight.Medium)
+            }
+            .width('100%')
+
+            Text('不确定状态（未握持/双手/未识别）的回落时间：已贴左后握姿变模糊，持续该时长无左手复确认才回落默认右侧。值越小回退越快；值越大对短暂识别抖动越不敏感。')
+              .fontSize(this.scaledFont(12))
+              .fontColor(this.settingSubTextColor())
+              .width('100%')
+
+            Row({ space: this.scaledSize(8) }) {
+              Text('快')
+                .fontSize(this.scaledFont(11))
+                .fontColor(this.settingTextColor())
+                .margin({ right: this.scaledSize(4) })
+              Slider({
+                value: this.settings.holdingHandSoftFallbackMs,
+                min: HOLDING_HAND_SOFT_FALLBACK_MIN_MS,
+                max: HOLDING_HAND_SOFT_FALLBACK_MAX_MS,
+                step: HOLDING_HAND_SOFT_FALLBACK_STEP_MS,
+                style: SliderStyle.OutSet
+              })
+                .layoutWeight(1)
+                .selectedColor(this.primaryColor)
+                .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+                .blockColor('#FFFFFF')
+                .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
+                .blockBorderColor(this.primaryColor)
+                .blockBorderWidth(3)
+                .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
+                .onChange((value: number, mode: SliderChangeMode) => {
+                  this.settings.holdingHandSoftFallbackMs = value
+                  AppStorage.setOrCreate(KEY_HOLDING_HAND_SOFT_FALLBACK_MS, value)
+                  this.updateSetting(this.isSliderSettled(mode))
+                })
+              Text('钝')
+                .fontSize(this.scaledFont(11))
+                .fontColor(this.settingTextColor())
+                .margin({ left: this.scaledSize(4) })
+            }
+            .width('100%')
+            .alignItems(VerticalAlign.Center)
+          }
+          .width('100%')
+          .padding({
+            top: this.scaledSize(10),
+            left: this.scaledSize(14),
+            right: this.scaledSize(14),
+            bottom: this.scaledSize(10)
+          })
+          .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+          .borderRadius(this.scaledSize(10))
+          .transition(this.settingCardTransition())
+        }
       }
 
       Column() {
@@ -1112,7 +1247,7 @@ struct SettingsDetailPage {
               .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
               .blockBorderColor(this.primaryColor)
               .blockBorderWidth(3)
-              .sliderInteractionMode(SliderInteraction.SLIDE_ONLY)
+              .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
               .onChange((value: number, mode: SliderChangeMode) => {
                 this.settings.homeTopBlurStrength = value
                 this.homeTopBlurStrength = value
@@ -1260,7 +1395,7 @@ struct SettingsDetailPage {
               .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
               .blockBorderColor(this.primaryColor)
               .blockBorderWidth(3)
-              .sliderInteractionMode(SliderInteraction.SLIDE_ONLY)
+              .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
               .onChange((value: number, mode: SliderChangeMode) => {
                 this.settings.fontSizeScale = value / 100
                 this.fontSizeScale = this.settings.fontSizeScale
@@ -1313,7 +1448,7 @@ struct SettingsDetailPage {
               .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
               .blockBorderColor(this.primaryColor)
               .blockBorderWidth(3)
-              .sliderInteractionMode(SliderInteraction.SLIDE_ONLY)
+              .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
               .onChange((value: number, mode: SliderChangeMode) => {
                 this.settings.displaySizeScale = value / 100
                 this.displaySizeScale = this.settings.displaySizeScale
@@ -1396,29 +1531,10 @@ struct SettingsDetailPage {
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
         .borderRadius(this.scaledSize(10))
 
-        // 跟手光效（原「底部栏触摸指示」）：用一个开关组件控制（开 = 'light'，关 = 'off'）。
-        // 仅玻璃样式且设备支持液态玻璃时显示：跟手光效依赖液态玻璃材质，经典样式下不生效
+        // 跟手光效颜色：无（=关）/ 白光 / 主题色。仅玻璃样式时显示；
+        // 选「无」即关闭跟手光效，不再单设开关。tabTouchIndicator 由颜色派生（off/light），
+        // 供 GlassBackButton/HomeContent 联动消费
         if (isLiquidGlassAvailable() && this.settings.tabStyle === 'immersive') {
-          Column() {
-            this.toggleRow('跟手光效', this.settings.tabTouchIndicator === 'light', (isOn: boolean) => {
-              // 附属卡片「跟手光效颜色」显隐翻转必须包进统一触发动画，过渡才会播放（与 EQ/空间渲染开关同规范）
-              this.animateSettingChange(() => {
-                this.settings.tabTouchIndicator = isOn ? 'light' : 'off'
-              })
-              this.updateSetting()
-              AppStorage.setOrCreate('uplayer_tab_touch_indicator', this.settings.tabTouchIndicator)
-            })
-          }
-          .width('100%')
-          .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-          .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-          .borderRadius(this.scaledSize(10))
-          .transition(this.settingCardTransition())
-        }
-
-        // 跟手光效颜色：白光 / 主题色。仅玻璃样式且触摸指示为「跟手光效」时显示
-        if (isLiquidGlassAvailable() && this.settings.tabStyle === 'immersive' &&
-          this.settings.tabTouchIndicator === 'light') {
           Column() {
             Row() {
               this.subTitleRow('跟手光效颜色')
@@ -1441,11 +1557,14 @@ struct SettingsDetailPage {
                 .borderRadius(this.scaledSize(14))
                 .animation({ duration: 200, curve: Curve.EaseInOut })
                 .onClick(() => {
-                  this.settings.tabLightColor = opt.value
+                  this.animateSettingChange(() => {
+                    this.settings.tabLightColor = opt.value
+                    this.settings.tabTouchIndicator = opt.value === 'none' ? 'off' : 'light'
+                  })
                   this.updateSetting()
                   AppStorage.setOrCreate('uplayer_tab_light_color', opt.value)
+                  AppStorage.setOrCreate('uplayer_tab_touch_indicator', this.settings.tabTouchIndicator)
                 })
-                .transition(this.settingCardTransition())
               }, (opt: TouchIndicatorOption) => opt.value)
             }
             .width('100%')
@@ -1463,6 +1582,109 @@ struct SettingsDetailPage {
           .borderRadius(this.scaledSize(10))
           .transition(this.settingCardTransition())
         }
+
+        // Tab 栏材质等级（玻璃样式专属）：控制页签栏液态玻璃的渲染档位
+        // （hdsMaterial.MaterialLevel：自适应/精美/轻柔/流畅），实时下发 barFloatingStyle
+        if (isLiquidGlassAvailable() && this.settings.tabStyle === 'immersive') {
+          Column() {
+            Row() {
+              this.subTitleRow('材质等级')
+              Blank()
+              ForEach(this.materialLevelOptions, (opt: TouchIndicatorOption) => {
+                Column() {
+                  Text(opt.label)
+                    .fontSize(this.scaledFont(11))
+                    .fontColor(this.settings.tabMaterialLevel === opt.value
+                      ? '#FFFFFF' : this.settingInactiveTextColor())
+                }
+                .padding({
+                  left: this.scaledSize(10),
+                  right: this.scaledSize(10),
+                  top: this.scaledSize(5),
+                  bottom: this.scaledSize(5)
+                })
+                .backgroundColor(this.settings.tabMaterialLevel === opt.value
+                  ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+                .borderRadius(this.scaledSize(14))
+                .animation({ duration: 200, curve: Curve.EaseInOut })
+                .onClick(() => {
+                  this.settings.tabMaterialLevel = opt.value
+                  this.updateSetting()
+                })
+              }, (opt: TouchIndicatorOption) => opt.value)
+            }
+            .width('100%')
+            .constraintSize({ minWidth: 0, maxWidth: '100%' })
+            .alignItems(VerticalAlign.Center)
+            .padding({
+              left: this.scaledSize(14),
+              right: this.scaledSize(14),
+              top: this.scaledSize(10),
+              bottom: this.scaledSize(10)
+            })
+          }
+          .width('100%')
+          .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+          .borderRadius(this.scaledSize(10))
+          .transition(this.settingCardTransition())
+        }
+
+        // 播控条底部间距已删除（布局参数写死 28，不再暴露：布局不动，只调样式）
+
+        // Tab 栏不透明度：barFloatingStyle.barOpacity（0-100%），
+        // 调低后 Tab 栏整体变通透，两种组件风格均生效
+        Column({ space: this.scaledSize(6) }) {
+          Row() {
+            this.subTitleRow('Tab 栏不透明度')
+            Blank()
+            Text(`${this.settings.tabBarOpacity}%`)
+              .fontSize(this.scaledFont(11))
+              .fontColor(this.settingSubTextColor())
+          }
+          .width('100%')
+
+          Row({ space: this.scaledSize(12) }) {
+            Text('透')
+              .fontSize(this.scaledFont(11))
+              .fontColor(this.settingTextColor())
+            Slider({
+              value: this.settings.tabBarOpacity,
+              min: 10,
+              max: 100,
+              step: 5,
+              style: SliderStyle.OutSet
+            })
+              .layoutWeight(1)
+              .selectedColor(this.primaryColor)
+              .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+              .blockColor('#FFFFFF')
+              .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
+              .blockBorderColor(this.primaryColor)
+              .blockBorderWidth(3)
+              .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
+              .onChange((value: number, mode: SliderChangeMode) => {
+                this.settings.tabBarOpacity = value
+                this.updateSetting(this.isSliderSettled(mode))
+              })
+            Text('实')
+              .fontSize(this.scaledFont(11))
+              .fontColor(this.settingTextColor())
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
+          .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
+        }
+        .width('100%')
+        .padding({
+          top: this.scaledSize(10),
+          left: this.scaledSize(14),
+          right: this.scaledSize(14),
+          bottom: this.scaledSize(10)
+        })
+        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+        .borderRadius(this.scaledSize(10))
+
+        // 底部渐变遮罩与温控降级设置已删除（gradientMask 恒禁用、thermoCtrl 不下发走 SDK 默认 false）
 
         // 磨砂兜底模糊强度（独立设置项卡片）：
         // - 老设备：两种样式都显示（磨砂兜底始终生效）
@@ -1498,7 +1720,7 @@ struct SettingsDetailPage {
                 .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
                 .blockBorderColor(this.primaryColor)
                 .blockBorderWidth(3)
-                .sliderInteractionMode(SliderInteraction.SLIDE_ONLY)
+                .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
                 .onChange((value: number, mode: SliderChangeMode) => {
                   this.settings.glassBlurStrength = value
                   this.glassBlurStrength = value
@@ -1550,7 +1772,7 @@ struct SettingsDetailPage {
               .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
               .blockBorderColor(this.primaryColor)
               .blockBorderWidth(3)
-              .sliderInteractionMode(SliderInteraction.SLIDE_ONLY)
+              .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
               .onChange((value: number, mode: SliderChangeMode) => {
                 this.settings.tabIndicatorOpacity = value
                 this.tabIndicatorOpacity = value
@@ -1852,7 +2074,7 @@ struct SettingsDetailPage {
           .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
           .blockBorderColor(this.primaryColor)
           .blockBorderWidth(3)
-          .sliderInteractionMode(SliderInteraction.SLIDE_ONLY)
+          .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
           .onChange((value: number, mode: SliderChangeMode) => {
             this.onSpeedChange(value, mode)
           })
@@ -2000,7 +2222,7 @@ struct SettingsDetailPage {
                       .blockSize({ width: this.scaledSize(26), height: this.scaledSize(14) })
                       .blockBorderColor(this.primaryColor)
                       .blockBorderWidth(2)
-                      .sliderInteractionMode(SliderInteraction.SLIDE_ONLY)
+                      .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
                       .onChange((value: number, mode: SliderChangeMode) => {
                         this.onEqBandChange(band.index, value, mode)
                       })
@@ -2347,7 +2569,7 @@ struct SettingsDetailPage {
               .blockSize({ width: this.scaledSize(16), height: this.scaledSize(16) })
               .blockBorderColor(this.primaryColor)
               .blockBorderWidth(2)
-              .sliderInteractionMode(SliderInteraction.SLIDE_ONLY)
+              .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
               .onChange((value: number, mode: SliderChangeMode) => {
                 this.onPureVoicePitchChange(value, mode)
               })
@@ -2746,7 +2968,7 @@ struct SettingsDetailPage {
         .blockSize({ width: this.scaledSize(16), height: this.scaledSize(16) })
         .blockBorderColor(this.primaryColor)
         .blockBorderWidth(2)
-        .sliderInteractionMode(SliderInteraction.SLIDE_ONLY)
+        .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
         .onChange((v: number, mode: SliderChangeMode) => {
           onChange(v, mode)
         })
@@ -2784,7 +3006,7 @@ struct SettingsDetailPage {
         .blockSize({ width: this.scaledSize(16), height: this.scaledSize(16) })
         .blockBorderColor(this.primaryColor)
         .blockBorderWidth(2)
-        .sliderInteractionMode(SliderInteraction.SLIDE_ONLY)
+        .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
         .onChange((value: number, mode: SliderChangeMode) => {
           this.onSpaceValueChange(index, value, mode)
         })
@@ -2851,13 +3073,37 @@ struct SettingsDetailPage {
     })
   }
 
+  // 材质等级设置 → hdsMaterial.MaterialLevel（预览与真机同映射）
+  private previewMaterialLevelEnum(): hdsMaterial.MaterialLevel {
+    if (this.settings.tabMaterialLevel === 'exquisite') {
+      return hdsMaterial.MaterialLevel.EXQUISITE
+    }
+    if (this.settings.tabMaterialLevel === 'gentle') {
+      return hdsMaterial.MaterialLevel.GENTLE
+    }
+    if (this.settings.tabMaterialLevel === 'smooth') {
+      return hdsMaterial.MaterialLevel.SMOOTH
+    }
+    return hdsMaterial.MaterialLevel.ADAPTIVE
+  }
+
+  // 跟手光效颜色解析（预览与真机同逻辑）：none=关（全透明），white=白，theme=主题色
+  private previewFollowLightColor(): ResourceColor {
+    if (this.settings.tabLightColor === 'none') {
+      return Color.Transparent
+    }
+    if (this.settings.tabLightColor === 'white') {
+      return '#FFFFFF'
+    }
+    return this.primaryColor
+  }
+
   // 玻璃标题栏：返回按钮（自带 systemMaterial，处于 Navigation 标题栏生效区内 → 出真玻璃）+ 标题。
 
   private getPreviewBarFloatingStyle(): HdsTabsFloatingStyle {
-    // 与真机 Index 同逻辑：关跟手光效时传全透明色显式关闭
+    // 与真机 Index 同逻辑：选「无」传全透明色显式关闭
     //（lightColor 默认值是深浅色固定光效色，传 undefined 会回落默认光效而非关闭）
-    const lightColor: ResourceColor = this.settings.tabTouchIndicator === 'light'
-      ? (this.settings.tabLightColor === 'white' ? '#FFFFFF' : this.primaryColor) : Color.Transparent
+    const lightColor: ResourceColor = this.previewFollowLightColor()
     // 与真机同公式：主容器宽 × 0.4（HdsTabs 宽 <600vp 小屏态时不下发，系统走默认胶囊，与真机 sm/md 行为一致）
     const hasBarWidth: boolean = this.previewBarWidthVp > 0
     const smallScreen: boolean = this.previewBarWidthVp < 600
@@ -2868,9 +3114,10 @@ struct SettingsDetailPage {
         gradientMask: { maskColor: 'rgba(0,0,0,0)', maskHeight: 0 },
         systemMaterialEffect: {
           materialType: hdsMaterial.MaterialType.IMMERSIVE,
-          materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE,
+          materialLevel: this.previewMaterialLevelEnum(),
         },
-        barBottomMargin: 28,
+        barOpacity: this.settings.tabBarOpacity / 100,
+        barBottomMargin: 25,
         lightColor: lightColor,
         barWidth: (smallScreen || !hasBarWidth) ? undefined :
           { smallWidth: barWidthVp, mediumWidth: barWidthVp, largeWidth: barWidthVp },
@@ -2885,7 +3132,8 @@ struct SettingsDetailPage {
         materialType: hdsMaterial.MaterialType.NONE,
         materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE,
       },
-      barBottomMargin: 28,
+      barOpacity: this.settings.tabBarOpacity / 100,
+      barBottomMargin: 25,
       lightColor: lightColor,
       barWidth: (smallScreen || !hasBarWidth) ? undefined :
         { smallWidth: barWidthVp, mediumWidth: barWidthVp, largeWidth: barWidthVp },

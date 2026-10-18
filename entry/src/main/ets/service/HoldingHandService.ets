@@ -13,6 +13,20 @@ export const KEY_HOLDING_HAND_ENABLED: string = 'uplayer_holding_hand_enabled'
 //   - 设置页顶部预览：左手握持 → 靠右（沿用原有映射）
 export const KEY_HOLDING_HAND_LEFT: string = 'uplayer_holding_hand_left'
 
+// ═══ 智感握姿灵敏度可调参数（设置页滑轨暴露，服务与设置页共用同一份常量）═══
+// 切换确认窗：置信换手（LEFT/RIGHT）报告经该窗口无回摆才真正切边
+export const KEY_HOLDING_HAND_CONFIRM_WINDOW_MS: string = 'uplayer_holding_hand_confirm_window_ms'
+export const HOLDING_HAND_CONFIRM_WINDOW_DEFAULT_MS: number = 500
+export const HOLDING_HAND_CONFIRM_WINDOW_MIN_MS: number = 100
+export const HOLDING_HAND_CONFIRM_WINDOW_MAX_MS: number = 2000
+export const HOLDING_HAND_CONFIRM_WINDOW_STEP_MS: number = 50
+// 不确定态回落窗：已靠左时进入不确定态持续该时长无左手复确认才回落默认侧（靠右）
+export const KEY_HOLDING_HAND_SOFT_FALLBACK_MS: string = 'uplayer_holding_hand_soft_fallback_ms'
+export const HOLDING_HAND_SOFT_FALLBACK_DEFAULT_MS: number = 1000
+export const HOLDING_HAND_SOFT_FALLBACK_MIN_MS: number = 200
+export const HOLDING_HAND_SOFT_FALLBACK_MAX_MS: number = 3000
+export const HOLDING_HAND_SOFT_FALLBACK_STEP_MS: number = 100
+
 // 智感握姿共享监听服务
 // 全应用只向系统订阅一次 holdingHandChanged：设置页预览与首页控件共用同一份滤波结果，
 // 避免同一事件被多处订阅、各自滤波，导致两侧状态不一致或传感器回调重复触发。
@@ -29,10 +43,6 @@ export const KEY_HOLDING_HAND_LEFT: string = 'uplayer_holding_hand_left'
 @SuppressWarnings({ rules: [SuppressWarningsType.SYSCAP] })
 export class HoldingHandService {
   private static readonly instance: HoldingHandService = new HoldingHandService()
-  // 置信翻转确认窗：LEFT/RIGHT 报告后经该窗口仍无回摆才真正切边（真换手约 0.5s 生效）
-  private static readonly CONFIRM_WINDOW_MS: number = 500
-  // 不确定态回落窗：已靠左时不确定态持续超过该时长无左手复确认，才回落默认侧（靠右）
-  private static readonly SOFT_FALLBACK_MS: number = 1000
   private readonly isPC: boolean = deviceInfo.deviceType === '2in1'
   private registered: boolean = false
   // 置信翻转待定窗：待定目标侧与定时器 id。窗口内收到反向/不确定报告则取消，杜绝瞬态来回切边
@@ -95,6 +105,20 @@ export class HoldingHandService {
     return AppStorage.get<boolean>(KEY_HOLDING_HAND_ENABLED) ?? true
   }
 
+  // 当前生效的切换确认窗（ms）：读取设置页滑轨写入的 AppStorage 值，越界钳回范围
+  private confirmWindowMs(): number {
+    const v: number = AppStorage.get<number>(KEY_HOLDING_HAND_CONFIRM_WINDOW_MS) ??
+      HOLDING_HAND_CONFIRM_WINDOW_DEFAULT_MS
+    return Math.min(HOLDING_HAND_CONFIRM_WINDOW_MAX_MS, Math.max(HOLDING_HAND_CONFIRM_WINDOW_MIN_MS, v))
+  }
+
+  // 当前生效的不确定态回落窗（ms）：同上
+  private softFallbackMs(): number {
+    const v: number = AppStorage.get<number>(KEY_HOLDING_HAND_SOFT_FALLBACK_MS) ??
+      HOLDING_HAND_SOFT_FALLBACK_DEFAULT_MS
+    return Math.min(HOLDING_HAND_SOFT_FALLBACK_MAX_MS, Math.max(HOLDING_HAND_SOFT_FALLBACK_MIN_MS, v))
+  }
+
   // 公开：检测设备是否支持智感握姿（非 PC + 系统 Motion 能力可用）
   public static isSupported(): boolean {
     return deviceInfo.deviceType !== '2in1' && canIUse('SystemCapability.MultimodalAwareness.Motion')
@@ -136,7 +160,7 @@ export class HoldingHandService {
     this.pendingTimerId = setTimeout((): void => {
       this.pendingLeft = undefined
       this.publish(true)
-    }, HoldingHandService.CONFIRM_WINDOW_MS)
+    }, this.confirmWindowMs())
   }
 
   // 右手报告（置信反向）：取消不确定态回落，开确认窗快速切回默认右侧
@@ -150,7 +174,7 @@ export class HoldingHandService {
     this.pendingTimerId = setTimeout((): void => {
       this.pendingLeft = undefined
       this.publish(false)
-    }, HoldingHandService.CONFIRM_WINDOW_MS)
+    }, this.confirmWindowMs())
   }
 
   // 不确定态：取消任何待定翻转（窗口内出现回摆说明刚收到的置信报告是瞬态）；
@@ -163,7 +187,7 @@ export class HoldingHandService {
     this.softTimerId = setTimeout((): void => {
       this.softTimerId = -1
       this.publish(false)
-    }, HoldingHandService.SOFT_FALLBACK_MS)
+    }, this.softFallbackMs())
   }
 
   private clearFilter(): void {

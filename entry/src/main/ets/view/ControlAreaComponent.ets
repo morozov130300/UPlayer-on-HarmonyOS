@@ -17,7 +17,6 @@ import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstan
 import { audio } from '@kit.AudioKit';
 import { AVCastPicker } from '@kit.AVSessionKit';
 import { AudioRoutingService } from '../service/AudioRoutingService';
-import { BluetoothAudioService } from '../service/BluetoothAudioService';
 import { BusinessError, SuppressWarnings, SuppressWarningsType } from '@kit.BasicServicesKit';
 import { AlbumCover } from '../component/AlbumCover';
 import { AVSessionController } from '../common/utils/mediautils/AVSessionController';
@@ -25,6 +24,7 @@ import { DataService } from '../service/DataService';
 import { createToastGlassMaterial, DEFAULT_GLASS_STYLE, showToastGlassMaterial } from '../common/utils/GlassUtil';
 import { isDarkThemeEffective } from '../common/utils/ThemeUtil';
 import { applyMetadataToSong, extractSongMetadata, saveSongTagsToFile, TagsWriteResult } from '../service/MetadataTask';
+import { ScaleButton } from '../component/ScaleButton';
 
 const TAG = 'ControlAreaComponent';
 const SEEK_SETTLE_MS: number = 2000;
@@ -55,7 +55,6 @@ export struct ControlAreaComponent {
   @State songTimeFontSize: number = 10;
   @State songTimeFontColor: ResourceColor = '#B3FFFFFF';
   @State trackThickness: number = 6;
-  @State playBtnScale: number = 1.0;
   @State isShowMorePanel: boolean = false;
   @State isShowTimerPanel: boolean = false;
   @State isShowSongInfoPanel: boolean = false;
@@ -73,12 +72,6 @@ export struct ControlAreaComponent {
   private context: common.UIAbilityContext | undefined = AppStorage.get(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT);
   uiContext: UIContext = this.getUIContext();
   promptAction: PromptAction = this.uiContext.getPromptAction();
-  @State playlistScale: number = 1.0;
-  @State playModeScale: number = 1.0;
-  @State speedScale: number = 1.0;
-  @State volumeScale: number = 1.0;
-  // 喇叭（音量面板）按钮独立缩放状态，避免与「更多」按钮共享 volumeScale 导致同时出动效
-  @State soundScale: number = 1.0;
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance();
   private songDataSource: SongDataSource = new SongDataSource([]);
   private volumeManager: audio.AudioVolumeManager | undefined = undefined;
@@ -93,13 +86,6 @@ export struct ControlAreaComponent {
   @StorageProp(AppStorageKeyConstants.KEY_OUTPUT_DEVICE_REVISION) @Watch('onOutputDeviceRevision')
   private outputDeviceRevision: number = 0;
   private audioRoutingService: AudioRoutingService = AudioRoutingService.getInstance();
-  // 「更多」面板：蓝牙音频（A2DP）状态行；首次打开面板申请 ACCESS_BLUETOOTH
-  @StorageProp(AppStorageKeyConstants.KEY_BLUETOOTH_AUDIO_REVISION) @Watch('refreshBluetoothAudioInfo')
-  private bluetoothAudioRevision: number = 0;
-  @State bluetoothAudioSubtitle: string = '';
-  @State bluetoothAudioNeedsGrant: boolean = false;
-  @State bluetoothAudioUnavailable: boolean = false;
-  private bluetoothAudioService: BluetoothAudioService = BluetoothAudioService.getInstance();
 
   private settingTextColor(): ResourceColor {
     const themeMode: string = AppStorage.get<string>('uplayer_theme_mode') ?? 'system'
@@ -228,43 +214,6 @@ export struct ControlAreaComponent {
   refreshOutputDeviceInfo(): void {
     this.currentOutputDeviceLabel = this.audioRoutingService.getCurrentOutputDeviceLabel();
     this.outputDeviceList = this.audioRoutingService.getAvailableOutputDevices();
-  }
-
-  // ─── 蓝牙音频（A2DP Source 只读状态，首次打开「更多」面板申请权限） ───
-
-  refreshBluetoothAudioInfo(): void {
-    this.bluetoothAudioNeedsGrant = !this.bluetoothAudioService.isPermissionGranted();
-    this.bluetoothAudioUnavailable = this.bluetoothAudioService.isPermissionGranted() &&
-      !this.bluetoothAudioService.isSupported();
-    if (!this.bluetoothAudioService.isPermissionGranted()) {
-      this.bluetoothAudioSubtitle = '未授权，点击授权蓝牙权限';
-      return;
-    }
-    if (!this.bluetoothAudioService.isSupported()) {
-      this.bluetoothAudioSubtitle = '当前设备不支持蓝牙音频';
-      return;
-    }
-    if (!this.bluetoothAudioService.isBluetoothEnabled()) {
-      this.bluetoothAudioSubtitle = '蓝牙已关闭';
-      return;
-    }
-    if (!this.bluetoothAudioService.isConnectedDevice()) {
-      this.bluetoothAudioSubtitle = '未连接蓝牙音频设备';
-      return;
-    }
-    const name: string = this.bluetoothAudioService.getDeviceName();
-    const playState: string = this.bluetoothAudioService.isPlaying() ? '播放中' : '已连接';
-    this.bluetoothAudioSubtitle = name.length > 0 ? `${name} · ${playState}` : playState;
-  }
-
-  requestBluetoothAudioIfNeeded(): void {
-    this.refreshBluetoothAudioInfo();
-    if (this.bluetoothAudioService.isPermissionGranted()) {
-      return;
-    }
-    this.bluetoothAudioService.ensurePermissionAndInit(this.context).catch((err: BusinessError): void => {
-      Logger.error(TAG, `ensurePermissionAndInit rejected: code=${err.code}, message=${err.message}`);
-    });
   }
 
   private syncPlayModeIndex(): void {
@@ -659,81 +608,92 @@ export struct ControlAreaComponent {
 
       Row() {
         Column() {
-          Image($r('app.media.ic_public_fast_backward'))
-            .width(28)
-            .height(28)
-            .fillColor(Color.White)
-            .opacity(0.86)
-            .hoverEffect(HoverEffect.Scale)
-            .onClick(() => { this.skipBackward(); })
+          ScaleButton({
+            pressScale: 0.8,
+            hoverScale: 1.1,
+            onButtonTap: () => { this.skipBackward(); }
+          }) {
+            Image($r('app.media.ic_public_fast_backward'))
+              .width(28)
+              .height(28)
+              .fillColor(Color.White)
+              .opacity(0.86)
+          }
         }
         .layoutWeight(1)
         .justifyContent(FlexAlign.Center)
 
         Column() {
-          Image($r('app.media.ic_public_play_last'))
-            .controlImageBuilder()
-            .width(28)
-            .fillColor(Color.White)
-            .hoverEffect(HoverEffect.Scale)
-            .onClick(() => {
+          ScaleButton({
+            pressScale: 0.8,
+            hoverScale: 1.1,
+            onButtonTap: () => {
               this.avPlayerService.playPreviousSong();
               this.pageShowTime = 0;
-            })
+            }
+          }) {
+            Image($r('app.media.ic_public_play_last'))
+              .controlImageBuilder()
+              .width(28)
+              .fillColor(Color.White)
+          }
         }
         .layoutWeight(1)
         .justifyContent(FlexAlign.Center)
 
         Column() {
-          Image(this.isPlay ? $r('app.media.ic_public_play') : $r('app.media.ic_public_pause'))
-            .controlImageBuilder()
-            .width(60)
-            .fillColor(Color.White)
-            .scale({ x: this.playBtnScale, y: this.playBtnScale })
-            .shadow({ radius: 10, color: ColorHelper.hexWithAlpha(this.primaryColor, '22') })
-            .hoverEffect(HoverEffect.Scale)
-            .onClick(() => {
+          ScaleButton({
+            pressScale: 0.85,
+            hoverScale: 1.05,
+            onButtonTap: () => {
               if (this.isPlay) {
                 this.avPlayerService.pause();
               } else {
                 this.avPlayerService.resume();
               }
-              this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
-                this.playBtnScale = 0.85;
-              });
-              setTimeout(() => {
-                this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
-                  this.playBtnScale = 1.0;
-                });
-              }, StyleConstants.ANIMATION_PRESS_DELAY_SHORT);
               this.pageShowTime = 0;
-            })
+            }
+          }) {
+            Image(this.isPlay ? $r('app.media.ic_public_play') : $r('app.media.ic_public_pause'))
+              .controlImageBuilder()
+              .width(60)
+              .fillColor(Color.White)
+              .shadow({ radius: 10, color: ColorHelper.hexWithAlpha(this.primaryColor, '22') })
+          }
         }
         .layoutWeight(1)
         .justifyContent(FlexAlign.Center)
 
         Column() {
-          Image($r('app.media.ic_public_play_next'))
-            .controlImageBuilder()
-            .width(28)
-            .fillColor(Color.White)
-            .hoverEffect(HoverEffect.Scale)
-            .onClick(() => {
+          ScaleButton({
+            pressScale: 0.8,
+            hoverScale: 1.1,
+            onButtonTap: () => {
               this.avPlayerService.playNextSong();
               this.pageShowTime = 0;
-            })
+            }
+          }) {
+            Image($r('app.media.ic_public_play_next'))
+              .controlImageBuilder()
+              .width(28)
+              .fillColor(Color.White)
+          }
         }
         .layoutWeight(1)
         .justifyContent(FlexAlign.Center)
 
         Column() {
-          Image($r('app.media.ic_public_fast_forward'))
-            .width(28)
-            .height(28)
-            .fillColor(Color.White)
-            .opacity(0.86)
-            .hoverEffect(HoverEffect.Scale)
-            .onClick(() => { this.skipForward(); })
+          ScaleButton({
+            pressScale: 0.8,
+            hoverScale: 1.1,
+            onButtonTap: () => { this.skipForward(); }
+          }) {
+            Image($r('app.media.ic_public_fast_forward'))
+              .width(28)
+              .height(28)
+              .fillColor(Color.White)
+              .opacity(0.86)
+          }
         }
         .layoutWeight(1)
         .justifyContent(FlexAlign.Center)
@@ -741,149 +701,127 @@ export struct ControlAreaComponent {
       .width(StyleConstants.FULL_WIDTH)
 
       Row() {
-        SymbolGlyph(this.playMode === MusicPlayMode.ORDER ? $r('sys.symbol.order_play') :
-          this.playMode === MusicPlayMode.RANDOM ? $r('sys.symbol.shuffle') : $r('sys.symbol.repeat_1'))
-          .fontSize(26)
-          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
-          .fontColor([Color.White])
-          .opacity(0.86)
-          .scale({ x: this.playModeScale, y: this.playModeScale })
-          .hoverEffect(HoverEffect.Scale)
-          .onClick(() => {
-            this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_PRESS_DURATION_MEDIUM, curve: Curve.EaseInOut }, () => {
-              this.playModeScale = 0.75;
-            });
-            setTimeout(() => {
-              this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_RELEASE_DURATION_MEDIUM, curve: curves.springMotion() }, () => {
-                this.playModeScale = 1.0;
-              });
-            }, StyleConstants.ANIMATION_PRESS_DELAY_LONG);
-            this.switchPlayMode();
-          })
+        ScaleButton({
+          pressScale: 0.75,
+          hoverScale: 1.1,
+          onButtonTap: () => { this.switchPlayMode(); }
+        }) {
+          SymbolGlyph(this.playMode === MusicPlayMode.ORDER ? $r('sys.symbol.order_play') :
+            this.playMode === MusicPlayMode.RANDOM ? $r('sys.symbol.shuffle') : $r('sys.symbol.repeat_1'))
+            .fontSize(26)
+            .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+            .fontColor([Color.White])
+            .opacity(0.86)
+        }
 
-        SymbolGlyph($r('sys.symbol.music_note_list'))
-          .fontSize(26)
-          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
-          .fontColor([Color.White])
-          .opacity(0.86)
-          .scale({ x: this.playlistScale, y: this.playlistScale })
-          .hoverEffect(HoverEffect.Scale)
-          .onClick(() => {
-            this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_PRESS_DURATION_SHORT, curve: Curve.EaseInOut }, () => {
-              this.playlistScale = 0.8;
-            });
-            setTimeout(() => {
-              this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_RELEASE_DURATION_SHORT, curve: curves.springMotion() }, () => {
-                this.playlistScale = 1.0;
-              });
-            }, StyleConstants.ANIMATION_PRESS_DELAY_MEDIUM);
-            this.isShowPlayList = true;
-          })
-          .bindSheet($$this.isShowPlayList, this.musicListBuilder(), {
-            detents: [SheetSize.MEDIUM],
-            dragBar: false,
-            title: this.playListTitle(),
-            showClose: true,
-            preferType: SheetType.CENTER,
-            onWillAppear: () => {
-              Logger.info(TAG, 'musicListBuilder');
-              this.scroller.scrollToIndex(this.selectIndex, false, ScrollAlign.CENTER);
-            }
-          })
-
-        SymbolGlyph($r('sys.symbol.speed_multiple'))
-          .fontSize(26)
-          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
-          .fontColor([Color.White])
-          .opacity(0.86)
-          .scale({ x: this.speedScale, y: this.speedScale })
-          .hoverEffect(HoverEffect.Scale)
-          .onClick(() => {
-            this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_PRESS_DURATION_SHORT, curve: Curve.EaseInOut }, () => {
-              this.speedScale = 0.8;
-            });
-            setTimeout(() => {
-              this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_RELEASE_DURATION_SHORT, curve: curves.springMotion() }, () => {
-                this.speedScale = 1.0;
-              });
-            }, StyleConstants.ANIMATION_PRESS_DELAY_MEDIUM);
-            this.isShowSpeedBuild = true;
-          })
-          .bindPopup(this.isShowSpeedBuild, {
-            builder: this.speedPopupBuilder,
-            placement: Placement.Top,
-            showInSubWindow: false,
-            onStateChange: (e) => {
-              if (!e.isVisible) {
-                this.isShowSpeedBuild = false;
+        ScaleButton({
+          pressScale: 0.8,
+          hoverScale: 1.1,
+          onButtonTap: () => { this.isShowPlayList = true; }
+        }) {
+          SymbolGlyph($r('sys.symbol.music_note_list'))
+            .fontSize(26)
+            .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+            .fontColor([Color.White])
+            .opacity(0.86)
+            .bindSheet($$this.isShowPlayList, this.musicListBuilder(), {
+              detents: [SheetSize.MEDIUM],
+              dragBar: false,
+              title: this.playListTitle(),
+              showClose: true,
+              preferType: SheetType.CENTER,
+              onWillAppear: () => {
+                Logger.info(TAG, 'musicListBuilder');
+                this.scroller.scrollToIndex(this.selectIndex, false, ScrollAlign.CENTER);
               }
-            }
-          })
+            })
+        }
+
+        ScaleButton({
+          pressScale: 0.8,
+          hoverScale: 1.1,
+          onButtonTap: () => { this.isShowSpeedBuild = true; }
+        }) {
+          SymbolGlyph($r('sys.symbol.speed_multiple'))
+            .fontSize(26)
+            .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+            .fontColor([Color.White])
+            .opacity(0.86)
+            .bindPopup(this.isShowSpeedBuild, {
+              builder: this.speedPopupBuilder,
+              placement: Placement.Top,
+              showInSubWindow: false,
+              onStateChange: (e) => {
+                if (!e.isVisible) {
+                  this.isShowSpeedBuild = false;
+                }
+              }
+            })
+        }
 
         // 音量入口：自定义 Slider 弹层（AVVolumePanel 无法被点击主动弹出，见 toggleVolumePanel 注释）
-        Image($r('app.media.ic_public_sound'))
-          .width(26)
-          .height(26)
-          .fillColor(Color.White)
-          .opacity(0.86)
-          .scale({ x: this.soundScale, y: this.soundScale })
-          .hoverEffect(HoverEffect.Scale)
-          .onClick(() => {
-            this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_PRESS_DURATION_SHORT, curve: Curve.EaseInOut }, () => {
-              this.soundScale = 0.8;
-            });
-            setTimeout(() => {
-              this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_RELEASE_DURATION_SHORT, curve: curves.springMotion() }, () => {
-                this.soundScale = 1.0;
-              });
-            }, StyleConstants.ANIMATION_PRESS_DELAY_MEDIUM);
-            this.toggleVolumePanel();
-          })
-          .bindPopup(this.isShowVolumeBuild, {
-            builder: this.volumePopupBuilder,
-            placement: Placement.Top,
-            showInSubWindow: false,
-            onStateChange: (e) => {
-              if (!e.isVisible) {
-                this.isShowVolumeBuild = false;
+        ScaleButton({
+          pressScale: 0.8,
+          hoverScale: 1.1,
+          onButtonTap: () => { this.toggleVolumePanel(); }
+        }) {
+          Image($r('app.media.ic_public_sound'))
+            .width(26)
+            .height(26)
+            .fillColor(Color.White)
+            .opacity(0.86)
+            .bindPopup(this.isShowVolumeBuild, {
+              builder: this.volumePopupBuilder,
+              placement: Placement.Top,
+              showInSubWindow: false,
+              onStateChange: (e) => {
+                if (!e.isVisible) {
+                  this.isShowVolumeBuild = false;
+                }
               }
-            }
-          })
+            })
+        }
 
-        Image($r('app.media.ic_public_more'))
-          .width(26)
-          .height(26)
-          .fillColor(Color.White)
-          .opacity(0.86)
-          .scale({ x: this.volumeScale, y: this.volumeScale })
-          .hoverEffect(HoverEffect.Scale)
-          .onClick(() => {
-            this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_PRESS_DURATION_SHORT, curve: Curve.EaseInOut }, () => {
-              this.volumeScale = 0.8;
-            });
-            setTimeout(() => {
-              this.getUIContext()?.animateTo({ duration: StyleConstants.ANIMATION_RELEASE_DURATION_SHORT, curve: curves.springMotion() }, () => {
-                this.volumeScale = 1.0;
-              });
-            }, StyleConstants.ANIMATION_PRESS_DELAY_MEDIUM);
-            this.isShowMorePanel = true;
-            this.requestBluetoothAudioIfNeeded();
-          })
-          .bindSheet($$this.isShowMorePanel, this.morePanelBuilder(), {
-            detents: [SheetSize.MEDIUM],
-            dragBar: false,
-            title: this.morePanelTitle(),
-            showClose: true,
-            preferType: SheetType.CENTER,
-            onWillDisappear: () => {
-              this.isShowMorePanel = false;
-            }
-          })
+        ScaleButton({
+          pressScale: 0.8,
+          hoverScale: 1.1,
+          onButtonTap: () => { this.isShowMorePanel = true; }
+        }) {
+          Image($r('app.media.ic_public_more'))
+            .width(26)
+            .height(26)
+            .fillColor(Color.White)
+            .opacity(0.86)
+            .bindSheet($$this.isShowMorePanel, this.morePanelBuilder(), {
+              detents: [SheetSize.MEDIUM],
+              dragBar: false,
+              title: this.morePanelTitle(),
+              showClose: true,
+              preferType: SheetType.CENTER,
+              onWillDisappear: () => {
+                this.isShowMorePanel = false;
+              }
+            })
+        }
       }
       .width(StyleConstants.FULL_WIDTH)
       .justifyContent(FlexAlign.SpaceEvenly)
       .margin({ top: 28 })
     }
+  }
+
+  // 投送设备行右侧图标：customPicker 自绘为与其他条目一致的右箭头（点击仍唤起系统投播面板）
+  @Builder
+  castPickerArrowBuilder() {
+    Stack() {
+      Image($r('app.media.ic_public_arrow_right'))
+        .width(this.scaledSize(18))
+        .height(this.scaledSize(18))
+        .fillColor($r('app.color.text_twenty_color'))
+    }
+    .width('100%')
+    .height('100%')
+    .alignContent(Alignment.End)
   }
 
   @Builder
@@ -1030,9 +968,10 @@ export struct ControlAreaComponent {
         .alignItems(HorizontalAlign.Start)
         Blank()
         AVCastPicker({
-          normalColor: Color.White,
-          activeColor: this.primaryColor,
-          sessionType: 'audio'
+          sessionType: 'audio',
+          customPicker: (): void => {
+            this.castPickerArrowBuilder()
+          }
         })
           .width(this.scaledSize(32))
           .height(this.scaledSize(32))
@@ -1042,38 +981,6 @@ export struct ControlAreaComponent {
       .padding({ left: 16, right: 16 })
       .backgroundColor($r('app.color.player_bg_color'))
       .borderRadius(this.scaledSize(10))
-
-      // 蓝牙音频行：A2DP Source 只读状态（授权 / 蓝牙开关 / 连接设备与播放状态）
-      Row() {
-        Column({ space: 2 }) {
-          Text('蓝牙音频')
-            .fontSize(this.scaledFont(14))
-            .fontWeight(FontWeight.Medium)
-            .fontColor(this.settingTextColor())
-          Text(this.bluetoothAudioSubtitle)
-            .fontSize(this.scaledFont(12))
-            .fontColor(this.bluetoothAudioNeedsGrant ? this.primaryColor : $r('app.color.text_sixty_color'))
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-        }
-        .alignItems(HorizontalAlign.Start)
-        .layoutWeight(1)
-        Blank()
-        Image($r('app.media.ic_public_arrow_right'))
-          .width(this.scaledSize(18))
-          .height(this.scaledSize(18))
-          .fillColor($r('app.color.text_twenty_color'))
-          .visibility(this.bluetoothAudioNeedsGrant ? Visibility.Visible : Visibility.None)
-      }
-      .width('100%')
-      .height(52)
-      .padding({ left: 16, right: 16 })
-      .backgroundColor($r('app.color.player_bg_color'))
-      .borderRadius(this.scaledSize(10))
-      .onClick(() => {
-        // 拒绝过授权时提供「行内重试」入口；已授权则仅刷新一次状态
-        this.requestBluetoothAudioIfNeeded();
-      })
     }
     .width(StyleConstants.FULL_WIDTH)
   }
@@ -1097,13 +1004,17 @@ export struct ControlAreaComponent {
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .layoutWeight(1)
-          if (this.currentOutputDeviceLabel.length > 0 &&
-            this.audioRoutingService.getDeviceLabel(device) === this.currentOutputDeviceLabel) {
-            Text('使用中')
-              .fontSize(this.scaledFont(12))
-              .fontColor(this.primaryColor)
-              .margin({ left: 8 })
-          }
+          Radio({
+            value: `dev_${device.deviceType}_${device.id}`,
+            group: 'output_device_group'
+          })
+            .checked(this.currentOutputDeviceLabel.length > 0 &&
+              this.audioRoutingService.getDeviceLabel(device) === this.currentOutputDeviceLabel)
+            .width(this.scaledSize(20))
+            .height(this.scaledSize(20))
+            .radioStyle({ checkedBackgroundColor: this.primaryColor })
+            .margin({ left: 8 })
+            .hitTestBehavior(HitTestMode.None)
         }
         .width('100%')
         .height(52)
@@ -1125,7 +1036,6 @@ export struct ControlAreaComponent {
             return
           }
           this.audioRoutingService.selectOutputDevice(device)
-          this.isShowOutputDevicePanel = false
         })
       }, (device: audio.AudioDeviceDescriptor) => `dev_${device.deviceType}_${device.id}`)
     }

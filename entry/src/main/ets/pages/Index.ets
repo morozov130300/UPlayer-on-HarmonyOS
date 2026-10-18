@@ -1,6 +1,6 @@
 import { curves, uiMaterial } from '@kit.ArkUI'
 import {
-  HdsTabs, HdsTabsController, HdsTabsFloatingStyle, HdsTabsMiniBar, hdsMaterial
+  HdsTabs, HdsTabsBackgroundStyle, HdsTabsController, HdsTabsFloatingStyle, HdsTabsMiniBar, hdsEffect, hdsMaterial
 } from '@kit.UIDesignKit'
 import { common } from '@kit.AbilityKit'
 import { deviceInfo } from '@kit.BasicServicesKit'
@@ -16,7 +16,6 @@ import { importSongsWithToast } from '../service/SongScanner'
 import { PoetryService } from '../service/PoetryService'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import {
-  createBarGlassMaterial,
   DEFAULT_GLASS_STYLE,
   getDeviceMaterialLevel,
   isLiquidGlassAvailable
@@ -61,6 +60,15 @@ struct MainPage {
   @State barPrevScale: number = 1.0
   @State barPlayScale: number = 1.0
   @State barNextScale: number = 1.0
+  // ── spike: hdsEffect.pointLight 点光源跟手光效真机验证，失败整段回滚 ──
+  // 光源位置（vp，相对播控条触控宿主 Stack），初始 -100 藏到条外
+  @State spikeBarLightX: number = -100
+  @State spikeBarLightY: number = -100
+  @State spikeBarLightOn: boolean = false
+  // miniBar 独立一套状态（两布局互斥渲染，不共用）
+  @State spikeMiniLightX: number = -100
+  @State spikeMiniLightY: number = -100
+  @State spikeMiniLightOn: boolean = false
   @State breakpoint: string = 'md'
   // 主容器实测布局宽度（vp），onAreaChange 更新：悬浮样式宽度字段不支持百分比，需用具体 vp 值
   @State mainWidthVp: number = 0
@@ -78,8 +86,9 @@ struct MainPage {
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
   @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
   @StorageLink('uplayer_glass_blur_strength') glassBlurStrength: number = 25
-  @StorageLink('uplayer_tab_touch_indicator') tabTouchIndicator: string = 'light'
   @StorageLink('uplayer_tab_light_color') tabLightColor: string = 'theme'
+  @StorageLink('uplayer_tab_material_level') tabMaterialLevel: string = 'adaptive'
+  @StorageLink('uplayer_tab_bar_opacity') tabBarOpacity: number = 100
   @StorageLink('uplayer_tab_indicator_opacity') tabIndicatorOpacity: number = 50
   @State isTitleMarqueeRunning: boolean = true
   @State isArtistMarqueeRunning: boolean = true
@@ -226,37 +235,59 @@ struct MainPage {
   private hdsBarStyleCache: HdsTabsFloatingStyle | undefined = undefined
   private hdsBarStyleCacheKey: string = ''
 
+  // 材质等级设置（uplayer_tab_material_level）→ hdsMaterial.MaterialLevel
+  private tabMaterialLevelEnum(): hdsMaterial.MaterialLevel {
+    if (this.tabMaterialLevel === 'exquisite') {
+      return hdsMaterial.MaterialLevel.EXQUISITE
+    }
+    if (this.tabMaterialLevel === 'gentle') {
+      return hdsMaterial.MaterialLevel.GENTLE
+    }
+    if (this.tabMaterialLevel === 'smooth') {
+      return hdsMaterial.MaterialLevel.SMOOTH
+    }
+    return hdsMaterial.MaterialLevel.ADAPTIVE
+  }
+
   private getHdsBarFloatingStyle(): HdsTabsFloatingStyle | undefined {
-    // 缓存键覆盖全部输入（tabStyle/断点/主容器宽/跟手光效开关/光效配色/主题色），键不变即样式不变
+    // 缓存键覆盖全部输入（tabStyle/断点/主容器宽/光效配色/主题色/材质等级/Tab栏不透明度），键不变即样式不变
     const cacheKey: string = `${this.tabStyle}|${this.breakpoint}|${this.mainWidthVp}|` +
-      `${this.tabTouchIndicator}|${this.tabLightColor}|${this.primaryColor}`
+      `${this.tabLightColor}|${this.primaryColor}|` +
+      `${this.tabMaterialLevel}|${this.tabBarOpacity}`
     if (this.hdsBarStyleCache !== undefined && this.hdsBarStyleCacheKey === cacheKey) {
       return this.hdsBarStyleCache
     }
     // 经典样式与玻璃样式：除了底色（磨砂 vs 液态玻璃）外，整体布局（悬浮 TabBar + 并排 miniBar + barWidth + barBottomMargin）必须完全一致
     // 因此本方法在两种样式下都返回有效 barFloatingStyle，仅 systemMaterialEffect 在经典下不设置
     // 设备不支持液态玻璃时仍可走悬浮布局（只是没有玻璃材质），布局不降级
-    const level: hdsMaterial.MaterialLevel = hdsMaterial.MaterialLevel.ADAPTIVE    // 关跟手光效时传全透明色显式关闭（lightColor 默认值是深浅色固定光效色，传 undefined 会回落默认光效而非关闭）
-    const lightColor: ResourceColor = this.tabTouchIndicator === 'light' ? this.followLightColor() : Color.Transparent
+    const level: hdsMaterial.MaterialLevel = this.tabMaterialLevelEnum()
+    // 选「无」时传全透明色显式关闭（lightColor 默认值是深浅色固定光效色，传 undefined 会回落默认光效而非关闭）
+    const lightColor: ResourceColor = this.tabLightColor === 'none' ? Color.Transparent : this.followLightColor()
     const smallScreen: boolean = this.breakpoint === 'sm' || this.breakpoint === 'md'
+    // Tab 栏宽度固定主容器宽 2/5，不受任何设置影响（用户拍板：Tab 栏不许动）
     const barWidthVp: number = Math.round(this.mainWidthVp * 0.4)
     const hasBarWidth: boolean = this.mainWidthVp > 0
+    // 渐变遮罩恒禁用（用户拍板 2026-10-18：整体删除该设置，写死关闭）
+    const gradientMask: HdsTabsBackgroundStyle = { maskColor: 'rgba(0,0,0,0)', maskHeight: 0 }
     // 小屏/折叠态（sm/md）：系统会把页签栏强制收折成小胶囊并接管迷你栏布局，
     // 不下发系统迷你栏，改由 build() 中自建的 playerControl 播控条叠放在 TabBar 上方。
     // 大屏态（lg/xl/xxl）：下发系统迷你栏，左右并排。
     let miniBar: HdsTabsMiniBar | undefined = undefined
     if (!smallScreen) {
-      // tab 与播控条各占 2/5（= barWidthVp，主容器宽 × 0.4）；中间留 1/5 间隙
-      const miniBarWidthVp: number = barWidthVp
-      // 磨砂态（经典样式或设备无液态玻璃）：迷你栏背景跟随页签栏背景（enableMiniBarBackground=true），
-      // 与 TabBar 磨砂完全一致；迷你栏区域内自挂 backgroundBlurStyle 采样不到页面背景（渲染为透明），必须走系统背景。
-      // 沉浸式玻璃：关闭系统背景，避免容器背景像围栏一样裁掉自挂材质的交互形变。
-      const frostedMode: boolean = this.tabStyle !== 'immersive' || !isLiquidGlassAvailable()
+      // 播控条宽度固定整个窗口的 1/3（用户拍板 2026-10-18：占窗口三分之一，定死）
+      const miniBarWidthVp: number = Math.round(this.mainWidthVp / 3)
+      // 迷你栏背景恒走系统背景（跟随页签栏）：迷你栏区域内自挂 backgroundBlurStyle 采样不到
+      // 页面背景（渲染为透明，5cfa2cf 已证实）；自挂 systemMaterial 在迷你栏容器内也不渲染
+      // （真机 MateBook Pro 实测：迷你栏是独立悬浮容器，不在官方文档规定的底部 TabBar
+      // 液态玻璃生效区内），两种样式统一由系统背景提供底板，玻璃样式下跟随页签栏材质。
       miniBar = {
         miniBarBuilder: (): void => {
           this.miniBarBuilder()
         },
-        enableMiniBarBackground: frostedMode,
+        // 迷你栏背景恒走系统背景（跟随页签栏）：自挂 systemMaterial 在迷你栏 builder 内容上
+        // 不渲染（2026-10-18 三次真机实证：含无背景层干扰的干净配置，底板仍纯黑透明，
+        // 官方 FAQ 生效区限制——builder 内容属"其他组件"不在底部 TabBar 生效区内）
+        enableMiniBarBackground: true,
         // 关闭迷你栏容器对 builder 内容的默认裁剪（SDK 默认 enableMiniBarClip=true）：
         // 否则交互形变鼓包超出容器边界的部分被剪掉，不动边缘看起来像一圈"围栏"
         enableMiniBarClip: false,
@@ -270,12 +301,13 @@ struct MainPage {
     if (this.tabStyle === 'immersive' && isLiquidGlassAvailable()) {
       style = {
         adaptToHandedness: true,
-        gradientMask: { maskColor: 'rgba(0,0,0,0)', maskHeight: 0 },
+        gradientMask: gradientMask,
         systemMaterialEffect: {
           materialType: hdsMaterial.MaterialType.IMMERSIVE,
           materialLevel: level,
         },
-        barBottomMargin: 28,
+        barOpacity: this.tabBarOpacity / 100,
+        barBottomMargin: 25,
         lightColor: lightColor,
         barWidth: (smallScreen || !hasBarWidth) ? undefined :
           { smallWidth: barWidthVp, mediumWidth: barWidthVp, largeWidth: barWidthVp },
@@ -285,8 +317,9 @@ struct MainPage {
       // 经典样式（或设备无液态玻璃）：同布局结构，仅不挂玻璃材质，底色由 barBackgroundBlurStyle 磨砂兜底
       style = {
         adaptToHandedness: true,
-        gradientMask: { maskColor: 'rgba(0,0,0,0)', maskHeight: 0 },
-        barBottomMargin: 28,
+        gradientMask: gradientMask,
+        barOpacity: this.tabBarOpacity / 100,
+        barBottomMargin: 25,
         lightColor: lightColor,
         barWidth: (smallScreen || !hasBarWidth) ? undefined :
           { smallWidth: barWidthVp, mediumWidth: barWidthVp, largeWidth: barWidthVp },
@@ -362,7 +395,25 @@ struct MainPage {
 
   @Builder
   playerControl() {
-    Row({ space: this.scaledSize(20) }) {
+    // spike: Stack 作为触控宿主与点光源挂载点（hdsEffect.pointLight 跟手光验证，失败整段回滚）
+    Stack() {
+      // spike: 透明光源小块，position 跟随手指（options-only 模式，光色跟随页签栏光效设置）
+      Row()
+        .width(2)
+        .height(2)
+        .position({ x: this.spikeBarLightX - 1, y: this.spikeBarLightY - 1 })
+        .hitTestBehavior(HitTestMode.None)
+        .visualEffect(new hdsEffect.HdsEffectBuilder()
+          .pointLight({
+            options: {
+              color: this.followLightColor(),
+              intensity: this.spikeBarLightOn && this.tabLightColor !== 'none' ? 0.9 : 0,
+              height: 75,
+              bloom: 0.4
+            }
+          })
+          .buildEffect())
+      Row({ space: this.scaledSize(20) }) {
       if (this.currentSongTitle.length > 0) {
         AlbumCover({
           song: this.currentSong(),
@@ -497,9 +548,10 @@ struct MainPage {
       bottom: this.scaledSize(2)
     })
     .backgroundColor(Color.Transparent)
-    .backgroundBlurStyle((this.tabStyle !== 'immersive' || !isLiquidGlassAvailable())
-      ? this.getBarBackgroundBlur() : BlurStyle.NONE)
-    .systemMaterial(this.bottomBarGlassMaterial())
+    // 播控条挂在根 Stack，位于 Tabs 底部栏液态玻璃生效区外（官方文档：ImmersiveMaterial
+    // 仅在 Navigation 标题栏/底部 TabBar 生效区渲染），systemMaterial 在此永不生效，
+    // 两种样式统一走系统磨砂底板
+    .backgroundBlurStyle(this.getBarBackgroundBlur())
     .border({
       width: 1, color: 'rgba(255,255,255,0.22)'
     })
@@ -509,11 +561,49 @@ struct MainPage {
       color: this.isGlowing ? ColorHelper.hexWithAlpha(this.primaryColor, '66') : $r('app.color.shadow_color'),
       offsetY: 5
     })
+    // spike: 播控条整条标记受光（V4 探针：边框+内容受光，验证内容可照亮的范围）
+    .visualEffect(new hdsEffect.HdsEffectBuilder()
+      .pointLight({ illuminatedType: hdsEffect.PointLightIlluminatedType.BORDER_CONTENT })
+      .buildEffect())
+    }
+    .onTouch((event: TouchEvent) => {
+      if (event.type === TouchType.Down || event.type === TouchType.Move) {
+        this.spikeBarLightX = event.touches[0].x
+        this.spikeBarLightY = event.touches[0].y
+        if (!this.spikeBarLightOn) {
+          Logger.info(TAG, 'spikeLight bar on')
+        }
+        this.spikeBarLightOn = true
+      } else {
+        if (this.spikeBarLightOn) {
+          Logger.info(TAG, 'spikeLight bar off')
+        }
+        this.spikeBarLightOn = false
+      }
+    })
   }
 
   @Builder
   miniBarBuilder() {
-    Row({ space: this.scaledSize(8) }) {
+    // spike: Stack 作为触控宿主与点光源挂载点（miniBar 容器内渲染验证，失败整段回滚）
+    Stack() {
+      // spike: 透明光源小块，position 跟随手指（options-only 模式，光色跟随页签栏光效设置）
+      Row()
+        .width(2)
+        .height(2)
+        .position({ x: this.spikeMiniLightX - 1, y: this.spikeMiniLightY - 1 })
+        .hitTestBehavior(HitTestMode.None)
+        .visualEffect(new hdsEffect.HdsEffectBuilder()
+          .pointLight({
+            options: {
+              color: this.followLightColor(),
+              intensity: this.spikeMiniLightOn && this.tabLightColor !== 'none' ? 0.9 : 0,
+              height: 75,
+              bloom: 0.4
+            }
+          })
+          .buildEffect())
+      Row({ space: this.scaledSize(8) }) {
       if (this.currentSongTitle.length > 0) {
         AlbumCover({
           song: this.currentSong(),
@@ -621,8 +711,6 @@ struct MainPage {
         })
     }
     .height(this.scaledSize(44))
-    // 胶囊圆角：沉浸式下系统迷你栏背景关闭，自挂玻璃材质按 Row 自身几何渲染，
-    // 必须显式给圆角（44 高 → 22 半径胶囊，与 playerControl 一致），否则渲染成直角方形
     .borderRadius(this.scaledSize(22))
     .alignSelf(ItemAlign.Center)
     .padding({
@@ -631,16 +719,32 @@ struct MainPage {
       top: this.scaledSize(2),
       bottom: this.scaledSize(2)
     })
-    // miniBar 底色：磨砂态由系统迷你栏背景提供（enableMiniBarBackground=true，跟随页签栏），
-    // 玻璃样式下挂液态玻璃材质（位于 Tabs 底部栏生效区内，材质可正常渲染）：
-    // interactive 交互形变 + lightEffect 跟手光效，无歌曲时点击/拖拽同样有反馈
-    .systemMaterial(this.bottomBarGlassMaterial())
+    // miniBar 底色恒由系统迷你栏背景提供（enableMiniBarBackground=true，跟随页签栏）。
+    // 自挂 systemMaterial 三次真机实证不渲染（生效区限制），不得再挂，
+    // 否则玻璃样式下底板纯黑透明（2026-10-18 回归实测）
+    // spike: miniBar 整条标记受光（V4 探针：边框+内容受光）
+    .visualEffect(new hdsEffect.HdsEffectBuilder()
+      .pointLight({ illuminatedType: hdsEffect.PointLightIlluminatedType.BORDER_CONTENT })
+      .buildEffect())
+    }
+    .onTouch((event: TouchEvent) => {
+      if (event.type === TouchType.Down || event.type === TouchType.Move) {
+        this.spikeMiniLightX = event.touches[0].x
+        this.spikeMiniLightY = event.touches[0].y
+        if (!this.spikeMiniLightOn) {
+          Logger.info(TAG, 'spikeLight mini on')
+        }
+        this.spikeMiniLightOn = true
+      } else {
+        if (this.spikeMiniLightOn) {
+          Logger.info(TAG, 'spikeLight mini off')
+        }
+        this.spikeMiniLightOn = false
+      }
+    })
   }
 
   openPlayer(): void {
-    if (this.currentSongTitle.length === 0) {
-      return
-    }
     this.getUIContext().getRouter().pushUrl({ url: 'pages/MusicPlayer' })
   }
 
@@ -969,10 +1073,10 @@ struct MainPage {
   }
 
   // 小屏态自建播控条的底部偏移：压在 TabBar 顶部正上方。
-  // 28(tab barBottomMargin) + 44(tab 高) 到 tab 顶；再加 4vp 基础间距，最后 +4.5vp 把播控条上移到
+  // 25(tab barBottomMargin) + 44(tab 高) 到 tab 顶；再加 4vp 基础间距，最后 +4.5vp 把播控条上移到
   // 「加号底」与「tab 顶」的垂直中点，使播控条到加号与到 tab 的垂直距离相等（窄态真机实测）。
   private controlBarBottomMargin(): number {
-    return 28 + this.scaledSize(44) + this.scaledSize(4) + 4.5
+    return 25 + this.scaledSize(44) + this.scaledSize(4) + 4.5
   }
 
   // 加号组件底边位置：紧贴播控条（迷你栏）上沿。真机实测（vp）：
@@ -1021,20 +1125,12 @@ struct MainPage {
 
   // 否则传 undefined 让 lightEffect 完全关闭，便于外层使用系统自带的按压白色蒙版。
 
-  // 底部播放信息栏的液态玻璃材质：仅沉浸(immersive)样式下挂载；
-  // 经典样式下返回 undefined，磨砂由 backgroundBlurStyle 兜底（与 TabBar 同档位）
-  // 跟手光效颜色：白光 / 主题色（设置项 uplayer_tab_light_color）
+  // 跟手光效颜色：white=白光，theme=主题色（设置项 uplayer_tab_light_color；none 已在外层过滤）
   private followLightColor(): string {
-    return this.tabLightColor === 'white' ? '#FFFFFF' : this.primaryColor
-  }
-
-  private bottomBarGlassMaterial(): uiMaterial.Material | undefined {
-    if (this.tabStyle !== 'immersive') {
-      return undefined
+    if (this.tabLightColor === 'white') {
+      return '#FFFFFF'
     }
-    const lightColor: string | undefined = this.tabTouchIndicator === 'light' ?
-      this.followLightColor() : undefined
-    return createBarGlassMaterial(DEFAULT_GLASS_STYLE, true, lightColor)
+    return this.primaryColor
   }
 
   private isSongInfoShort(): boolean {

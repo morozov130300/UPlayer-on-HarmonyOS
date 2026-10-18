@@ -414,8 +414,11 @@ export class AVPlayerService {
       nativeAudio.setVolume(this.desiredVolume)
       nativeAudio.resume()
     }
-    AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, nativeAudio.isPlaying())
-    this.sessionController.setPlayState(true)
+    // 原生 Resume 失败已回滚暂停态（如渲染器 Start 失败），此处以原生实际状态为准，
+    // 避免 AVSession/播放态谎报「播放中」而进度冻结
+    const playing: boolean = nativeAudio.isPlaying()
+    AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, playing)
+    this.sessionController.setPlayState(playing)
     this.startBackground()
   }
 
@@ -1064,7 +1067,10 @@ export class AVPlayerService {
         this.handleNativeFailure(requestId, 'native render failed')
         return
       }
-      if (nativeAudio.isCompleted()) {
+      // 仅播放态允许自然播完自动切歌：暂停态下 isCompleted 为真属于异常
+      // （历史缺陷：暂停中管线隐形跑完本曲），此时不得自动播下一首
+      if (nativeAudio.isCompleted() &&
+        (AppStorage.get<boolean>(AppStorageKeyConstants.KEY_IS_PLAY) ?? false)) {
         this.stopNativeProgressTimer()
         AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, false)
         this.sessionController.setPlayState(false)

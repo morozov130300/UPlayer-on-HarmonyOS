@@ -20,8 +20,8 @@ export class PlayerConstants {
   static readonly ENCODING: string = 'utf-8';
   static readonly BACK_IMAGE: string = '120%';
   // Image.blur 渲染期模糊半径：与旧 effectKit 预模糊的半径语义不同（同数值下视觉更浅），
-  // 50 为用户真机对比旧 effectKit blur(15) 观感确认后的值
-  static readonly IMAGE_BLUR: number = 50;
+  // 应用户要求在真机确认值 50 基础上进一步加大
+  static readonly IMAGE_BLUR: number = 80;
   static readonly FONT_WEIGHT_700: number = 700;
   static readonly FONT_WEIGHT_500: number = 500;
   static readonly FONT_FAMILY_BLACK: string = 'HarmonyHeiTi';

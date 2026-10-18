@@ -150,18 +150,29 @@ export class AudioRoutingService {
 
   // 应用级输出设备选择（AudioDeviceEnhanceManager，API 26+）
   selectOutputDevice(device: audio.AudioDeviceDescriptor): void {
+    const targetLabel: string = this.getDeviceLabel(device)
+    const beforeLabel: string = this.getCurrentOutputDeviceLabel()
+    Logger.info(TAG, `selectOutputDevice: before="${beforeLabel}" target="${targetLabel}" type=${this.deviceTypeLabel(device.deviceType)} id=${device.id}`)
     try {
       this.audioManager = audio.getAudioManager()
       this.audioManager.getDeviceEnhanceManager().selectOutputDevice(device)
         .then((): void => {
           this.bumpRevision()
-          this.showToast(`已切换输出设备：${this.getDeviceLabel(device)}`)
+          const actualLabel: string = this.getCurrentOutputDeviceLabel()
+          Logger.info(TAG, `selectOutputDevice: actual="${actualLabel}" target="${targetLabel}"`)
+          if (actualLabel === targetLabel) {
+            this.showToast(`已切换输出设备：${actualLabel}`)
+          } else {
+            this.showToast(`当前输出设备：${actualLabel}`)
+          }
         })
         .catch((err: BusinessError): void => {
           Logger.error(TAG, `selectOutputDevice failed: code=${err.code}, ${err.message}`)
+          this.showToast(`切换输出设备失败：${err.message}`)
         })
     } catch (err) {
       Logger.error(TAG, `selectOutputDevice error: ${JSON.stringify(err)}`)
+      this.showToast('切换输出设备失败，请重试')
     }
   }
 

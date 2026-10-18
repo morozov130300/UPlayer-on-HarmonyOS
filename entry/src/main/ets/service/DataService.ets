@@ -10,6 +10,10 @@ import { BusinessError } from '@kit.BasicServicesKit'
 import { MusicPlayMode } from '../common/constants/PlayerConstants'
 import { AudioMetadataService } from './AudioMetadataService'
 import { clearLyricCache } from './LyricLoader'
+import { HOLDING_HAND_CONFIRM_WINDOW_DEFAULT_MS, HOLDING_HAND_CONFIRM_WINDOW_MAX_MS,
+  HOLDING_HAND_CONFIRM_WINDOW_MIN_MS, HOLDING_HAND_SOFT_FALLBACK_DEFAULT_MS,
+  HOLDING_HAND_SOFT_FALLBACK_MAX_MS, HOLDING_HAND_SOFT_FALLBACK_MIN_MS,
+  KEY_HOLDING_HAND_CONFIRM_WINDOW_MS, KEY_HOLDING_HAND_SOFT_FALLBACK_MS } from './HoldingHandService'
 
 const TAG = 'DataService'
 
@@ -100,11 +104,18 @@ export class AppSettingsData {
   tabIndicatorOpacity: number = 50
   // 质感握姿：开启后系统根据单手握持方向自动让首页顶部模糊预览/控件靠左或靠右
   holdingHandEnabled: boolean = true
-  // 底部栏点击/拖动指示器风格：light=跟手光效，mask=白色蒙版，off=关闭
-  // mask 仅在有鼠标/触控板的设备上提供（设置页按检测结果显隐开关，无鼠标时降级为 off）
+  // 智感握姿灵敏度：切换确认窗 / 不确定态回落窗（ms），默认值与范围同 HoldingHandService 导出常量
+  holdingHandConfirmWindowMs: number = 500
+  holdingHandSoftFallbackMs: number = 1000
+  // 跟手光效开关（派生自 tabLightColor，供 GlassBackButton/HomeContent 联动消费）：light=开，off=关
   tabTouchIndicator: string = 'light'
-  // 跟手光效颜色：white=白光，theme=主题色光
+  // 跟手光效颜色：none=无（即关闭），white=白光，theme=主题色
   tabLightColor: string = 'theme'
+  // Tab 栏材质等级（玻璃样式）：adaptive=自适应/exquisite=精美/gentle=轻柔/smooth=流畅
+  // → hdsMaterial.MaterialLevel（systemMaterialEffect.materialLevel）
+  tabMaterialLevel: string = 'adaptive'
+  // Tab 栏不透明度（%），barFloatingStyle.barOpacity（0-100，100=完全不透明）
+  tabBarOpacity: number = 100
   }
 
 export class DataService {
@@ -867,6 +878,12 @@ return result
       s.tabIndicatorOpacity = rawTabIndicatorOpacity !== undefined ? rawTabIndicatorOpacity as number : 50
       let rawHoldingHandEnabled: Object | undefined = r['holdingHandEnabled']
       s.holdingHandEnabled = rawHoldingHandEnabled !== undefined ? rawHoldingHandEnabled as boolean : true
+      s.holdingHandConfirmWindowMs = this.pickNum(r, 'holdingHandConfirmWindowMs',
+        HOLDING_HAND_CONFIRM_WINDOW_DEFAULT_MS, HOLDING_HAND_CONFIRM_WINDOW_MIN_MS,
+        HOLDING_HAND_CONFIRM_WINDOW_MAX_MS)
+      s.holdingHandSoftFallbackMs = this.pickNum(r, 'holdingHandSoftFallbackMs',
+        HOLDING_HAND_SOFT_FALLBACK_DEFAULT_MS, HOLDING_HAND_SOFT_FALLBACK_MIN_MS,
+        HOLDING_HAND_SOFT_FALLBACK_MAX_MS)
       let rawTabTouchIndicator: Object | undefined = r['tabTouchIndicator']
       // v1.0.7 起删除旧值 'mask' 的兼容迁移（不跨版本兼容）：「白色蒙版」选项
       // 早已删除，遗留 'mask' 值在所有消费侧均按 === 'light' 比较，行为等价于
@@ -874,6 +891,17 @@ return result
       s.tabTouchIndicator = rawTabTouchIndicator !== undefined ? rawTabTouchIndicator as string : 'light'
       let rawTabLightColor: Object | undefined = r['tabLightColor']
       s.tabLightColor = rawTabLightColor !== undefined ? rawTabLightColor as string : 'theme'
+      // 归一化跟手光效颜色为三态 none/white/theme：旧开关关闭（tabTouchIndicator='off'）
+      // 或历史 hex 色值（已删除的任意色版本）收敛到合法值
+      if (s.tabLightColor !== 'white' && s.tabLightColor !== 'theme' && s.tabLightColor !== 'none') {
+        s.tabLightColor = s.tabTouchIndicator === 'off' ? 'none' : 'theme'
+      }
+      // tabTouchIndicator 派生自 tabLightColor（无=关），GlassBackButton/HomeContent 仍消费该键
+      s.tabTouchIndicator = s.tabLightColor === 'none' ? 'off' : 'light'
+      let rawTabMaterialLevel: Object | undefined = r['tabMaterialLevel']
+      s.tabMaterialLevel = rawTabMaterialLevel !== undefined ? rawTabMaterialLevel as string : 'adaptive'
+      let rawTabBarOpacity: Object | undefined = r['tabBarOpacity']
+      s.tabBarOpacity = rawTabBarOpacity !== undefined ? rawTabBarOpacity as number : 100
       let rawContinuePlayOnHeadsetUnplug: Object | undefined = r['continuePlayOnHeadsetUnplug']
       s.continuePlayOnHeadsetUnplug = rawContinuePlayOnHeadsetUnplug !== undefined ? rawContinuePlayOnHeadsetUnplug as boolean : false
       let rawIgnoreNotificationDuck: Object | undefined = r['ignoreNotificationDuck']
@@ -938,8 +966,12 @@ return result
     r['tabIndicatorOpacity'] = settings.tabIndicatorOpacity
 
     r['holdingHandEnabled'] = settings.holdingHandEnabled
+    r['holdingHandConfirmWindowMs'] = settings.holdingHandConfirmWindowMs
+    r['holdingHandSoftFallbackMs'] = settings.holdingHandSoftFallbackMs
     r['tabTouchIndicator'] = settings.tabTouchIndicator
     r['tabLightColor'] = settings.tabLightColor
+    r['tabMaterialLevel'] = settings.tabMaterialLevel
+    r['tabBarOpacity'] = settings.tabBarOpacity
     r['continuePlayOnHeadsetUnplug'] = settings.continuePlayOnHeadsetUnplug
     r['ignoreNotificationDuck'] = settings.ignoreNotificationDuck
     r['lowPowerPlayback'] = settings.lowPowerPlayback
@@ -947,6 +979,8 @@ return result
     // 跨页实时联动只推"有独立消费键"的字段（整份 settings 对象无消费者，不再推送，避免死广播）
     AppStorage.setOrCreate('uplayer_fade_in_out', settings.fadeInOut)
     AppStorage.setOrCreate('uplayer_plus_button_scroll_hide', settings.plusButtonScrollHide)
+    AppStorage.setOrCreate('uplayer_tab_material_level', settings.tabMaterialLevel)
+    AppStorage.setOrCreate('uplayer_tab_bar_opacity', settings.tabBarOpacity)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CONTINUE_PLAY_ON_UNPLUG, settings.continuePlayOnHeadsetUnplug)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_IGNORE_NOTIFICATION_DUCK, settings.ignoreNotificationDuck)
   }
@@ -1113,8 +1147,15 @@ return result
     AppStorage.setOrCreate('uplayer_tab_indicator_opacity', 50)
     AppStorage.setOrCreate('uplayer_plus_button_scroll_hide', true)
     AppStorage.setOrCreate('uplayer_holding_hand_enabled', true)
+    AppStorage.setOrCreate(KEY_HOLDING_HAND_CONFIRM_WINDOW_MS, HOLDING_HAND_CONFIRM_WINDOW_DEFAULT_MS)
+    AppStorage.setOrCreate(KEY_HOLDING_HAND_SOFT_FALLBACK_MS, HOLDING_HAND_SOFT_FALLBACK_DEFAULT_MS)
     AppStorage.setOrCreate('uplayer_tab_touch_indicator', 'light')
     AppStorage.setOrCreate('uplayer_tab_light_color', 'theme')
+    AppStorage.setOrCreate('uplayer_tab_material_level', 'adaptive')
+    AppStorage.setOrCreate('uplayer_bar_bottom_margin', 28)
+    AppStorage.setOrCreate('uplayer_tab_bar_opacity', 100)
+    AppStorage.setOrCreate('uplayer_gradient_mask_height', 0)
+    AppStorage.setOrCreate('uplayer_thermo_ctrl', false)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SPATIALIZATION_ENABLED, false)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SPATIALIZATION_SUPPORTED, false)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_BLUETOOTH_AUDIO_REVISION, 0)
@@ -1156,8 +1197,12 @@ return result
     AppStorage.setOrCreate('uplayer_tab_indicator_opacity', settings.tabIndicatorOpacity)
     AppStorage.setOrCreate('uplayer_plus_button_scroll_hide', settings.plusButtonScrollHide)
     AppStorage.setOrCreate('uplayer_holding_hand_enabled', settings.holdingHandEnabled)
+    AppStorage.setOrCreate(KEY_HOLDING_HAND_CONFIRM_WINDOW_MS, settings.holdingHandConfirmWindowMs)
+    AppStorage.setOrCreate(KEY_HOLDING_HAND_SOFT_FALLBACK_MS, settings.holdingHandSoftFallbackMs)
     AppStorage.setOrCreate('uplayer_tab_touch_indicator', settings.tabTouchIndicator)
     AppStorage.setOrCreate('uplayer_tab_light_color', settings.tabLightColor)
+    AppStorage.setOrCreate('uplayer_tab_material_level', settings.tabMaterialLevel)
+    AppStorage.setOrCreate('uplayer_tab_bar_opacity', settings.tabBarOpacity)
     this.activatePersistedUris()
     return settings
   }
