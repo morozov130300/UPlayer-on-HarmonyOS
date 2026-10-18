@@ -441,8 +441,7 @@ public:
             "native startup stage=decoder elapsedMs=%{public}lld", elapsedMs());
         // Phase 1 懒构建：无任何效果请求时跳过引擎/管线创建（省 ~110ms 起播开销与效果服务 IPC），
         // 首个效果开关经 EnsureEffectsBuiltLocked 按需补建，播放全程无感
-        const bool anyEffects = IsAnyEffectRequested();
-        if (anyEffects) {
+        if (IsAnyEffectRequested()) {
             if (!ConfigureEffects()) {
                 Stop();
                 return false;
@@ -453,13 +452,7 @@ public:
             OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                 "native startup effects=skipped elapsedMs=%{public}lld", elapsedMs());
         }
-        // 音质源率直出：无效果请求且源率为 44100/48000 时渲染器直接跑源率，
-        // ReadPcmDirect 旁路直拷解码队列，跳过 44.1k→48k 重采样与转换器线程跳转；
-        // 有效果请求恒 48000——AudioSuite 引擎输入/输出端口均为 48k 契约，
-        // 渲染器采样率必须与管线输出率一致，不可跟随源率
-        const int32_t rendererRate = (!anyEffects &&
-            (sampleRate_ == 44100 || sampleRate_ == 48000)) ? sampleRate_ : 48000;
-        if (!ConfigureRenderer(rendererRate)) {
+        if (!ConfigureRenderer()) {
             Stop();
             return false;
         }
@@ -473,7 +466,6 @@ public:
         seekRequested_ = false;
         seekRequestSequence_ = 0;
         renderGateRequested_.store(false);
-        converterRebuildRequested_.store(false);
         decoderFailureLogged_ = false;
         decoderLifecycle_ = DecoderLifecycle::STARTED;
         paused_ = false;
@@ -498,7 +490,6 @@ public:
             startBaseMs = targetPositionMs;
         }
         resampleInputRate_ = sampleRate_;
-        resampleOutputRate_ = rendererRate;
         inputDensityFactor_.store(1);
         converterInputFinished_.store(false);
         inputWindowFrames_ = 0;
@@ -2562,14 +2553,14 @@ private:
         return true;
     }
 
-    bool ConfigureRenderer(int32_t requestedRate)
+    bool ConfigureRenderer()
     {
         OH_AudioStreamBuilder* builder = nullptr;
         if (OH_AudioStreamBuilder_Create(&builder, AUDIOSTREAM_TYPE_RENDERER) != AUDIOSTREAM_SUCCESS) {
             OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG, "renderer builder failed");
             return false;
         }
-        OH_AudioStreamBuilder_SetSamplingRate(builder, requestedRate);
+        OH_AudioStreamBuilder_SetSamplingRate(builder, 48000);
         OH_AudioStreamBuilder_SetChannelCount(builder, 2);
         OH_AudioStreamBuilder_SetSampleFormat(builder, AUDIOSTREAM_SAMPLE_S16LE);
         OH_AudioStreamBuilder_SetEncodingType(builder, AUDIOSTREAM_ENCODING_TYPE_RAW);
@@ -2584,7 +2575,7 @@ private:
             if (OH_AudioManager_GetAudioStreamManager(&streamManager) == AUDIOCOMMON_RESULT_SUCCESS &&
                 streamManager != nullptr) {
             OH_AudioStreamInfo streamInfo = {};
-            streamInfo.samplingRate = requestedRate;
+            streamInfo.samplingRate = 48000;
                 streamInfo.channelLayout = CH_LAYOUT_STEREO;
                 streamInfo.encodingType = AUDIOSTREAM_ENCODING_TYPE_RAW;
                 streamInfo.sampleFormat = AUDIOSTREAM_SAMPLE_S16LE;
@@ -2924,48 +2915,6 @@ private:
         return static_cast<int32_t>(want);
     }
 
-    // 源率直出（ReadPcmDirect 旁路）：输入率==输出率时跳过 OH_AudioConverter，
-    // 直接把解码队列源 PCM 拷给渲染。队列交互与 FillConverterInput 完全一致
-    // （短等 8ms、整采样点交付、干涸计数、锁外通知）；EOF=decodingEnded_ 且队列
-    // 耗尽——解码队列即全部音频，无转换器内部尾巴需要反复 Process 冲刷。
-    int32_t ReadPcmQueueDirect(void* audioData, int32_t audioDataSize, bool* finished)
-    {
-        if (audioData == nullptr || audioDataSize <= 0 || finished == nullptr) {
-            return 0;
-        }
-        *finished = false;
-        std::unique_lock<std::mutex> lock(queueMutex_);
-        if (pcmQueue_.size() < 4 && !decodingEnded_.load() && !stopRequested_.load()) {
-            if (!queueCondition_.wait_for(lock, std::chrono::milliseconds(8), [this]() {
-                    return stopRequested_.load() || decodingEnded_.load() || pcmQueue_.size() >= 4;
-                })) {
-                queueDryCount_.fetch_add(1, std::memory_order_relaxed);
-            }
-        }
-        if (stopRequested_.load()) {
-            *finished = true;
-            return 0;
-        }
-        if (pcmQueue_.size() < 4) {
-            if (decodingEnded_.load()) {
-                *finished = true;
-                queueCondition_.notify_all();
-            }
-            return 0;
-        }
-        size_t want = pcmQueue_.size() - (pcmQueue_.size() % 4);
-        if (want > static_cast<size_t>(audioDataSize)) {
-            want = static_cast<size_t>(audioDataSize);
-        }
-        want -= want % 4;
-        std::copy(pcmQueue_.begin(), pcmQueue_.begin() + static_cast<std::ptrdiff_t>(want),
-            static_cast<uint8_t*>(audioData));
-        pcmQueue_.erase(pcmQueue_.begin(), pcmQueue_.begin() + static_cast<std::ptrdiff_t>(want));
-        lock.unlock();
-        queueCondition_.notify_all();
-        return static_cast<int32_t>(want);
-    }
-
     static bool IsConverterRateSupported(int32_t rate)
     {
         for (int32_t supported : CONVERTER_SUPPORTED_RATES) {
@@ -3127,20 +3076,6 @@ private:
     {
         const int32_t density = inputDensityFactor_.load();
         if (density <= 1) {
-            // 源率直出旁路：管线未激活且输入率==输出率（直通时渲染器跟随源率）→
-            // 跳过 OH_AudioConverter 线程直拷解码队列，少一次线程跳转与转换器
-            // 短读欠载风险。转换器若存在（管线期遗留），其内部未输出缓存已过时，
-            // 置重建标记防止管线恢复时重播旧缓存
-            if (!IsPipelineActive() && resampleInputRate_ == resampleOutputRate_) {
-                if (converter_ != nullptr) {
-                    converterRebuildRequested_.store(true, std::memory_order_release);
-                }
-                const int32_t direct = ReadPcmQueueDirect(audioData, audioDataSize, finished);
-                if (direct < audioDataSize) {
-                    converterShortCount_.fetch_add(1, std::memory_order_relaxed);
-                }
-                return direct;
-            }
             // 目标率与直通一致，无需抽取；短读（源供数断流）计入健康行 short 计数
             const int32_t direct = ReadPcm(audioData, audioDataSize, finished, true);
             if (direct < audioDataSize) {
@@ -3491,9 +3426,7 @@ private:
             std::lock_guard<std::mutex> lock(ringMutex_);
             filledSamples = ringFilled_;
         }
-        const int32_t healthRate = rendererSampleRate_.load(std::memory_order_relaxed);
-        const int64_t fillMs = static_cast<int64_t>(filledSamples) * 1000 /
-            (static_cast<int64_t>(healthRate > 0 ? healthRate : 48000) * 2);
+        const int64_t fillMs = static_cast<int64_t>(filledSamples) / RING_SAMPLES_PER_MS;
         if (healthWinStartMs_ == 0) {
             healthWinStartMs_ = nowMs;
         }
