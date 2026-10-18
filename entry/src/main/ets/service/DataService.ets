@@ -114,8 +114,6 @@ export class AppSettingsData {
   // Tab 栏材质等级（玻璃样式）：adaptive=自适应/exquisite=精美/gentle=轻柔/smooth=流畅
   // → hdsMaterial.MaterialLevel（systemMaterialEffect.materialLevel）
   tabMaterialLevel: string = 'adaptive'
-  // Tab 栏不透明度（%），barFloatingStyle.barOpacity（0-100，100=完全不透明）
-  tabBarOpacity: number = 100
   }
 
 export class DataService {
@@ -900,8 +898,6 @@ return result
       s.tabTouchIndicator = s.tabLightColor === 'none' ? 'off' : 'light'
       let rawTabMaterialLevel: Object | undefined = r['tabMaterialLevel']
       s.tabMaterialLevel = rawTabMaterialLevel !== undefined ? rawTabMaterialLevel as string : 'adaptive'
-      let rawTabBarOpacity: Object | undefined = r['tabBarOpacity']
-      s.tabBarOpacity = rawTabBarOpacity !== undefined ? rawTabBarOpacity as number : 100
       let rawContinuePlayOnHeadsetUnplug: Object | undefined = r['continuePlayOnHeadsetUnplug']
       s.continuePlayOnHeadsetUnplug = rawContinuePlayOnHeadsetUnplug !== undefined ? rawContinuePlayOnHeadsetUnplug as boolean : false
       let rawIgnoreNotificationDuck: Object | undefined = r['ignoreNotificationDuck']
@@ -971,7 +967,6 @@ return result
     r['tabTouchIndicator'] = settings.tabTouchIndicator
     r['tabLightColor'] = settings.tabLightColor
     r['tabMaterialLevel'] = settings.tabMaterialLevel
-    r['tabBarOpacity'] = settings.tabBarOpacity
     r['continuePlayOnHeadsetUnplug'] = settings.continuePlayOnHeadsetUnplug
     r['ignoreNotificationDuck'] = settings.ignoreNotificationDuck
     r['lowPowerPlayback'] = settings.lowPowerPlayback
@@ -980,7 +975,6 @@ return result
     AppStorage.setOrCreate('uplayer_fade_in_out', settings.fadeInOut)
     AppStorage.setOrCreate('uplayer_plus_button_scroll_hide', settings.plusButtonScrollHide)
     AppStorage.setOrCreate('uplayer_tab_material_level', settings.tabMaterialLevel)
-    AppStorage.setOrCreate('uplayer_tab_bar_opacity', settings.tabBarOpacity)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CONTINUE_PLAY_ON_UNPLUG, settings.continuePlayOnHeadsetUnplug)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_IGNORE_NOTIFICATION_DUCK, settings.ignoreNotificationDuck)
   }
@@ -1153,7 +1147,6 @@ return result
     AppStorage.setOrCreate('uplayer_tab_light_color', 'theme')
     AppStorage.setOrCreate('uplayer_tab_material_level', 'adaptive')
     AppStorage.setOrCreate('uplayer_bar_bottom_margin', 28)
-    AppStorage.setOrCreate('uplayer_tab_bar_opacity', 100)
     AppStorage.setOrCreate('uplayer_gradient_mask_height', 0)
     AppStorage.setOrCreate('uplayer_thermo_ctrl', false)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SPATIALIZATION_ENABLED, false)
@@ -1202,7 +1195,6 @@ return result
     AppStorage.setOrCreate('uplayer_tab_touch_indicator', settings.tabTouchIndicator)
     AppStorage.setOrCreate('uplayer_tab_light_color', settings.tabLightColor)
     AppStorage.setOrCreate('uplayer_tab_material_level', settings.tabMaterialLevel)
-    AppStorage.setOrCreate('uplayer_tab_bar_opacity', settings.tabBarOpacity)
     this.activatePersistedUris()
     return settings
   }

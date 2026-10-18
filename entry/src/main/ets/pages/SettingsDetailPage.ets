@@ -1631,58 +1631,7 @@ struct SettingsDetailPage {
 
         // 播控条底部间距已删除（布局参数写死 28，不再暴露：布局不动，只调样式）
 
-        // Tab 栏不透明度：barFloatingStyle.barOpacity（0-100%），
-        // 调低后 Tab 栏整体变通透，两种组件风格均生效
-        Column({ space: this.scaledSize(6) }) {
-          Row() {
-            this.subTitleRow('Tab 栏不透明度')
-            Blank()
-            Text(`${this.settings.tabBarOpacity}%`)
-              .fontSize(this.scaledFont(11))
-              .fontColor(this.settingSubTextColor())
-          }
-          .width('100%')
-
-          Row({ space: this.scaledSize(12) }) {
-            Text('透')
-              .fontSize(this.scaledFont(11))
-              .fontColor(this.settingTextColor())
-            Slider({
-              value: this.settings.tabBarOpacity,
-              min: 10,
-              max: 100,
-              step: 5,
-              style: SliderStyle.OutSet
-            })
-              .layoutWeight(1)
-              .selectedColor(this.primaryColor)
-              .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-              .blockColor('#FFFFFF')
-              .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
-              .blockBorderColor(this.primaryColor)
-              .blockBorderWidth(3)
-              .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
-              .onChange((value: number, mode: SliderChangeMode) => {
-                this.settings.tabBarOpacity = value
-                this.updateSetting(this.isSliderSettled(mode))
-              })
-            Text('实')
-              .fontSize(this.scaledFont(11))
-              .fontColor(this.settingTextColor())
-          }
-          .width('100%')
-          .alignItems(VerticalAlign.Center)
-          .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
-        }
-        .width('100%')
-        .padding({
-          top: this.scaledSize(10),
-          left: this.scaledSize(14),
-          right: this.scaledSize(14),
-          bottom: this.scaledSize(10)
-        })
-        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-        .borderRadius(this.scaledSize(10))
+        // Tab 栏不透明度设置已删除（Tab 栏恒完全不透明，barOpacity 写死 1）
 
         // 底部渐变遮罩与温控降级设置已删除（gradientMask 恒禁用、thermoCtrl 不下发走 SDK 默认 false）
 
@@ -3116,7 +3065,7 @@ struct SettingsDetailPage {
           materialType: hdsMaterial.MaterialType.IMMERSIVE,
           materialLevel: this.previewMaterialLevelEnum(),
         },
-        barOpacity: this.settings.tabBarOpacity / 100,
+        barOpacity: 1,
         barBottomMargin: 25,
         lightColor: lightColor,
         barWidth: (smallScreen || !hasBarWidth) ? undefined :
@@ -3132,7 +3081,7 @@ struct SettingsDetailPage {
         materialType: hdsMaterial.MaterialType.NONE,
         materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE,
       },
-      barOpacity: this.settings.tabBarOpacity / 100,
+      barOpacity: 1,
       barBottomMargin: 25,
       lightColor: lightColor,
       barWidth: (smallScreen || !hasBarWidth) ? undefined :

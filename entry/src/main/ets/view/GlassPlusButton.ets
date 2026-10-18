@@ -3,7 +3,6 @@
 // 与页面切换动画并行）；页面级可见性（滚动隐藏等）经 visible 在组件内部淡入淡出。
 import { curves } from '@kit.ArkUI'
 import { ColorHelper } from '../common/utils/ColorHelper'
-import { StyleConstants } from '../common/constants/StyleConstants'
 import { KEY_HOLDING_HAND_LEFT } from '../service/HoldingHandService'
 
 @Component
@@ -97,11 +96,18 @@ export struct GlassPlusButton {
     })
     .transition({ type: TransitionType.Insert, opacity: 0, scale: { x: 0.5, y: 0.5 } })
     .transition({ type: TransitionType.Delete, opacity: 0, scale: { x: 0.5, y: 0.5 } })
+    .onTouch((event: TouchEvent) => {
+      if (event.type === TouchType.Down) {
+        this.getUIContext()?.animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
+          this.plusBtnScale = 0.85
+        })
+      } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+        this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
+          this.plusBtnScale = 1.0
+        })
+      }
+    })
     .onClick(() => {
-      this.plusBtnScale = 0.85
-      setTimeout(() => {
-        this.plusBtnScale = 1.0
-      }, StyleConstants.ANIMATION_PRESS_DELAY_SHORT)
       this.onPlusClick()
     })
   }

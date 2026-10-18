@@ -354,6 +354,7 @@ public:
         pipelineRenderRespBytes_.store(0, std::memory_order_relaxed);
         pipelineRenderFirstLogged_ = false;
         pipelineShortfallPrev_ = false;
+        directShortfallPrev_ = false;
         // Phase 4 断音插桩复位：必须赶在解码/渲染线程启动前完成（DecoderLoop 启动即读基线）
         ringUnderrunCount_.store(0, std::memory_order_relaxed);
         renderChunkSlowCount_.store(0, std::memory_order_relaxed);
@@ -503,6 +504,7 @@ public:
         RingReset();
         renderStopRequested_.store(false);
         ringUnderrunLastSample_ = 0;
+        rtUnderrunPrev_ = false;
         if (ringBuffer_.size() != static_cast<size_t>(RING_CAPACITY_MS) * RING_SAMPLES_PER_MS) {
             ringBuffer_.assign(static_cast<size_t>(RING_CAPACITY_MS) * RING_SAMPLES_PER_MS, 0);
         }
@@ -3274,6 +3276,19 @@ private:
                     }
                     rtSeenEpoch_ = ringEpoch_;
                 }
+                // 欠载恢复淡入：上一块欠载已把尾部衰减到零，本块直接回到波形会在
+                // 零→波形中值处产生硬边「噼」，首段线性淡入（rtUnderrunPrev_ 为 RT 私有）
+                if (rtUnderrunPrev_) {
+                    rtUnderrunPrev_ = false;
+                    const size_t underrunFadeSamples =
+                        std::min(static_cast<size_t>(RING_SEAM_FADE_SAMPLES), copied);
+                    for (size_t i = 0; i < underrunFadeSamples; i++) {
+                        const double fadeGain =
+                            static_cast<double>(i + 1) / static_cast<double>(underrunFadeSamples);
+                        outSamples[i] = static_cast<int16_t>(std::lround(
+                            static_cast<double>(outSamples[i]) * fadeGain));
+                    }
+                }
                 ringUnderrunLastSample_ = outSamples[copied - 1];
             }
             // 释放了空间，唤醒工作线程继续渲染（wait morphing，开销极小）
@@ -3291,6 +3306,8 @@ private:
                     static_cast<double>(lastSample) * fadeGain));
             }
         }
+        // 本块欠载（部分或全部）→ 置 RT 私有标志：下一块有数据时首段淡入，消除恢复硬边
+        rtUnderrunPrev_ = copied < static_cast<size_t>(totalSamples);
         // 位置基线重锚（FIFO 推导：本块首帧的呈递序号 == 提交前累计帧数；
         // routeOffset_ 平移音频路由变化造成的呈递帧坐标复位）与提交帧计数。
         // 全部原子操作，无锁无日志，RT 安全。
@@ -3712,8 +3729,36 @@ private:
             bool finished = false;
             int32_t readSize = ReadPcmDirect(audioData, audioDataSize, &finished);
             if (readSize < audioDataSize) {
+                // 供数短读：先把有效尾部淡出到零再补零——直接在波形中值处补零产生
+                // 硬边「噼」；恢复块首段淡入（与管线路径 pipelineShortfallPrev_ 对齐，
+                // 直通路径此前缺这套平滑，供数每次抖动都是一次可闻爆点）
+                constexpr int32_t SHORTFALL_FADE_SAMPLES = 128;
+                int16_t* outSamples = static_cast<int16_t*>(audioData);
+                const int32_t validSamples = readSize / static_cast<int32_t>(sizeof(int16_t));
+                const int32_t fadeStart = std::max(0, validSamples - SHORTFALL_FADE_SAMPLES);
+                for (int32_t i = fadeStart; i < validSamples; i++) {
+                    const double fadeGain = static_cast<double>(validSamples - i) /
+                        static_cast<double>(validSamples - fadeStart);
+                    outSamples[i] = static_cast<int16_t>(std::lround(
+                        static_cast<double>(outSamples[i]) * fadeGain));
+                }
                 std::memset(static_cast<uint8_t*>(audioData) + readSize, 0,
                     static_cast<size_t>(audioDataSize - readSize));
+                directShortfallPrev_ = true;
+            } else if (directShortfallPrev_) {
+                // 短读恢复：首 128 采样线性淡入，消除零→波形中值的硬边
+                directShortfallPrev_ = false;
+                constexpr int32_t SHORTFALL_FADE_SAMPLES = 128;
+                int16_t* outSamples = static_cast<int16_t*>(audioData);
+                const int32_t totalSamples =
+                    audioDataSize / static_cast<int32_t>(sizeof(int16_t));
+                const int32_t fadeSamples = std::min(SHORTFALL_FADE_SAMPLES, totalSamples);
+                for (int32_t i = 0; i < fadeSamples; i++) {
+                    const double fadeGain = static_cast<double>(i + 1) /
+                        static_cast<double>(fadeSamples);
+                    outSamples[i] = static_cast<int16_t>(std::lround(
+                        static_cast<double>(outSamples[i]) * fadeGain));
+                }
             }
             if (finished) {
                 audioSuiteEofReached_ = true;
@@ -4164,6 +4209,7 @@ private:
     // 环纪元：RingReset 在 ringMutex_ 下递增；RT 首见新纪元时对接缝首块淡入
     uint32_t ringEpoch_ = 0;
     uint32_t rtSeenEpoch_ = 0;   // RT 私有：已执行接缝淡入的纪元（仅 RT 回调线程读写）
+    bool rtUnderrunPrev_ = false;   // RT 私有：上一块欠载（恢复淡入用，仅 RT 回调线程读写）
     std::atomic<uint64_t> renderChunkSlowCount_ = 0;
     std::mutex queueMutex_;
     std::condition_variable queueCondition_;
@@ -4246,6 +4292,7 @@ private:
     std::atomic<uint64_t> pipelineRenderRespBytes_ = 0;
     bool pipelineRenderFirstLogged_ = false;
     bool pipelineShortfallPrev_ = false;
+    bool directShortfallPrev_ = false;   // 渲染线程私有：直通路径短读状态（尾部淡出/恢复淡入）
     // ═══ Phase 4 断音插桩 ═══ 事件点（RT/worker/转换回调）仅原子写：无锁、无日志、无分配；
     // 解码线程 ReportPipelineHealth 每秒汇总一条 health 行。单调计数器只在 Play 起点复位
     // （届时各线程未启动，无竞争），播放中由解码线程本地基线 healthPrev* 算差值，绝不跨线程清零。

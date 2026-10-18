@@ -88,7 +88,6 @@ struct MainPage {
   @StorageLink('uplayer_glass_blur_strength') glassBlurStrength: number = 25
   @StorageLink('uplayer_tab_light_color') tabLightColor: string = 'theme'
   @StorageLink('uplayer_tab_material_level') tabMaterialLevel: string = 'adaptive'
-  @StorageLink('uplayer_tab_bar_opacity') tabBarOpacity: number = 100
   @StorageLink('uplayer_tab_indicator_opacity') tabIndicatorOpacity: number = 50
   @State isTitleMarqueeRunning: boolean = true
   @State isArtistMarqueeRunning: boolean = true
@@ -250,10 +249,10 @@ struct MainPage {
   }
 
   private getHdsBarFloatingStyle(): HdsTabsFloatingStyle | undefined {
-    // 缓存键覆盖全部输入（tabStyle/断点/主容器宽/光效配色/主题色/材质等级/Tab栏不透明度），键不变即样式不变
+    // 缓存键覆盖全部输入（tabStyle/断点/主容器宽/光效配色/主题色/材质等级），键不变即样式不变
     const cacheKey: string = `${this.tabStyle}|${this.breakpoint}|${this.mainWidthVp}|` +
       `${this.tabLightColor}|${this.primaryColor}|` +
-      `${this.tabMaterialLevel}|${this.tabBarOpacity}`
+      `${this.tabMaterialLevel}`
     if (this.hdsBarStyleCache !== undefined && this.hdsBarStyleCacheKey === cacheKey) {
       return this.hdsBarStyleCache
     }
@@ -306,7 +305,7 @@ struct MainPage {
           materialType: hdsMaterial.MaterialType.IMMERSIVE,
           materialLevel: level,
         },
-        barOpacity: this.tabBarOpacity / 100,
+        barOpacity: 1,
         barBottomMargin: 25,
         lightColor: lightColor,
         barWidth: (smallScreen || !hasBarWidth) ? undefined :
@@ -318,7 +317,7 @@ struct MainPage {
       style = {
         adaptToHandedness: true,
         gradientMask: gradientMask,
-        barOpacity: this.tabBarOpacity / 100,
+        barOpacity: 1,
         barBottomMargin: 25,
         lightColor: lightColor,
         barWidth: (smallScreen || !hasBarWidth) ? undefined :
@@ -509,10 +508,12 @@ struct MainPage {
         .scale({ x: this.barPrevScale, y: this.barPrevScale })
         .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
           $r('app.color.player_icon_inactive_color'))
-        .onClick(() => {
-          this.barButtonPress((pressed: boolean): void => {
+        .onTouch((event: TouchEvent) => {
+          this.onBarButtonTouch((pressed: boolean): void => {
             this.barPrevScale = pressed ? 0.8 : 1.0
-          })
+          }, event)
+        })
+        .onClick(() => {
           this.playPrevious()
         })
       Image(this.isPlaying ? $r('app.media.ic_public_play') : $r('app.media.ic_public_pause'))
@@ -520,10 +521,12 @@ struct MainPage {
         .scale({ x: this.barPlayScale, y: this.barPlayScale })
         .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
           $r('app.color.player_icon_inactive_color'))
-        .onClick(() => {
-          this.barButtonPress((pressed: boolean): void => {
+        .onTouch((event: TouchEvent) => {
+          this.onBarButtonTouch((pressed: boolean): void => {
             this.barPlayScale = pressed ? 0.8 : 1.0
-          })
+          }, event)
+        })
+        .onClick(() => {
           this.togglePlay()
         })
       Image($r('app.media.ic_public_play_next'))
@@ -531,10 +534,12 @@ struct MainPage {
         .scale({ x: this.barNextScale, y: this.barNextScale })
         .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
           $r('app.color.player_icon_inactive_color'))
-        .onClick(() => {
-          this.barButtonPress((pressed: boolean): void => {
+        .onTouch((event: TouchEvent) => {
+          this.onBarButtonTouch((pressed: boolean): void => {
             this.barNextScale = pressed ? 0.8 : 1.0
-          })
+          }, event)
+        })
+        .onClick(() => {
           this.playNext()
         })
     }
@@ -681,10 +686,12 @@ struct MainPage {
         .scale({ x: this.barPrevScale, y: this.barPrevScale })
         .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
           $r('app.color.player_icon_inactive_color'))
-        .onClick(() => {
-          this.barButtonPress((pressed: boolean): void => {
+        .onTouch((event: TouchEvent) => {
+          this.onBarButtonTouch((pressed: boolean): void => {
             this.barPrevScale = pressed ? 0.8 : 1.0
-          })
+          }, event)
+        })
+        .onClick(() => {
           this.playPrevious()
         })
       Image(this.isPlaying ? $r('app.media.ic_public_play') : $r('app.media.ic_public_pause'))
@@ -692,10 +699,12 @@ struct MainPage {
         .scale({ x: this.barPlayScale, y: this.barPlayScale })
         .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
           $r('app.color.player_icon_inactive_color'))
-        .onClick(() => {
-          this.barButtonPress((pressed: boolean): void => {
+        .onTouch((event: TouchEvent) => {
+          this.onBarButtonTouch((pressed: boolean): void => {
             this.barPlayScale = pressed ? 0.8 : 1.0
-          })
+          }, event)
+        })
+        .onClick(() => {
           this.togglePlay()
         })
       Image($r('app.media.ic_public_play_next'))
@@ -703,10 +712,12 @@ struct MainPage {
         .scale({ x: this.barNextScale, y: this.barNextScale })
         .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
           $r('app.color.player_icon_inactive_color'))
-        .onClick(() => {
-          this.barButtonPress((pressed: boolean): void => {
+        .onTouch((event: TouchEvent) => {
+          this.onBarButtonTouch((pressed: boolean): void => {
             this.barNextScale = pressed ? 0.8 : 1.0
-          })
+          }, event)
+        })
+        .onClick(() => {
           this.playNext()
         })
     }
@@ -816,17 +827,18 @@ struct MainPage {
     }
   }
 
-  // 播控条按钮按压弹簧动画：压至 0.8 后 ANIMATION_PRESS_DELAY_SHORT 弹回 1.0，
-  // 与播放器大页面 ControlAreaComponent 的按压手感一致
-  private barButtonPress(scaleSetter: (pressed: boolean) => void): void {
-    this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
-      scaleSetter(true)
-    })
-    setTimeout(() => {
+  // 播控条按钮按压弹簧动画：按下立即缩小、松开/取消立即弹簧回弹（跟随按压时长，无固定延时），
+  // 与 ScaleButton / 播放器大页面 ControlAreaComponent 的按压手感一致
+  private onBarButtonTouch(scaleSetter: (pressed: boolean) => void, event: TouchEvent): void {
+    if (event.type === TouchType.Down) {
+      this.getUIContext()?.animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
+        scaleSetter(true)
+      })
+    } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
       this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
         scaleSetter(false)
       })
-    }, StyleConstants.ANIMATION_PRESS_DELAY_SHORT)
+    }
   }
 
   playPrevious(): void {
