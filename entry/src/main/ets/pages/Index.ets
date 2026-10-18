@@ -1075,6 +1075,16 @@ struct MainPage {
     if (event.keyCode === KeyCode.KEYCODE_ESCAPE) {
       return this.tryExitMultiSelect()
     }
+    // 左右方向键：外接键盘切页（首页↔歌单↔设置）。方向键事件只能来自物理键盘，未连键盘时
+    // 本分支天然不触发；按键经多模输入按焦点链派发，PC/平板/手机连键盘的行为完全一致
+    if (event.keyCode === KeyCode.KEYCODE_DPAD_LEFT || event.keyCode === KeyCode.KEYCODE_DPAD_RIGHT) {
+      const target: number =
+        event.keyCode === KeyCode.KEYCODE_DPAD_LEFT ? this.currentIndex - 1 : this.currentIndex + 1
+      if (target >= 0 && target <= 2) {
+        this.tabsController.changeIndex(target)
+      }
+      return true
+    }
     if (event.keyCode === KeyCode.KEYCODE_A && this.currentIndex === 0 && this.homeMultiSelect &&
       this.isCtrlPressed(event)) {
       const current: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_HOME_SELECT_ALL_REQUEST) ?? 0
