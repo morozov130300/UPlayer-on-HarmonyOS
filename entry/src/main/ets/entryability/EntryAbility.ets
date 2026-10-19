@@ -108,26 +108,16 @@ export default class EntryAbility extends UIAbility {
         initTimeoutTimer = -1;
       }
 
-      // 逐项隔离：任一项初始化抛异常只记日志，不中断后续项、不阻断 loadContent
-      const safeRun = (step: string, action: () => void): void => {
-        try {
-          action();
-        } catch (e) {
-          Logger.error(TAG, `${step} failed: ${e instanceof Error ? `${e.name}: ${e.message}` : JSON.stringify(e)}`);
-        }
-      };
-
       // 预置 AppStorage 键：@StorageProp/@StorageLink 要求键在组件创建前已存在，
       // 否则绑定静默失败（音量联动 KEY_CURRENT_VOLUME / KEY_VOL_PANEL_MAX 同理）
-      safeRun('presetAppStorageKeys', () => {
+      this.safeRun('presetAppStorageKeys', () => {
         AppStorage.setOrCreate<number>(AppStorageKeyConstants.KEY_VOL_PANEL_MAX, 15);
         AppStorage.setOrCreate<number>(AppStorageKeyConstants.KEY_CURRENT_VOLUME, 1);
       });
       // 偏好存储已迁移 PersistenceV2：其 connect 硬性要求晚于 loadContent，
       // 真实持久化设置只能在 loadContent 之后读取；此处先用默认值占位全部
-      // 设置相关 AppStorage 键保证组件绑定成立，loadContent 回调里再由
-      // initToAppStorage 用真实持久化值覆盖
-      safeRun('presetSettingsDefaults', () => {
+      // 设置相关 AppStorage 键保证组件绑定成立，loadContent 之后再读真实持久化值覆盖
+      this.safeRun('presetSettingsDefaults', () => {
         DataService.getInstance().presetAppStorageDefaults();
       });
 
@@ -139,97 +129,123 @@ export default class EntryAbility extends UIAbility {
           return;
         }
         hilog.info(DOMAIN, 'testTag', 'Succeeded in loading the content.');
-
-        // ── 以下初始化依赖持久化设置，全部后移到 loadContent 之后执行 ──
-        let settings: AppSettingsData = new AppSettingsData();
-        safeRun('initToAppStorage', () => {
-          settings = DataService.getInstance().initToAppStorage();
-        });
-        // 旧 preferences('myStore') 数据已废弃不迁移（用户确认现有设置整体重置）：
-        // 读取链路已全部切换 PersistenceV2，此处一次性删除旧 store 文件
-        safeRun('purgeLegacyPreferences', () => {
-          preferences.deletePreferences(this.context, { name: 'myStore' }).catch((purgeErr: BusinessError) => {
-            Logger.error(TAG, `purgeLegacyPreferences failed: ${JSON.stringify(purgeErr)}`);
-          });
-        });
-        // 音频输出设备路由监听（耳机断开自动暂停 / 输出设备切换入口）
-        safeRun('AudioRoutingService.init', () => {
-          AudioRoutingService.getInstance().init();
-        });
-        // 系统空间音频状态（只读：开关由系统设置控制，应用订阅变化供设置页展示）
-        safeRun('AudioSpatialService.init', () => {
-          AudioSpatialService.getInstance().init();
-        });
-        // 音频会话事件订阅（会话被系统去激活/焦点状态变化可观测，日志跟踪）
-        safeRun('AudioFocusService.init', () => {
-          AudioFocusService.getInstance().init();
-        });
-        // 通知/提示音不压低音量：按落库设置激活或去激活「并发播放」AudioSession
-        safeRun('applyIgnoreNotificationDuck', () => {
-          AudioFocusService.getInstance().applyIgnoreNotificationDuck(settings.ignoreNotificationDuck);
-        });
-        // 智感握姿：按落库设置决定是否订阅 holdingHandChanged（首页加号与设置页预览共用同一份结果）
-        safeRun('HoldingHandService.syncWithSetting', () => {
-          HoldingHandService.getInstance().syncWithSetting();
-        });
-        safeRun('AVSessionController.initAVSession', () => {
-          AVSessionController.getInstance().initAVSession();
-        });
-
-        try {
-          if (settings.themeMode === 'light') {
-            this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT);
-          } else if (settings.themeMode === 'dark') {
-            this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_DARK);
-          } else {
-            this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
-          }
-        } catch (e) {
-          hilog.error(DOMAIN, 'testTag', 'applyThemeMode failed: ' + JSON.stringify(e));
-        }
-
-        windowStage.getMainWindow().then((mainWindow: window.Window) => {
-          let uiContext = windowStage.getMainWindowSync().getUIContext();
-          let windowUtil = new WindowUtil(mainWindow, uiContext);
-          AppStorage.setOrCreate(AppStorageKeyConstants.KEY_WINDOW_UTIL, windowUtil);
-          AppStorage.setOrCreate(AppStorageKeyConstants.KEY_WINDOW, mainWindow);
-          ShareService.getInstance().initialize(mainWindow);
-          const isDarkStatusBackground: boolean = settings.themeMode === 'dark' ||
-            (settings.themeMode === 'system' &&
-              this.context.config.colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK);
-          ColorConversion.setSysBarLightBackground(isDarkStatusBackground);
-          windowUtil.setAvoidArea();
-          windowUtil.updateAvoidArea();
-          windowUtil.updateWindowInfo();
-          try {
-            const isPC: boolean = deviceInfo.deviceType === '2in1';
-            if (isPC) {
-              windowUtil.setupImmersiveTitleButtons();
-            } else {
-              mainWindow.setWindowDecorVisible(false);
-            }
-          } catch (e) {
-            Logger.error(TAG, `setWindowDecorVisible failed: code=${(e as BusinessError).code}, message=${(e as BusinessError).message}`);
-          }
-        }).catch((error: Error) => {
-          Logger.error(TAG, `getMainWindow failed: code=${(error as BusinessError).code}, message=${(error as BusinessError).message}`);
-        });
-
-        windowStage.getMainWindow().then((mainWindow: window.Window) => {
-          mainWindow.setWindowLayoutFullScreen(true).catch((err: Error) => {
-            Logger.error(TAG, `setWindowLayoutFullScreen failed: ${JSON.stringify(err)}`);
-          });
-        });
-
-        // 恢复全部音效运行态（均衡器 + 声场/环境/美声/空间渲染/变声/变速/音源分离）：
-        // 状态推入原生引擎，播放启动时 playWithEffects 按持久化状态全量下发。
-        // 置于 loadContent 之后：即使某个同步 NAPI 被 AudioSuite 系统 IPC 拖住不返回，
-        // 主界面已加载，不会再卡开屏（try/catch 对「不返回」无效，只有后移能兜底）
-        safeRun('syncEffectsFromDisk', () => {
-          AVPlayerService.getInstance().syncEffectsFromDisk();
-        });
+        // ★ 开屏退场红线：启动页（startWindow）由系统在「首帧绘制完成」后才移除，
+        // 而 loadContent 回调仍在 UI 线程、首帧尚未提交——回调里任何一次不返回的
+        // 同步调用（音效 NAPI、系统 IPC、PersistenceV2 读盘）都会把首帧永久卡住，
+        // 表现为「一直停在启动页、完全不能操作」。
+        // 因此回调体内只做一件事：把全部初始化丢到下一个宏任务后立刻返回，
+        // 让出 UI 线程提交首帧。try/catch 对「不返回」无效，只有离开这条路径才是兜底。
+        setTimeout(() => {
+          this.initAfterFirstFrame(windowStage);
+        }, 0);
       });
     });
+  }
+
+  // 逐项隔离：任一项初始化抛异常只记日志，不中断后续项
+  private safeRun(step: string, action: () => void): void {
+    try {
+      action();
+    } catch (e) {
+      Logger.error(TAG, `${step} failed: ${e instanceof Error ? `${e.name}: ${e.message}` : JSON.stringify(e)}`);
+    }
+  }
+
+  // 首帧之后的启动初始化（第一段：依赖持久化设置、必须尽早生效的部分）
+  private initAfterFirstFrame(windowStage: window.WindowStage): void {
+    Logger.info(TAG, 'post-frame init begin');
+
+    let settings: AppSettingsData = new AppSettingsData();
+    this.safeRun('initToAppStorage', () => {
+      settings = DataService.getInstance().initToAppStorage();
+    });
+
+    this.safeRun('applyThemeMode', () => {
+      if (settings.themeMode === 'light') {
+        this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT);
+      } else if (settings.themeMode === 'dark') {
+        this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_DARK);
+      } else {
+        this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
+      }
+    });
+
+    windowStage.getMainWindow().then((mainWindow: window.Window) => {
+      let uiContext = windowStage.getMainWindowSync().getUIContext();
+      let windowUtil = new WindowUtil(mainWindow, uiContext);
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_WINDOW_UTIL, windowUtil);
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_WINDOW, mainWindow);
+      ShareService.getInstance().initialize(mainWindow);
+      const isDarkStatusBackground: boolean = settings.themeMode === 'dark' ||
+        (settings.themeMode === 'system' &&
+          this.context.config.colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK);
+      ColorConversion.setSysBarLightBackground(isDarkStatusBackground);
+      windowUtil.setAvoidArea();
+      windowUtil.updateAvoidArea();
+      windowUtil.updateWindowInfo();
+      try {
+        const isPC: boolean = deviceInfo.deviceType === '2in1';
+        if (isPC) {
+          windowUtil.setupImmersiveTitleButtons();
+        } else {
+          mainWindow.setWindowDecorVisible(false);
+        }
+      } catch (e) {
+        Logger.error(TAG, `setWindowDecorVisible failed: code=${(e as BusinessError).code}, message=${(e as BusinessError).message}`);
+      }
+      mainWindow.setWindowLayoutFullScreen(true).catch((err: Error) => {
+        Logger.error(TAG, `setWindowLayoutFullScreen failed: ${JSON.stringify(err)}`);
+      });
+    }).catch((error: Error) => {
+      Logger.error(TAG, `getMainWindow failed: code=${(error as BusinessError).code}, message=${(error as BusinessError).message}`);
+    });
+
+    // 第二段再推迟一个宏任务：系统服务订阅与音效状态都涉及系统 IPC，
+    // 与首帧渲染错开，任何一项卡住都不再作用于开屏
+    setTimeout(() => {
+      this.initDeferredServices(settings);
+    }, 0);
+  }
+
+  // 首帧之后的启动初始化（第二段：系统服务订阅、音效运行态）
+  private initDeferredServices(settings: AppSettingsData): void {
+    Logger.info(TAG, 'post-frame services init begin');
+    // 旧 preferences('myStore') 数据已废弃不迁移（用户确认现有设置整体重置）：
+    // 读取链路已全部切换 PersistenceV2，此处一次性删除旧 store 文件
+    this.safeRun('purgeLegacyPreferences', () => {
+      preferences.deletePreferences(this.context, { name: 'myStore' }).catch((purgeErr: BusinessError) => {
+        Logger.error(TAG, `purgeLegacyPreferences failed: ${JSON.stringify(purgeErr)}`);
+      });
+    });
+    // 音频输出设备路由监听（耳机断开自动暂停 / 输出设备切换入口）
+    this.safeRun('AudioRoutingService.init', () => {
+      AudioRoutingService.getInstance().init();
+    });
+    // 系统空间音频状态（只读：开关由系统设置控制，应用订阅变化供设置页展示）
+    this.safeRun('AudioSpatialService.init', () => {
+      AudioSpatialService.getInstance().init();
+    });
+    // 音频会话事件订阅（会话被系统去激活/焦点状态变化可观测，日志跟踪）
+    this.safeRun('AudioFocusService.init', () => {
+      AudioFocusService.getInstance().init();
+    });
+    // 通知/提示音不压低音量：按落库设置激活或去激活「并发播放」AudioSession
+    this.safeRun('applyIgnoreNotificationDuck', () => {
+      AudioFocusService.getInstance().applyIgnoreNotificationDuck(settings.ignoreNotificationDuck);
+    });
+    // 智感握姿：按落库设置决定是否订阅 holdingHandChanged（首页加号与设置页预览共用同一份结果）
+    this.safeRun('HoldingHandService.syncWithSetting', () => {
+      HoldingHandService.getInstance().syncWithSetting();
+    });
+    this.safeRun('AVSessionController.initAVSession', () => {
+      AVSessionController.getInstance().initAVSession();
+    });
+    // 恢复全部音效运行态（只回填内存状态，不再在启动期打 20+ 次同步音效 NAPI）：
+    // 原生下发由每次起播的 playWithEffects 全量完成，启动期推一次纯属重复且是卡开屏的元凶
+    this.safeRun('syncEffectsFromDisk', () => {
+      AVPlayerService.getInstance().syncEffectsFromDisk();
+    });
+    Logger.info(TAG, 'post-frame services init end');
   }
 
   onWindowStageDestroy(): void {

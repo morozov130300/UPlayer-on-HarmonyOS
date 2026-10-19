@@ -674,7 +674,10 @@ export class AVPlayerService {
       this.separationEnabled
   }
 
-  // 启动时把持久化设置同步进原生引擎与运行态（EntryAbility 调用）
+  // 启动时把持久化设置读回内存运行态（EntryAbility 在首帧之后调用）。
+  // 这里刻意不调用 applyAllEffectsToNative()：那是 20+ 次同步音效 NAPI（内部会创建
+  // AudioSuite 引擎/管线并逐个节点下发），一旦被系统 IPC 拖住不返回就会冻住 UI 线程；
+  // 原生侧的下发由每次起播的 playWithEffects 全量完成，启动期再推一次纯属重复。
   syncEffectsFromDisk(): void {
     const settings: AppSettingsData = DataService.getInstance().getSettings()
     this.equalizerEnabled = settings.eqEnabled
@@ -700,7 +703,6 @@ export class AVPlayerService {
     this.tempoPitch = settings.tempoPitch
     this.separationEnabled = settings.separationEnabled
     this.separationOutput = settings.separationOutput
-    this.applyAllEffectsToNative()
   }
 
   // 设备音效节点能力：首次调用才打 native（同步系统 IPC，9 个节点类型 9 次调用），
