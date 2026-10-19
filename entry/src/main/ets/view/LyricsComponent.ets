@@ -18,6 +18,8 @@ export struct LyricsComponent {
   @Prop mainWindowInfo: WindowInfo;
   // 手机断点下一镜到底启用时，小封面由 PlayerFlyingCover 浮层渲染，此处仅保留透明占位
   @Prop isCoverFloating: boolean = false;
+  // 小封面几何上报（页面级坐标），作为一镜到底的终点
+  onCoverAreaChange: (area: Area) => void = () => {};
   @StorageLink(AppStorageKeyConstants.KEY_PROGRESS) time: number = 0;
   @State mLrcEntryList: Array<LrcEntry> = [];
   // 歌词加载态：加载中显示「正在加载歌词…」，与「无歌词」区分，避免解析前误占位
@@ -40,6 +42,13 @@ export struct LyricsComponent {
 
   private currentSong(): SongInfo {
     return DataService.currentSongFromList(this.songList, this.currentSongId)
+  }
+
+  // 窄屏判定与 PlayerInfoComponent 保持一致：XS/SM 断点（手机、分屏、缩小后的 PC 窗口）
+  // 都是单页滑动，需要显示 48×48 小封面作为一镜到底的终点
+  private isNarrowLayout(): boolean {
+    const bp: WidthBreakpoint | undefined = this.mainWindowInfo?.widthBp
+    return bp === WidthBreakpoint.WIDTH_SM || bp === WidthBreakpoint.WIDTH_XS
   }
 
   async getLrcEntryList(): Promise<void> {
@@ -66,14 +75,21 @@ export struct LyricsComponent {
 
   build() {
     Column() {
-      if (this.mainWindowInfo.widthBp === WidthBreakpoint.WIDTH_SM) {
+      if (this.isNarrowLayout()) {
         Row() {
-          AlbumCover({ song: this.currentSong(), coverWidth: 48, coverHeight: 48,
-            coverRadius: $r('app.float.label_border') })
-            .margin({ right: 16 })
-            // 一镜到底终点：手机断点下封面由 PlayerFlyingCover 浮层渲染，此处仅保留 48×48 透明占位
-            .opacity(this.isCoverFloating ? 0 : 1)
-            .id('cover_target')
+          // 一镜到底终点：手机断点下封面由 PlayerFlyingCover 浮层渲染，此处仅保留 48×48 透明占位。
+          // 尺寸与 margin 保持与裸 AlbumCover 完全一致，确保歌名/歌手不发生位移
+          Stack() {
+            AlbumCover({ song: this.currentSong(), coverWidth: 48, coverHeight: 48,
+              coverRadius: $r('app.float.label_border') })
+              .opacity(this.isCoverFloating ? 0 : 1)
+          }
+          .width(48)
+          .height(48)
+          .margin({ right: 16 })
+          .onAreaChange((_oldArea: Area, newArea: Area) => {
+            this.onCoverAreaChange(newArea)
+          })
           Column() {
             Text(this.currentSong().title)
               .fontSize(Math.round(20 * this.fontSizeScale)).fontColor(Color.White)
@@ -102,7 +118,7 @@ export struct LyricsComponent {
         isLyricLoading: this.isLyricLoading })
         .layoutWeight(1)
 
-      if (this.mainWindowInfo.widthBp === WidthBreakpoint.WIDTH_SM && this.isShowControl) {
+      if (this.isNarrowLayout() && this.isShowControl) {
         ControlAreaComponent()
           .margin({ top: $r('app.float.control_lyric_margin') })
           .transition({ type: TransitionType.Insert, translate: { x: 0, y: 40 }, opacity: 0 })
@@ -111,7 +127,7 @@ export struct LyricsComponent {
     }
     .onClick(() => {
       this.pageShowTime = 0;
-      if (this.mainWindowInfo.widthBp !== WidthBreakpoint.WIDTH_SM) {
+      if (!this.isNarrowLayout()) {
         return;
       }
       if (this.isShowControl) {

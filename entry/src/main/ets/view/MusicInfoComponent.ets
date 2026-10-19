@@ -21,6 +21,8 @@ export struct MusicInfoComponent {
   @Prop mainWindowInfo: WindowInfo;
   // 手机断点下一镜到底启用时，封面由 PlayerFlyingCover 浮层渲染，本页只保留同尺寸透明占位
   @Prop isCoverFloating: boolean = false;
+  // 封面区域几何上报（页面级坐标），父组件据此驱动一镜到底插值
+  onCoverAreaChange: (area: Area) => void = () => {};
   @StorageLink(AppStorageKeyConstants.KEY_SONG_LIST) songList: SongInfo[] = [];
   @StorageProp(AppStorageKeyConstants.KEY_SELECT_INDEX) @Watch('onSongChange') selectIndex: number = 0;
   // 当前播放歌曲 id：显示信息一律按 id 从全量曲库解析，不依赖队列下标，
@@ -205,8 +207,10 @@ export struct MusicInfoComponent {
         .constraintSize({ maxWidth: '100%', maxHeight: '50%' })
         .shadow({ radius: 12, color: 'rgba(0,0,0,0.15)', offsetX: 0, offsetY: 4 })
         .animation({ duration: StyleConstants.ANIMATION_COVER_CROSS_FADE_DURATION, curve: Curve.EaseInOut })
-        // 一镜到底起点：PlayerInfoComponent 通过该 id 测量大封面矩形
-        .id('cover_origin')
+        // 一镜到底起点：把大封面的页面级几何上报给 PlayerInfoComponent
+        .onAreaChange((_oldArea: Area, newArea: Area) => {
+          this.onCoverAreaChange(newArea)
+        })
       }
       .width('100%')
       .constraintSize({ maxWidth: '100%', maxHeight: '50%' })

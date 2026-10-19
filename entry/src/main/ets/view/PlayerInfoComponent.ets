@@ -21,15 +21,10 @@ import { PlayerFlyingCover } from './PlayerFlyingCover';
 
 const TAG = 'PlayerInfoComponent'
 
-// 两端封面矩形测量：布局首帧内可能拿不到第二页，有限次重试（20 × 60ms ≈ 1.2s）
-const GEOMETRY_RETRY_MAX: number = 20
-const GEOMETRY_RETRY_INTERVAL_MS: number = 60
-
-interface CoverRect {
-  x: number
-  y: number
-  width: number
-  height: number
+// Area 里的 Length/Position 可能是字符串或缺失，统一转成有限数值，避免 NaN 污染坐标计算
+function toFiniteNumber(value: Length | undefined): number {
+  const result: number = Number(value)
+  return isFinite(result) ? result : 0
 }
 
 @Component
@@ -50,6 +45,8 @@ export struct PlayerInfoComponent {
   @State intervalID: number = 0;
   // 手机断点一镜到底：0 = 大封面页，1 = 歌词页；由 Swiper 逐帧回调驱动浮层封面插值
   @State swipeProgress: number = 0;
+  // 已停靠页：决定逐帧偏移量换算成进度的方向
+  private swipeBasePage: number = 0;
   // 两端封面矩形是否测量成功；未成功时浮层不启用，两页各自正常渲染封面（降级为原样）
   @State isCoverGeometryReady: boolean = false;
   @State coverOriginX: number = 0;
@@ -62,8 +59,21 @@ export struct PlayerInfoComponent {
   @State coverTargetHeight: number = 0;
   private layerWidth: number = 0;
   private layerHeight: number = 0;
-  private geometryRetryTimer: number = -1;
-  private geometryRetryCount: number = 0;
+  private page0GlobalX: number = 0;
+  private page0GlobalY: number = 0;
+  private page1GlobalX: number = 0;
+  private page1GlobalY: number = 0;
+  // 页容器是否已真正上报过坐标：未上报时默认 0，直接相减会把封面算到屏幕外
+  private page0Measured: boolean = false;
+  private page1Measured: boolean = false;
+  private originWidth: number = 0;
+  private originHeight: number = 0;
+  private originGlobalX: number = 0;
+  private originGlobalY: number = 0;
+  private targetWidth: number = 0;
+  private targetHeight: number = 0;
+  private targetGlobalX: number = 0;
+  private targetGlobalY: number = 0;
   // 系统音量写通道：底栏音量 Slider 弹层经 KEY_CURRENT_VOLUME 联动驱动 volumeLevel，
   // AVVolumePanel 常驻挂载，不做显隐切换
   @StorageProp(AppStorageKeyConstants.KEY_VOL_PANEL_MAX) volPanelMax: number = 15;
@@ -89,19 +99,28 @@ export struct PlayerInfoComponent {
   mainWindowInfoChange() {
     Logger.info(
       `windowUtil is change,current width breakpoint is ${this.mainWindowInfo?.widthBp},height breakpoint is ${this.mainWindowInfo?.heightBp}`)
-    // 断点在手机/宽屏之间切换后，封面矩形必须重新测量（宽屏分支不使用浮层）
-    this.scheduleGeometryMeasure()
+    // 断点切换后 Swiper 会重建并回到第 0 页，进度必须归零，
+    // 否则残留的 1 会让浮层封面直接落在小封面位置（窗口缩放场景必现）
+    this.swipeProgress = 0;
+    this.swipeBasePage = 0;
+    this.layerWidth = 0;
+    this.layerHeight = 0;
+    this.originWidth = 0;
+    this.targetWidth = 0;
+    // 页容器与封面都会随断点重建，旧坐标一律作废，等新的 onAreaChange 上报
+    this.page0Measured = false;
+    this.page1Measured = false;
+    // 两端封面随断点重建，等它们的 onAreaChange 重新上报几何后再启用浮层
+    this.isCoverGeometryReady = false
   }
 
   aboutToAppear(): void {
     ColorConversion.setSysBarLightBackground(this.isBackgroundDark(this.imageColor));
     this.getImageColor();
-    this.scheduleGeometryMeasure();
   }
 
   aboutToDisappear(): void {
     clearInterval(this.intervalID);
-    this.clearGeometryRetry();
     this.imageLoadRequestId++;
     this.backgroundCoverLease?.release();
     this.backgroundCoverLease = undefined;
@@ -198,7 +217,7 @@ export struct PlayerInfoComponent {
         .opacity(0.6)
 
       Column() {
-        if (this.mainWindowInfo.widthBp !== WidthBreakpoint.WIDTH_SM) {
+        if (!this.isNarrowLayout()) {
           Row() {
             Column() {
               MusicInfoComponent({ mainWindowInfo: this.mainWindowInfo })
@@ -225,7 +244,10 @@ export struct PlayerInfoComponent {
                 Column() {
                   MusicInfoComponent({
                     mainWindowInfo: this.mainWindowInfo,
-                    isCoverFloating: this.isCoverGeometryReady
+                    isCoverFloating: this.isCoverGeometryReady,
+                    onCoverAreaChange: (area: Area) => {
+                      this.onOriginAreaChange(area)
+                    }
                   })
                 }
                 .padding({
@@ -236,6 +258,9 @@ export struct PlayerInfoComponent {
                 })
                 .width('100%')
                 .height('100%')
+                .onAreaChange((_oldArea: Area, newArea: Area) => {
+                  this.onPageAreaChange(0, newArea)
+                })
               }
 
               Stack() {
@@ -243,7 +268,10 @@ export struct PlayerInfoComponent {
                   LyricsComponent({
                     isShowControl: this.isShowControl,
                     mainWindowInfo: this.mainWindowInfo,
-                    isCoverFloating: this.isCoverGeometryReady
+                    isCoverFloating: this.isCoverGeometryReady,
+                    onCoverAreaChange: (area: Area) => {
+                      this.onTargetAreaChange(area)
+                    }
                   })
                 }
                 .padding({
@@ -254,6 +282,9 @@ export struct PlayerInfoComponent {
                 })
                 .width('100%')
                 .height('100%')
+                .onAreaChange((_oldArea: Area, newArea: Area) => {
+                  this.onPageAreaChange(1, newArea)
+                })
               }
             }
             .width('100%')
@@ -261,21 +292,40 @@ export struct PlayerInfoComponent {
             .loop(false)
             .curve(curves.springMotion(0.5, 0.8))
             .indicator(
+              // 未选中圆点 6×6，当前页拉成 22×6 椭圆长条（高度 6 → 端部圆角半径 3）
               new DotIndicator()
                 .top(8)
-                .color(this.getDotColor(false))
-                .selectedColor(this.getDotColor(true))
+                .color('rgba(255, 255, 255, 0.32)')
+                .selectedColor('rgba(255, 255, 255, 0.95)')
                 .itemWidth(6)
                 .itemHeight(6)
-                .selectedItemWidth(14)
+                .selectedItemWidth(18)
                 .selectedItemHeight(6)
             )
-            // 逐帧滑动进度：position 为当前页相对 index 页的归一化偏移，index + position 即跨页进度
-            .onContentDidScroll((index: number, position: number, _mainAxisLength: number) => {
-              this.updateSwipeProgress(index, position)
+            // 跟手阶段唯一进度源：onGestureSwipe 在手势期间每帧回调，currentOffset 即实时滑动位移
+            .onGestureSwipe((_index: number, extraInfo: SwiperAnimationEvent) => {
+              this.updateSwipeProgress(extraInfo.currentOffset, this.layerWidth)
+            })
+            // 收尾阶段：Swiper 开始回弹动画时，从「当前已显示的进度」补到目标页，
+            // 不用 onContentDidScroll —— 该回调在松手瞬间会把偏移重置为 0，
+            // 会把进度拉回起点再走一遍，正是之前看到的二次飞行
+            .onAnimationStart((_index: number, targetIndex: number, _extraInfo: SwiperAnimationEvent) => {
+              this.swipeBasePage = targetIndex
+              const targetProgress: number = targetIndex === 1 ? 1 : 0
+              if (Math.abs(this.swipeProgress - targetProgress) < 0.005) {
+                return
+              }
+              // 曲线与 Swiper 的 .curve(springMotion(0.5,0.8)) 完全一致，不额外指定时长，
+              // 让弹簧自由演化，封面与页面同步收尾
+              this.getUIContext()?.animateTo({
+                curve: curves.springMotion(0.5, 0.8)
+              }, () => {
+                this.swipeProgress = targetProgress
+              })
             })
             .onChange((index: number) => {
-              // 尾帧对齐：动画结束必须落到 0/1，避免浮层停在插值中途
+              // 到位后只做数值校准，页面切换的其余逻辑保持原样
+              this.swipeBasePage = index
               this.swipeProgress = index === 1 ? 1 : 0
               if (index === 1) {
                 this.getUIContext()?.animateTo({ curve: curves.springMotion(0.5, 0.8) }, () => {
@@ -312,16 +362,8 @@ export struct PlayerInfoComponent {
           }
           .layoutWeight(1)
           .width('100%')
-          .id('cover_layer')
-          .onAreaChange((oldArea: Area, newArea: Area) => {
-            const width: number = Number(newArea.width)
-            const height: number = Number(newArea.height)
-            if (Math.abs(width - this.layerWidth) < 0.5 && Math.abs(height - this.layerHeight) < 0.5) {
-              return
-            }
-            this.layerWidth = width
-            this.layerHeight = height
-            this.scheduleGeometryMeasure()
+          .onAreaChange((_oldArea: Area, newArea: Area) => {
+            this.onLayerAreaChange(newArea)
           })
         }
       }
@@ -389,109 +431,111 @@ export struct PlayerInfoComponent {
     return false;
   }
 
-  // 逐帧滑动进度：0 = 大封面页，1 = 歌词页。position 为当前页相对 index 页的归一化偏移，
-  // 两者相加即跨页进度；方向若与预期相反（真机表现为封面反向飞），改为 index - position
-  private updateSwipeProgress(index: number, position: number): void {
-    if (this.mainWindowInfo?.widthBp !== WidthBreakpoint.WIDTH_SM) {
+  // 窄屏（单页滑动）判定：手机直板屏、平板分屏、PC/折叠屏窗口缩小到 XS/SM 断点，
+  // 全部走同一套 Swiper + 一镜到底；只有 MD 及以上的宽窗口才用左右双栏
+  private isNarrowLayout(): boolean {
+    const bp: WidthBreakpoint | undefined = this.mainWindowInfo?.widthBp
+    return bp === WidthBreakpoint.WIDTH_SM || bp === WidthBreakpoint.WIDTH_XS
+  }
+
+  // 逐帧滑动进度：与手指位移严格线性。position 是当前滑动偏移（可能归一化 -1~1，
+  // 也可能以 vp 给出，用主轴长度自适应），方向未知，取绝对值；
+  // 再按「已停靠页」决定是正向还是反向，避免到位后 position 归零导致封面弹回
+  private updateSwipeProgress(position: number, mainAxisLength: number): void {
+    if (!this.isNarrowLayout()) {
       return
     }
-    let progress: number = index + position
-    if (progress < 0) {
-      progress = 0
+    let delta: number = Math.abs(position)
+    if (delta > 1 && mainAxisLength > 0) {
+      delta = delta / mainAxisLength
     }
-    if (progress > 1) {
-      progress = 1
+    if (delta > 1) {
+      delta = 1
     }
-    if (Math.abs(progress - this.swipeProgress) < 0.001) {
+    const progress: number = this.swipeBasePage === 1 ? 1 - delta : delta
+    if (Math.abs(progress - this.swipeProgress) < 0.0005) {
       return
     }
     this.swipeProgress = progress
   }
 
-  private scheduleGeometryMeasure(): void {
-    this.geometryRetryCount = 0
-    this.clearGeometryRetry()
-    // 等一帧让布局完成，否则首次测量拿不到两端封面矩形
-    this.geometryRetryTimer = setTimeout(() => {
-      this.geometryRetryTimer = -1
-      this.measureCoverGeometry()
-    }, 0)
+  // 以下三个回调由两端封面与浮层容器各自的 onAreaChange 上报。globalPosition 是页面级坐标（vp），
+  // 用它取代 getRectangleById 的 id 查询：id 查询依赖挂载时机、查不到只抛异常，实测靠不住
+  private onLayerAreaChange(area: Area): void {
+    this.layerWidth = toFiniteNumber(area.width)
+    this.layerHeight = toFiniteNumber(area.height)
+    this.applyCoverGeometry()
   }
 
-  private clearGeometryRetry(): void {
-    if (this.geometryRetryTimer !== -1) {
-      clearTimeout(this.geometryRetryTimer)
-      this.geometryRetryTimer = -1
+  private onPageAreaChange(pageIndex: number, area: Area): void {
+    const globalX: number = toFiniteNumber(area.globalPosition.x)
+    const globalY: number = toFiniteNumber(area.globalPosition.y)
+    if (pageIndex === 0) {
+      this.page0GlobalX = globalX
+      this.page0GlobalY = globalY
+      this.page0Measured = true
+    } else {
+      this.page1GlobalX = globalX
+      this.page1GlobalY = globalY
+      this.page1Measured = true
     }
+    this.applyCoverGeometry()
   }
 
-  // 两端封面矩形在首次布局时可能尚未就绪（Swiper 第二页延迟挂载），按固定间隔有限次重试
-  private retryGeometryMeasure(): void {
-    if (this.geometryRetryCount >= GEOMETRY_RETRY_MAX) {
+  // 封面坐标换算成「所在页内的相对位置」：Swiper 滑动时页容器与封面同步位移，
+  // 两者的 globalPosition 差值恒定，浮层因此不会跟着页面一起跑
+  private onOriginAreaChange(area: Area): void {
+    this.originWidth = toFiniteNumber(area.width)
+    this.originHeight = toFiniteNumber(area.height)
+    this.originGlobalX = toFiniteNumber(area.globalPosition.x)
+    this.originGlobalY = toFiniteNumber(area.globalPosition.y)
+    this.applyCoverGeometry()
+  }
+
+  private onTargetAreaChange(area: Area): void {
+    this.targetWidth = toFiniteNumber(area.width)
+    this.targetHeight = toFiniteNumber(area.height)
+    this.targetGlobalX = toFiniteNumber(area.globalPosition.x)
+    this.targetGlobalY = toFiniteNumber(area.globalPosition.y)
+    this.applyCoverGeometry()
+  }
+
+  // 页内相对坐标的基准与浮层层原点一致（页 0、Swiper、浮层 Stack 三者左上角重合）。
+  // 任一侧页容器没有上报过坐标时一律不启用浮层：宁可回退成两页各自显示封面，也不能把封面算到屏幕外
+  private applyCoverGeometry(): void {
+    // 采样一次即冻结：端点位置是静态量，一旦算准就不再随任何 onAreaChange 改动。
+    // 否则「页先动、进度后更新」的那几帧会用新页坐标配旧封面坐标，算出错误端点导致封面跳一下
+    if (this.isCoverGeometryReady) {
       return
     }
-    this.geometryRetryCount++
-    this.clearGeometryRetry()
-    this.geometryRetryTimer = setTimeout(() => {
-      this.geometryRetryTimer = -1
-      this.measureCoverGeometry()
-    }, GEOMETRY_RETRY_INTERVAL_MS)
-  }
-
-  private measureCoverGeometry(): void {
-    if (this.mainWindowInfo?.widthBp !== WidthBreakpoint.WIDTH_SM) {
-      if (this.isCoverGeometryReady) {
-        this.isCoverGeometryReady = false
-      }
+    if (!this.isNarrowLayout() || this.layerWidth <= 0 || this.originWidth <= 0 || this.targetWidth <= 0 ||
+      !this.page0Measured || !this.page1Measured) {
       return
     }
-    const layer: CoverRect | undefined = this.readRect('cover_layer')
-    const origin: CoverRect | undefined = this.readRect('cover_origin')
-    const target: CoverRect | undefined = this.readRect('cover_target')
-    if (layer === undefined || origin === undefined || target === undefined || layer.width <= 0) {
-      if (this.isCoverGeometryReady) {
-        this.isCoverGeometryReady = false
-      }
-      this.retryGeometryMeasure()
+    const originX: number = this.originGlobalX - this.page0GlobalX
+    const originY: number = this.originGlobalY - this.page0GlobalY
+    const targetX: number = this.targetGlobalX - this.page1GlobalX
+    const targetY: number = this.targetGlobalY - this.page1GlobalY
+    // 越界即这组坐标不可信，不采样、继续等下一帧上报（此时浮层仍是未启用状态，页面封面正常可见）
+    const outOfLayer: boolean = originX < -1 || originX > this.layerWidth || originY < -1 ||
+      originY > this.layerHeight || targetX < -1 || targetX > this.layerWidth || targetY < -1 ||
+      targetY > this.layerHeight
+    if (outOfLayer) {
       return
     }
-    // 第 1 页的小封面位于 Swiper 第二屏，需按页宽回退到当前视口坐标系
-    const pageWidth: number = layer.width
-    this.coverOriginX = origin.x - layer.x
-    this.coverOriginY = origin.y - layer.y
-    this.coverOriginWidth = origin.width
-    this.coverOriginHeight = origin.height
-    this.coverTargetX = target.x - layer.x - pageWidth
-    this.coverTargetY = target.y - layer.y
-    this.coverTargetWidth = target.width
-    this.coverTargetHeight = target.height
-    this.isCoverGeometryReady = this.coverOriginWidth > 0 && this.coverTargetWidth > 0
-  }
-
-  private readRect(id: string): CoverRect | undefined {
-    try {
-      const uiContext = this.getUIContext()
-      // 组件不存在时 getRectangleById 会抛异常，由 catch 兜住并返回 undefined
-      const info = uiContext.getComponentUtils().getRectangleById(id)
-      // getRectangleById 返回 px，统一换算成 vp 与布局单位对齐
-      const rect: CoverRect = {
-        x: uiContext.px2vp(info.windowOffset.x),
-        y: uiContext.px2vp(info.windowOffset.y),
-        width: uiContext.px2vp(info.size.width),
-        height: uiContext.px2vp(info.size.height)
-      }
-      return rect
-    } catch (_) {
-      return undefined
-    }
-  }
-
-  private getDotColor(isSelected: boolean): ResourceColor {
-    const isLight = this.isBackgroundLight(this.imageColor);
-    if (isSelected) {
-      return isLight ? '#333333' : '#FFFFFF';
-    }
-    return isLight ? '#AAAAAA' : '#666666';
+    this.coverOriginX = originX
+    this.coverOriginY = originY
+    this.coverOriginWidth = this.originWidth
+    this.coverOriginHeight = this.originHeight
+    this.coverTargetX = targetX
+    this.coverTargetY = targetY
+    this.coverTargetWidth = this.targetWidth
+    this.coverTargetHeight = this.targetHeight
+    Logger.info(TAG,
+      `cover fly ready: origin=(${this.coverOriginX.toFixed(1)},${this.coverOriginY.toFixed(1)}) ${this.coverOriginWidth.toFixed(1)}vp ` +
+        `target=(${this.coverTargetX.toFixed(1)},${this.coverTargetY.toFixed(1)}) ${this.coverTargetWidth.toFixed(1)}vp ` +
+        `layer=${this.layerWidth.toFixed(1)}x${this.layerHeight.toFixed(1)}`)
+    this.isCoverGeometryReady = true
   }
 
   getImageColor() {

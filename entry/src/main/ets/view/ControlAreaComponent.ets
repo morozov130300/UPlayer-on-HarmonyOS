@@ -1508,7 +1508,8 @@ export struct ControlAreaComponent {
         }
         .width(this.scaledSize(44))
         .height(this.scaledSize(44))
-        .margin({ left: this.scaledSize(-10), right: this.scaledSize(8) })
+        // 负边距会让 44vp 热区被标题栏裁掉一部分，箭头看起来偏左，故热区整体落在可视区内
+        .margin({ left: 0, right: this.scaledSize(6) })
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
         .borderRadius(this.scaledSize(22))
