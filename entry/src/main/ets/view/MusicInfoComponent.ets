@@ -12,7 +12,8 @@ import { ControlAreaComponent } from './ControlAreaComponent';
 
 import { AlbumCover } from '../component/AlbumCover';
 import { ScaleButton } from '../component/ScaleButton';
-import { audioQualityBadgeText } from '../common/utils/AudioQualityUtil';
+import { AudioQualityBadge } from '../component/AudioQualityBadge';
+import { audioQualityBadgeDetail, audioQualityBadgeText, audioQualityTier } from '../common/utils/AudioQualityUtil';
 
 const TAG = 'MusicInfoComponent';
 
@@ -184,22 +185,15 @@ export struct MusicInfoComponent {
             .aspectRatio(1)
             .opacity(this.isCoverFloating ? 0 : 1)
 
-          // 封面左下角音质标签（码率/编码格式）：半透明黑底白字小胶囊，无码率数据时不渲染
+          // 封面左下角音质标签（黑金配色）：无数据时不渲染；
           // 浮层模式下标签随封面一起搬到 PlayerFlyingCover，本页不再渲染，避免被浮层遮挡或双份
           if (!this.isCoverFloating && audioQualityBadgeText(this.currentSong()).length > 0) {
-            Row() {
-              Text(audioQualityBadgeText(this.currentSong()))
-                .fontSize(Math.round(10 * this.fontSizeScale))
-                .fontColor(Color.White)
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-                .constraintSize({ maxWidth: '70%' })
-            }
-            .padding({ left: 6, right: 6, top: 3, bottom: 3 })
-            .borderRadius(8)
-            .backgroundColor('rgba(0, 0, 0, 0.45)')
-            .margin({ left: 8, bottom: 8 })
-            .hitTestBehavior(HitTestMode.None)
+            AudioQualityBadge({
+              tier: audioQualityTier(this.currentSong()),
+              detail: audioQualityBadgeDetail(this.currentSong()),
+              fontSizeScale: this.fontSizeScale
+            })
+              .hitTestBehavior(HitTestMode.None)
           }
         }
         .width('100%')

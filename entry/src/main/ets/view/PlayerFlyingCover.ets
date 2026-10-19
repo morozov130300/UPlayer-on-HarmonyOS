@@ -2,7 +2,8 @@ import { SongInfo } from '../model/SongInfo'
 import { AlbumCover } from '../component/AlbumCover'
 import { DataService } from '../service/DataService'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
-import { audioQualityBadgeText } from '../common/utils/AudioQualityUtil'
+import { audioQualityBadgeDetail, audioQualityBadgeText, audioQualityTier } from '../common/utils/AudioQualityUtil'
+import { AudioQualityBadge } from '../component/AudioQualityBadge'
 
 // 大封面圆角（与 MusicInfoComponent.CoverInfo 内 AlbumCover 保持一致）
 const ORIGIN_RADIUS: number = 8
@@ -122,26 +123,22 @@ export struct PlayerFlyingCover {
 
       // 音质标签随封面一起搬运：浮层盖在页面内封面之上，若标签仍留在页面里会被浮层遮住
       if (this.badgeOpacity() > 0.01 && audioQualityBadgeText(this.currentSong()).length > 0) {
-        Row() {
-          Text(audioQualityBadgeText(this.currentSong()))
-            .fontSize(Math.round(10 * this.fontSizeScale))
-            .fontColor(Color.White)
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .constraintSize({ maxWidth: '70%' })
-        }
-        .padding({ left: 6, right: 6, top: 3, bottom: 3 })
-        .borderRadius(8)
-        .backgroundColor('rgba(0, 0, 0, 0.45)')
-        .margin({ left: 8, bottom: 8 })
-        .opacity(this.badgeOpacity())
-        .hitTestBehavior(HitTestMode.None)
+        AudioQualityBadge({
+          tier: audioQualityTier(this.currentSong()),
+          detail: audioQualityBadgeDetail(this.currentSong()),
+          fontSizeScale: this.fontSizeScale
+        })
+          .opacity(this.badgeOpacity())
+          .hitTestBehavior(HitTestMode.None)
       }
     }
     .width(this.coverWidth())
     .height(this.coverHeight())
     .position({ x: this.coverLeft(), y: this.coverTop() })
-    .hitTestBehavior(HitTestMode.None)
+    // 浮层盖在 Swiper 之上且其子组件（封面图）会命中触摸测试：
+    // None 无法让被盖住的下层 Swiper 触发触摸测试（手指落在封面上时滑动手势失效），
+    // 必须用 Transparent 才能把触摸透传给下层，封面图片上起手才能左右翻页
+    .hitTestBehavior(HitTestMode.Transparent)
     .zIndex(2)
   }
 }

@@ -31,13 +31,9 @@ export function audioQualityTier(song: SongInfo): string {
   return ''
 }
 
-// 封面左下角音质标签：等级缩写在前，码率/采样率/位深跟随；完全无数据时不渲染
-export function audioQualityBadgeText(song: SongInfo): string {
+// 音质标签详情部分（码率/采样率/位深），不含等级缩写
+export function audioQualityBadgeDetail(song: SongInfo): string {
   const parts: string[] = []
-  const tier: string = audioQualityTier(song)
-  if (tier.length > 0) {
-    parts.push(tier)
-  }
   const bitrate: number = song.effectiveBitrate()
   if (bitrate > 0) {
     parts.push(`${Math.round(bitrate / 1000)} kbps`)
@@ -50,4 +46,17 @@ export function audioQualityBadgeText(song: SongInfo): string {
     parts.push(`${depth} bit`)
   }
   return parts.join(' · ')
+}
+
+// 封面左下角音质标签：等级缩写在前，码率/采样率/位深跟随；完全无数据时不渲染
+export function audioQualityBadgeText(song: SongInfo): string {
+  const tier: string = audioQualityTier(song)
+  const detail: string = audioQualityBadgeDetail(song)
+  if (tier.length > 0 && detail.length > 0) {
+    return `${tier} · ${detail}`
+  }
+  if (tier.length > 0) {
+    return tier
+  }
+  return detail
 }
