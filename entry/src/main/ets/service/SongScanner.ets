@@ -5,6 +5,7 @@ import { SongInfo } from '../model/SongInfo'
 import { AUDIO_EXTENSIONS, DataService, ImportResult } from './DataService'
 import { AudioMetadataService } from './AudioMetadataService'
 import { applyMetadataToSong, extractSongMetadata } from './MetadataTask'
+import { fillPinyinForSongs } from './PinyinTask'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { LyricFile } from '../common/constants/LyricConst'
 import { showToastGlassMaterial } from '../common/utils/GlassUtil'
@@ -136,6 +137,8 @@ export class SongScanner {
         AppStorage.setOrCreate(AppStorageKeyConstants.KEY_IMPORT_DONE, doneCount)
         batchBuffer.push(song)
         if (batchBuffer.length >= IMPORT_BATCH_SIZE) {
+          // 入库前预计算拼音列（S3）：搜索数据随导入同步落库，无需二次回填
+          await fillPinyinForSongs(batchBuffer)
           this.flushBatch(batchBuffer, onBatch)
         }
         index = nextIndex
@@ -148,6 +151,7 @@ export class SongScanner {
       workers.push(worker())
     }
     await Promise.all(workers)
+    await fillPinyinForSongs(batchBuffer)
     this.flushBatch(batchBuffer, onBatch)
   }
 

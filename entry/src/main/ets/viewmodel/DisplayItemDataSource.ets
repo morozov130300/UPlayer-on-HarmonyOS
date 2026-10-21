@@ -5,6 +5,8 @@ export class DisplayItem {
   headerText: string = ''
   song: SongInfo = new SongInfo()
   key: string = ''
+  // 专辑/歌手分组头（P2-4）：组内歌曲数；header.song 挂组内代表歌曲用于封面渲染
+  headerCount: number = 0
 }
 
 export class DisplayItemDataSource implements IDataSource {

@@ -2,6 +2,7 @@ import { relationalStore } from '@kit.ArkData'
 import { common } from '@kit.AbilityKit'
 import { SongInfo } from '../model/SongInfo'
 import { FolderInfo } from '../model/FolderInfo'
+import { PlaylistInfo } from '../model/PlaylistInfo'
 import Logger from '../common/utils/Logger'
 
 const TAG = 'SongDatabase'
@@ -52,7 +53,15 @@ const SQL_CREATE_SONGS: string = 'CREATE TABLE IF NOT EXISTS songs (' +
   'bitDepth TEXT NOT NULL DEFAULT \'\',' +
   'codec TEXT NOT NULL DEFAULT \'\',' +
   'trackCount TEXT NOT NULL DEFAULT \'\',' +
-  'fileSize INTEGER NOT NULL DEFAULT 0)'
+  'fileSize INTEGER NOT NULL DEFAULT 0,' +
+  'playCount INTEGER NOT NULL DEFAULT 0,' +
+  'lastPlayedAt INTEGER NOT NULL DEFAULT 0,' +
+  'pinyinFull TEXT NOT NULL DEFAULT \'\',' +
+  'pinyinAbbr TEXT NOT NULL DEFAULT \'\',' +
+  'mbid TEXT NOT NULL DEFAULT \'\',' +
+  'lyricOffsetMs INTEGER NOT NULL DEFAULT 0,' +
+  'rgTrackGain INTEGER NOT NULL DEFAULT 0,' +
+  'rgAlbumGain INTEGER NOT NULL DEFAULT 0)'
 
 const SQL_INDEX_URI: string = 'CREATE INDEX IF NOT EXISTS idx_songs_uri ON songs(uri)'
 const SQL_INDEX_FOLDER: string = 'CREATE INDEX IF NOT EXISTS idx_songs_folder ON songs(folderPath)'
@@ -69,6 +78,27 @@ const SQL_CREATE_FOLDERS: string = 'CREATE TABLE IF NOT EXISTS folders (' +
   'isFavorite INTEGER NOT NULL DEFAULT 0,' +
   'sortOrder INTEGER NOT NULL DEFAULT 0,' +
   'orderIndex INTEGER NOT NULL DEFAULT 0)'
+
+// 自定义歌单（P2-3）：歌单元数据 + 歌单-歌曲关联表。
+// playlist_items 复合主键 (playlistId, songId) 天然去重——重复「加入歌单」写不进第二行
+const TABLE_PLAYLISTS: string = 'playlists'
+const SQL_CREATE_PLAYLISTS: string = 'CREATE TABLE IF NOT EXISTS playlists (' +
+  'id TEXT PRIMARY KEY,' +
+  'name TEXT NOT NULL DEFAULT \'\',' +
+  'createdTime INTEGER NOT NULL DEFAULT 0,' +
+  'sortOrder INTEGER NOT NULL DEFAULT 0,' +
+  'coverSongId TEXT NOT NULL DEFAULT \'\')'
+
+const TABLE_PLAYLIST_ITEMS: string = 'playlist_items'
+const SQL_CREATE_PLAYLIST_ITEMS: string = 'CREATE TABLE IF NOT EXISTS playlist_items (' +
+  'playlistId TEXT NOT NULL,' +
+  'songId TEXT NOT NULL,' +
+  'addedTime INTEGER NOT NULL DEFAULT 0,' +
+  'sortOrder INTEGER NOT NULL DEFAULT 0,' +
+  'PRIMARY KEY(playlistId, songId))'
+
+const SQL_INDEX_PLAYLIST_ITEMS: string =
+  'CREATE INDEX IF NOT EXISTS idx_playlist_items_playlist ON playlist_items(playlistId)'
 
 // 单列的完整定义：name 为列名，definition 为「类型 + 约束」（不含列名本身），
 // 后者直接用于 ALTER TABLE ADD COLUMN 补列，保证补出的列与新建表完全一致。
@@ -104,8 +134,12 @@ function parseColumnDefs(createSql: string): ColumnDef[] {
 
 const SONGS_COLUMN_DEFS: ColumnDef[] = parseColumnDefs(SQL_CREATE_SONGS)
 const FOLDERS_COLUMN_DEFS: ColumnDef[] = parseColumnDefs(SQL_CREATE_FOLDERS)
+const PLAYLISTS_COLUMN_DEFS: ColumnDef[] = parseColumnDefs(SQL_CREATE_PLAYLISTS)
+const PLAYLIST_ITEMS_COLUMN_DEFS: ColumnDef[] = parseColumnDefs(SQL_CREATE_PLAYLIST_ITEMS)
 const SONGS_COLUMNS: string[] = SONGS_COLUMN_DEFS.map((def: ColumnDef) => def.name)
 const FOLDERS_COLUMNS: string[] = FOLDERS_COLUMN_DEFS.map((def: ColumnDef) => def.name)
+const PLAYLISTS_COLUMNS: string[] = PLAYLISTS_COLUMN_DEFS.map((def: ColumnDef) => def.name)
+const PLAYLIST_ITEMS_COLUMNS: string[] = PLAYLIST_ITEMS_COLUMN_DEFS.map((def: ColumnDef) => def.name)
 
 // 表结构探测结果：
 //   current = 列齐全，当前 schema，原样保留
@@ -147,6 +181,9 @@ export class SongDatabase {
         await store.executeSql(SQL_INDEX_FOLDER)
         await store.executeSql(SQL_INDEX_SORT)
         await store.executeSql(SQL_CREATE_FOLDERS)
+        await store.executeSql(SQL_CREATE_PLAYLISTS)
+        await store.executeSql(SQL_CREATE_PLAYLIST_ITEMS)
+        await store.executeSql(SQL_INDEX_PLAYLIST_ITEMS)
         Logger.info(TAG, 'SongDatabase initialized')
         resolve()
       }).catch((err: Error) => {
@@ -187,7 +224,22 @@ export class SongDatabase {
     } else if (foldersProbe.status === 'unknown') {
       Logger.warn(TAG, 'folders schema probe inconclusive, table kept untouched')
     }
-    Logger.info(TAG, `schema check: songs=${songsProbe.status}, folders=${foldersProbe.status}`)
+    const playlistsProbe: TableProbe = await this.probeTable(store, TABLE_PLAYLISTS, PLAYLISTS_COLUMNS)
+    if (playlistsProbe.status === 'legacy') {
+      Logger.warn(TAG, `legacy playlists table detected, missing columns [${playlistsProbe.missing.join(', ')}], alter table to add them`)
+      await this.addMissingColumns(store, TABLE_PLAYLISTS, playlistsProbe.missing, PLAYLISTS_COLUMN_DEFS)
+    } else if (playlistsProbe.status === 'unknown') {
+      Logger.warn(TAG, 'playlists schema probe inconclusive, table kept untouched')
+    }
+    const playlistItemsProbe: TableProbe = await this.probeTable(store, TABLE_PLAYLIST_ITEMS, PLAYLIST_ITEMS_COLUMNS)
+    if (playlistItemsProbe.status === 'legacy') {
+      Logger.warn(TAG, `legacy playlist_items table detected, missing columns [${playlistItemsProbe.missing.join(', ')}], alter table to add them`)
+      await this.addMissingColumns(store, TABLE_PLAYLIST_ITEMS, playlistItemsProbe.missing, PLAYLIST_ITEMS_COLUMN_DEFS)
+    } else if (playlistItemsProbe.status === 'unknown') {
+      Logger.warn(TAG, 'playlist_items schema probe inconclusive, table kept untouched')
+    }
+    Logger.info(TAG, `schema check: songs=${songsProbe.status}, folders=${foldersProbe.status}, ` +
+      `playlists=${playlistsProbe.status}, playlist_items=${playlistItemsProbe.status}`)
   }
 
   // 逐列补齐缺失列：定义取自当前 CREATE TABLE SQL，保证补出的列与新建表一致。
@@ -436,6 +488,145 @@ export class SongDatabase {
     return folder
   }
 
+  // ═══════════ playlists / playlist_items 表：自定义歌单（P2-3）═══════════
+
+  public async queryAllPlaylists(): Promise<PlaylistInfo[]> {
+    const store = this.requireStore()
+    const predicates = new relationalStore.RdbPredicates(TABLE_PLAYLISTS)
+    predicates.orderByAsc('createdTime')
+    const resultSet: relationalStore.ResultSet = await store.query(predicates)
+    const result: PlaylistInfo[] = []
+    try {
+      while (resultSet.goToNextRow()) {
+        result.push(this.playlistFromResultSet(resultSet))
+      }
+    } finally {
+      resultSet.close()
+    }
+    return result
+  }
+
+  // playlistId → 有序 songId 列表（加入顺序），供筛选/封面拼贴/计数使用
+  public async queryAllPlaylistItems(): Promise<Map<string, string[]>> {
+    const store = this.requireStore()
+    const predicates = new relationalStore.RdbPredicates(TABLE_PLAYLIST_ITEMS)
+    predicates.orderByAsc('addedTime')
+    const resultSet: relationalStore.ResultSet = await store.query(predicates)
+    const result: Map<string, string[]> = new Map<string, string[]>()
+    try {
+      while (resultSet.goToNextRow()) {
+        const playlistId: string = this.rsGetString(resultSet, 'playlistId')
+        const songId: string = this.rsGetString(resultSet, 'songId')
+        let list: string[] | undefined = result.get(playlistId)
+        if (list === undefined) {
+          list = []
+          result.set(playlistId, list)
+        }
+        list.push(songId)
+      }
+    } finally {
+      resultSet.close()
+    }
+    return result
+  }
+
+  public async insertPlaylist(playlist: PlaylistInfo): Promise<void> {
+    const store = this.requireStore()
+    await store.insert(TABLE_PLAYLISTS, this.playlistToValuesBucket(playlist))
+    Logger.info(TAG, `insertPlaylist: ${playlist.id} ${playlist.name}`)
+  }
+
+  // 改名/封面歌曲更新：按 id 增量 UPDATE，不动其余行
+  public async updatePlaylist(playlist: PlaylistInfo): Promise<void> {
+    const store = this.requireStore()
+    const predicates = new relationalStore.RdbPredicates(TABLE_PLAYLISTS)
+    predicates.equalTo('id', playlist.id)
+    await store.update(this.playlistToValuesBucket(playlist), predicates)
+    Logger.info(TAG, `updatePlaylist: ${playlist.id} ${playlist.name}`)
+  }
+
+  // 删除歌单：显式事务内删歌单行 + 关联曲目行，歌曲文件与 songs 表不受影响
+  public async deletePlaylist(playlistId: string): Promise<void> {
+    const store = this.requireStore()
+    store.beginTransaction()
+    try {
+      const playlistPredicates = new relationalStore.RdbPredicates(TABLE_PLAYLISTS)
+      playlistPredicates.equalTo('id', playlistId)
+      await store.delete(playlistPredicates)
+      const itemPredicates = new relationalStore.RdbPredicates(TABLE_PLAYLIST_ITEMS)
+      itemPredicates.equalTo('playlistId', playlistId)
+      await store.delete(itemPredicates)
+      await store.commit()
+    } catch (err) {
+      store.rollBack()
+      throw new Error(`deletePlaylist failed: ${JSON.stringify(err)}`)
+    }
+    Logger.info(TAG, `deletePlaylist: ${playlistId}`)
+  }
+
+  // 加入歌单：INSERT OR IGNORE（复合主键去重，重复加入同一首静默跳过）
+  public async addPlaylistItems(playlistId: string, songIds: string[], addedTime: number): Promise<void> {
+    if (songIds.length === 0) {
+      return
+    }
+    const store = this.requireStore()
+    store.beginTransaction()
+    try {
+      for (let i = 0; i < songIds.length; i++) {
+        await store.executeSql(`INSERT OR IGNORE INTO ${TABLE_PLAYLIST_ITEMS} ` +
+          `(playlistId, songId, addedTime, sortOrder) VALUES (?, ?, ?, 0)`,
+          [playlistId, songIds[i], addedTime])
+      }
+      await store.commit()
+    } catch (err) {
+      store.rollBack()
+      throw new Error(`addPlaylistItems failed: ${JSON.stringify(err)}`)
+    }
+    Logger.info(TAG, `addPlaylistItems: ${playlistId} +${songIds.length}`)
+  }
+
+  // 移出歌单：显式事务内按 (playlistId, songId) 精确删除
+  public async removePlaylistItems(playlistId: string, songIds: string[]): Promise<void> {
+    if (songIds.length === 0) {
+      return
+    }
+    const store = this.requireStore()
+    store.beginTransaction()
+    try {
+      for (let i = 0; i < songIds.length; i++) {
+        const predicates = new relationalStore.RdbPredicates(TABLE_PLAYLIST_ITEMS)
+        predicates.equalTo('playlistId', playlistId)
+        predicates.equalTo('songId', songIds[i])
+        await store.delete(predicates)
+      }
+      await store.commit()
+    } catch (err) {
+      store.rollBack()
+      throw new Error(`removePlaylistItems failed: ${JSON.stringify(err)}`)
+    }
+    Logger.info(TAG, `removePlaylistItems: ${playlistId} -${songIds.length}`)
+  }
+
+  private playlistToValuesBucket(playlist: PlaylistInfo): relationalStore.ValuesBucket {
+    const bucket: relationalStore.ValuesBucket = {}
+    bucket['id'] = playlist.id
+    bucket['name'] = playlist.name
+    bucket['createdTime'] = playlist.createdTime
+    bucket['sortOrder'] = playlist.sortOrder
+    bucket['coverSongId'] = playlist.coverSongId
+    return bucket
+  }
+
+  private playlistFromResultSet(rs: relationalStore.ResultSet): PlaylistInfo {
+    const playlist: PlaylistInfo = new PlaylistInfo()
+    playlist.id = this.rsGetString(rs, 'id')
+    playlist.name = this.rsGetString(rs, 'name')
+    playlist.createdTime = this.rsGetLong(rs, 'createdTime')
+    playlist.sortOrder = this.rsGetLong(rs, 'sortOrder')
+    playlist.coverSongId = this.rsGetString(rs, 'coverSongId')
+    return playlist
+  }
+
   private requireStore(): relationalStore.RdbStore {
     if (this.store === undefined) {
       throw new Error('SongDatabase not initialized')
@@ -487,6 +678,14 @@ export class SongDatabase {
     bucket['codec'] = song.codec
     bucket['trackCount'] = song.trackCount
     bucket['fileSize'] = song.fileSize
+    bucket['playCount'] = song.playCount
+    bucket['lastPlayedAt'] = song.lastPlayedAt
+    bucket['pinyinFull'] = song.pinyinFull
+    bucket['pinyinAbbr'] = song.pinyinAbbr
+    bucket['mbid'] = song.mbid
+    bucket['lyricOffsetMs'] = song.lyricOffsetMs
+    bucket['rgTrackGain'] = song.rgTrackGain
+    bucket['rgAlbumGain'] = song.rgAlbumGain
     return bucket
   }
 
@@ -534,6 +733,14 @@ export class SongDatabase {
     song.codec = this.rsGetString(rs, 'codec')
     song.trackCount = this.rsGetString(rs, 'trackCount')
     song.fileSize = this.rsGetLong(rs, 'fileSize')
+    song.playCount = this.rsGetLong(rs, 'playCount')
+    song.lastPlayedAt = this.rsGetLong(rs, 'lastPlayedAt')
+    song.pinyinFull = this.rsGetString(rs, 'pinyinFull')
+    song.pinyinAbbr = this.rsGetString(rs, 'pinyinAbbr')
+    song.mbid = this.rsGetString(rs, 'mbid')
+    song.lyricOffsetMs = this.rsGetLong(rs, 'lyricOffsetMs')
+    song.rgTrackGain = this.rsGetLong(rs, 'rgTrackGain')
+    song.rgAlbumGain = this.rsGetLong(rs, 'rgAlbumGain')
     if (song.title.length === 0) {
       song.title = song.name
     }

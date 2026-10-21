@@ -100,6 +100,20 @@
         "srcEntry": "./ets/liveview/LiveViewExtAbility.ets",
         "type": "liveViewLockScreen",
         "exported": false
+      },
+      {
+        "name": "PlayerFormAbility",
+        "srcEntry": "./ets/form/PlayerFormAbility.ets",
+        "label": "$string:PlayerFormAbility_label",
+        "description": "$string:PlayerFormAbility_desc",
+        "type": "form",
+        "exported": false,
+        "metadata": [
+          {
+            "name": "ohos.extension.form",
+            "resource": "$profile:form_config"
+          }
+        ]
       }
     ]
   }

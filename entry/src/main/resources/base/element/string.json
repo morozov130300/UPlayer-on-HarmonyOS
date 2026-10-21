@@ -56,6 +56,22 @@
     {
       "name": "reason_bluetooth",
       "value": "查看已连接蓝牙音频设备状态，用于「更多」面板展示"
+    },
+    {
+      "name": "PlayerFormAbility_label",
+      "value": "UPlayer 播放卡片"
+    },
+    {
+      "name": "PlayerFormAbility_desc",
+      "value": "音乐播放服务卡片"
+    },
+    {
+      "name": "card_player_display_name",
+      "value": "UPlayer"
+    },
+    {
+      "name": "card_player_desc",
+      "value": "显示当前歌曲信息，支持播放控制"
     }
   ]
 }

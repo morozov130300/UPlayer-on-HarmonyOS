@@ -15,8 +15,12 @@ import { MusicPlayMode } from '../common/constants/PlayerConstants'
 import { WindowUtil } from '../common/utils/WindowUtil'
 import { showToastGlassMaterial } from '../common/utils/GlassUtil'
 import { loadLyricEntries } from './LyricLoader'
+import { SettingsStore } from '../common/utils/SettingsStore'
 
 const TAG = 'AVPlayerService'
+// 断点续播（P0-2）：上次播放歌曲/位置持久化键
+const KEY_LAST_SONG_ID: string = 'uplayer_last_song_id'
+const KEY_LAST_POSITION_MS: string = 'uplayer_last_position_ms'
 
 enum BackendState {
   IDLE = 'idle',
@@ -78,10 +82,15 @@ export class AVPlayerService {
   private tempoPitch: number = 1
   private separationEnabled: boolean = false
   private separationOutput: number = 1
+  // ReplayGain（P2-1）：按歌曲暂存的定增益（stageReplayGain 计算，playWithEffects 下发）
+  private replayGainEnabled: boolean = false
+  private replayGainDb: number = 0
   // 音效节点能力探测缓存（undefined = 尚未探测）：见 ensureEffectNodeSupport()
   private effectNodeSupport: EffectNodeSupport | undefined = undefined
   private nativeProgressTimer: number = -1
   private nativeStartupTimer: number = -1
+  // 断点续播（P0-2）：进度定时器周期性落盘位置的 tick 计数（每 20 tick ≈ 5s 一次防抖写）
+  private lastPlaybackPersistTickCount: number = 0
   private playRequestId: number = 0
   private activePlaybackGeneration: number = -1
   private completionGeneration: number = -1
@@ -96,6 +105,9 @@ export class AVPlayerService {
   private isSeeking: boolean = false
   private seekingClearTimer: number = -1
   private seekFromMs: number = -1
+  // 按歌曲数定时（P0-1）：最后一首曲尾淡出已触发标志，防止进度定时器重复启动淡出；
+  // 每次 play 新曲目/seek 打断时复位
+  private timerSongTailFadeStarted: boolean = false
 
   public static getInstance(): AVPlayerService {
     return AVPlayerService.instance
@@ -129,6 +141,8 @@ export class AVPlayerService {
 
   async play(fileUri: string, startPositionMs: number = 0, startPaused: boolean = false): Promise<void> {
     const requestId: number = ++this.playRequestId
+    this.timerSongTailFadeStarted = false
+    this.lastPlaybackPersistTickCount = 0
     this.pendingSeekMs = startPositionMs
     await this.enqueueOperation(async (): Promise<void> => {
       await this.performPlay(fileUri, requestId, this.pendingSeekMs ?? startPositionMs, startPaused)
@@ -142,7 +156,7 @@ export class AVPlayerService {
     }
     this.pendingSeekMs = undefined
     // AudioSession 可能因「无音频流运行」被系统超时去激活，起播前按设置补激活，
-    // 保证通知音到达时「不压低音量」的并发策略仍然生效
+    // 保证「与其他音频同时播放（含通知不压低音量）」的并发策略仍然生效
     AudioFocusService.getInstance().ensureStrategy()
     // 若当前处于播放状态，本次是切歌（播放中切到下一首），stop/reset 期间不应把播放状态置为暂停
     const wasPlaying: boolean = AppStorage.get<boolean>(AppStorageKeyConstants.KEY_IS_PLAY) ?? false
@@ -170,6 +184,10 @@ export class AVPlayerService {
         this.sessionController.setPlayState(true)
       }
       this.backendState = BackendState.PLAYING
+      // 复用分支同样要把进度/启动看护定时器迁移到新代次：requestId 已自增，
+      // 旧定时器会因代次不匹配自杀，不在此重启则音效开关后进度条/歌词全部冻结
+      this.startNativeProgressTimer(fileUri, requestId)
+      this.startNativeStartupCheck(fileUri, requestId)
       this.applyPendingNativeSeek()
       return
     }
@@ -201,7 +219,8 @@ export class AVPlayerService {
     this.notifyPlaybackFailed('播放失败，请重试')
   }
 
-  async playSong(song: SongInfo, index: number, startPaused: boolean = false): Promise<void> {
+  async playSong(song: SongInfo, index: number, startPaused: boolean = false,
+    startMs: number = 0): Promise<void> {
     if (!song.isAvailable) {
       // 可访问性检查已修复（见 DataService.ets），此分支仅保留作为防御性日志；
       // 触发前检查 KEY_SONG_LIST 是否已从 activatePersistedUris 获得最新状态。
@@ -216,14 +235,19 @@ export class AVPlayerService {
     AppStorage.setOrCreate('uplayer_current_cover_state', 'placeholder')
     AppStorage.setOrCreate('uplayer_current_album_art', '')
     AppStorage.setOrCreate('uplayer_current_song_path', song.filePath)
-    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PROGRESS, 0)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PROGRESS, startMs > 0 ? startMs : 0)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_TIME, '00:00')
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TOTAL_MS_TIME, song.duration)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PROGRESS_MAX, song.duration)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TOTAL_TIME, this.formatTime(song.duration))
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, index)
+    // 断点续播（P0-2）：切歌即记录新歌曲为「上次播放」，位置从 0（或续播起点）开始；
+    // 防抖中的旧位置落盘会被本次覆盖为最新值，不会写入新歌配旧位置
+    SettingsStore.getInstance().set(KEY_LAST_SONG_ID, song.id, true)
+    SettingsStore.getInstance().set(KEY_LAST_POSITION_MS, startMs > 0 ? startMs.toString() : '0', true)
     this.liveViewService.updateLiveView()
-    await this.play(song.uri.length > 0 ? song.uri : song.filePath, 0, startPaused)
+    this.stageReplayGain(song)
+    await this.play(song.uri.length > 0 ? song.uri : song.filePath, startMs, startPaused)
   }
 
   // 播放队列：与首页可见顺序一致（由 HomeContent 同步到 KEY_SONG_LIST），
@@ -345,6 +369,27 @@ export class AVPlayerService {
       return
     }
     this.completionGeneration = generation
+    // P0-4：自然完曲计数（随机/单曲循环同样经此路径，符合"自然完曲"定义）；
+    // 先记统计再切歌——切歌后 uplayer_current_song_id 已指向下一首
+    const completedSongId: string = AppStorage.get<string>('uplayer_current_song_id') ?? ''
+    if (completedSongId.length > 0) {
+      DataService.getInstance().recordPlayStats(completedSongId)
+    }
+    // 按歌曲数定时递减（P0-1）：最后一首曲尾淡出触发时不会走到这里（淡出完成已直接 stop），
+    // 走到本分支说明淡出时长为 0（立即停止）或曲尾淡出窗口未命中（seek 打断后自然完曲）
+    const songsRemaining: number =
+      AppStorage.get<number>(AppStorageKeyConstants.KEY_TIMER_SONGS_REMAINING) ?? 0
+    if (songsRemaining > 0) {
+      const nextRemaining: number = songsRemaining - 1
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_SONGS_REMAINING, nextRemaining)
+      if (nextRemaining <= 0) {
+        this.timerSongTailFadeStarted = false
+        this.stop().catch((err: Error): void => {
+          Logger.error(TAG, `timer songs stop failed: ${JSON.stringify(err)}`)
+        })
+        return
+      }
+    }
     this.playNextSong(true).catch((err: Error) => {
       Logger.error(TAG, `natural completion selection failed: ${JSON.stringify(err)}`)
     })
@@ -426,6 +471,8 @@ export class AVPlayerService {
     if (!this.isEngineLoaded()) {
       return
     }
+    // 断点续播（P0-2）：暂停即落盘当前位置（淡出暂停路径位置不变）
+    this.persistLastPlayback(true)
     AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, false)
     this.sessionController.setPlayState(false)
     this.stopBackground()
@@ -488,6 +535,70 @@ export class AVPlayerService {
     }
   }
 
+  // 定时停止淡出时长（ms）：设置页滑条 0-10 秒，0=立即停止不淡出
+  private getTimerFadeMs(): number {
+    const seconds: number =
+      AppStorage.get<number>(AppStorageKeyConstants.KEY_TIMER_FADE_SECONDS) ?? 3
+    if (!Number.isFinite(seconds) || seconds < 0) {
+      return 3000
+    }
+    return Math.min(seconds, 10) * 1000
+  }
+
+  // 定长淡出到静音后回调（定时停止共用）：曲线复用 fadeOut 的指数衰减，步数固定 30 档，
+  // 间隔按时长伸缩；期间用户起新播放/暂停会经 stopFade/fadeIn 打断本定时器，回调不再触发
+  private fadeOutWithDuration(fadeMs: number, onFinished: () => void): void {
+    this.stopFade()
+    if (fadeMs <= 0) {
+      onFinished()
+      return
+    }
+    const startVol: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_CURRENT_VOLUME) ?? 1
+    const intervalMs: number = fadeMs / AVPlayerService.FADE_STEPS
+    this.fadeStep = 0
+    this.fadeTimer = setInterval(() => {
+      this.fadeStep++
+      const ratio: number = Math.min(this.fadeStep / AVPlayerService.FADE_STEPS, 1)
+      this.applyFadeVolume(Math.max(startVol * Math.pow(AVPlayerService.FADE_FLOOR, ratio), 0))
+      if (this.fadeStep >= AVPlayerService.FADE_STEPS) {
+        this.stopFade()
+        this.applyFadeVolume(0)
+        onFinished()
+      }
+    }, intervalMs)
+  }
+
+  // 定时停止（时间模式到期入口，ControlAreaComponent 调用）：按设置淡出时长平滑降至静音后停止；
+  // 淡出期间用户手动起新播放会改变代次，回调校验后代次不一致则放弃停止
+  fadeOutAndStop(): void {
+    const generation: number = this.playRequestId
+    this.fadeOutWithDuration(this.getTimerFadeMs(), (): void => {
+      if (generation !== this.playRequestId) {
+        return
+      }
+      this.stop().catch((err: Error): void => {
+        Logger.error(TAG, `timer fade stop failed: ${JSON.stringify(err)}`)
+      })
+    })
+  }
+
+  // 按歌曲数定时：最后一首进入曲尾淡出窗口（剩余时长 <= 淡出时长）时由进度定时器触发，
+  // 淡出完成后清零计数并停止；seek 打断由 seek() 复位标志并恢复音量，下次进窗口可重新触发
+  private startTimerSongTailFade(fadeMs: number): void {
+    this.timerSongTailFadeStarted = true
+    const generation: number = this.playRequestId
+    this.fadeOutWithDuration(fadeMs, (): void => {
+      if (!this.timerSongTailFadeStarted || generation !== this.playRequestId) {
+        return
+      }
+      this.timerSongTailFadeStarted = false
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_SONGS_REMAINING, 0)
+      this.stop().catch((err: Error): void => {
+        Logger.error(TAG, `timer songs fade stop failed: ${JSON.stringify(err)}`)
+      })
+    })
+  }
+
   private startBackground(): void {
     const ctx: common.UIAbilityContext | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
     if (ctx !== undefined) {
@@ -502,6 +613,51 @@ export class AVPlayerService {
     }
   }
 
+  // 断点续播（P0-2）：持久化当前歌曲与播放位置；immediate=false 走 300ms 防抖合并落盘
+  // （进度定时器周期调用），true 立即落盘（暂停/停止/切歌）
+  persistLastPlayback(immediate: boolean = false): void {
+    const songId: string = AppStorage.get<string>('uplayer_current_song_id') ?? ''
+    if (songId.length === 0) {
+      return
+    }
+    SettingsStore.getInstance().set(KEY_LAST_SONG_ID, songId, immediate)
+    SettingsStore.getInstance().set(KEY_LAST_POSITION_MS, this.getCurrentPositionMs().toString(), immediate)
+  }
+
+  // 断点续播（P0-2）：冷启动恢复上次播放歌曲与进度（EntryAbility 首帧后调用一次）；
+  // 「启动时恢复上次播放」关则跳过；「恢复后自动播放」决定恢复后是否直接起播；
+  // 位置越界或距曲尾不足 2s 时从头播放
+  async restoreLastPlayback(): Promise<void> {
+    const settings: AppSettingsData = DataService.getInstance().getSettings()
+    if (!settings.resumePlaybackOnStart) {
+      return
+    }
+    const songId: string = SettingsStore.getInstance().get(KEY_LAST_SONG_ID, '')
+    if (songId.length === 0) {
+      return
+    }
+    const songs: SongInfo[] = DataService.getInstance().getSongs()
+    let index: number = -1
+    for (let i = 0; i < songs.length; i++) {
+      if (songs[i].id === songId) {
+        index = i
+        break
+      }
+    }
+    if (index < 0 || !songs[index].isAvailable) {
+      Logger.info(TAG, `restoreLastPlayback: song ${songId} missing or unavailable`)
+      return
+    }
+    const parsedPos: number = parseInt(SettingsStore.getInstance().get(KEY_LAST_POSITION_MS, '0'))
+    let startMs: number = Number.isFinite(parsedPos) && parsedPos > 0 ? parsedPos : 0
+    if (startMs + 2000 >= songs[index].duration) {
+      startMs = 0
+    }
+    const startPaused: boolean = !settings.autoPlayAfterResume
+    Logger.info(TAG, `restoreLastPlayback: id=${songId} pos=${startMs} autoPlay=${settings.autoPlayAfterResume}`)
+    await this.playSong(songs[index], index, startPaused, startMs)
+  }
+
   async stop(): Promise<void> {
     const generation: number = ++this.playRequestId
     await this.enqueueOperation(async (): Promise<void> => {
@@ -510,6 +666,8 @@ export class AVPlayerService {
       this.stopNativeProgressTimer()
       this.stopNativeStartupCheck()
       this.stopFade()
+      // 断点续播（P0-2）：停止前记录当前位置，下次冷启动可从停止处续播
+      this.persistLastPlayback(true)
       nativeAudio.stop()
       this.stopBackground()
       AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, false)
@@ -538,6 +696,14 @@ export class AVPlayerService {
     this.sessionController.setProgressState(timeMs)
     this.isSeeking = true
     this.seekFromMs = this.getCurrentPositionMs()
+    // 按歌曲数定时曲尾淡出被 seek 打断：中止淡出并恢复音量，复位标志后窗口再次命中可重新淡出
+    if (this.timerSongTailFadeStarted) {
+      this.timerSongTailFadeStarted = false
+      this.stopFade()
+      if (this.isEngineLoaded()) {
+        nativeAudio.setVolume(this.desiredVolume)
+      }
+    }
     if (this.seekingClearTimer !== -1) {
       clearTimeout(this.seekingClearTimer)
       this.seekingClearTimer = -1
@@ -653,17 +819,12 @@ export class AVPlayerService {
   }
 
   async applyEqualizer(enabled: boolean, bands: number[]): Promise<void> {
-    const previousEnabled: boolean = this.equalizerEnabled
     this.equalizerEnabled = enabled
     this.equalizerBands = this.normalizeEqualizerBands(bands)
     nativeAudio.setEqualizerEnable(enabled)
     if (enabled) {
       nativeAudio.setEqualizerBands(this.equalizerBands)
     }
-    if (previousEnabled === enabled || !enabled) {
-      return
-    }
-    await this.reloadForNativeEffects()
   }
 
   // 任一音效启用即需要走原生链路（管线 Bypass/管线切换即时生效）
@@ -729,32 +890,21 @@ export class AVPlayerService {
   }
 
   async applyGeneralVoiceChange(enabled: boolean, type: number = 1): Promise<void> {
-    const previousEnabled: boolean = this.generalVoiceChangeEnabled
     this.generalVoiceChangeEnabled = enabled
     this.generalVoiceChangeType = type
     nativeAudio.setGeneralVoiceChangeEnable(enabled)
     if (enabled) {
       nativeAudio.setGeneralVoiceChangeType(this.generalVoiceChangeType)
     }
-    if (previousEnabled === enabled || !enabled) {
-      return
-    }
-    await this.reloadForNativeEffects()
   }
 
   async applyNoiseReduction(enabled: boolean): Promise<void> {
-    const previousEnabled: boolean = this.noiseReductionEnabled
     this.noiseReductionEnabled = enabled
     nativeAudio.setNoiseReductionEnable(enabled)
-    if (previousEnabled === enabled || !enabled) {
-      return
-    }
-    await this.reloadForNativeEffects()
   }
 
   async applyPureVoiceChange(enabled: boolean, gender: number = 1, type: number = 1,
     pitch: number = 0): Promise<void> {
-    const previousEnabled: boolean = this.pureVoiceChangeEnabled
     this.pureVoiceChangeEnabled = enabled
     this.pureVoiceChangeGender = gender
     this.pureVoiceChangeType = type
@@ -764,14 +914,9 @@ export class AVPlayerService {
       nativeAudio.setPureVoiceChangeConfig(this.pureVoiceChangeGender, this.pureVoiceChangeType,
         this.pureVoiceChangePitch)
     }
-    if (previousEnabled === enabled || !enabled) {
-      return
-    }
-    await this.reloadForNativeEffects()
   }
 
   async applyTempoPitch(enabled: boolean, speed: number = 1, pitch: number = 1): Promise<void> {
-    const previousEnabled: boolean = this.tempoPitchEnabled
     this.tempoPitchEnabled = enabled
     this.tempoSpeed = speed
     this.tempoPitch = pitch
@@ -779,70 +924,45 @@ export class AVPlayerService {
     if (enabled) {
       nativeAudio.setTempoPitchConfig(this.tempoSpeed, this.tempoPitch)
     }
-    if (previousEnabled === enabled || !enabled) {
-      return
-    }
-    await this.reloadForNativeEffects()
   }
 
   async applySeparation(enabled: boolean, output: number = 1): Promise<void> {
-    const previousEnabled: boolean = this.separationEnabled
     this.separationEnabled = enabled
     this.separationOutput = output
     nativeAudio.setSeparationEnable(enabled)
     if (enabled) {
       nativeAudio.setSeparationOutput(this.separationOutput)
     }
-    if (previousEnabled === enabled || !enabled) {
-      return
-    }
-    await this.reloadForNativeEffects()
   }
 
   async applySoundField(enabled: boolean, type: number = 1): Promise<void> {
-    const previousEnabled: boolean = this.soundFieldEnabled
     this.soundFieldEnabled = enabled
     this.soundFieldType = type
     nativeAudio.setSoundFieldEnable(enabled)
     if (enabled) {
       nativeAudio.setSoundFieldType(this.soundFieldType)
     }
-    if (previousEnabled === enabled || !enabled) {
-      return
-    }
-    await this.reloadForNativeEffects()
   }
 
   async applyEnvironment(enabled: boolean, type: number = 1): Promise<void> {
-    const previousEnabled: boolean = this.environmentEnabled
     this.environmentEnabled = enabled
     this.environmentType = type
     nativeAudio.setEnvironmentEnable(enabled)
     if (enabled) {
       nativeAudio.setEnvironmentType(this.environmentType)
     }
-    if (previousEnabled === enabled || !enabled) {
-      return
-    }
-    await this.reloadForNativeEffects()
   }
 
   async applyVoiceBeautifier(enabled: boolean, type: number = 1): Promise<void> {
-    const previousEnabled: boolean = this.beautifierEnabled
     this.beautifierEnabled = enabled
     this.beautifierType = type
     nativeAudio.setVoiceBeautifierEnable(enabled)
     if (enabled) {
       nativeAudio.setVoiceBeautifierType(this.beautifierType)
     }
-    if (previousEnabled === enabled || !enabled) {
-      return
-    }
-    await this.reloadForNativeEffects()
   }
 
   async applySpaceRender(enabled: boolean, mode: number = 0, values: number[] = [0, 0, 0]): Promise<void> {
-    const previousEnabled: boolean = this.spaceRenderEnabled
     this.spaceRenderEnabled = enabled
     this.spaceRenderMode = mode
     this.spaceRenderValues = values
@@ -850,10 +970,42 @@ export class AVPlayerService {
     if (enabled) {
       nativeAudio.setSpaceRenderConfig(this.spaceRenderMode, this.spaceRenderValues)
     }
-    if (previousEnabled === enabled || !enabled) {
+  }
+
+  // ReplayGain（P2-1）：按设置模式解析当前歌曲标签增益（库值 = round(db*100) centi-dB）
+  // 并叠加预增益，暂存待 playWithEffects 下发；模式关/无标签按 0dB 处理
+  private stageReplayGain(song: SongInfo): void {
+    const settings: AppSettingsData = DataService.getInstance().getSettings()
+    const mode: string = settings.replayGainMode
+    if (mode !== 'track' && mode !== 'album') {
+      this.replayGainEnabled = false
+      this.replayGainDb = 0
       return
     }
-    await this.reloadForNativeEffects()
+    let tagCentiDb: number = song.rgTrackGain
+    if (mode === 'album') {
+      tagCentiDb = song.rgAlbumGain !== 0 ? song.rgAlbumGain : tagCentiDb
+    }
+    this.replayGainEnabled = true
+    this.replayGainDb = tagCentiDb / 100 + settings.replayGainPreGainDb
+  }
+
+  // 设置页实时生效：重算当前歌曲 RG 并直接下发原生（未加载引擎时只更新暂存值，
+  // 下次起播由 playWithEffects 一并推送）
+  applyReplayGainSettings(): void {
+    const songId: string = AppStorage.get<string>('uplayer_current_song_id') ?? ''
+    if (songId.length === 0) {
+      return
+    }
+    const song: SongInfo | undefined = DataService.getInstance().getSongById(songId)
+    if (song === undefined) {
+      return
+    }
+    this.stageReplayGain(song)
+    nativeAudio.setReplayGainEnable(this.replayGainEnabled)
+    if (this.replayGainEnabled) {
+      nativeAudio.setReplayGainDb(this.replayGainDb)
+    }
   }
 
   // 全量下发 5 类音效状态到原生引擎，ConfigureEffects 按初始态建节点并设 Bypass
@@ -914,17 +1066,6 @@ export class AVPlayerService {
     Logger.info(TAG, 'native apply end')
   }
 
-  // 播放中开启音效：取实时位置重载播放，让效果链立即接入当前曲目
-  private async reloadForNativeEffects(): Promise<void> {
-    const isPlaying: boolean = AppStorage.get<boolean>(AppStorageKeyConstants.KEY_IS_PLAY) ?? false
-    if (!isPlaying || this.currentFilePath.length === 0) {
-      return
-    }
-    const position: number = this.getCurrentPositionMs()
-    const fileUri: string = this.currentFilePath
-    await this.play(fileUri, position)
-  }
-
   private async playWithEffects(
     fileUri: string, requestId: number, startPositionMs: number = 0,
     startPaused: boolean = false): Promise<boolean> {
@@ -935,6 +1076,11 @@ export class AVPlayerService {
       file = fs.openSync(fileUri, fs.OpenMode.READ_ONLY)
       const size: number = fs.statSync(file.fd).size
       this.applyAllEffectsToNative()
+      // ReplayGain（P2-1）：按歌曲暂存的定增益同步进原生引擎（所有输出路径统一应用）
+      nativeAudio.setReplayGainEnable(this.replayGainEnabled)
+      if (this.replayGainEnabled) {
+        nativeAudio.setReplayGainDb(this.replayGainDb)
+      }
       // 低功耗链路开关在每次起播前同步进原生引擎（下次 Play 生效的策略）
       nativeAudio.setLowPowerMode(DataService.getInstance().getSettings().lowPowerPlayback)
       const fadeInOutOnStart: boolean = !startPaused && (AppStorage.get<boolean>('uplayer_fade_in_out') ?? false)
@@ -1034,6 +1180,12 @@ export class AVPlayerService {
         return
       }
       const position: number = nativeAudio.getPosition()
+      // 断点续播（P0-2）：每 20 tick（约 5s）防抖落盘一次播放位置，避免每 250ms 写盘
+      this.lastPlaybackPersistTickCount++
+      if (this.lastPlaybackPersistTickCount >= 20) {
+        this.lastPlaybackPersistTickCount = 0
+        this.persistLastPlayback(false)
+      }
       if (!this.isSeeking && this.isUiActive()) {
         AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PROGRESS, position)
       }
@@ -1068,6 +1220,20 @@ export class AVPlayerService {
         this.stopNativeProgressTimer()
         this.handleNativeFailure(requestId, 'native render failed')
         return
+      }
+      // 按歌曲数定时（P0-1）：最后一首且进入曲尾淡出窗口时平滑淡出后停止（播放态且非 seek 中）
+      if (!this.timerSongTailFadeStarted && !this.isSeeking &&
+        (AppStorage.get<boolean>(AppStorageKeyConstants.KEY_IS_PLAY) ?? false)) {
+        const songsRemaining: number =
+          AppStorage.get<number>(AppStorageKeyConstants.KEY_TIMER_SONGS_REMAINING) ?? 0
+        if (songsRemaining === 1) {
+          const tailFadeMs: number = this.getTimerFadeMs()
+          const durationMs: number = nativeAudio.getDuration()
+          const tailMs: number = durationMs - position
+          if (tailFadeMs > 0 && durationMs > 0 && tailMs > 0 && tailMs <= tailFadeMs) {
+            this.startTimerSongTailFade(tailFadeMs)
+          }
+        }
       }
       // 仅播放态允许自然播完自动切歌：暂停态下 isCompleted 为真属于异常
       // （历史缺陷：暂停中管线隐形跑完本曲），此时不得自动播下一首

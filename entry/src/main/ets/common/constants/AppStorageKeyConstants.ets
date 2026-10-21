@@ -46,6 +46,14 @@ export class AppStorageKeyConstants {
   // 当前运行中的定时所对应的预设分钟数（-1 表示自定义或无定时），
   // 用于把倒计时固定显示在原设定项上，避免被面板里的待确认选择抢走
   public static readonly KEY_TIMER_PRESET_MINUTES: string = BaseConstants.KEY_PREFIX + 'TimerPresetMinutes'
+  // 按歌曲数定时（P0-1）：剩余自然完曲数，>0 生效，每首自然播完由 AVPlayerService 递减，
+  // 归零时最后一首曲尾淡出（时长取 KEY_TIMER_FADE_SECONDS）后停止
+  public static readonly KEY_TIMER_SONGS_REMAINING: string = BaseConstants.KEY_PREFIX + 'TimerSongsRemaining'
+  // 当前运行中的按歌曲数定时对应的预设首数（-1 表示自定义或无定时），仅用于面板高亮
+  public static readonly KEY_TIMER_PRESET_SONGS: string = BaseConstants.KEY_PREFIX + 'TimerPresetSongs'
+  // 定时停止淡出时长（秒，0-10，默认 3；0=立即停止）：时间模式到期淡出当前曲目，
+  // 歌曲数模式淡出最后一首的曲尾；设置页「播放」区滑条写入
+  public static readonly KEY_TIMER_FADE_SECONDS: string = BaseConstants.KEY_PREFIX + 'TimerFadeSeconds'
   public static readonly KEY_IMPORT_RUNNING: string = BaseConstants.KEY_PREFIX + 'ImportRunning'
   public static readonly KEY_IMPORT_TOTAL: string = BaseConstants.KEY_PREFIX + 'ImportTotal'
   public static readonly KEY_IMPORT_DONE: string = BaseConstants.KEY_PREFIX + 'ImportDone'
@@ -71,9 +79,10 @@ export class AppStorageKeyConstants {
   // 输出设备列表/首选设备变化计数器：AudioRoutingService 在 availableDeviceChange 时 +1，
   // 「更多」面板的「输出设备」行 @StorageProp @Watch 到变化后刷新设备名与列表
   public static readonly KEY_OUTPUT_DEVICE_REVISION: string = BaseConstants.KEY_PREFIX + 'OutputDeviceRevision'
-  // 通知/提示音不压低本应用音量（设置页「播放」区开关，默认关）：
+  // 与其它应用音频并发播放（设置页「播放」区开关，默认关；「通知/提示音不压低音量」与
+  // 「与其他音频应用同时播放」为同一系统机制，共用本开关，无法独立控制）：
   // 开启时 AudioFocusService 激活 AudioSession 声明「与其它流并发播放」(CONCURRENCY_MIX_WITH_OTHERS)，
-  // 其它应用（含系统通知音）后续请求音频焦点时不再对本应用执行 duck（压低音量）
+  // 其它应用（含系统通知音）后续请求音频焦点时不再对本应用执行 duck（压低音量）/暂停
   public static readonly KEY_IGNORE_NOTIFICATION_DUCK: string = BaseConstants.KEY_PREFIX + 'IgnoreNotificationDuck'
   // 系统媒体音量最大格数（getMaxVolumeByStream 结果，AVVolumePanel.volumeLevel 换算用）
   public static readonly KEY_VOL_PANEL_MAX: string = BaseConstants.KEY_PREFIX + 'VolPanelMax'
@@ -86,4 +95,13 @@ export class AppStorageKeyConstants {
   // 蓝牙 A2DP 音频状态变化计数器：BluetoothAudioService 在连接/播放状态刷新时 +1，
   // 「更多」面板的「蓝牙音频」行 @StorageProp @Watch 到变化后刷新展示
   public static readonly KEY_BLUETOOTH_AUDIO_REVISION: string = BaseConstants.KEY_PREFIX + 'BluetoothAudioRevision'
+  // Ctrl+F 聚焦首页搜索框请求（计数器）：页面级键盘事件每次按下 +1，
+  // HomeContent 的 @Watch 收到后打开搜索行并让输入框获焦
+  public static readonly KEY_HOME_SEARCH_FOCUS: string = BaseConstants.KEY_PREFIX + 'HomeSearchFocus'
+  // 自定义歌单集合变化计数器（P2-3）：歌单增删改/曲目增删后 +1，
+  // 歌单页卡片、首页筛选与多选「加入歌单」弹窗 @Watch 到变化后刷新
+  public static readonly KEY_PLAYLIST_REVISION: string = BaseConstants.KEY_PREFIX + 'PlaylistRevision'
+  // 首页筛选下拉列表的艺术家拆分分隔符（设置页「播放」区多选 + 自定义输入，默认 , ， & ＿＆）：
+  // saveSettings 写入，HomeContent @StorageLink @Watch 感知后按新分隔符重拆艺术家并重新筛选
+  public static readonly KEY_ARTIST_SEPARATORS: string = BaseConstants.KEY_PREFIX + 'ArtistSeparators'
 }

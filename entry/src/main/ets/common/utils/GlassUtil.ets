@@ -132,6 +132,43 @@ export function createToastGlassMaterial(strength: number): uiMaterial.Material 
   })
 }
 
+// 组件风格（tabStyle：immersive 玻璃 / classic 经典）驱动的调用级材质，供弹窗类
+// （Popup/Sheet options 的 systemMaterial 字段）与选择类（Toggle/Slider 通用属性）消费：
+// - 玻璃风格 → 液态玻璃材质（档位随 strength 映射 ImmersiveStyle）
+// - 经典风格 / 低算力（SMOOTH）→ uiMaterial.Material.empty 显式关闭：
+//   undefined 只表示「恢复系统默认」，default 模式下弹窗/选择类组件可能仍呈现系统
+//   默认材质关不干净；Material.empty 才是真正的关闭，让组件回到原有自定义样式
+// - 设备不支持（API<26 / 未声明 ImmersiveMaterial）→ undefined：材质挂什么都无法渲染，
+//   且此时不得触碰 uiMaterial.Material.empty（该符号 API 26 才存在，低版本访问会抛异常）
+export function createStyleGlassMaterial(tabStyle: string, strength: number): uiMaterial.Material | undefined {
+  if (!isLiquidGlassAvailable()) {
+    return undefined
+  }
+  if (tabStyle !== 'immersive' || isGlassOff(strength) || isLowPowerGlassDevice()) {
+    return uiMaterial.Material.empty
+  }
+  return new uiMaterial.ImmersiveMaterial({
+    style: glassImmersiveStyleFromStrength(strength)
+  })
+}
+
+// 组件风格驱动的强调按钮材质：与 createStyleGlassMaterial 同一套风格/算力/能力守卫，
+// 额外携带 materialColor 保留主题色强调层级（高/中算力=材质滤镜混纯色）。
+// 强调按钮原为实心主题色+白字，无色玻璃会丢失强调与字色对比度，故必须染色。
+export function createStyleAccentGlassMaterial(tabStyle: string, strength: number,
+  color: string): uiMaterial.Material | undefined {
+  if (!isLiquidGlassAvailable()) {
+    return undefined
+  }
+  if (tabStyle !== 'immersive' || isGlassOff(strength) || isLowPowerGlassDevice()) {
+    return uiMaterial.Material.empty
+  }
+  return new uiMaterial.ImmersiveMaterial({
+    style: glassImmersiveStyleFromStrength(strength),
+    materialColor: color
+  })
+}
+
 // 统一 Toast：设备支持液态玻璃时自动挂材质（原「系统组件液态玻璃」设置项已删除，
 // 消费点固定开启）；能力不足返回 undefined → 系统默认样式
 export function showToastGlassMaterial(promptAction: PromptAction | undefined, message: string): void {

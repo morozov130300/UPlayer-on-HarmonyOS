@@ -2,7 +2,8 @@
 import { common } from '@kit.AbilityKit'
 import { deviceInfo } from '@kit.BasicServicesKit'
 import { SongInfo } from '../model/SongInfo'
-import { DataService, AppSettingsData, LibraryDeleteResult } from '../service/DataService'
+import { PlaylistInfo } from '../model/PlaylistInfo'
+import { DataService, AppSettingsData, LibraryDeleteResult, FilterDimensions } from '../service/DataService'
 import { importSongsWithToast } from '../service/SongScanner'
 import { AVPlayerService } from '../service/AVPlayerService'
 import { AVSessionController } from '../common/utils/mediautils/AVSessionController'
@@ -24,6 +25,33 @@ const PREFETCH_THROTTLE_MS: number = 50
 const APPROX_ITEM_HEIGHT: number = 72
 // 手柄拖拽：拖拽位移超过该距离（约一行高）时与相邻项交换位置
 const DRAG_SWAP_DISTANCE: number = 60
+// 模糊搜索：输入防抖间隔与结果条数上限（命中权重排序后截断）
+const SEARCH_DEBOUNCE_MS: number = 300
+const SEARCH_RESULT_LIMIT: number = 200
+// 筛选面板：单维度候选项上限（按歌曲数降序截断，防止超长列表拖垮面板）
+const FILTER_PANEL_OPTION_LIMIT: number = 100
+// 最近播放：lastPlayedAt 倒序展示条数上限（P0-4）
+const RECENT_PLAY_LIMIT: number = 20
+
+// 搜索命中封装：score 为各 token 权重之和，0 表示不命中
+class ScoredSong {
+  song: SongInfo = new SongInfo()
+  score: number = 0
+}
+
+// 筛选面板候选项：value 为原始匹配值（可能为空串），label 为展示文案，count 为歌曲数
+class FilterChipOption {
+  value: string = ''
+  label: string = ''
+  count: number = 0
+}
+
+// 「加入歌单」弹窗行（P2-3）：id/name/count 为歌单快照，打开弹窗时重建
+class PickerPlaylistRow {
+  id: string = ''
+  name: string = ''
+  count: number = 0
+}
 
 @Component
 export struct HomeContent {
@@ -55,6 +83,11 @@ export struct HomeContent {
   // Delete 键删除请求（Index 页面级键盘事件 +1）：多选态下与删除按钮功能一致
   @StorageLink(AppStorageKeyConstants.KEY_HOME_DELETE_REQUEST) @Watch('onDeleteRequest')
   deleteRequest: number = 0
+  // 艺术家拆分分隔符（设置页「播放」区配置）：筛选下拉列表按这些符号把
+  // 「midnight kiss,kappa」等多艺人串拆成独立艺术家归类；默认值须与
+  // AppSettingsData.artistSeparators 一致，变化经 saveSettings 推送 @Watch 重筛
+  @StorageLink(AppStorageKeyConstants.KEY_ARTIST_SEPARATORS) @Watch('onArtistSeparatorsChange')
+  artistSeparators: string[] = [',', '，', '&', '＆']
   @StorageLink(AppStorageKeyConstants.KEY_TITLE_BUTTON_WIDTH) titleButtonWidth: number = 0
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
   @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
@@ -68,6 +101,33 @@ export struct HomeContent {
   @State dragSongId: string = ''
   @State dragOffsetY: number = 0
   private dragLastY: number = 0
+  // 模糊搜索（S2）：搜索行显隐、输入内容、300ms 防抖句柄；
+  // Ctrl+F 由 Index 页面级键盘事件 +1 触发 @Watch，打开搜索行并聚焦输入框
+  @State isSearchActive: boolean = false
+  @State searchText: string = ''
+  private searchDebounceId: number = -1
+  @StorageLink(AppStorageKeyConstants.KEY_HOME_SEARCH_FOCUS) @Watch('onSearchFocusRequest')
+  searchFocusRequest: number = 0
+  // 组合筛选面板（S1）：面板显隐、各维度已选值与候选列表
+  @State isFilterPanelVisible: boolean = false
+  @State panelArtists: string[] = []
+  @State panelAlbums: string[] = []
+  @State panelGenres: string[] = []
+  @State panelYears: string[] = []
+  @State panelArtistOptions: FilterChipOption[] = []
+  @State panelAlbumOptions: FilterChipOption[] = []
+  @State panelGenreOptions: FilterChipOption[] = []
+  @State panelYearOptions: FilterChipOption[] = []
+  // 最近播放模式（P0-4）：lastPlayedAt 倒序前 20 覆盖排序展示，再点退出
+  @State isRecentMode: boolean = false
+  // 自定义歌单（P2-3）：筛选态激活的歌单 id 缓存（refreshFilterLabel 同步），
+  // 歌单集合变化经 KEY_PLAYLIST_REVISION @Watch 刷新列表；多选「加入歌单」弹窗状态
+  @State playlistFilterId: string = ''
+  @StorageLink(AppStorageKeyConstants.KEY_PLAYLIST_REVISION) @Watch('onPlaylistRevisionChange')
+  playlistRevision: number = 0
+  @State isPlaylistPickerVisible: boolean = false
+  @State pickerRows: PickerPlaylistRow[] = []
+  @State pickerNewName: string = ''
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
   // 底部栏样式：经典样式下多选菜单栏不挂任何背景效果（磨砂/液态玻璃）
   @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
@@ -161,6 +221,10 @@ export struct HomeContent {
 
   aboutToDisappear(): void {
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_HOME_MULTI_SELECT, false)
+    if (this.searchDebounceId >= 0) {
+      clearTimeout(this.searchDebounceId)
+      this.searchDebounceId = -1
+    }
   }
 
   // 多选状态变化统一收口在这里。isMultiSelectMode 已改为 @StorageLink，
@@ -202,23 +266,100 @@ export struct HomeContent {
     this.refreshFilterLabel()
   }
 
-  // 把 DataService 当前筛选状态写入 @State，驱动胶囊 UI 刷新
+  // 分隔符配置变化（设置页保存触发）：面板开着则重建候选项，再按新拆分重筛
+  onArtistSeparatorsChange(): void {
+    if (this.isFilterPanelVisible) {
+      this.buildPanelOptions()
+    }
+    this.applyFilters()
+  }
+
+  // 把 DataService 当前筛选状态写入 @State，驱动胶囊 UI 刷新；
+  // 组合筛选维度激活时追加标注（保持「全部歌曲」判断语义：维度激活即不再视为未筛选）
   private refreshFilterLabel(): void {
-    if (this.dataService.isFavoritesSelected()) {
-      this.filterLabel = '我的收藏'
+    let label: string = ''
+    // 歌单筛选（P2-3）：胶囊显示歌单名（与文件夹/收藏互斥，优先级最高）
+    const playlistId: string = this.dataService.getFilterPlaylistId()
+    this.playlistFilterId = playlistId
+    if (playlistId.length > 0) {
+      const playlists: PlaylistInfo[] = this.dataService.getPlaylists()
+      label = '歌单'
+      for (let i = 0; i < playlists.length; i++) {
+        if (playlists[i].id === playlistId) {
+          label = playlists[i].name
+          break
+        }
+      }
+    } else if (this.dataService.isFavoritesSelected()) {
+      label = '我的收藏'
     } else {
       const paths: string[] = this.dataService.getSelectedFolderPaths()
       if (paths.length === 1) {
         const lastSlash: number = paths[0].lastIndexOf('/')
         const lastBackslash: number = paths[0].lastIndexOf('\\')
         const sepIdx: number = lastSlash > lastBackslash ? lastSlash : lastBackslash
-        this.filterLabel = sepIdx >= 0 ? paths[0].substring(sepIdx + 1) : paths[0]
+        label = sepIdx >= 0 ? paths[0].substring(sepIdx + 1) : paths[0]
       } else if (paths.length > 1) {
-        this.filterLabel = paths.length + ' 个文件夹'
+        label = paths.length + ' 个文件夹'
       } else {
-        this.filterLabel = '全部歌曲'
+        label = '全部歌曲'
       }
     }
+    if (this.countActiveFilterDims() > 0) {
+      label = label === '全部歌曲' ? '组合筛选' : label + ' · 筛选'
+    }
+    this.filterLabel = label
+  }
+
+  // 歌单集合/曲目变化（P2-3）：歌单筛选态下列表随歌单内容刷新，胶囊同步歌单名
+  onPlaylistRevisionChange(): void {
+    this.applyFilters()
+    this.refreshFilterLabel()
+  }
+
+  // 打开「加入歌单」弹窗（P2-3）：快照歌单列表（名称 + 首数）
+  openPlaylistPicker(): void {
+    const rows: PickerPlaylistRow[] = []
+    const playlists: PlaylistInfo[] = this.dataService.getPlaylists()
+    for (let i = 0; i < playlists.length; i++) {
+      const row: PickerPlaylistRow = new PickerPlaylistRow()
+      row.id = playlists[i].id
+      row.name = playlists[i].name
+      row.count = this.dataService.getPlaylistItemSongIds(playlists[i].id).length
+      rows.push(row)
+    }
+    this.pickerRows = rows
+    this.pickerNewName = ''
+    this.isPlaylistPickerVisible = true
+  }
+
+  // 选中歌曲加入已有歌单：加完关弹窗、退多选并 toast 提示
+  private async addSelectedToPlaylist(playlistId: string): Promise<void> {
+    await this.dataService.addSongsToPlaylist(playlistId, this.selectedIds.slice())
+    this.isPlaylistPickerVisible = false
+    this.exitMultiSelect()
+    try {
+      showToastGlassMaterial(this.getUIContext()?.getPromptAction(), '已加入歌单')
+    } catch (e) {
+      Logger.error(TAG, 'toast failed')
+    }
+  }
+
+  // 新建歌单并加入当前选中歌曲（空名/超长不创建）
+  private async createPlaylistWithSelected(): Promise<void> {
+    const name: string = this.pickerNewName.trim()
+    if (name.length === 0 || name.length > 30) {
+      return
+    }
+    const created: PlaylistInfo | undefined = await this.dataService.createPlaylist(name)
+    if (created !== undefined) {
+      await this.addSelectedToPlaylist(created.id)
+    }
+  }
+
+  private countActiveFilterDims(): number {
+    return this.dataService.getFilterArtists().length + this.dataService.getFilterAlbums().length +
+      this.dataService.getFilterGenres().length + this.dataService.getFilterYears().length
   }
 
   loadData(): void {
@@ -233,20 +374,94 @@ export struct HomeContent {
     const isFavFilter: boolean = this.dataService.isFavoritesSelected()
     const selectedPaths: string[] = this.dataService.getSelectedFolderPaths()
     const hasFolderFilter: boolean = !isFavFilter && selectedPaths.length > 0
+    const dimArtists: string[] = this.dataService.getFilterArtists()
+    const dimAlbums: string[] = this.dataService.getFilterAlbums()
+    const dimGenres: string[] = this.dataService.getFilterGenres()
+    const dimYears: string[] = this.dataService.getFilterYears()
+    const hasDimFilter: boolean = dimArtists.length > 0 || dimAlbums.length > 0 ||
+      dimGenres.length > 0 || dimYears.length > 0
+    // 歌单筛选（P2-3）：激活时仅保留歌单内曲目（与文件夹/收藏互斥，顶级列表来源）
+    const playlistId: string = this.dataService.getFilterPlaylistId()
+    let playlistSongIds: Set<string> | undefined = undefined
+    if (playlistId.length > 0) {
+      playlistSongIds = new Set<string>()
+      const itemIds: string[] = this.dataService.getPlaylistItemSongIds(playlistId)
+      for (let i = 0; i < itemIds.length; i++) {
+        playlistSongIds.add(itemIds[i])
+      }
+    }
+    const query: string = this.searchText.trim().toLowerCase()
+    const isSearching: boolean = query.length > 0
     const result: SongInfo[] = []
     for (let i = 0; i < this.songs.length; i++) {
       const song: SongInfo = this.songs[i]
       if (isFavFilter) {
-        if (song.isFavorite) {
-          result.push(song)
+        if (!song.isFavorite) {
+          continue
         }
       } else if (hasFolderFilter) {
-        if (selectedPaths.indexOf(song.folderPath) >= 0) {
-          result.push(song)
+        if (selectedPaths.indexOf(song.folderPath) < 0) {
+          continue
         }
-      } else {
-        result.push(song)
       }
+      if (playlistSongIds !== undefined && !playlistSongIds.has(song.id)) {
+        continue
+      }
+      if (hasDimFilter) {
+        if (dimArtists.length > 0 && !this.songMatchesArtistFilter(song, dimArtists)) {
+          continue
+        }
+        if (dimAlbums.length > 0 && dimAlbums.indexOf(song.album) < 0) {
+          continue
+        }
+        if (dimGenres.length > 0 && dimGenres.indexOf(song.genre) < 0) {
+          continue
+        }
+        if (dimYears.length > 0 && dimYears.indexOf(song.year) < 0) {
+          continue
+        }
+      }
+      result.push(song)
+    }
+    if (isSearching) {
+      // 搜索模式：按命中权重排序（标题/歌手等前缀 > 包含 > 全拼 > 首字母缩写），截断前 200 条
+      const scored: ScoredSong[] = []
+      for (let i = 0; i < result.length; i++) {
+        const score: number = this.searchScore(result[i], query)
+        if (score > 0) {
+          const item: ScoredSong = new ScoredSong()
+          item.song = result[i]
+          item.score = score
+          scored.push(item)
+        }
+      }
+      scored.sort((a: ScoredSong, b: ScoredSong): number => {
+        return b.score - a.score
+      })
+      const capped: SongInfo[] = []
+      for (let i = 0; i < scored.length && capped.length < SEARCH_RESULT_LIMIT; i++) {
+        capped.push(scored[i].song)
+      }
+      this.buildDisplayItems(capped)
+      return
+    }
+    if (this.isRecentMode) {
+      // 最近播放模式（P0-4）：仅展示播过的歌，lastPlayedAt 倒序前 20，覆盖常规排序
+      const played: SongInfo[] = []
+      for (let i = 0; i < result.length; i++) {
+        if (result[i].lastPlayedAt > 0) {
+          played.push(result[i])
+        }
+      }
+      played.sort((a: SongInfo, b: SongInfo): number => {
+        return b.lastPlayedAt - a.lastPlayedAt
+      })
+      const capped: SongInfo[] = []
+      for (let i = 0; i < played.length && capped.length < RECENT_PLAY_LIMIT; i++) {
+        capped.push(played[i])
+      }
+      this.buildDisplayItems(capped)
+      return
     }
     const sorted: SongInfo[] = this.sortSongs(result)
     this.buildDisplayItems(sorted)
@@ -260,6 +475,36 @@ export struct HomeContent {
         di.isHeader = false
         di.song = sorted[i]
         items.push(di)
+      }
+    } else if (this.viewMode === 'album' || this.viewMode === 'artist') {
+      // 专辑/歌手分组视图（P2-4）：组序随当前排序，组内按音轨数值序重排；
+      // 分组头挂组内代表歌曲渲染封面，点击整组连播（见 groupHeaderRow）
+      const groupMap: Record<string, SongInfo[]> = {}
+      for (let i = 0; i < sorted.length; i++) {
+        const song: SongInfo = sorted[i]
+        const key: string = this.groupKeyForView(song)
+        if (groupMap[key] === undefined) {
+          groupMap[key] = []
+        }
+        groupMap[key].push(song)
+      }
+      const keys: string[] = Object.keys(groupMap)
+      for (let gi = 0; gi < keys.length; gi++) {
+        const key: string = keys[gi]
+        const groupSongs: SongInfo[] = groupMap[key]
+        this.sortGroupSongs(groupSongs)
+        const header: DisplayItem = new DisplayItem()
+        header.isHeader = true
+        header.headerText = key
+        header.song = groupSongs[0]
+        header.headerCount = groupSongs.length
+        items.push(header)
+        for (let si = 0; si < groupSongs.length; si++) {
+          const di: DisplayItem = new DisplayItem()
+          di.isHeader = false
+          di.song = groupSongs[si]
+          items.push(di)
+        }
       }
     } else {
       const groupMap: Record<string, SongInfo[]> = {}
@@ -347,17 +592,367 @@ export struct HomeContent {
   }
 
   clearFilters(): void {
-    this.dataService.setFilterState([], false)
+    // 点击筛选胶囊 = 整体重置：文件夹/收藏与组合筛选维度一并清空
+    this.dataService.setFilterState([], false, new FilterDimensions())
+  }
+
+  // ═══════════ 模糊搜索（S2）═══════════
+
+  // Ctrl+F：打开搜索行并聚焦输入框。
+  // requestFocus 要求节点已挂树（错误码 150003），isSearchActive 渲染搜索行后再延迟请求焦点
+  onSearchFocusRequest(): void {
+    this.openSearch()
+  }
+
+  openSearch(): void {
+    this.isSearchActive = true
+    setTimeout(() => {
+      this.getUIContext()?.getFocusController().requestFocus('home_search_input')
+    }, 100)
+  }
+
+  closeSearch(): void {
+    this.isSearchActive = false
+    if (this.searchDebounceId >= 0) {
+      clearTimeout(this.searchDebounceId)
+      this.searchDebounceId = -1
+    }
+    if (this.searchText.length > 0) {
+      this.searchText = ''
+      this.applyFilters()
+    }
+  }
+
+  private onSearchTextChanged(value: string): void {
+    this.searchText = value
+    if (this.searchDebounceId >= 0) {
+      clearTimeout(this.searchDebounceId)
+    }
+    this.searchDebounceId = setTimeout(() => {
+      this.searchDebounceId = -1
+      this.applyFilters()
+    }, SEARCH_DEBOUNCE_MS)
+  }
+
+  // 搜索打分：query 按空白切 token，各 token 须至少命中一个字段（AND 语义），
+  // 权重：标题/歌名/歌手/专辑/文件名（前缀 8 / 包含 6）> 全拼（5/4）> 首字母缩写（3/2）
+  private searchScore(song: SongInfo, query: string): number {
+    const tokens: string[] = this.splitSearchTokens(query)
+    if (tokens.length === 0) {
+      return 0
+    }
+    let total: number = 0
+    for (let i = 0; i < tokens.length; i++) {
+      const tokenScore: number = this.tokenScore(song, tokens[i])
+      if (tokenScore <= 0) {
+        return 0
+      }
+      total += tokenScore
+    }
+    return total
+  }
+
+  private splitSearchTokens(query: string): string[] {
+    const tokens: string[] = []
+    const parts: string[] = query.split(' ')
+    for (let i = 0; i < parts.length; i++) {
+      const part: string = parts[i].trim()
+      if (part.length > 0) {
+        tokens.push(part)
+      }
+    }
+    return tokens
+  }
+
+  private tokenScore(song: SongInfo, token: string): number {
+    let best: number = 0
+    best = Math.max(best, this.textScore(song.title, token, 8, 6))
+    best = Math.max(best, this.textScore(song.name, token, 8, 6))
+    best = Math.max(best, this.textScore(song.artist, token, 8, 6))
+    best = Math.max(best, this.textScore(song.album, token, 8, 6))
+    best = Math.max(best, this.textScore(song.fileName, token, 8, 6))
+    best = Math.max(best, this.textScore(song.pinyinFull, token, 5, 4))
+    best = Math.max(best, this.textScore(song.pinyinAbbr, token, 3, 2))
+    return best
+  }
+
+  private textScore(text: string, token: string, prefixScore: number, containsScore: number): number {
+    if (text.length === 0) {
+      return 0
+    }
+    const lower: string = text.toLowerCase()
+    if (lower.startsWith(token)) {
+      return prefixScore
+    }
+    if (lower.indexOf(token) >= 0) {
+      return containsScore
+    }
+    return 0
+  }
+
+  // ═══════════ 组合筛选面板（S1）═══════════
+
+  openFilterPanel(): void {
+    this.panelArtists = this.dataService.getFilterArtists().slice()
+    this.panelAlbums = this.dataService.getFilterAlbums().slice()
+    this.panelGenres = this.dataService.getFilterGenres().slice()
+    this.panelYears = this.dataService.getFilterYears().slice()
+    this.buildPanelOptions()
+    this.isFilterPanelVisible = true
+  }
+
+  closeFilterPanel(): void {
+    this.isFilterPanelVisible = false
+  }
+
+  // 「完成」：把面板选择组装成 FilterDimensions 提交，
+  // 触发 KEY_FILTER_REVISION → onFilterChange → applyFilters + refreshFilterLabel
+  applyFilterPanel(): void {
+    const dims: FilterDimensions = new FilterDimensions()
+    dims.artists = this.panelArtists.slice()
+    dims.albums = this.panelAlbums.slice()
+    dims.genres = this.panelGenres.slice()
+    dims.years = this.panelYears.slice()
+    // 筛选面板只管理艺术家/专辑/流派/年份：歌单筛选由歌单页卡片控制，这里原样保留
+    dims.playlistId = this.dataService.getFilterPlaylistId()
+    this.dataService.setFilterState(this.dataService.getSelectedFolderPaths(),
+      this.dataService.isFavoritesSelected(), dims)
+    this.isFilterPanelVisible = false
+  }
+
+  // 「重置」：清空面板各维度选择并立即应用（保留文件夹/收藏筛选）
+  resetFilterPanel(): void {
+    this.panelArtists = []
+    this.panelAlbums = []
+    this.panelGenres = []
+    this.panelYears = []
+    this.applyFilterPanel()
+  }
+
+  private togglePanelValue(list: string[], value: string): void {
+    const idx: number = list.indexOf(value)
+    if (idx >= 0) {
+      list.splice(idx, 1)
+    } else {
+      list.push(value)
+    }
+  }
+
+  onChipToggle(dim: string, value: string): void {
+    if (dim === 'artist') {
+      this.togglePanelValue(this.panelArtists, value)
+      this.panelArtists = this.panelArtists.slice()
+    } else if (dim === 'album') {
+      this.togglePanelValue(this.panelAlbums, value)
+      this.panelAlbums = this.panelAlbums.slice()
+    } else if (dim === 'genre') {
+      this.togglePanelValue(this.panelGenres, value)
+      this.panelGenres = this.panelGenres.slice()
+    } else if (dim === 'year') {
+      this.togglePanelValue(this.panelYears, value)
+      this.panelYears = this.panelYears.slice()
+    }
+  }
+
+  private isChipSelected(selected: string[], value: string): boolean {
+    return selected.indexOf(value) >= 0
+  }
+
+  // 艺术家拆分：按当前分隔符把多艺人串拆成独立艺术家（「midnight kiss,kappa」→ 两位），
+  // 拆后去首尾空白、去重；空串原样返回（归入「未知」）；无分隔符或无可拆内容时回退原串
+  private splitArtistNames(artist: string): string[] {
+    if (artist.length === 0) {
+      return [artist]
+    }
+    const seps: string[] = this.artistSeparators
+    if (seps.length === 0) {
+      return [artist]
+    }
+    const names: string[] = []
+    let current: string = ''
+    for (let i = 0; i < artist.length; i++) {
+      const ch: string = artist.charAt(i)
+      if (seps.indexOf(ch) >= 0) {
+        const trimmed: string = current.trim()
+        if (trimmed.length > 0 && names.indexOf(trimmed) < 0) {
+          names.push(trimmed)
+        }
+        current = ''
+      } else {
+        current += ch
+      }
+    }
+    const last: string = current.trim()
+    if (last.length > 0 && names.indexOf(last) < 0) {
+      names.push(last)
+    }
+    if (names.length === 0) {
+      return [artist]
+    }
+    return names
+  }
+
+  // 艺术家筛选匹配：歌曲任一拆分后艺术家命中已选值即保留；
+  // 同时回退匹配原始整串，兼容升级前按未拆分串保存的旧筛选状态
+  private songMatchesArtistFilter(song: SongInfo, dimArtists: string[]): boolean {
+    if (dimArtists.indexOf(song.artist) >= 0) {
+      return true
+    }
+    const names: string[] = this.splitArtistNames(song.artist)
+    for (let i = 0; i < names.length; i++) {
+      if (dimArtists.indexOf(names[i]) >= 0) {
+        return true
+      }
+    }
+    return false
+  }
+
+  // 候选项构建：各维度按值聚合计数、数量降序（并列按名称），空值归入「未知」；
+  // 艺术家维度先按分隔符拆分成独立艺术家再聚合（多艺人歌曲对每位艺术家各计 +1）
+  private buildPanelOptions(): void {
+    const artistMap: Record<string, number> = {}
+    const albumMap: Record<string, number> = {}
+    const genreMap: Record<string, number> = {}
+    const yearMap: Record<string, number> = {}
+    for (let i = 0; i < this.songs.length; i++) {
+      const song: SongInfo = this.songs[i]
+      const songArtists: string[] = this.splitArtistNames(song.artist)
+      for (let ai = 0; ai < songArtists.length; ai++) {
+        this.bumpOptionCount(artistMap, songArtists[ai])
+      }
+      this.bumpOptionCount(albumMap, song.album)
+      this.bumpOptionCount(genreMap, song.genre)
+      this.bumpOptionCount(yearMap, song.year)
+    }
+    this.panelArtistOptions = this.optionsFromMap(artistMap)
+    this.panelAlbumOptions = this.optionsFromMap(albumMap)
+    this.panelGenreOptions = this.optionsFromMap(genreMap)
+    this.panelYearOptions = this.optionsFromMap(yearMap)
+  }
+
+  private bumpOptionCount(map: Record<string, number>, value: string): void {
+    if (map[value] === undefined) {
+      map[value] = 0
+    }
+    map[value] = map[value] + 1
+  }
+
+  private optionsFromMap(map: Record<string, number>): FilterChipOption[] {
+    const keys: string[] = Object.keys(map)
+    const options: FilterChipOption[] = []
+    for (let i = 0; i < keys.length; i++) {
+      const key: string = keys[i]
+      const option: FilterChipOption = new FilterChipOption()
+      option.value = key
+      option.label = key.length > 0 ? key : '未知'
+      option.count = map[key]
+      options.push(option)
+    }
+    options.sort((a: FilterChipOption, b: FilterChipOption): number => {
+      if (b.count !== a.count) {
+        return b.count - a.count
+      }
+      return a.label.localeCompare(b.label)
+    })
+    const capped: FilterChipOption[] = []
+    for (let i = 0; i < options.length && i < FILTER_PANEL_OPTION_LIMIT; i++) {
+      capped.push(options[i])
+    }
+    return capped
   }
 
   toggleViewMode(): void {
+    // 四态循环（P2-4）：平铺 → 文件夹 → 专辑 → 歌手
     if (this.viewMode === 'flat') {
       this.viewMode = 'folder'
+    } else if (this.viewMode === 'folder') {
+      this.viewMode = 'album'
+    } else if (this.viewMode === 'album') {
+      this.viewMode = 'artist'
     } else {
       this.viewMode = 'flat'
     }
     this.dataService.setViewMode(this.viewMode)
     this.applyFilters()
+  }
+
+  // 视图胶囊文案（P2-4）
+  viewModeLabel(): string {
+    if (this.viewMode === 'folder') {
+      return '文件夹'
+    }
+    if (this.viewMode === 'album') {
+      return '专辑'
+    }
+    if (this.viewMode === 'artist') {
+      return '歌手'
+    }
+    return '平铺'
+  }
+
+  // 专辑/歌手分组的取键字段（P2-4）：空值归入「未知」组
+  private groupKeyForView(song: SongInfo): string {
+    if (this.viewMode === 'album') {
+      return song.album.length > 0 ? song.album : '未知专辑'
+    }
+    return song.artist.length > 0 ? song.artist : '未知艺术家'
+  }
+
+  // 音轨数值（P2-4）：解析 "3/12" → 3；非法/缺失返回 0（由调用方兜底 addedTime）
+  private trackNumber(song: SongInfo): number {
+    const raw: string = song.track
+    const slashIdx: number = raw.indexOf('/')
+    const text: string = slashIdx >= 0 ? raw.substring(0, slashIdx) : raw
+    const parsed: number = parseInt(text)
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
+  }
+
+  // 专辑/歌手组内排序（P2-4）：歌手视图先按专辑名二级分组，再按音轨数值序，兜底加入时间
+  private sortGroupSongs(groupSongs: SongInfo[]): void {
+    const byAlbum: boolean = this.viewMode === 'artist'
+    groupSongs.sort((a: SongInfo, b: SongInfo): number => {
+      if (byAlbum) {
+        const albumCmp: number = a.album.localeCompare(b.album)
+        if (albumCmp !== 0) {
+          return albumCmp
+        }
+      }
+      const at: number = this.trackNumber(a)
+      const bt: number = this.trackNumber(b)
+      if (at !== bt) {
+        return at - bt
+      }
+      return a.addedTime - b.addedTime
+    })
+  }
+
+  // 点击专辑/歌手分组头（P2-4）：整组连播——播放队列临时收窄为组内可播歌曲后播第一首；
+  // 下一次筛选/曲库变化经 syncPlayQueue 自动恢复全量可见队列
+  playGroupFromHeader(headerText: string): void {
+    const groupSongs: SongInfo[] = []
+    let started: boolean = false
+    for (let i = 0; i < this.displayItems.length; i++) {
+      const it: DisplayItem = this.displayItems[i]
+      if (!started) {
+        if (it.isHeader && it.headerText === headerText) {
+          started = true
+        }
+        continue
+      }
+      if (it.isHeader) {
+        break
+      }
+      if (it.song.isAvailable) {
+        groupSongs.push(it.song)
+      }
+    }
+    if (groupSongs.length === 0) {
+      return
+    }
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SONG_LIST, groupSongs)
+    this.avPlayerService.playSongAt(0).catch((err: Error): void => {
+      Logger.error(TAG, `group play failed: ${JSON.stringify(err)}`)
+    })
   }
 
   switchSortMode(): void {
@@ -593,6 +1188,18 @@ export struct HomeContent {
   }
 
   deleteSelected(): void {
+    // 歌单筛选态（P2-3）：删除按钮语义 = 移出歌单——只删 playlist_items 关联行，不动歌曲文件；
+    // 移出后 bump KEY_PLAYLIST_REVISION → onPlaylistRevisionChange 重新过滤列表
+    if (this.playlistFilterId.length > 0) {
+      const playlistId: string = this.playlistFilterId
+      const ids: string[] = this.selectedIds.slice()
+      this.isMultiSelectMode = false
+      this.selectedIds = []
+      this.dataService.removeSongsFromPlaylist(playlistId, ids).catch((err: Error) => {
+        Logger.error(TAG, `removeSongsFromPlaylist failed: ${JSON.stringify(err)}`)
+      })
+      return
+    }
     // 走统一删除入口：全链路清理（播放队列/筛选状态/文件夹列表/当前播放），
     // 否则删除某文件夹全部歌曲后，顶部筛选胶囊仍残留该文件夹名
     const result: LibraryDeleteResult = this.dataService.removeSongsByIds(this.selectedIds.slice())
@@ -691,7 +1298,11 @@ export struct HomeContent {
             LazyForEach(this.displayDataSource, (item: DisplayItem, index: number) => {
               ListItem() {
                 if (item.isHeader) {
-                  this.folderHeaderRow(item.headerText)
+                  if (this.viewMode === 'album' || this.viewMode === 'artist') {
+                    this.groupHeaderRow(item)
+                  } else {
+                    this.folderHeaderRow(item.headerText)
+                  }
                 } else if (!item.isHeader) {
                   this.songItemRow(item.song)
                 }
@@ -751,11 +1362,15 @@ export struct HomeContent {
           })
 
           if (this.displayItems.length === 0) {
-            Text('暂无歌曲，点击添加')
+            Text(this.searchText.trim().length > 0 ? '未找到匹配的歌曲' : '暂无歌曲，点击添加')
               .fontSize(Math.round(14 * this.fontSizeScale))
               .fontColor($r('app.color.text_twenty_color'))
               .textAlign(TextAlign.Center)
-              .onClick(() => { this.onPlusClick() })
+              .onClick(() => {
+                if (this.searchText.trim().length === 0) {
+                  this.onPlusClick()
+                }
+              })
           }
 
           ScrollBar({
@@ -795,43 +1410,89 @@ export struct HomeContent {
             ]
           })
 
-        Row() {
+        Column() {
           Row() {
             Text(this.filterLabel)
               .fontSize(Math.round(14 * this.fontSizeScale))
               .fontColor($r('app.color.text_primary'))
               .fontWeight(FontWeight.Bold)
-          }
-          .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-          .backgroundColor(this.filterLabel === '全部歌曲' ? 'rgba(0,0,0,0.05)' : ColorHelper.hexToRgba(this.primaryColor, 0.12))
-          .borderRadius(16)
-          .onClick(() => { this.clearFilters() })
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .backgroundColor(this.filterLabel === '全部歌曲' ? 'rgba(0,0,0,0.05)' : ColorHelper.hexToRgba(this.primaryColor, 0.12))
+              .borderRadius(16)
+              .onClick(() => { this.clearFilters() })
 
-          Blank()
+            // 组合筛选入口（S1）：维度激活时高亮提示
+            Text('筛选')
+              .fontSize(Math.round(12 * this.fontSizeScale))
+              .fontColor($r('app.color.text_primary'))
+              .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+              .margin({ left: 8 })
+              .backgroundColor(this.countActiveFilterDims() > 0 ?
+                ColorHelper.hexToRgba(this.primaryColor, 0.28) : 'rgba(0,0,0,0.05)')
+              .borderRadius(16)
+              .onClick(() => { this.openFilterPanel() })
 
-          Row() {
-            Image($r('app.media.ic_sort_list'))
+            // 最近播放入口（P0-4）：激活时以 lastPlayedAt 倒序前 20 覆盖排序展示
+            Text('最近播放')
+              .fontSize(Math.round(12 * this.fontSizeScale))
+              .fontColor(this.isRecentMode ? Color.White : $r('app.color.text_primary'))
+              .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+              .margin({ left: 8 })
+              .backgroundColor(this.isRecentMode ? this.primaryColor : 'rgba(0,0,0,0.05)')
+              .borderRadius(16)
+              .onClick(() => {
+                this.isRecentMode = !this.isRecentMode
+                this.applyFilters()
+              })
+
+            Blank()
+
+            // 模糊搜索入口（S2）：展开/收起搜索行，Ctrl+F 亦可触发
+            Image($r('app.media.ic_public_search'))
               .width(16).height(16)
               .fillColor($r('app.color.text_primary'))
-            Text(this.getSortLabel())
-              .fontSize(Math.round(12 * this.fontSizeScale))
-              .fontColor($r('app.color.text_primary'))
-              .margin({ left: 4 })
-          }
-          .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-          .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-          .borderRadius(16)
-          .onClick(() => { this.switchSortMode() })
+              .padding({ left: 10, right: 10, top: 8, bottom: 8 })
+              .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+              .borderRadius(16)
+              .onClick(() => {
+                if (this.isSearchActive) {
+                  this.closeSearch()
+                } else {
+                  this.openSearch()
+                }
+              })
 
-          Row() {
-            Text(this.viewMode === 'flat' ? '平铺' : '文件夹')
-              .fontSize(Math.round(12 * this.fontSizeScale))
-              .fontColor($r('app.color.text_primary'))
+            Row() {
+              Image($r('app.media.ic_sort_list'))
+                .width(16).height(16)
+                .fillColor($r('app.color.text_primary'))
+              Text(this.getSortLabel())
+                .fontSize(Math.round(12 * this.fontSizeScale))
+                .fontColor($r('app.color.text_primary'))
+                .margin({ left: 4 })
+            }
+            .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+            .margin({ left: 8 })
+            .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+            .borderRadius(16)
+            .onClick(() => { this.switchSortMode() })
+
+            Row() {
+              Text(this.viewModeLabel())
+                .fontSize(Math.round(12 * this.fontSizeScale))
+                .fontColor($r('app.color.text_primary'))
+            }
+            .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+            .margin({ left: 8 })
+            .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+            .borderRadius(16)
+            .onClick(() => { this.toggleViewMode() })
           }
-          .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-          .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-          .borderRadius(16)
-          .onClick(() => { this.toggleViewMode() })
+          .width('100%')
+
+          if (this.isSearchActive) {
+            this.searchInputRow()
+          }
         }
         .width('100%')
         .padding({ left: 16, right: 16, top: 6 })
@@ -879,13 +1540,26 @@ export struct HomeContent {
           .margin({ right: 16 })
           .onClick(() => { this.toggleSelectAll() })
 
-          // 删除按钮 - 带图标
+          // 加入歌单（P2-3）- 带图标：弹窗选择目标歌单或新建
+          Row({ space: 4 }) {
+            Image($r('app.media.ic_public_add_norm_filled'))
+              .width(Math.round(16 * this.fontSizeScale))
+              .height(Math.round(16 * this.fontSizeScale))
+              .fillColor(this.primaryColor)
+            Text('加入歌单')
+              .fontSize(Math.round(14 * this.fontSizeScale))
+              .fontColor(this.primaryColor)
+          }
+          .margin({ right: 16 })
+          .onClick(() => { this.openPlaylistPicker() })
+
+          // 删除按钮 - 带图标；歌单筛选态（P2-3）语义变为「移出歌单」（不删文件）
           Row({ space: 4 }) {
             Image($r('app.media.ic_public_delete'))
               .width(Math.round(16 * this.fontSizeScale))
               .height(Math.round(16 * this.fontSizeScale))
               .fillColor(StyleConstants.COLOR_DANGER_RED)
-            Text('删除')
+            Text(this.playlistFilterId.length > 0 ? '移出歌单' : '删除')
               .fontSize(Math.round(14 * this.fontSizeScale))
               .fontColor(StyleConstants.COLOR_DANGER_RED)
           }
@@ -922,6 +1596,175 @@ export struct HomeContent {
         ))
       }
 
+      // 组合筛选面板（S1）：半透明遮罩 + 顶部下拉卡片；遮罩点击直接关闭（不应用未提交的修改）
+      if (this.isFilterPanelVisible) {
+        Stack({ alignContent: Alignment.Top }) {
+          Column()
+            .width('100%')
+            .height('100%')
+            .backgroundColor('rgba(0,0,0,0.35)')
+            .onClick(() => { this.closeFilterPanel() })
+
+          Column() {
+            Row() {
+              Text('筛选')
+                .fontSize(Math.round(16 * this.fontSizeScale))
+                .fontWeight(FontWeight.Bold)
+                .fontColor($r('app.color.text_primary'))
+              Blank()
+              Text('重置')
+                .fontSize(Math.round(14 * this.fontSizeScale))
+                .fontColor($r('app.color.text_sixty_color'))
+                .onClick(() => { this.resetFilterPanel() })
+              Text('完成')
+                .fontSize(Math.round(14 * this.fontSizeScale))
+                .fontColor(Color.White)
+                .padding({ left: 14, right: 14, top: 6, bottom: 6 })
+                .backgroundColor(this.primaryColor)
+                .borderRadius(14)
+                .margin({ left: 16 })
+                .onClick(() => { this.applyFilterPanel() })
+            }
+            .width('100%')
+            .alignItems(VerticalAlign.Center)
+
+            Scroll() {
+              Column() {
+                this.filterChipSection('艺术家', this.panelArtistOptions, this.panelArtists, 'artist')
+                this.filterChipSection('专辑', this.panelAlbumOptions, this.panelAlbums, 'album')
+                this.filterChipSection('流派', this.panelGenreOptions, this.panelGenres, 'genre')
+                this.filterChipSection('年份', this.panelYearOptions, this.panelYears, 'year')
+              }
+              .width('100%')
+              .alignItems(HorizontalAlign.Start)
+            }
+            .layoutWeight(1)
+            .width('100%')
+            .align(Alignment.Start)
+            .scrollBar(BarState.Auto)
+          }
+          .width('92%')
+          .constraintSize({ maxHeight: '62%' })
+          .padding(16)
+          .borderRadius(20)
+          .backgroundColor($r('app.color.page_background_sm'))
+          .margin({ top: this.listTopPadding() })
+        }
+        .width('100%')
+        .height('100%')
+        .zIndex(20)
+        .transition(TransitionEffect.OPACITY)
+      }
+
+      // 「加入歌单」弹窗（P2-3）：目标歌单列表 + 新建歌单并加入
+      if (this.isPlaylistPickerVisible) {
+        Stack({ alignContent: Alignment.Top }) {
+          Column()
+            .width('100%')
+            .height('100%')
+            .backgroundColor('rgba(0,0,0,0.35)')
+            .onClick(() => { this.isPlaylistPickerVisible = false })
+
+          Column() {
+            Row() {
+              Text('加入歌单')
+                .fontSize(Math.round(16 * this.fontSizeScale))
+                .fontWeight(FontWeight.Bold)
+                .fontColor($r('app.color.text_primary'))
+              Blank()
+              Text('取消')
+                .fontSize(Math.round(14 * this.fontSizeScale))
+                .fontColor($r('app.color.text_sixty_color'))
+                .padding({ left: 14, right: 14, top: 6, bottom: 6 })
+                .onClick(() => { this.isPlaylistPickerVisible = false })
+            }
+            .width('100%')
+            .alignItems(VerticalAlign.Center)
+
+            // 新建歌单并加入：输入名称即建即加
+            Row({ space: 10 }) {
+              TextInput({ placeholder: '新建歌单名称' })
+                .layoutWeight(1)
+                .height(this.scaledSize(36))
+                .fontSize(Math.round(14 * this.fontSizeScale))
+                .backgroundColor('rgba(0,0,0,0.04)')
+                .borderRadius(12)
+                .onChange((value: string) => {
+                  this.pickerNewName = value
+                })
+              Text('创建并加入')
+                .fontSize(Math.round(13 * this.fontSizeScale))
+                .fontColor(Color.White)
+                .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+                .borderRadius(14)
+                .backgroundColor(this.primaryColor)
+                .onClick(() => {
+                  this.createPlaylistWithSelected().catch((err: Error) => {
+                    Logger.error(TAG, `createPlaylistWithSelected failed: ${JSON.stringify(err)}`)
+                  })
+                })
+            }
+            .width('100%')
+            .margin({ top: 12 })
+
+            if (this.pickerRows.length === 0) {
+              Text('还没有歌单，输入名称创建一个吧')
+                .fontSize(Math.round(13 * this.fontSizeScale))
+                .fontColor($r('app.color.text_twenty_color'))
+                .width('100%')
+                .textAlign(TextAlign.Center)
+                .margin({ top: 24 })
+            } else {
+              Scroll() {
+                Column() {
+                  ForEach(this.pickerRows, (row: PickerPlaylistRow) => {
+                    Row() {
+                      Image($r('app.media.ic_public_music'))
+                        .width(20)
+                        .height(20)
+                        .fillColor($r('app.color.text_sixty_color'))
+                        .margin({ right: 12 })
+                      Text(row.name)
+                        .fontSize(Math.round(14 * this.fontSizeScale))
+                        .fontColor($r('app.color.text_primary'))
+                        .maxLines(1)
+                        .textOverflow({ overflow: TextOverflow.Ellipsis })
+                        .layoutWeight(1)
+                      Text(row.count + ' 首')
+                        .fontSize(Math.round(12 * this.fontSizeScale))
+                        .fontColor($r('app.color.text_sixty_color'))
+                        .margin({ left: 12 })
+                    }
+                    .width('100%')
+                    .padding({ top: 12, bottom: 12 })
+                    .onClick(() => {
+                      this.addSelectedToPlaylist(row.id).catch((err: Error) => {
+                        Logger.error(TAG, `addSelectedToPlaylist failed: ${JSON.stringify(err)}`)
+                      })
+                    })
+                  }, (row: PickerPlaylistRow) => row.id + '_' + row.count)
+                }
+                .width('100%')
+              }
+              .layoutWeight(1)
+              .width('100%')
+              .margin({ top: 4 })
+              .scrollBar(BarState.Auto)
+            }
+          }
+          .width('92%')
+          .constraintSize({ maxHeight: '62%' })
+          .padding(16)
+          .borderRadius(20)
+          .backgroundColor($r('app.color.page_background_sm'))
+          .margin({ top: this.listTopPadding() })
+        }
+        .width('100%')
+        .height('100%')
+        .zIndex(20)
+        .transition(TransitionEffect.OPACITY)
+      }
+
       // 全局悬浮加号由 Index 统一渲染（首页/歌单共用，切页不位移，设置页隐藏），
       // 可见性由 publishPlusVisible 上报，本页不再挂按钮
     }
@@ -944,6 +1787,124 @@ export struct HomeContent {
     }
     .width('100%')
     .backgroundColor('rgba(0,0,0,0.02)')
+  }
+
+  // 专辑/歌手分组头（P2-4）：代表封面 + 组名 + 曲目数，整行点击连播组内歌曲
+  @Builder
+  groupHeaderRow(item: DisplayItem): void {
+    Row({ space: this.scaledSize(10) }) {
+      AlbumCover({ song: item.song, coverWidth: this.scaledSize(40), coverHeight: this.scaledSize(40),
+        coverRadius: this.scaledSize(8), decodeSize: AlbumCoverSize.SMALL })
+
+      Column({ space: 2 }) {
+        Text(item.headerText)
+          .fontSize(Math.round(15 * this.fontSizeScale))
+          .fontColor($r('app.color.text_primary'))
+          .fontWeight(FontWeight.Medium)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+        Text(`${item.headerCount} 首`)
+          .fontSize(Math.round(12 * this.fontSizeScale))
+          .fontColor($r('app.color.text_sixty_color'))
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+
+      Image($r('app.media.ic_public_play'))
+        .width(this.scaledSize(22)).height(this.scaledSize(22))
+        .fillColor($r('app.color.text_sixty_color'))
+    }
+    .width('100%')
+    .padding({
+      left: this.scaledSize(16), right: this.scaledSize(16),
+      top: this.scaledSize(8), bottom: this.scaledSize(8)
+    })
+    .margin({ top: this.scaledSize(4) })
+    .borderRadius(10)
+    .backgroundColor('rgba(0,0,0,0.02)')
+    .onClick(() => {
+      this.playGroupFromHeader(item.headerText)
+    })
+  }
+
+  // 模糊搜索输入行（S2）：随搜索激活显示在胶囊行下方，高度并入 headerRowHeight 自动下推列表
+  @Builder
+  searchInputRow(): void {
+    Row({ space: 8 }) {
+      Image($r('app.media.ic_public_search'))
+        .width(16).height(16)
+        .fillColor($r('app.color.text_sixty_color'))
+
+      TextInput({ text: this.searchText, placeholder: '搜索歌曲 / 歌手 / 专辑 / 拼音' })
+        .id('home_search_input')
+        .layoutWeight(1)
+        .height(this.scaledSize(32))
+        .fontSize(Math.round(14 * this.fontSizeScale))
+        .placeholderFont({ size: Math.round(14 * this.fontSizeScale) })
+        .placeholderColor($r('app.color.text_twenty_color'))
+        .fontColor($r('app.color.text_primary'))
+        .caretColor(this.primaryColor)
+        .backgroundColor(Color.Transparent)
+        .padding({ left: 0, right: 0 })
+        .onChange((value: string) => {
+          this.onSearchTextChanged(value)
+        })
+
+      if (this.searchText.length > 0) {
+        Image($r('app.media.ic_public_close'))
+          .width(16).height(16)
+          .fillColor($r('app.color.text_sixty_color'))
+          .onClick(() => {
+            this.searchText = ''
+            this.applyFilters()
+          })
+      }
+
+      Text('取消')
+        .fontSize(Math.round(14 * this.fontSizeScale))
+        .fontColor($r('app.color.text_sixty_color'))
+        .onClick(() => { this.closeSearch() })
+    }
+    .width('100%')
+    .margin({ top: 8 })
+    .padding({ left: 12, right: 12, top: 4, bottom: 4 })
+    .borderRadius(18)
+    .backgroundColor('rgba(0,0,0,0.05)')
+    .alignItems(VerticalAlign.Center)
+  }
+
+  // 筛选面板单维度分区（S1）：标题 + 芯片流式换行，多选高亮
+  @Builder
+  filterChipSection(sectionTitle: string, options: FilterChipOption[], selected: string[], dim: string): void {
+    if (options.length > 0) {
+      Column() {
+        Text(sectionTitle)
+          .fontSize(Math.round(13 * this.fontSizeScale))
+          .fontColor($r('app.color.text_sixty_color'))
+          .margin({ bottom: 8 })
+        Flex({ wrap: FlexWrap.Wrap }) {
+          ForEach(options, (option: FilterChipOption) => {
+            Text(option.label + ' ' + option.count)
+              .fontSize(Math.round(12 * this.fontSizeScale))
+              .fontColor(this.isChipSelected(selected, option.value) ?
+                this.primaryColor : $r('app.color.text_primary'))
+              .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+              .margin({ right: 8, bottom: 8 })
+              .borderRadius(14)
+              .backgroundColor(this.isChipSelected(selected, option.value) ?
+                ColorHelper.hexToRgba(this.primaryColor, 0.18) : 'rgba(0,0,0,0.05)')
+              .onClick(() => {
+                this.onChipToggle(dim, option.value)
+              })
+          }, (option: FilterChipOption) => dim + '_' + option.value)
+        }
+        .width('100%')
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .margin({ bottom: 12 })
+    }
   }
 
   @Builder

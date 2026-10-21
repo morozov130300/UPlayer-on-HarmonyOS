@@ -1,9 +1,10 @@
 // ArkUI 26 Beta1: 接口定义变更（误报，本项目已是Stage模型）+ UX视觉布局变更（Text默认开启沉浸式材质，系统行为）
-import { curves } from '@kit.ArkUI'
+import { curves, uiMaterial } from '@kit.ArkUI'
 import { hdsMaterial, HdsTabs, HdsTabsController, HdsTabsFloatingStyle } from '@kit.UIDesignKit'
 import { bundleManager, common, ConfigurationConstant } from '@kit.AbilityKit'
 import { updateManager } from '@kit.AppGalleryKit'
 import { AppSettingsData, DataService } from '../service/DataService'
+import { SongInfo } from '../model/SongInfo'
 import { AVPlayerService, EffectNodeSupport } from '../service/AVPlayerService'
 import nativeAudio from 'libuplayer.so'
 import { AudioFocusService } from '../service/AudioFocusService'
@@ -17,7 +18,8 @@ import { HoldingHandService, HOLDING_HAND_CONFIRM_WINDOW_MAX_MS, HOLDING_HAND_CO
   KEY_HOLDING_HAND_CONFIRM_WINDOW_MS, KEY_HOLDING_HAND_ENABLED, KEY_HOLDING_HAND_LEFT,
   KEY_HOLDING_HAND_SOFT_FALLBACK_MS } from '../service/HoldingHandService'
 import { ColorConversion } from '../common/utils/ColorConversion'
-import { isLiquidGlassAvailable, showToastGlassMaterial, topBlurRadiusFromStrength } from '../common/utils/GlassUtil'
+import { createStyleAccentGlassMaterial, createStyleGlassMaterial, DEFAULT_GLASS_STYLE, isLiquidGlassAvailable,
+  showToastGlassMaterial, topBlurRadiusFromStrength } from '../common/utils/GlassUtil'
 import { StyleConstants } from '../common/constants/StyleConstants'
 import { GlassBackButton } from '../view/GlassBackButton'
 import { isDarkThemeEffective } from '../common/utils/ThemeUtil'
@@ -104,6 +106,13 @@ interface ChipRowOptions {
   onPick: (value: number) => void
 }
 
+// 最常播放 Top 20 条目（P0-4）：设置页关于分组展示
+class TopPlayedEntry {
+  title: string = ''
+  artist: string = ''
+  playCount: number = 0
+}
+
 @Entry
 @Component
 @SuppressWarnings({ rules: [SuppressWarningsType.SYSCAP] })
@@ -157,6 +166,8 @@ struct SettingsDetailPage {
   @StorageProp(AppStorageKeyConstants.KEY_SPATIALIZATION_ENABLED) spatializationEnabled: boolean = false
   // 低功耗播放：设备是否支持 OH_LowPowerAudioSink 链路（进入「播放」分区时探测一次）
   @State lowPowerSupported: boolean = true
+  // 艺术家分隔符自定义输入框内容（「播放」分区「艺术家分隔符」卡片）
+  @State artistSepInput: string = ''
   private context: common.UIAbilityContext
     | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
   // Tab 栏实时预览：直接使用 HdsTabs 系统组件，与 Index 完全一致的渲染管线
@@ -194,6 +205,8 @@ struct SettingsDetailPage {
     { label: '轻柔', value: 'gentle' },
     { label: '流畅', value: 'smooth' }
   ]
+  // 艺术家分隔符预置候选（「播放」分区多选）：首页筛选下拉列表按这些符号拆分多艺人串
+  private artistSeparatorOptions: string[] = [',', '，', '&', '＆', ';', '；', '、', '/']
   // ═══ 设置项显隐统一动画（所有条件显隐的设置卡片/选项必须完全一致，禁止各自定义）═══
   private colorOptions: ThemeColorOption[] = [
     { name: '鸿蒙蓝', value: '#007DFF' },
@@ -476,6 +489,94 @@ struct SettingsDetailPage {
     return mode === SliderChangeMode.End || mode === SliderChangeMode.Click
   }
 
+  // 艺术家分隔符展示名：预置候选的字符 + 中文名
+  private artistSeparatorLabel(sep: string): string {
+    if (sep === ',') {
+      return '英文逗号 ,'
+    }
+    if (sep === '，') {
+      return '中文逗号 ，'
+    }
+    if (sep === '&') {
+      return '和号 &'
+    }
+    if (sep === '＆') {
+      return '全角和号 ＆'
+    }
+    if (sep === ';') {
+      return '分号 ;'
+    }
+    if (sep === '；') {
+      return '全角分号 ；'
+    }
+    if (sep === '、') {
+      return '顿号 、'
+    }
+    return '斜杠 /'
+  }
+
+  // 已启用的自定义分隔符：artistSeparators 中不在预置候选里的字符
+  private customArtistSeparators(): string[] {
+    const out: string[] = []
+    const seps: string[] = this.settings.artistSeparators
+    for (let i = 0; i < seps.length; i++) {
+      if (this.artistSeparatorOptions.indexOf(seps[i]) < 0) {
+        out.push(seps[i])
+      }
+    }
+    return out
+  }
+
+  // 统一写入艺术家分隔符：换数组引用 + 整体重赋 settings 触发芯片刷新；
+  // 保存后经 saveSettings 推送 KEY_ARTIST_SEPARATORS，首页 @Watch 自动重筛
+  private setArtistSeparators(next: string[]): void {
+    this.settings.artistSeparators = next
+    this.settings = this.settings
+    this.updateSetting()
+  }
+
+  toggleArtistSeparator(sep: string): void {
+    const next: string[] = this.settings.artistSeparators.slice()
+    const idx: number = next.indexOf(sep)
+    if (idx >= 0) {
+      next.splice(idx, 1)
+    } else {
+      next.push(sep)
+    }
+    this.setArtistSeparators(next)
+  }
+
+  removeArtistSeparator(sep: string): void {
+    const next: string[] = this.settings.artistSeparators.slice()
+    const idx: number = next.indexOf(sep)
+    if (idx >= 0) {
+      next.splice(idx, 1)
+      this.setArtistSeparators(next)
+    }
+  }
+
+  // 自定义输入按字符逐个添加：每个字符都是独立分隔符；空白字符跳过（会误拆含空格的
+  // 艺人名），已存在（含预置候选已启用的字符）不重复添加
+  addCustomArtistSeparators(): void {
+    const raw: string = this.artistSepInput
+    const next: string[] = this.settings.artistSeparators.slice()
+    let added: boolean = false
+    for (let i = 0; i < raw.length; i++) {
+      const ch: string = raw.charAt(i)
+      if (ch.trim().length === 0) {
+        continue
+      }
+      if (next.indexOf(ch) < 0) {
+        next.push(ch)
+        added = true
+      }
+    }
+    this.artistSepInput = ''
+    if (added) {
+      this.setArtistSeparators(next)
+    }
+  }
+
   setThemeMode(mode: string): void {
     this.getUIContext()?.animateTo({ curve: curves.springMotion(0.4, 0.8) }, () => {
       this.settings.themeMode = mode
@@ -538,6 +639,13 @@ struct SettingsDetailPage {
     } catch (e) {
       Logger.error(TAG, 'setSpeed failed: ' + JSON.stringify(e))
     }
+  }
+
+  // 定时停止淡出时长（P0-1）：拖动实时写 AppStorage（saveSettings 内联动推送），
+  // AVPlayerService 触发定时停止时读取；松手帧才立即落盘
+  onTimerFadeSecondsChange(value: number, mode: SliderChangeMode): void {
+    this.settings.timerFadeSeconds = Math.round(value)
+    this.updateSetting(this.isSliderSettled(mode))
   }
 
   onEqBandChange(bandIndex: number, value: number, mode: SliderChangeMode): void {
@@ -726,6 +834,32 @@ struct SettingsDetailPage {
     this.avPlayerService.applyTempoPitch(this.settings.tempoPitchEnabled, this.settings.tempoSpeed, value)
   }
 
+  // 自动音量均衡（P2-1）：0=off 1=track 2=album（chipRow 选中下标）
+  replayGainModeIndex(): number {
+    if (this.settings.replayGainMode === 'track') {
+      return 1
+    }
+    return this.settings.replayGainMode === 'album' ? 2 : 0
+  }
+
+  onReplayGainModeChange(index: number): void {
+    const mode: string = index === 1 ? 'track' : (index === 2 ? 'album' : 'off')
+    this.animateSettingChange(() => {
+      this.settings.replayGainMode = mode
+      this.settings = this.settings
+    })
+    this.updateSetting()
+    this.avPlayerService.applyReplayGainSettings()
+  }
+
+  onReplayGainPreGainChange(value: number, mode: SliderChangeMode): void {
+    const clamped: number = Math.max(-12, Math.min(12, Math.round(value)))
+    this.settings.replayGainPreGainDb = clamped
+    this.settings = this.settings
+    this.updateSetting(this.isSliderSettled(mode))
+    this.avPlayerService.applyReplayGainSettings()
+  }
+
   onSeparationOutputChange(output: number): void {
     this.animateSettingChange(() => {
       this.settings.separationOutput = output
@@ -823,6 +957,7 @@ struct SettingsDetailPage {
       dragBar: false,
       preferType: SheetType.CENTER,
       showClose: true,
+      systemMaterial: this.styleGlassMaterial(),
       backgroundColor: $r('app.color.page_background_other')
     })
   }
@@ -935,6 +1070,19 @@ struct SettingsDetailPage {
       .padding({ right: this.scaledSize(4) })
   }
 
+  // 组件风格（tabStyle）驱动的弹窗与选择类组件材质（bindSheet options 的 systemMaterial
+  // 字段、Toggle/Slider 通用属性）：玻璃风格 → 液态玻璃；经典风格 → Material.empty
+  // 显式关闭（undefined 只会恢复系统默认，关不干净）；设备不支持 → undefined
+  private styleGlassMaterial(): uiMaterial.Material | undefined {
+    return createStyleGlassMaterial(this.settings.tabStyle, DEFAULT_GLASS_STYLE)
+  }
+
+  // 组件风格驱动的强调按钮材质：在 styleGlassMaterial 基础上携带 materialColor，
+  // 保留实心主题色按钮的强调层级与白字对比度（玻璃生效后自定义背景色会被系统置透明）
+  private accentGlassMaterial(color: string): uiMaterial.Material | undefined {
+    return createStyleAccentGlassMaterial(this.settings.tabStyle, DEFAULT_GLASS_STYLE, color)
+  }
+
   // 玻璃效果生效范围说明弹窗（bindSheet 半模态内容）
   @Builder
   glassScopeSheetBuilder(): void {
@@ -959,6 +1107,8 @@ struct SettingsDetailPage {
       this.scopeLine('• 全局悬浮加号按钮（磨砂玻璃盘）')
       this.scopeLine(
         '• 操作时屏幕底部短暂弹出的文字提示浮层（如切换播放模式时的"随机播放"）——设备支持液态玻璃时固定使用液态玻璃材质')
+      this.scopeLine('• 半模态弹窗与气泡（播放列表、更多面板、倍速/音量气泡、本说明弹窗等）：玻璃样式下使用液态玻璃，经典样式恢复常规背景')
+      this.scopeLine('• 设置页的开关与滑块：玻璃样式下跟随液态玻璃，经典样式恢复主题色自定义样式')
 
       Text('以下位置不使用玻璃效果：')
         .fontSize(this.scaledFont(12))
@@ -976,6 +1126,7 @@ struct SettingsDetailPage {
           .fontColor('#FFFFFF')
           .backgroundColor(this.primaryColor)
           .borderRadius(this.scaledSize(15))
+          .systemMaterial(this.accentGlassMaterial(this.primaryColor))
           .onClick(() => {
             this.showGlassScope = false
           })
@@ -1032,6 +1183,7 @@ struct SettingsDetailPage {
 
           Toggle({ type: ToggleType.Switch, isOn: this.settings.holdingHandEnabled })
             .selectedColor(this.primaryColor)
+            .systemMaterial(this.styleGlassMaterial())
             .alignSelf(ItemAlign.Center)
             .onChange((isOn: boolean) => {
               this.settings.holdingHandEnabled = isOn
@@ -1086,6 +1238,7 @@ struct SettingsDetailPage {
                 .blockBorderColor(this.primaryColor)
                 .blockBorderWidth(3)
                 .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
+                .systemMaterial(this.styleGlassMaterial())
                 .onChange((value: number, mode: SliderChangeMode) => {
                   this.settings.holdingHandConfirmWindowMs = value
                   AppStorage.setOrCreate(KEY_HOLDING_HAND_CONFIRM_WINDOW_MS, value)
@@ -1146,6 +1299,7 @@ struct SettingsDetailPage {
                 .blockBorderColor(this.primaryColor)
                 .blockBorderWidth(3)
                 .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
+                .systemMaterial(this.styleGlassMaterial())
                 .onChange((value: number, mode: SliderChangeMode) => {
                   this.settings.holdingHandSoftFallbackMs = value
                   AppStorage.setOrCreate(KEY_HOLDING_HAND_SOFT_FALLBACK_MS, value)
@@ -1248,6 +1402,7 @@ struct SettingsDetailPage {
               .blockBorderColor(this.primaryColor)
               .blockBorderWidth(3)
               .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
+              .systemMaterial(this.styleGlassMaterial())
               .onChange((value: number, mode: SliderChangeMode) => {
                 this.settings.homeTopBlurStrength = value
                 this.homeTopBlurStrength = value
@@ -1396,6 +1551,7 @@ struct SettingsDetailPage {
               .blockBorderColor(this.primaryColor)
               .blockBorderWidth(3)
               .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
+              .systemMaterial(this.styleGlassMaterial())
               .onChange((value: number, mode: SliderChangeMode) => {
                 this.settings.fontSizeScale = value / 100
                 this.fontSizeScale = this.settings.fontSizeScale
@@ -1449,6 +1605,7 @@ struct SettingsDetailPage {
               .blockBorderColor(this.primaryColor)
               .blockBorderWidth(3)
               .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
+              .systemMaterial(this.styleGlassMaterial())
               .onChange((value: number, mode: SliderChangeMode) => {
                 this.settings.displaySizeScale = value / 100
                 this.displaySizeScale = this.settings.displaySizeScale
@@ -1670,6 +1827,7 @@ struct SettingsDetailPage {
                 .blockBorderColor(this.primaryColor)
                 .blockBorderWidth(3)
                 .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
+                .systemMaterial(this.styleGlassMaterial())
                 .onChange((value: number, mode: SliderChangeMode) => {
                   this.settings.glassBlurStrength = value
                   this.glassBlurStrength = value
@@ -1722,6 +1880,7 @@ struct SettingsDetailPage {
               .blockBorderColor(this.primaryColor)
               .blockBorderWidth(3)
               .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
+              .systemMaterial(this.styleGlassMaterial())
               .onChange((value: number, mode: SliderChangeMode) => {
                 this.settings.tabIndicatorOpacity = value
                 this.tabIndicatorOpacity = value
@@ -1866,6 +2025,7 @@ struct SettingsDetailPage {
             .height(this.scaledSize(38))
             .fontColor(this.settingTextColor())
             .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.08))
+            .systemMaterial(this.styleGlassMaterial())
             .onClick(() => {
               this.cancelColorPicker()
             })
@@ -1874,6 +2034,7 @@ struct SettingsDetailPage {
             .height(this.scaledSize(38))
             .fontColor('#FFFFFF')
             .backgroundColor(this.currentPickerColor())
+            .systemMaterial(this.accentGlassMaterial(this.currentPickerColor()))
             .onClick(() => {
               this.confirmColorPicker()
             })
@@ -1912,6 +2073,7 @@ struct SettingsDetailPage {
 
           Toggle({ type: ToggleType.Switch, isOn: this.settings.fadeInOut })
             .selectedColor(this.primaryColor)
+            .systemMaterial(this.styleGlassMaterial())
             .onChange((val: boolean) => {
               this.settings.fadeInOut = val
               this.updateSetting()
@@ -1924,6 +2086,126 @@ struct SettingsDetailPage {
       }
       .width('100%')
       .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
+
+      Column() {
+        Row() {
+          Column({ space: this.scaledSize(2) }) {
+            Text('定时停止淡出时长')
+              .fontSize(this.scaledFont(14))
+              .fontColor(this.settingTextColor())
+              .fontWeight(FontWeight.Medium)
+            Text('定时关闭到期时音量平滑淡出后停止；0 秒为立即停止。按歌曲数定时会淡出最后一首的曲尾')
+              .fontSize(this.scaledFont(12))
+              .fontColor(this.settingSubTextColor())
+          }
+          .layoutWeight(1)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Start)
+
+          Text(this.settings.timerFadeSeconds + ' 秒')
+            .fontSize(this.scaledFont(12))
+            .fontColor(this.settingTextColor())
+            .alignSelf(ItemAlign.Center)
+            .margin({ left: this.scaledSize(10) })
+        }
+        .width('100%')
+        .padding({ top: this.scaledSize(10) })
+        .alignItems(VerticalAlign.Center)
+
+        Slider({
+          value: this.settings.timerFadeSeconds,
+          min: 0,
+          max: 10,
+          step: 1,
+          style: SliderStyle.OutSet
+        })
+          .width('100%')
+          .selectedColor(this.primaryColor)
+          .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+          .blockColor('#FFFFFF')
+          .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
+          .blockBorderColor(this.primaryColor)
+          .blockBorderWidth(3)
+          .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
+          .systemMaterial(this.styleGlassMaterial())
+          .onChange((value: number, mode: SliderChangeMode) => {
+            this.onTimerFadeSecondsChange(value, mode)
+          })
+          .margin({ top: this.scaledSize(4), bottom: this.scaledSize(12) })
+      }
+      .width('100%')
+      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
+
+      Row() {
+        Column({ space: this.scaledSize(6) }) {
+          Text('启动时恢复上次播放')
+            .fontSize(this.scaledFont(14))
+            .fontColor(this.settingTextColor())
+            .fontWeight(FontWeight.Medium)
+          Text('开启后冷启动自动载入上次播放的歌曲并定位到上次进度')
+            .fontSize(this.scaledFont(12))
+            .fontColor(this.settingSubTextColor())
+        }
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Start)
+
+        Toggle({ type: ToggleType.Switch, isOn: this.settings.resumePlaybackOnStart })
+          .selectedColor(this.primaryColor)
+          .systemMaterial(this.styleGlassMaterial())
+          .alignSelf(ItemAlign.Center)
+          .margin({ left: this.scaledSize(10) })
+          .onChange((isOn: boolean) => {
+            this.settings.resumePlaybackOnStart = isOn
+            this.updateSetting()
+          })
+      }
+      .width('100%')
+      .padding({
+        left: this.scaledSize(14),
+        right: this.scaledSize(14),
+        top: this.scaledSize(10),
+        bottom: this.scaledSize(10)
+      })
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
+
+      Row() {
+        Column({ space: this.scaledSize(6) }) {
+          Text('恢复后自动播放')
+            .fontSize(this.scaledFont(14))
+            .fontColor(this.settingTextColor())
+            .fontWeight(FontWeight.Medium)
+          Text('开启后启动恢复完成即自动开始播放；关闭则恢复为暂停状态，手动点播放继续')
+            .fontSize(this.scaledFont(12))
+            .fontColor(this.settingSubTextColor())
+        }
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Start)
+
+        Toggle({ type: ToggleType.Switch, isOn: this.settings.autoPlayAfterResume })
+          .selectedColor(this.primaryColor)
+          .systemMaterial(this.styleGlassMaterial())
+          .alignSelf(ItemAlign.Center)
+          .margin({ left: this.scaledSize(10) })
+          .enabled(this.settings.resumePlaybackOnStart)
+          .onChange((isOn: boolean) => {
+            this.settings.autoPlayAfterResume = isOn
+            this.updateSetting()
+          })
+      }
+      .width('100%')
+      .padding({
+        left: this.scaledSize(14),
+        right: this.scaledSize(14),
+        top: this.scaledSize(10),
+        bottom: this.scaledSize(10)
+      })
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(this.scaledSize(10))
 
@@ -1943,6 +2225,7 @@ struct SettingsDetailPage {
 
         Toggle({ type: ToggleType.Switch, isOn: this.settings.continuePlayOnHeadsetUnplug })
           .selectedColor(this.primaryColor)
+          .systemMaterial(this.styleGlassMaterial())
           .alignSelf(ItemAlign.Center)
           .margin({ left: this.scaledSize(10) })
           .onChange((isOn: boolean) => {
@@ -1962,11 +2245,11 @@ struct SettingsDetailPage {
 
       Row() {
         Column({ space: this.scaledSize(6) }) {
-          Text('通知不压低音量')
+          Text('与其他音频应用同时播放')
             .fontSize(this.scaledFont(14))
             .fontColor(this.settingTextColor())
             .fontWeight(FontWeight.Medium)
-          Text('开启后系统通知、提示音响起时本应用音量保持不变；此时与其它应用音频并发播放，互不打断')
+          Text('开启后与其它应用音频并发播放、互不打断；系统通知、提示音也不压低本应用音量（两种效果共用同一系统策略，无法单独关闭其一）')
             .fontSize(this.scaledFont(12))
             .fontColor(this.settingSubTextColor())
         }
@@ -1976,6 +2259,7 @@ struct SettingsDetailPage {
 
         Toggle({ type: ToggleType.Switch, isOn: this.settings.ignoreNotificationDuck })
           .selectedColor(this.primaryColor)
+          .systemMaterial(this.styleGlassMaterial())
           .alignSelf(ItemAlign.Center)
           .margin({ left: this.scaledSize(10) })
           .onChange((isOn: boolean) => {
@@ -2024,6 +2308,7 @@ struct SettingsDetailPage {
           .blockBorderColor(this.primaryColor)
           .blockBorderWidth(3)
           .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
+          .systemMaterial(this.styleGlassMaterial())
           .onChange((value: number, mode: SliderChangeMode) => {
             this.onSpeedChange(value, mode)
           })
@@ -2052,6 +2337,7 @@ struct SettingsDetailPage {
 
         Toggle({ type: ToggleType.Switch, isOn: this.settings.lowPowerPlayback })
           .selectedColor(this.primaryColor)
+          .systemMaterial(this.styleGlassMaterial())
           .alignSelf(ItemAlign.Center)
           .margin({ left: this.scaledSize(10) })
           .enabled(this.lowPowerSupported)
@@ -2067,6 +2353,105 @@ struct SettingsDetailPage {
         right: this.scaledSize(14),
         top: this.scaledSize(10),
         bottom: this.scaledSize(10)
+      })
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
+
+      // 艺术家分隔符：首页筛选下拉列表按这些符号把多艺人串拆开归类（可多选 + 自定义）
+      Column() {
+        Text('艺术家分隔符')
+          .fontSize(this.scaledFont(14))
+          .fontColor(this.settingTextColor())
+          .fontWeight(FontWeight.Medium)
+          .width('100%')
+        Text('首页筛选下拉列表按启用的符号把「甲,乙」等多位艺术家拆开归类，可多选；全部停用则不拆分')
+          .fontSize(this.scaledFont(12))
+          .fontColor(this.settingSubTextColor())
+          .width('100%')
+          .margin({ top: this.scaledSize(2) })
+
+        Flex({ wrap: FlexWrap.Wrap }) {
+          ForEach(this.artistSeparatorOptions, (sep: string) => {
+            Text(this.artistSeparatorLabel(sep))
+              .fontSize(this.scaledFont(12))
+              .fontColor(this.settings.artistSeparators.indexOf(sep) >= 0 ?
+                '#FFFFFF' : this.settingTextColor())
+              .padding({
+                left: this.scaledSize(10),
+                right: this.scaledSize(10),
+                top: this.scaledSize(5),
+                bottom: this.scaledSize(5)
+              })
+              .margin({ right: this.scaledSize(6), bottom: this.scaledSize(6) })
+              .backgroundColor(this.settings.artistSeparators.indexOf(sep) >= 0 ?
+                this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+              .borderRadius(this.scaledSize(15))
+              .onClick(() => {
+                this.toggleArtistSeparator(sep)
+              })
+          }, (sep: string) => sep + (this.settings.artistSeparators.indexOf(sep) >= 0 ? '_on' : '_off'))
+        }
+        .width('100%')
+        .margin({ top: this.scaledSize(8) })
+
+        Row({ space: this.scaledSize(8) }) {
+          TextInput({ text: this.artistSepInput, placeholder: '自定义分隔符，每个字符各算一个' })
+            .layoutWeight(1)
+            .height(this.scaledSize(36))
+            .fontSize(this.scaledFont(13))
+            .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.06))
+            .borderRadius(this.scaledSize(12))
+            .onChange((value: string) => {
+              this.artistSepInput = value
+            })
+          Text('添加')
+            .fontSize(this.scaledFont(13))
+            .fontColor(Color.White)
+            .padding({
+              left: this.scaledSize(14),
+              right: this.scaledSize(14),
+              top: this.scaledSize(8),
+              bottom: this.scaledSize(8)
+            })
+            .borderRadius(this.scaledSize(14))
+            .backgroundColor(this.primaryColor)
+            .onClick(() => {
+              this.addCustomArtistSeparators()
+            })
+        }
+        .width('100%')
+        .margin({ top: this.scaledSize(2) })
+
+        if (this.customArtistSeparators().length > 0) {
+          Flex({ wrap: FlexWrap.Wrap }) {
+            ForEach(this.customArtistSeparators(), (sep: string) => {
+              Text(`「${sep}」 ×`)
+                .fontSize(this.scaledFont(12))
+                .fontColor(this.settingTextColor())
+                .padding({
+                  left: this.scaledSize(10),
+                  right: this.scaledSize(10),
+                  top: this.scaledSize(5),
+                  bottom: this.scaledSize(5)
+                })
+                .margin({ right: this.scaledSize(6), bottom: this.scaledSize(6) })
+                .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.08))
+                .borderRadius(this.scaledSize(15))
+                .onClick(() => {
+                  this.removeArtistSeparator(sep)
+                })
+            }, (sep: string) => 'custom_' + sep)
+          }
+          .width('100%')
+          .margin({ top: this.scaledSize(2) })
+        }
+      }
+      .width('100%')
+      .padding({
+        left: this.scaledSize(14),
+        right: this.scaledSize(14),
+        top: this.scaledSize(10),
+        bottom: this.scaledSize(12)
       })
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(this.scaledSize(10))
@@ -2172,6 +2557,7 @@ struct SettingsDetailPage {
                       .blockBorderColor(this.primaryColor)
                       .blockBorderWidth(2)
                       .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
+                      .systemMaterial(this.styleGlassMaterial())
                       .onChange((value: number, mode: SliderChangeMode) => {
                         this.onEqBandChange(band.index, value, mode)
                       })
@@ -2210,6 +2596,64 @@ struct SettingsDetailPage {
         }
         .width('100%')
         .height(this.scaledSize(280))
+        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+        .borderRadius(this.scaledSize(10))
+        .transition(this.settingCardTransition())
+      }
+
+      // ═══ 自动音量均衡（P2-1 ReplayGain）═══
+      Column() {
+        Text('自动音量均衡')
+          .fontSize(this.scaledFont(13))
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.settingTextColor())
+          .width('100%')
+        Text('按歌曲内嵌 ReplayGain 标签统一响度（MP3/FLAC），无标签歌曲不调整')
+          .fontSize(this.scaledFont(11))
+          .fontColor(this.settingSubTextColor())
+          .width('100%')
+          .margin({ top: this.scaledSize(2) })
+        Column() {
+          this.chipRow({
+            labels: ['均衡关', '按曲目', '按专辑'],
+            current: this.replayGainModeIndex(),
+            onPick: (i: number) => {
+              this.onReplayGainModeChange(i)
+            }
+          })
+        }
+        .width('100%')
+        .margin({ top: this.scaledSize(8) })
+      }
+      .width('100%')
+      .padding({
+        left: this.scaledSize(14),
+        right: this.scaledSize(14),
+        top: this.scaledSize(10),
+        bottom: this.scaledSize(10)
+      })
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
+
+      if (this.settings.replayGainMode !== 'off') {
+        Column() {
+          this.optionSliderRow('预增益', this.settings.replayGainPreGainDb, -12, 12, 1, 'dB',
+            (value: number, mode: SliderChangeMode) => {
+              this.onReplayGainPreGainChange(value, mode)
+            })
+          Text('在标签增益上整体叠加的固定量，正数更响、负数更轻')
+            .fontSize(this.scaledFont(11))
+            .fontColor(this.settingSubTextColor())
+            .width('100%')
+            .margin({ top: this.scaledSize(4) })
+        }
+        .width('100%')
+        .padding({
+          left: this.scaledSize(14),
+          right: this.scaledSize(14),
+          top: this.scaledSize(10),
+          bottom: this.scaledSize(10)
+        })
         .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
         .borderRadius(this.scaledSize(10))
         .transition(this.settingCardTransition())
@@ -2519,6 +2963,7 @@ struct SettingsDetailPage {
               .blockBorderColor(this.primaryColor)
               .blockBorderWidth(2)
               .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
+              .systemMaterial(this.styleGlassMaterial())
               .onChange((value: number, mode: SliderChangeMode) => {
                 this.onPureVoicePitchChange(value, mode)
               })
@@ -2755,6 +3200,18 @@ struct SettingsDetailPage {
       }
       .width('100%')
 
+      // 最常播放 Top 20（P0-4）：playCount 倒序，实时读取曲库统计
+      Column({ space: this.scaledSize(6) }) {
+        Text('最常播放 Top 20')
+          .fontSize(this.scaledFont(13))
+          .fontColor(this.settingTextColor())
+          .fontWeight(FontWeight.Bold)
+          .width('100%')
+          .padding({ left: this.scaledSize(4) })
+        this.topPlayCountRows()
+      }
+      .width('100%')
+
       Text('本地音乐播放器 · 为鸿蒙打造')
         .fontSize(this.scaledFont(11))
         .fontColor(this.settingTextColor())
@@ -2764,6 +3221,80 @@ struct SettingsDetailPage {
     }
     .width('100%')
     .constraintSize({ minWidth: 0, maxWidth: '100%' })
+  }
+
+  // P0-4：最常播放 Top 20 数据（playCount 倒序，仅含播过的歌）
+  private topPlayedSongs(): TopPlayedEntry[] {
+    const songs: SongInfo[] = DataService.getInstance().getSongs()
+    const entries: TopPlayedEntry[] = []
+    for (let i = 0; i < songs.length; i++) {
+      if (songs[i].playCount > 0) {
+        const entry: TopPlayedEntry = new TopPlayedEntry()
+        entry.title = songs[i].title.length > 0 ? songs[i].title : songs[i].name
+        entry.artist = songs[i].artist.length > 0 ? songs[i].artist : '未知歌手'
+        entry.playCount = songs[i].playCount
+        entries.push(entry)
+      }
+    }
+    entries.sort((a: TopPlayedEntry, b: TopPlayedEntry): number => {
+      return b.playCount - a.playCount
+    })
+    const capped: TopPlayedEntry[] = []
+    for (let i = 0; i < entries.length && i < 20; i++) {
+      capped.push(entries[i])
+    }
+    return capped
+  }
+
+  @Builder
+  topPlayCountRows(): void {
+    if (this.topPlayedSongs().length === 0) {
+      Text('暂无播放记录')
+        .fontSize(this.scaledFont(13))
+        .fontColor(this.settingTextColor())
+        .opacity(0.6)
+        .width('100%')
+        .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+    } else {
+      ForEach(this.topPlayedSongs(), (entry: TopPlayedEntry, index: number) => {
+        Row() {
+          Text(String(index + 1))
+            .fontSize(this.scaledFont(13))
+            .fontColor(this.settingTextColor())
+            .fontWeight(FontWeight.Bold)
+            .width(this.scaledSize(24))
+            .flexShrink(0)
+          Text(entry.title)
+            .fontSize(this.scaledFont(13))
+            .fontColor(this.settingTextColor())
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .layoutWeight(1)
+          Text(entry.artist)
+            .fontSize(this.scaledFont(12))
+            .fontColor(this.settingTextColor())
+            .opacity(0.7)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .constraintSize({ maxWidth: '38%' })
+            .flexShrink(0)
+            .margin({ left: this.scaledSize(8) })
+          Text(entry.playCount + ' 次')
+            .fontSize(this.scaledFont(12))
+            .fontColor(this.settingTextColor())
+            .opacity(0.7)
+            .flexShrink(0)
+            .margin({ left: this.scaledSize(8) })
+        }
+        .width('100%')
+        .height(this.scaledSize(36))
+        .alignItems(VerticalAlign.Center)
+        .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+        .borderRadius(this.scaledSize(10))
+        .margin({ top: index === 0 ? 0 : this.scaledSize(4) })
+      }, (entry: TopPlayedEntry, index: number) => 'top_' + index + '_' + entry.playCount)
+    }
   }
 
   // 检查更新行：点击调用应用市场更新服务（checkAppUpdate + showUpdateDialog）
@@ -2918,6 +3449,7 @@ struct SettingsDetailPage {
         .blockBorderColor(this.primaryColor)
         .blockBorderWidth(2)
         .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
+        .systemMaterial(this.styleGlassMaterial())
         .onChange((v: number, mode: SliderChangeMode) => {
           onChange(v, mode)
         })
@@ -2956,6 +3488,7 @@ struct SettingsDetailPage {
         .blockBorderColor(this.primaryColor)
         .blockBorderWidth(2)
         .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
+        .systemMaterial(this.styleGlassMaterial())
         .onChange((value: number, mode: SliderChangeMode) => {
           this.onSpaceValueChange(index, value, mode)
         })
@@ -2981,6 +3514,7 @@ struct SettingsDetailPage {
       Blank()
       Toggle({ type: ToggleType.Switch, isOn: isChecked })
         .selectedColor(this.primaryColor)
+        .systemMaterial(this.styleGlassMaterial())
         .onChange((isOn: boolean) => {
           onToggleChange(isOn)
         })

@@ -1,5 +1,6 @@
 import { SongInfo } from '../model/SongInfo'
 import { FolderInfo } from '../model/FolderInfo'
+import { PlaylistInfo } from '../model/PlaylistInfo'
 import { SettingsStore } from '../common/utils/SettingsStore'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { common } from '@kit.AbilityKit'
@@ -10,6 +11,8 @@ import { BusinessError } from '@kit.BasicServicesKit'
 import { MusicPlayMode } from '../common/constants/PlayerConstants'
 import { AudioMetadataService } from './AudioMetadataService'
 import { clearLyricCache } from './LyricLoader'
+import { fillPinyinForSongs, hasChinese } from './PinyinTask'
+import { backfillReplayGainForSongs } from './MetadataTask'
 import { HOLDING_HAND_CONFIRM_WINDOW_DEFAULT_MS, HOLDING_HAND_CONFIRM_WINDOW_MAX_MS,
   HOLDING_HAND_CONFIRM_WINDOW_MIN_MS, HOLDING_HAND_SOFT_FALLBACK_DEFAULT_MS,
   HOLDING_HAND_SOFT_FALLBACK_MAX_MS, HOLDING_HAND_SOFT_FALLBACK_MIN_MS,
@@ -26,6 +29,7 @@ const KEY_SELECTED_FOLDERS: string = 'uplayer_selected_folders'
 const KEY_FAVORITES_SELECTED: string = 'uplayer_favorites_selected'
 const KEY_PLAY_NEXT_QUEUE: string = 'uplayer_play_next_queue'
 const KEY_PLAY_MODE: string = 'uplayer_play_mode'
+const KEY_REPLAYGAIN_BACKFILLED: string = 'uplayer_replaygain_backfilled'
 const EQUALIZER_MIN_GAIN_DB: number = -10
 const EQUALIZER_MAX_GAIN_DB: number = 10
 
@@ -51,6 +55,21 @@ export class LibraryDeleteResult {
 class FilterStateRecord {
   selectedFolderPaths: string[] = []
   favoritesSelected: boolean = false
+  // 组合筛选维度（S1）：艺术家/专辑/流派/年份多选 + 歌单预留
+  artists: string[] = []
+  albums: string[] = []
+  genres: string[] = []
+  years: string[] = []
+  playlistId: string = ''
+}
+
+// 组合筛选维度快照：HomeContent 筛选面板「完成」时组装并传入 setFilterState
+export class FilterDimensions {
+  artists: string[] = []
+  albums: string[] = []
+  genres: string[] = []
+  years: string[] = []
+  playlistId: string = ''
 }
 
 export class AppSettingsData {
@@ -89,13 +108,26 @@ export class AppSettingsData {
   playSpeed: number = 1
   folderSortMode: string = 'name'
   fadeInOut: boolean = false
+  // 定时停止淡出时长（秒，0-10，默认 3；0=立即停止）：定时关闭到期时音量平滑淡出后停止
+  timerFadeSeconds: number = 3
+  // 断点续播（P0-2）：冷启动恢复上次播放的歌曲与进度；autoPlayAfterResume 决定恢复后是否自动播放
+  resumePlaybackOnStart: boolean = true
+  autoPlayAfterResume: boolean = false
   // 耳机/蓝牙等输出设备断开时是否继续播放（系统默认路由到扬声器）；关闭则断开时自动暂停并提示
   continuePlayOnHeadsetUnplug: boolean = false
-  // 通知/提示音响起时保持本应用音量不被系统压低（AudioSession 并发策略，默认关）
+  // 与其它应用音频并发播放、互不打断；通知/提示音也不压低本应用音量（AudioSession 并发策略，
+  // 两种效果共用同一机制无法拆分，默认关）
   ignoreNotificationDuck: boolean = false
   // 低功耗播放（OH_LowPowerAudioSink 压缩帧直通链路，默认关）：开启时解码渲染卸载至
   // 低功耗硬件降低功耗，与均衡器等 AP 侧效果链互斥；设备/格式不支持时自动回退正常管线
   lowPowerPlayback: boolean = false
+  // 首页筛选下拉列表的艺术家拆分分隔符（设置页「播放」区配置）：每位字符独立分隔，
+  // 预置候选 , ， & ＿＆ ; ； 、 / 多选 + 自定义输入；默认启用 , ， & ＿＆；空数组 = 不拆分
+  artistSeparators: string[] = [',', '，', '&', '＆']
+  // 自动音量均衡（P2-1 ReplayGain）：off=关 track=按曲目 album=按专辑
+  replayGainMode: string = 'off'
+  // 均衡预增益（dB，-12..12，叠加在标签增益上；仅均衡开启时生效）
+  replayGainPreGainDb: number = 0
   fontSizeScale: number = 1.0
   displaySizeScale: number = 1.0
   tabStyle: string = 'classic'
@@ -132,6 +164,10 @@ export class DataService {
   // 文件夹列表 RDB 缓存：init() 完成前 getFolders 返回空列表
   private foldersCache: FolderInfo[] | undefined = undefined
   private saveFoldersChain: Promise<void> = Promise.resolve()
+  // 自定义歌单缓存（P2-3）：init() 完成前 getPlaylists 返回空列表；
+  // playlistItemsCache 为 playlistId → 有序 songId 列表（加入顺序）
+  private playlistsCache: PlaylistInfo[] | undefined = undefined
+  private playlistItemsCache: Map<string, string[]> = new Map<string, string[]>()
   // activatePersistedUris 幂等标志：曲库缓存未就绪时跳过（等 init 完成后由 init 补跑），
   // 已执行过一次后不再重复，避免可访问性检查跑两遍制造授权竞态
   private persistedUrisActivated: boolean = false
@@ -162,9 +198,15 @@ export class DataService {
       }
       this.dbSnapshot = snapshot
       await this.initFolders()
+      await this.initPlaylists()
       // init 完成后缓存已就绪：收敛历史脏筛选状态（initToAppStorage 可能先于 init 完成，
       // 之前因缓存未就绪被守卫跳过），保证启动后胶囊不残留已删文件夹
       this.pruneFilterAndFolders(songs)
+      // 存量曲库拼音回填（S3）：只补 pinyinFull 为空且含汉字的歌曲，分批低优先级执行，
+      // 不阻塞 init；失败下次启动自动重试（幂等）
+      void this.backfillPinyin()
+      // 存量曲库 ReplayGain 回填（P2-1）：一次性补扫（SettingsStore 标志防重复读大文件）
+      void this.backfillReplayGain()
       // UI 可能已在 init 完成前加载（开屏超时降级路径）：bump 修订号让首页/歌单
       // 经 @Watch(KEY_LIBRARY_REVISION) 自动重载；补跑授权激活（降级路径下
       // initToAppStorage 先执行时被「缓存未就绪」守卫跳过）
@@ -191,6 +233,79 @@ export class DataService {
     } catch (err) {
       Logger.error(TAG, `initFolders failed: ${JSON.stringify(err)}`)
     }
+  }
+
+  // 从 playlists / playlist_items 表加载自定义歌单缓存（P2-3）
+  private async initPlaylists(): Promise<void> {
+    try {
+      this.playlistsCache = await SongDatabase.getInstance().queryAllPlaylists()
+      this.playlistItemsCache = await SongDatabase.getInstance().queryAllPlaylistItems()
+    } catch (err) {
+      Logger.error(TAG, `initPlaylists failed: ${JSON.stringify(err)}`)
+    }
+  }
+
+  // 存量曲库拼音回填（S3）：升级安装后旧歌无拼音列数据，扫描 pinyinFull 为空且
+  // 检索字段含汉字的歌曲，50 首一批经 taskpool 转写后落库。只写有变化的歌曲
+  // （saveSongsNoReload 走增量 diff），不 bump LIBRARY_REVISION 避免列表反复重载
+  private async backfillPinyin(): Promise<void> {
+    const songs: SongInfo[] = this.getSongs()
+    const pending: SongInfo[] = []
+    for (let i = 0; i < songs.length; i++) {
+      const text: string = `${songs[i].title} ${songs[i].artist} ${songs[i].album} ${songs[i].folderName}`
+      if (songs[i].pinyinFull.length === 0 && hasChinese(text)) {
+        pending.push(songs[i])
+      }
+    }
+    if (pending.length === 0) {
+      return
+    }
+    Logger.info(TAG, `backfillPinyin: ${pending.length} songs pending`)
+    const chunkSize: number = 50
+    for (let offset = 0; offset < pending.length; offset += chunkSize) {
+      const chunk: SongInfo[] = pending.slice(offset, offset + chunkSize)
+      await fillPinyinForSongs(chunk)
+      if (this.songsCache !== undefined) {
+        this.saveSongsNoReload(this.songsCache)
+      }
+    }
+    this.flushPendingSongWrites()
+    Logger.info(TAG, 'backfillPinyin done')
+  }
+
+  // 存量曲库 ReplayGain 回填（P2-1）：升级安装后旧歌无 rgTrackGain/rgAlbumGain 数据，
+  // 两列均为 0 且源文件可用的歌曲 50 首一批经 taskpool 读标签回填（centi-dB）。
+  // 未打标签的歌没有可持久化的「已扫」标记（0 兼作列默认值），为免每次启动重复读
+  // 大文件（ID3 标签可含数 MB 封面），以 SettingsStore 一次性标志整体只跑一遍；
+  // 中断（标志未写）下次启动自动重试（幂等）；新导入歌曲由元数据链路同步写入
+  private async backfillReplayGain(): Promise<void> {
+    const store: SettingsStore = SettingsStore.getInstance()
+    if (store.get(KEY_REPLAYGAIN_BACKFILLED, '') === '1') {
+      return
+    }
+    const songs: SongInfo[] = this.getSongs()
+    const pending: SongInfo[] = []
+    for (let i = 0; i < songs.length; i++) {
+      if (songs[i].rgTrackGain === 0 && songs[i].rgAlbumGain === 0 && songs[i].isAvailable) {
+        pending.push(songs[i])
+      }
+    }
+    if (pending.length === 0) {
+      store.set(KEY_REPLAYGAIN_BACKFILLED, '1', true)
+      return
+    }
+    Logger.info(TAG, `backfillReplayGain: ${pending.length} songs pending`)
+    const chunkSize: number = 50
+    for (let offset = 0; offset < pending.length; offset += chunkSize) {
+      const chunk: SongInfo[] = pending.slice(offset, offset + chunkSize)
+      await backfillReplayGainForSongs(chunk)
+      if (this.songsCache !== undefined) {
+        this.saveSongsNoReload(this.songsCache)
+      }
+    }
+    this.flushPendingSongWrites()
+    store.set(KEY_REPLAYGAIN_BACKFILLED, '1', true)
+    Logger.info(TAG, 'backfillReplayGain done')
   }
 
   // 立即把暂存的歌曲列表增量写入数据库（幂等，可安全多次调用）
@@ -304,6 +419,14 @@ export class DataService {
     copy.codec = song.codec
     copy.trackCount = song.trackCount
     copy.fileSize = song.fileSize
+    copy.playCount = song.playCount
+    copy.lastPlayedAt = song.lastPlayedAt
+    copy.pinyinFull = song.pinyinFull
+    copy.pinyinAbbr = song.pinyinAbbr
+    copy.mbid = song.mbid
+    copy.lyricOffsetMs = song.lyricOffsetMs
+    copy.rgTrackGain = song.rgTrackGain
+    copy.rgAlbumGain = song.rgAlbumGain
     return copy
   }
 
@@ -320,7 +443,11 @@ export class DataService {
       a.encoder === b.encoder && a.description === b.description && a.hasAudio === b.hasAudio &&
       a.hasVideo === b.hasVideo && a.videoWidth === b.videoWidth && a.videoHeight === b.videoHeight &&
       a.channels === b.channels && a.bitDepth === b.bitDepth && a.codec === b.codec &&
-      a.trackCount === b.trackCount && a.fileSize === b.fileSize
+      a.trackCount === b.trackCount && a.fileSize === b.fileSize &&
+      a.playCount === b.playCount && a.lastPlayedAt === b.lastPlayedAt &&
+      a.pinyinFull === b.pinyinFull && a.pinyinAbbr === b.pinyinAbbr && a.mbid === b.mbid &&
+      a.lyricOffsetMs === b.lyricOffsetMs && a.rgTrackGain === b.rgTrackGain &&
+      a.rgAlbumGain === b.rgAlbumGain
   }
 
   private scheduleSaveSongs(songs: SongInfo[]): void {
@@ -676,6 +803,39 @@ return result
     return newFav
   }
 
+  // P0-3 每歌歌词偏移：内存缓存原地更新（songsCache 与播放队列共享同一批 SongInfo 引用，
+  // 改字段即刻全链路生效）；persist=true 时单曲增量落库。
+  // 不走 saveSongs/saveSongsNoReload：二者都会把 KEY_SONG_LIST 覆盖为全量曲库，
+  // 会把过滤后的播放队列冲掉，且 saveSongs 还会 bump LIBRARY_REVISION 引发首页列表重载
+  setLyricOffset(songId: string, offsetMs: number, persist: boolean): void {
+    const song: SongInfo | undefined = this.getSongById(songId)
+    if (song === undefined || song.lyricOffsetMs === offsetMs) {
+      return
+    }
+    song.lyricOffsetMs = offsetMs
+    if (persist) {
+      SongDatabase.getInstance().updateSongs([song]).catch((err: Error) => {
+        Logger.error(TAG, `persist lyric offset failed: ${JSON.stringify(err)}`)
+      })
+    }
+  }
+
+  // P0-4 听歌统计：自然完曲时当前歌 playCount+1、lastPlayedAt=now。
+  // 内存缓存原地更新（songsCache 与播放队列共享同一批 SongInfo 引用），
+  // 单曲增量落库；不走 scheduleSaveSongs——避免 KEY_SONG_LIST 被全量曲库覆盖
+  // 引发播放队列漂移，以及 LIBRARY_REVISION bump 让列表在切歌瞬间重载
+  recordPlayStats(songId: string): void {
+    const song: SongInfo | undefined = this.getSongById(songId)
+    if (song === undefined) {
+      return
+    }
+    song.playCount = song.playCount + 1
+    song.lastPlayedAt = Date.now()
+    SongDatabase.getInstance().updateSongs([song]).catch((err: Error) => {
+      Logger.error(TAG, `persist play stats failed: ${JSON.stringify(err)}`)
+    })
+  }
+
   updateSongFields(songId: string, updatedList: SongInfo[]): void {
     const songs: SongInfo[] = updatedList
     let modified: boolean = false
@@ -710,6 +870,135 @@ return result
     }).catch((err: BusinessError) => {
       Logger.error(TAG, `saveFolders to rdb failed: ${JSON.stringify(err)}`)
     })
+  }
+
+  // ═══════════ 自定义歌单 CRUD（P2-3）═══════════
+  // 缓存策略：写操作先落库再整表重读缓存（歌单数据量小，整读可忽略），
+  // 每次集合变化 bump KEY_PLAYLIST_REVISION 通知歌单页/首页刷新
+
+  getPlaylists(): PlaylistInfo[] {
+    if (this.playlistsCache !== undefined) {
+      return this.playlistsCache
+    }
+    return []
+  }
+
+  // 歌单内有序 songId 列表（加入顺序）；歌单不存在返回空列表
+  getPlaylistItemSongIds(playlistId: string): string[] {
+    const list: string[] | undefined = this.playlistItemsCache.get(playlistId)
+    return list !== undefined ? list : []
+  }
+
+  // 当前筛选态激活的歌单 id（空串 = 未按歌单筛选）
+  getFilterPlaylistId(): string {
+    return this.readFilterState().playlistId
+  }
+
+  // 按名称查歌单（重名校验用），不存在返回 undefined
+  findPlaylistByName(name: string): PlaylistInfo | undefined {
+    const playlists: PlaylistInfo[] = this.getPlaylists()
+    for (let i = 0; i < playlists.length; i++) {
+      if (playlists[i].name === name) {
+        return playlists[i]
+      }
+    }
+    return undefined
+  }
+
+  private bumpPlaylistRevision(): void {
+    const revision: number =
+      AppStorage.get<number>(AppStorageKeyConstants.KEY_PLAYLIST_REVISION) ?? 0
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PLAYLIST_REVISION, revision + 1)
+  }
+
+  private async reloadPlaylists(): Promise<void> {
+    this.playlistsCache = await SongDatabase.getInstance().queryAllPlaylists()
+    this.playlistItemsCache = await SongDatabase.getInstance().queryAllPlaylistItems()
+    this.bumpPlaylistRevision()
+  }
+
+  async createPlaylist(name: string): Promise<PlaylistInfo | undefined> {
+    const playlist: PlaylistInfo = new PlaylistInfo()
+    playlist.id = `pl_${Date.now()}_${Math.floor(Math.random() * 100000)}`
+    playlist.name = name
+    playlist.createdTime = Date.now()
+    await SongDatabase.getInstance().insertPlaylist(playlist)
+    await this.reloadPlaylists()
+    return playlist
+  }
+
+  async renamePlaylist(playlistId: string, name: string): Promise<void> {
+    const playlists: PlaylistInfo[] = this.getPlaylists()
+    for (let i = 0; i < playlists.length; i++) {
+      if (playlists[i].id === playlistId) {
+        playlists[i].name = name
+        await SongDatabase.getInstance().updatePlaylist(playlists[i])
+        await this.reloadPlaylists()
+        return
+      }
+    }
+  }
+
+  async deletePlaylist(playlistId: string): Promise<void> {
+    await SongDatabase.getInstance().deletePlaylist(playlistId)
+    // 删的是当前筛选歌单：同步清掉筛选态里的 playlistId，避免首页胶囊指向已删歌单
+    if (this.getFilterPlaylistId() === playlistId) {
+      const dims: FilterDimensions = new FilterDimensions()
+      dims.artists = this.getFilterArtists().slice()
+      dims.albums = this.getFilterAlbums().slice()
+      dims.genres = this.getFilterGenres().slice()
+      dims.years = this.getFilterYears().slice()
+      dims.playlistId = ''
+      this.setFilterState(this.getSelectedFolderPaths(), this.isFavoritesSelected(), dims)
+    }
+    await this.reloadPlaylists()
+  }
+
+  // 加入歌单：DB 复合主键去重（已存在的静默跳过）；首曲自动作为封面歌曲
+  async addSongsToPlaylist(playlistId: string, songIds: string[]): Promise<void> {
+    if (songIds.length === 0) {
+      return
+    }
+    const existing: string[] = this.getPlaylistItemSongIds(playlistId)
+    await SongDatabase.getInstance().addPlaylistItems(playlistId, songIds, Date.now())
+    // 封面歌曲缺失时用本次首曲补上（新建歌单直接加歌的路径）
+    if (existing.length === 0) {
+      const playlists: PlaylistInfo[] = this.getPlaylists()
+      for (let i = 0; i < playlists.length; i++) {
+        if (playlists[i].id === playlistId) {
+          if (playlists[i].coverSongId.length === 0 && songIds.length > 0) {
+            playlists[i].coverSongId = songIds[0]
+            await SongDatabase.getInstance().updatePlaylist(playlists[i])
+          }
+          break
+        }
+      }
+    }
+    await this.reloadPlaylists()
+  }
+
+  // 移出歌单：封面歌曲被移出时顺延到剩余首曲，歌单清空则封面置空；
+  // 剩余曲目必须以移出后的落库结果为准（内存缓存此时还是旧值）
+  async removeSongsFromPlaylist(playlistId: string, songIds: string[]): Promise<void> {
+    if (songIds.length === 0) {
+      return
+    }
+    await SongDatabase.getInstance().removePlaylistItems(playlistId, songIds)
+    const playlistsReload: PlaylistInfo[] = await SongDatabase.getInstance().queryAllPlaylists()
+    const itemsReload: Map<string, string[]> = await SongDatabase.getInstance().queryAllPlaylistItems()
+    for (let i = 0; i < playlistsReload.length; i++) {
+      if (playlistsReload[i].id === playlistId) {
+        if (playlistsReload[i].coverSongId.length > 0 && songIds.indexOf(playlistsReload[i].coverSongId) >= 0) {
+          const remaining: string[] | undefined = itemsReload.get(playlistId)
+          playlistsReload[i].coverSongId = remaining !== undefined && remaining.length > 0 ? remaining[0] : ''
+          await SongDatabase.getInstance().updatePlaylist(playlistsReload[i])
+        }
+        break
+      }
+    }
+    this.playlistsCache = playlistsReload
+    this.playlistItemsCache = itemsReload
+    this.bumpPlaylistRevision()
   }
 
   // ═══════════ Settings ═══════════
@@ -783,6 +1072,30 @@ return result
       const item: Object = arr[i]
       if (typeof item === 'number' && Number.isFinite(item)) {
         out[i] = item
+      }
+    }
+    return out
+  }
+
+  // 字符串数组（artistSeparators）：键缺失/非数组回退默认；是数组则逐元素校验
+  // （拆分按单字符匹配，只留单个非空白字符并去重），元素全非法或显式空数组均返回
+  // 空数组（空 = 不拆分，合法用户选择）
+  private pickStrArray(r: Record<string, Object>, key: string, def: string[]): string[] {
+    const v: Object | undefined = r[key]
+    if (v === undefined) {
+      return def.slice()
+    }
+    if (!Array.isArray(v)) {
+      Logger.warn(TAG, `settings ${key} invalid(not array), fallback [${def.join(',')}]`)
+      return def.slice()
+    }
+    const arr: Object[] = v as Object[]
+    const out: string[] = []
+    for (let i = 0; i < arr.length; i++) {
+      const item: Object = arr[i]
+      if (typeof item === 'string' && item.length === 1 && item.trim().length > 0 &&
+        out.indexOf(item) < 0) {
+        out.push(item)
       }
     }
     return out
@@ -862,6 +1175,13 @@ return result
       s.folderSortMode = rawFolderSort !== undefined ? rawFolderSort as string : 'name'
       let rawFadeInOut: Object | undefined = r['fadeInOut']
       s.fadeInOut = rawFadeInOut !== undefined ? rawFadeInOut as boolean : false
+      s.timerFadeSeconds = this.pickNum(r, 'timerFadeSeconds', 3, 0, 10)
+      let rawResumePlaybackOnStart: Object | undefined = r['resumePlaybackOnStart']
+      s.resumePlaybackOnStart = rawResumePlaybackOnStart !== undefined ?
+        rawResumePlaybackOnStart as boolean : true
+      let rawAutoPlayAfterResume: Object | undefined = r['autoPlayAfterResume']
+      s.autoPlayAfterResume = rawAutoPlayAfterResume !== undefined ?
+        rawAutoPlayAfterResume as boolean : false
       let rawFontSizeScale: Object | undefined = r['fontSizeScale']
       s.fontSizeScale = rawFontSizeScale !== undefined ? rawFontSizeScale as number : 1.0
       let rawDisplaySizeScale: Object | undefined = r['displaySizeScale']
@@ -904,6 +1224,11 @@ return result
       s.ignoreNotificationDuck = rawIgnoreNotificationDuck !== undefined ? rawIgnoreNotificationDuck as boolean : false
       let rawLowPowerPlayback: Object | undefined = r['lowPowerPlayback']
       s.lowPowerPlayback = rawLowPowerPlayback !== undefined ? rawLowPowerPlayback as boolean : false
+      s.artistSeparators = this.pickStrArray(r, 'artistSeparators', s.artistSeparators)
+      let rawReplayGainMode: Object | undefined = r['replayGainMode']
+      const rgModeRaw: string = rawReplayGainMode !== undefined ? rawReplayGainMode as string : 'off'
+      s.replayGainMode = rgModeRaw === 'track' || rgModeRaw === 'album' ? rgModeRaw : 'off'
+      s.replayGainPreGainDb = Math.round(this.pickNum(r, 'replayGainPreGainDb', 0, -12, 12))
       if (eqBandsMigrated) {
         this.saveSettings(s)
       }
@@ -954,6 +1279,9 @@ return result
     r['playSpeed'] = settings.playSpeed
     r['folderSortMode'] = settings.folderSortMode
     r['fadeInOut'] = settings.fadeInOut
+    r['timerFadeSeconds'] = settings.timerFadeSeconds
+    r['resumePlaybackOnStart'] = settings.resumePlaybackOnStart
+    r['autoPlayAfterResume'] = settings.autoPlayAfterResume
     r['fontSizeScale'] = settings.fontSizeScale
     r['displaySizeScale'] = settings.displaySizeScale
     r['tabStyle'] = settings.tabStyle
@@ -970,13 +1298,18 @@ return result
     r['continuePlayOnHeadsetUnplug'] = settings.continuePlayOnHeadsetUnplug
     r['ignoreNotificationDuck'] = settings.ignoreNotificationDuck
     r['lowPowerPlayback'] = settings.lowPowerPlayback
+    r['artistSeparators'] = settings.artistSeparators
+    r['replayGainMode'] = settings.replayGainMode
+    r['replayGainPreGainDb'] = settings.replayGainPreGainDb
     SettingsStore.getInstance().set(KEY_SETTINGS, JSON.stringify(r), immediate)
     // 跨页实时联动只推"有独立消费键"的字段（整份 settings 对象无消费者，不再推送，避免死广播）
     AppStorage.setOrCreate('uplayer_fade_in_out', settings.fadeInOut)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_FADE_SECONDS, settings.timerFadeSeconds)
     AppStorage.setOrCreate('uplayer_plus_button_scroll_hide', settings.plusButtonScrollHide)
     AppStorage.setOrCreate('uplayer_tab_material_level', settings.tabMaterialLevel)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CONTINUE_PLAY_ON_UNPLUG, settings.continuePlayOnHeadsetUnplug)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_IGNORE_NOTIFICATION_DUCK, settings.ignoreNotificationDuck)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_ARTIST_SEPARATORS, settings.artistSeparators)
   }
 
   // ═══════════ Simple string flags ═══════════
@@ -1031,6 +1364,16 @@ return result
       const rawFavorites: Object | undefined = record['favoritesSelected']
       state.selectedFolderPaths = rawPaths !== undefined ? (rawPaths as string[]).slice() : []
       state.favoritesSelected = rawFavorites !== undefined ? rawFavorites as boolean : false
+      const rawArtists: Object | undefined = record['artists']
+      state.artists = rawArtists !== undefined ? (rawArtists as string[]).slice() : []
+      const rawAlbums: Object | undefined = record['albums']
+      state.albums = rawAlbums !== undefined ? (rawAlbums as string[]).slice() : []
+      const rawGenres: Object | undefined = record['genres']
+      state.genres = rawGenres !== undefined ? (rawGenres as string[]).slice() : []
+      const rawYears: Object | undefined = record['years']
+      state.years = rawYears !== undefined ? (rawYears as string[]).slice() : []
+      const rawPlaylistId: Object | undefined = record['playlistId']
+      state.playlistId = rawPlaylistId !== undefined ? rawPlaylistId as string : ''
       if (state.favoritesSelected) {
         state.selectedFolderPaths = []
       }
@@ -1044,10 +1387,17 @@ return result
     return this.readFilterState().selectedFolderPaths
   }
 
-  setFilterState(paths: string[], favoritesSelected: boolean): void {
+  setFilterState(paths: string[], favoritesSelected: boolean, dims?: FilterDimensions): void {
     const state: FilterStateRecord = new FilterStateRecord()
     state.selectedFolderPaths = favoritesSelected ? [] : paths.slice()
     state.favoritesSelected = favoritesSelected
+    // dims 未传时保留现有维度（旧调用点只关心文件夹/收藏）；显式传入则整体替换
+    const current: FilterStateRecord = this.readFilterState()
+    state.artists = dims !== undefined ? dims.artists.slice() : current.artists.slice()
+    state.albums = dims !== undefined ? dims.albums.slice() : current.albums.slice()
+    state.genres = dims !== undefined ? dims.genres.slice() : current.genres.slice()
+    state.years = dims !== undefined ? dims.years.slice() : current.years.slice()
+    state.playlistId = dims !== undefined ? dims.playlistId : current.playlistId
     SettingsStore.getInstance().set(KEY_FILTER_STATE, JSON.stringify(state))
     AppStorage.setOrCreate(KEY_SELECTED_FOLDERS, state.selectedFolderPaths.slice())
     AppStorage.setOrCreate(KEY_FAVORITES_SELECTED, state.favoritesSelected)
@@ -1061,6 +1411,22 @@ return result
 
   isFavoritesSelected(): boolean {
     return this.readFilterState().favoritesSelected
+  }
+
+  getFilterArtists(): string[] {
+    return this.readFilterState().artists
+  }
+
+  getFilterAlbums(): string[] {
+    return this.readFilterState().albums
+  }
+
+  getFilterGenres(): string[] {
+    return this.readFilterState().genres
+  }
+
+  getFilterYears(): string[] {
+    return this.readFilterState().years
   }
 
   // ═══════════ Play Next Queue ═══════════
@@ -1131,6 +1497,9 @@ return result
     AppStorage.setOrCreate('uplayer_primary_color', '#007DFF')
     AppStorage.setOrCreate('uplayer_theme_mode', 'system')
     AppStorage.setOrCreate('uplayer_fade_in_out', false)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_FADE_SECONDS, 3)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_SONGS_REMAINING, 0)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_PRESET_SONGS, -1)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CONTINUE_PLAY_ON_UNPLUG, false)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_IGNORE_NOTIFICATION_DUCK, false)
     AppStorage.setOrCreate('uplayer_font_size_scale', 1.0)
@@ -1146,6 +1515,8 @@ return result
     AppStorage.setOrCreate('uplayer_tab_touch_indicator', 'light')
     AppStorage.setOrCreate('uplayer_tab_light_color', 'theme')
     AppStorage.setOrCreate('uplayer_tab_material_level', 'adaptive')
+    // 默认值须与 AppSettingsData.artistSeparators 保持一致
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_ARTIST_SEPARATORS, [',', '，', '&', '＆'])
     AppStorage.setOrCreate('uplayer_bar_bottom_margin', 28)
     AppStorage.setOrCreate('uplayer_gradient_mask_height', 0)
     AppStorage.setOrCreate('uplayer_thermo_ctrl', false)
@@ -1180,6 +1551,7 @@ return result
     AppStorage.setOrCreate('uplayer_primary_color', settings.primaryColor)
     AppStorage.setOrCreate('uplayer_theme_mode', settings.themeMode)
     AppStorage.setOrCreate('uplayer_fade_in_out', settings.fadeInOut)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_FADE_SECONDS, settings.timerFadeSeconds)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CONTINUE_PLAY_ON_UNPLUG, settings.continuePlayOnHeadsetUnplug)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_IGNORE_NOTIFICATION_DUCK, settings.ignoreNotificationDuck)
     AppStorage.setOrCreate('uplayer_font_size_scale', settings.fontSizeScale)
@@ -1195,6 +1567,7 @@ return result
     AppStorage.setOrCreate('uplayer_tab_touch_indicator', settings.tabTouchIndicator)
     AppStorage.setOrCreate('uplayer_tab_light_color', settings.tabLightColor)
     AppStorage.setOrCreate('uplayer_tab_material_level', settings.tabMaterialLevel)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_ARTIST_SEPARATORS, settings.artistSeparators)
     this.activatePersistedUris()
     return settings
   }

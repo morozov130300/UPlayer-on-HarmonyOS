@@ -53,6 +53,11 @@ constexpr double LOUDNESS_WINDOW_SMOOTHING = 0.6;    // 窗口间的目标增益
 constexpr double LOUDNESS_GAIN_SMOOTHING = 0.0002;   // 逐采样增益平滑（时间常数 ≈100ms@48k）
 constexpr double LOUDNESS_SOFT_KNEE_START = 24000.0; // 软限幅起控点（≈-2.7dBFS，以下完全透明）
 
+// ReplayGain 响度均衡（P2-1）：ID3v2 TXXX / FLAC Vorbis Comment 标签增益的开环定增益应用。
+// 开关/目标增益由 NAPI 线程原子写，应用增益仅渲染线程访问；关闭时整段跳过（零开销 bypass）。
+constexpr double REPLAY_GAIN_MAX_DB = 24.0;           // 增益钳制（±24dB，防标签异常值爆音）
+constexpr double REPLAY_GAIN_GAIN_SMOOTHING = 0.0002; // 逐样本增益平滑（≈100ms@48k，换曲/开关无爆音）
+
 // 管线直通保持：效果开关/管线激活瞬间，管线拉取模式突变，旧密度因子未收敛前按旧速率喂源
 // 会产生倍速高音调/慢速低音调。保持期内可听输出走直通（音调恒定正确），管线喂静音完成密度
 // 重测，收敛后与直通末段交叉淡化切回管线输出。
@@ -559,6 +564,12 @@ public:
             if (completed_.load() || stopRequested_.load()) {
                 return false;
             }
+            // 幂等恢复：未暂停即仍在运行。播放中开音效走的同文件复用分支会再次
+            // resume，此时若对运行中的 sink 重复 Resume 而失败，回滚 paused_ 会把
+            // 正在播放的音频打成静音
+            if (!paused_.load()) {
+                return true;
+            }
             paused_ = false;
             const bool resumed = lpSink_ != nullptr && OH_LowPowerAudioSink_Resume(lpSink_) == AV_ERR_OK;
             if (!resumed) {
@@ -572,6 +583,16 @@ public:
         }
         if (renderer_ == nullptr || completed_.load() || stopRequested_.load()) {
             return false;
+        }
+        // 幂等恢复：渲染器已在 RUNNING（播放中开音效的同文件复用分支、Pause 失败
+        // 残留的不一致态都会到这）。对 RUNNING 流重复 Start 必返回 INVALID_STATE，
+        // 若落入下方回滚分支，paused_ 置真会让 RT 回调持续交静音——正在播放的音乐
+        // 就此无声且无任何报错。此处直接解除 paused_ 返回成功
+        OH_AudioStream_State rendererState = AUDIOSTREAM_STATE_INVALID;
+        if (OH_AudioRenderer_GetCurrentState(renderer_, &rendererState) == AUDIOSTREAM_SUCCESS &&
+            rendererState == AUDIOSTREAM_STATE_RUNNING) {
+            paused_ = false;
+            return true;
         }
         paused_ = false;
         if (OH_AudioRenderer_Start(renderer_) != AUDIOSTREAM_SUCCESS) {
@@ -823,25 +844,30 @@ public:
         if (enabled && !IsEqualizerSupported()) {
             return false;
         }
-        std::lock_guard<std::mutex> lock(effectMutex_);
-        if (enabled && !EnsureEffectsBuiltLocked()) {
-            return false;
+        bool result;
+        {
+            std::lock_guard<std::mutex> lock(effectMutex_);
+            if (enabled && !EnsureEffectsBuiltLocked()) {
+                return false;
+            }
+            requestedEqEnabled_ = enabled;
+            activeEqEnabled_ = enabled;
+            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "effect toggle eq=%{public}d", enabled ? 1 : 0);
+            // 冷管线密度未知需直通保持；暖管线密度已收敛，旁路开关即时生效
+            if (!pipelineEverRendered_.load(std::memory_order_relaxed)) {
+                pipelineHoldRequested_.store(true);
+            }
+            OH_AudioNode* node = ActiveEffectNodes().eq;
+            if (node == nullptr) {
+                return HandleMissingEffectNode(enabled, "equalizer");
+            }
+            result = enabled ? ApplyBandsLocked(node, bands_, false) : BypassNodeLocked(node, true);
+            if (!result) {
+                return false;
+            }
         }
-        requestedEqEnabled_ = enabled;
-        activeEqEnabled_ = enabled;
-        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-            "effect toggle eq=%{public}d", enabled ? 1 : 0);
-        // 开关瞬间管线拉取模式可能变化：请求直通保持，密度因子重测收敛后再切入管线输出
-        pipelineHoldRequested_.store(true);
-        // 管线可能被其他效果占用，EQ 节点旁路状态必须与开关同步，避免关闭 EQ 后残留处理
-        OH_AudioNode* node = ActiveEffectNodes().eq;
-        if (node == nullptr) {
-            return HandleMissingEffectNode(enabled, "equalizer");
-        }
-        if (enabled) {
-            return ApplyBandsLocked(node, bands_, false);
-        }
-        return BypassNodeLocked(node, true);
+        return true;
     }
 
     bool SetBands(const std::array<int32_t, EQUALIZER_BAND_NUM>& bands)
@@ -884,22 +910,28 @@ public:
 
     bool SetSoundFieldEnabled(bool enabled)
     {
-        std::lock_guard<std::mutex> lock(effectMutex_);
-        if (enabled && !EnsureEffectsBuiltLocked()) {
-            return false;
+        bool result;
+        {
+            std::lock_guard<std::mutex> lock(effectMutex_);
+            if (enabled && !EnsureEffectsBuiltLocked()) {
+                return false;
+            }
+            requestedSoundFieldEnabled_ = enabled;
+            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "effect toggle soundField=%{public}d", enabled ? 1 : 0);
+            if (!pipelineEverRendered_.load(std::memory_order_relaxed)) {
+                pipelineHoldRequested_.store(true);
+            }
+            OH_AudioNode* node = ActiveEffectNodes().soundField;
+            if (node == nullptr) {
+                return HandleMissingEffectNode(enabled, "soundField");
+            }
+            result = enabled ? SetSoundFieldStateLocked(node) : BypassNodeLocked(node, true);
+            if (!result) {
+                return false;
+            }
         }
-        requestedSoundFieldEnabled_ = enabled;
-        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-            "effect toggle soundField=%{public}d", enabled ? 1 : 0);
-        pipelineHoldRequested_.store(true);
-        OH_AudioNode* node = ActiveEffectNodes().soundField;
-        if (node == nullptr) {
-            return HandleMissingEffectNode(enabled, "soundField");
-        }
-        if (enabled) {
-            return SetSoundFieldStateLocked(node);
-        }
-        return BypassNodeLocked(node, true);
+        return true;
     }
 
     bool SetSoundFieldType(int32_t type)
@@ -926,22 +958,28 @@ public:
 
     bool SetEnvironmentEnabled(bool enabled)
     {
-        std::lock_guard<std::mutex> lock(effectMutex_);
-        if (enabled && !EnsureEffectsBuiltLocked()) {
-            return false;
+        bool result;
+        {
+            std::lock_guard<std::mutex> lock(effectMutex_);
+            if (enabled && !EnsureEffectsBuiltLocked()) {
+                return false;
+            }
+            requestedEnvironmentEnabled_ = enabled;
+            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "effect toggle environment=%{public}d", enabled ? 1 : 0);
+            if (!pipelineEverRendered_.load(std::memory_order_relaxed)) {
+                pipelineHoldRequested_.store(true);
+            }
+            OH_AudioNode* node = ActiveEffectNodes().environment;
+            if (node == nullptr) {
+                return HandleMissingEffectNode(enabled, "environment");
+            }
+            result = enabled ? SetEnvironmentStateLocked(node) : BypassNodeLocked(node, true);
+            if (!result) {
+                return false;
+            }
         }
-        requestedEnvironmentEnabled_ = enabled;
-        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-            "effect toggle environment=%{public}d", enabled ? 1 : 0);
-        pipelineHoldRequested_.store(true);
-        OH_AudioNode* node = ActiveEffectNodes().environment;
-        if (node == nullptr) {
-            return HandleMissingEffectNode(enabled, "environment");
-        }
-        if (enabled) {
-            return SetEnvironmentStateLocked(node);
-        }
-        return BypassNodeLocked(node, true);
+        return true;
     }
 
     bool SetEnvironmentType(int32_t type)
@@ -968,22 +1006,28 @@ public:
 
     bool SetVoiceBeautifierEnabled(bool enabled)
     {
-        std::lock_guard<std::mutex> lock(effectMutex_);
-        if (enabled && !EnsureEffectsBuiltLocked()) {
-            return false;
+        bool result;
+        {
+            std::lock_guard<std::mutex> lock(effectMutex_);
+            if (enabled && !EnsureEffectsBuiltLocked()) {
+                return false;
+            }
+            requestedBeautifierEnabled_ = enabled;
+            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "effect toggle beautifier=%{public}d", enabled ? 1 : 0);
+            if (!pipelineEverRendered_.load(std::memory_order_relaxed)) {
+                pipelineHoldRequested_.store(true);
+            }
+            OH_AudioNode* node = ActiveEffectNodes().beautifier;
+            if (node == nullptr) {
+                return HandleMissingEffectNode(enabled, "beautifier");
+            }
+            result = enabled ? SetBeautifierStateLocked(node) : BypassNodeLocked(node, true);
+            if (!result) {
+                return false;
+            }
         }
-        requestedBeautifierEnabled_ = enabled;
-        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-            "effect toggle beautifier=%{public}d", enabled ? 1 : 0);
-        pipelineHoldRequested_.store(true);
-        OH_AudioNode* node = ActiveEffectNodes().beautifier;
-        if (node == nullptr) {
-            return HandleMissingEffectNode(enabled, "beautifier");
-        }
-        if (enabled) {
-            return SetBeautifierStateLocked(node);
-        }
-        return BypassNodeLocked(node, true);
+        return true;
     }
 
     bool SetVoiceBeautifierType(int32_t type)
@@ -1010,22 +1054,28 @@ public:
 
     bool SetSpaceRenderEnabled(bool enabled)
     {
-        std::lock_guard<std::mutex> lock(effectMutex_);
-        if (enabled && !EnsureEffectsBuiltLocked()) {
-            return false;
+        bool result;
+        {
+            std::lock_guard<std::mutex> lock(effectMutex_);
+            if (enabled && !EnsureEffectsBuiltLocked()) {
+                return false;
+            }
+            requestedSpaceRenderEnabled_ = enabled;
+            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "effect toggle spaceRender=%{public}d", enabled ? 1 : 0);
+            if (!pipelineEverRendered_.load(std::memory_order_relaxed)) {
+                pipelineHoldRequested_.store(true);
+            }
+            OH_AudioNode* node = ActiveEffectNodes().spaceRender;
+            if (node == nullptr) {
+                return HandleMissingEffectNode(enabled, "spaceRender");
+            }
+            result = enabled ? SetSpaceRenderStateLocked(node) : BypassNodeLocked(node, true);
+            if (!result) {
+                return false;
+            }
         }
-        requestedSpaceRenderEnabled_ = enabled;
-        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-            "effect toggle spaceRender=%{public}d", enabled ? 1 : 0);
-        pipelineHoldRequested_.store(true);
-        OH_AudioNode* node = ActiveEffectNodes().spaceRender;
-        if (node == nullptr) {
-            return HandleMissingEffectNode(enabled, "spaceRender");
-        }
-        if (enabled) {
-            return SetSpaceRenderStateLocked(node);
-        }
-        return BypassNodeLocked(node, true);
+        return true;
     }
 
     // mode: 0=固定摆位(values={x,y,z}) 1=旋转({x,y,z,surroundTime,surroundDirection}) 2=扩展({extRadius,extAngle})
@@ -1075,22 +1125,28 @@ public:
     // ═══ 通用变声（210，主链内，48k/S16/2ch）═══
     bool SetGeneralVoiceChangeEnabled(bool enabled)
     {
-        std::lock_guard<std::mutex> lock(effectMutex_);
-        if (enabled && !EnsureEffectsBuiltLocked()) {
-            return false;
+        bool result;
+        {
+            std::lock_guard<std::mutex> lock(effectMutex_);
+            if (enabled && !EnsureEffectsBuiltLocked()) {
+                return false;
+            }
+            requestedGeneralVoiceChangeEnabled_ = enabled;
+            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "effect toggle generalVoiceChange=%{public}d", enabled ? 1 : 0);
+            if (!pipelineEverRendered_.load(std::memory_order_relaxed)) {
+                pipelineHoldRequested_.store(true);
+            }
+            OH_AudioNode* node = ActiveEffectNodes().generalVoiceChange;
+            if (node == nullptr) {
+                return HandleMissingEffectNode(enabled, "generalVoiceChange");
+            }
+            result = enabled ? SetGeneralVoiceChangeStateLocked(node) : BypassNodeLocked(node, true);
+            if (!result) {
+                return false;
+            }
         }
-        requestedGeneralVoiceChangeEnabled_ = enabled;
-        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-            "effect toggle generalVoiceChange=%{public}d", enabled ? 1 : 0);
-        pipelineHoldRequested_.store(true);
-        OH_AudioNode* node = ActiveEffectNodes().generalVoiceChange;
-        if (node == nullptr) {
-            return HandleMissingEffectNode(enabled, "generalVoiceChange");
-        }
-        if (enabled) {
-            return SetGeneralVoiceChangeStateLocked(node);
-        }
-        return BypassNodeLocked(node, true);
+        return true;
     }
 
     bool SetGeneralVoiceChangeType(int32_t type)
@@ -1118,45 +1174,56 @@ public:
     // ═══ 降噪（202，特殊管线，16k/S16/1ch 输出）═══
     bool SetNoiseReductionEnabled(bool enabled)
     {
-        std::lock_guard<std::mutex> lock(effectMutex_);
-        if (enabled && !EnsureEffectsBuiltLocked()) {
-            return false;
+        bool result;
+        {
+            std::lock_guard<std::mutex> lock(effectMutex_);
+            if (enabled && !EnsureEffectsBuiltLocked()) {
+                return false;
+            }
+            requestedNoiseReductionEnabled_ = enabled;
+            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "effect toggle noiseReduction=%{public}d", enabled ? 1 : 0);
+            if (!SwitchPipelineLocked()) {
+                return false;
+            }
+            OH_AudioNode* node = ActiveEffectNodes().noiseReduction;
+            if (node == nullptr) {
+                return HandleMissingEffectNode(enabled, "noiseReduction");
+            }
+            // 降噪无参数，仅旁路开关
+            result = BypassNodeLocked(node, !enabled);
+            if (!result) {
+                return false;
+            }
         }
-        requestedNoiseReductionEnabled_ = enabled;
-        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-            "effect toggle noiseReduction=%{public}d", enabled ? 1 : 0);
-        if (!SwitchPipelineLocked()) {
-            return false;
-        }
-        OH_AudioNode* node = ActiveEffectNodes().noiseReduction;
-        if (node == nullptr) {
-            return HandleMissingEffectNode(enabled, "noiseReduction");
-        }
-        // 降噪无参数，仅旁路开关
-        return BypassNodeLocked(node, !enabled);
+        return true;
     }
 
     // ═══ 传统变声（209，特殊管线，16k/S16/1ch 输出）═══
     bool SetPureVoiceChangeEnabled(bool enabled)
     {
-        std::lock_guard<std::mutex> lock(effectMutex_);
-        if (enabled && !EnsureEffectsBuiltLocked()) {
-            return false;
+        bool result;
+        {
+            std::lock_guard<std::mutex> lock(effectMutex_);
+            if (enabled && !EnsureEffectsBuiltLocked()) {
+                return false;
+            }
+            requestedPureVoiceChangeEnabled_ = enabled;
+            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "effect toggle pureVoiceChange=%{public}d", enabled ? 1 : 0);
+            if (!SwitchPipelineLocked()) {
+                return false;
+            }
+            OH_AudioNode* node = ActiveEffectNodes().pureVoiceChange;
+            if (node == nullptr) {
+                return HandleMissingEffectNode(enabled, "pureVoiceChange");
+            }
+            result = enabled ? SetPureVoiceChangeStateLocked(node) : BypassNodeLocked(node, true);
+            if (!result) {
+                return false;
+            }
         }
-        requestedPureVoiceChangeEnabled_ = enabled;
-        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-            "effect toggle pureVoiceChange=%{public}d", enabled ? 1 : 0);
-        if (!SwitchPipelineLocked()) {
-            return false;
-        }
-        OH_AudioNode* node = ActiveEffectNodes().pureVoiceChange;
-        if (node == nullptr) {
-            return HandleMissingEffectNode(enabled, "pureVoiceChange");
-        }
-        if (enabled) {
-            return SetPureVoiceChangeStateLocked(node);
-        }
-        return BypassNodeLocked(node, true);
+        return true;
     }
 
     // gender: 1=女声 2=男声；type: 1..7；pitch: 0=系统推荐，自定义 [0.3, 3.0]
@@ -1180,24 +1247,28 @@ public:
     // ═══ 变速变调（211，特殊管线，48k/S16/1ch 输出）═══
     bool SetTempoPitchEnabled(bool enabled)
     {
-        std::lock_guard<std::mutex> lock(effectMutex_);
-        if (enabled && !EnsureEffectsBuiltLocked()) {
-            return false;
+        bool result;
+        {
+            std::lock_guard<std::mutex> lock(effectMutex_);
+            if (enabled && !EnsureEffectsBuiltLocked()) {
+                return false;
+            }
+            requestedTempoPitchEnabled_ = enabled;
+            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "effect toggle tempoPitch=%{public}d", enabled ? 1 : 0);
+            if (!SwitchPipelineLocked()) {
+                return false;
+            }
+            OH_AudioNode* node = ActiveEffectNodes().tempoPitch;
+            if (node == nullptr) {
+                return HandleMissingEffectNode(enabled, "tempoPitch");
+            }
+            result = enabled ? SetTempoPitchStateLocked(node) : BypassNodeLocked(node, true);
+            if (!result) {
+                return false;
+            }
         }
-        requestedTempoPitchEnabled_ = enabled;
-        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-            "effect toggle tempoPitch=%{public}d", enabled ? 1 : 0);
-        if (!SwitchPipelineLocked()) {
-            return false;
-        }
-        OH_AudioNode* node = ActiveEffectNodes().tempoPitch;
-        if (node == nullptr) {
-            return HandleMissingEffectNode(enabled, "tempoPitch");
-        }
-        if (enabled) {
-            return SetTempoPitchStateLocked(node);
-        }
-        return BypassNodeLocked(node, true);
+        return true;
     }
 
     // speed: [0.5, 10.0]；pitch: [0.1, 5.0]
@@ -1218,16 +1289,18 @@ public:
     // ═══ 音源分离（204，分离管线，多输出人声/伴奏）═══
     bool SetSeparationEnabled(bool enabled)
     {
-        std::lock_guard<std::mutex> lock(effectMutex_);
-        if (enabled && !EnsureEffectsBuiltLocked()) {
-            return false;
-        }
-        requestedSeparationEnabled_ = enabled;
-        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-            "effect toggle separation=%{public}d usable=%{public}d",
-            enabled ? 1 : 0, sepPipelineUsable_ ? 1 : 0);
-        if (!SwitchPipelineLocked()) {
-            return false;
+        {
+            std::lock_guard<std::mutex> lock(effectMutex_);
+            if (enabled && !EnsureEffectsBuiltLocked()) {
+                return false;
+            }
+            requestedSeparationEnabled_ = enabled;
+            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "effect toggle separation=%{public}d usable=%{public}d",
+                enabled ? 1 : 0, sepPipelineUsable_ ? 1 : 0);
+            if (!SwitchPipelineLocked()) {
+                return false;
+            }
         }
         return true;
     }
@@ -1277,6 +1350,18 @@ public:
             return OH_LowPowerAudioSink_SetVolume(lpSink_, volume) == AV_ERR_OK;
         }
         return renderer_ == nullptr || OH_AudioRenderer_SetVolume(renderer_, volume) == AUDIOSTREAM_SUCCESS;
+    }
+
+    // ReplayGain（P2-1）：db 为标签增益+预增益合成值；线性增益存原子，渲染线程按采样平滑逼近
+    void SetReplayGainEnable(bool enabled)
+    {
+        replayGainEnabled_.store(enabled, std::memory_order_relaxed);
+    }
+
+    void SetReplayGainDb(double db)
+    {
+        const double clamped = std::clamp(db, -REPLAY_GAIN_MAX_DB, REPLAY_GAIN_MAX_DB);
+        replayGainTarget_.store(std::pow(10.0, clamped / 20.0), std::memory_order_relaxed);
     }
 
     bool IsPlaying() const
@@ -2276,6 +2361,8 @@ private:
         activePipeline_ = ActivePipeline::NONE;
         specialPipelineUsable_ = false;
         sepPipelineUsable_ = false;
+        // 管线已销毁：热身标志随之失效，重建后的首次开关仍走直通保持完成密度首测
+        pipelineEverRendered_.store(false, std::memory_order_relaxed);
     }
 
     // 销毁 AudioSuite 引擎句柄。必须在所有管线与节点销毁之后调用。
@@ -2531,6 +2618,17 @@ private:
             return false;
         }
         PipelineGroup& group = GroupFor(initial);
+        // 幂等启动：首个音效开关经 EnsureEffectsBuiltLocked 已建管并启动，随后起播的
+        // ConfigureEffects 会再次走到这。对 RUNNING 管线重复 StartPipeline 行为未定义，
+        // 一旦报错会按 startPipeline failed 连带整次起播失败。已运行则直接跳过启动
+        OH_AudioSuite_PipelineState pipelineState = AUDIOSUITE_PIPELINE_STOPPED;
+        if (OH_AudioSuiteEngine_GetPipelineState(group.pipeline, &pipelineState) == AUDIOSUITE_SUCCESS &&
+            pipelineState == AUDIOSUITE_PIPELINE_RUNNING) {
+            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "cfg stage=startPipeline skipped already running initial=%{public}d",
+                static_cast<int>(initial));
+            return true;
+        }
         const OH_AudioSuite_Result startResult = OH_AudioSuiteEngine_StartPipeline(group.pipeline);
         if (startResult != AUDIOSUITE_SUCCESS) {
             OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
@@ -3413,6 +3511,8 @@ private:
                     "render frame failed; marked native playback failed");
                 break;
             }
+            // ReplayGain（P2-1）：所有可听输出（直通/hold/管线/分离）统一在进环形缓冲前定增益
+            ApplyReplayGain(renderChunkBuf_.data(), chunkBytes);
             RingWrite(renderChunkBuf_.data(), chunkSamples);
             // Phase 4：worker 周期性日志（audio level 逐秒/慢块逐条）全部撤除——hilogd 背压下
             // 它们正是 worker 停顿源；电平改快照原子发布，水位/慢块进健康窗口，
@@ -3510,7 +3610,11 @@ private:
         {
             std::lock_guard<std::mutex> lock(effectMutex_);
             if (activePipeline_ == ActivePipeline::SEP) {
-                return RenderSeparationFrameLocked(audioData, audioDataSize);
+                if (!RenderSeparationFrameLocked(audioData, audioDataSize)) {
+                    return false;
+                }
+                pipelineEverRendered_.store(true, std::memory_order_relaxed);
+                return true;
             }
             if (ActivePipelineHandle() == nullptr) {
                 return RenderDirectFallback(audioData, audioDataSize);
@@ -3600,6 +3704,8 @@ private:
             audioSuiteEofReached_ = true;
             MarkPlaybackCompleted();
         }
+        // 管线真实渲染成功：标记暖管线，后续同管线旁路开关免 300ms 直通保持
+        pipelineEverRendered_.store(true, std::memory_order_relaxed);
         return true;
     }
 
@@ -3999,6 +4105,42 @@ private:
         loudnessAppliedGain_ = gain;
     }
 
+    // ReplayGain 定增益应用（P2-1）：开环无反馈，按标签增益（含预增益）逐采样缩放。
+    // 增益切换/换曲经逐样本平滑无爆音；>1 增益复用响度补偿的 tanh 软膝限幅防削波；
+    // 关闭时整段跳过并把应用增益归一（重新开启时从 1.0 平滑爬升，杜绝旁通→生效的增益跳变）。
+    void ApplyReplayGain(void* audioData, int32_t audioDataSize)
+    {
+        if (!replayGainEnabled_.load(std::memory_order_relaxed)) {
+            replayGainApplied_ = 1.0;
+            return;
+        }
+        int16_t* samples = static_cast<int16_t*>(audioData);
+        const int32_t sampleCount = audioDataSize / static_cast<int32_t>(sizeof(int16_t));
+        if (samples == nullptr || sampleCount <= 0) {
+            return;
+        }
+        const double targetGain = replayGainTarget_.load(std::memory_order_relaxed);
+        double gain = replayGainApplied_;
+        const double kneeSpan = static_cast<double>(std::numeric_limits<int16_t>::max()) -
+            LOUDNESS_SOFT_KNEE_START;
+        for (int32_t i = 0; i < sampleCount; i++) {
+            gain += (targetGain - gain) * REPLAY_GAIN_GAIN_SMOOTHING;
+            const double scaled = static_cast<double>(samples[i]) * gain;
+            double limited = scaled;
+            if (scaled > LOUDNESS_SOFT_KNEE_START) {
+                limited = LOUDNESS_SOFT_KNEE_START +
+                    kneeSpan * std::tanh((scaled - LOUDNESS_SOFT_KNEE_START) / kneeSpan);
+            } else if (scaled < -LOUDNESS_SOFT_KNEE_START) {
+                limited = -(LOUDNESS_SOFT_KNEE_START +
+                    kneeSpan * std::tanh((-scaled - LOUDNESS_SOFT_KNEE_START) / kneeSpan));
+            }
+            const long converted = std::lround(limited);
+            samples[i] = static_cast<int16_t>(std::clamp<long>(converted,
+                std::numeric_limits<int16_t>::min(), std::numeric_limits<int16_t>::max()));
+        }
+        replayGainApplied_ = gain;
+    }
+
     // 输出电平测量（按 2 秒窗口快照原子发布，由解码线程健康行汇总打印）：仅渲染工作线程调用。
     // 原在 RT 回调执行，其 OH_LOG_Print 为 RT 阻塞源（周期性卡顿头号嫌疑），已随调用点迁出 RT。
     void MeasureOutput(void* audioData, int32_t audioDataSize)
@@ -4340,6 +4482,11 @@ private:
     double loudnessRawOutputSumSquares_ = 0.0;
     uint64_t loudnessRawOutputSampleCount_ = 0;
     int64_t loudnessWindowStartMs_ = 0;
+    // ReplayGain 定增益状态（P2-1）：开关/目标线性增益跨线程（NAPI 写原子），
+    // 应用增益仅渲染线程访问；关闭时应用增益归一（见 ApplyReplayGain）
+    std::atomic<bool> replayGainEnabled_ = false;
+    std::atomic<double> replayGainTarget_ = 1.0;
+    double replayGainApplied_ = 1.0;
     bool lastUsePipeline_ = false;
     std::array<int32_t, EQUALIZER_BAND_NUM> bands_ = {};
     // 空间渲染参数（effectMutex_ 保护）：摆位/旋转共用 x/y/z，旋转另有环绕时间/方向，扩展另有半径/角度
@@ -4366,6 +4513,11 @@ private:
     // 线程）须原子；holdStartMs_/carry 为渲染线程私有。
     std::atomic<bool> pipelineHoldActive_ = false;
     std::atomic<bool> pipelineHoldRequested_ = false;
+    // 管线热身标志：管线成功渲染过至少一帧即置位，销毁管线时复位。
+    // 暖管线的拉取密度已实测收敛，同管线旁路开关切换无需再走 300ms 直通保持
+    // （音效即时生效）；冷管线（首次启用/重建后）仍需保持期完成密度首测。
+    // NAPI 开关线程读、渲染线程写，跨线程须原子
+    std::atomic<bool> pipelineEverRendered_ = false;
     std::atomic<bool> densityWindowResetRequested_ = false;
     int64_t holdStartMs_ = 0;
     int32_t holdCarrySamples_ = 0;
@@ -6065,6 +6217,371 @@ napi_value WriteAudioTags(napi_env env, napi_callback_info info)
     return StringValue(env, WriteAudioTagsToFd(fd, tags));
 }
 
+// ===== ReplayGain 标签读取（P2-1）：只读不写，ID3v2 TXXX / FLAC Vorbis Comment =====
+// TXXX 描述匹配 replaygain_track_gain/replaygain_album_gain（大小写不敏感，
+// ReplayGain 2.0 规范写法，foobar2000/MP3Tag 等主流工具采用）；FLAC 读 VORBIS_COMMENT
+// 块同名键。增益文本形如 "-6.51 dB"/"+3.2dB"，取首个数字段解析，容忍前后缀。
+
+struct ReplayGainTags {
+    double trackGainDb = 0.0;
+    double albumGainDb = 0.0;
+    bool hasTrack = false;
+    bool hasAlbum = false;
+};
+
+// ASCII 大小写不敏感比较（text 为解码后文本，lower 为全小写字面量）
+static bool AsciiEqualsIgnoreCase(const std::string& text, const char* lower)
+{
+    size_t i = 0;
+    for (; i < text.size(); i++) {
+        char c = text[i];
+        if (c >= 'A' && c <= 'Z') {
+            c = static_cast<char>(c - 'A' + 'a');
+        }
+        if (c != lower[i]) {
+            return false;
+        }
+    }
+    return lower[i] == '\0';
+}
+
+// 增益值解析：跳过非数字前缀取首个带符号浮点段（"+3.2 dB" → 3.2；"-.51dB" → -0.51）
+static bool ParseReplayGainValue(const std::string& text, double& outDb)
+{
+    const size_t n = text.size();
+    size_t i = 0;
+    while (i < n) {
+        const char c = text[i];
+        if ((c >= '0' && c <= '9') || c == '-' || c == '+' || c == '.') {
+            break;
+        }
+        i++;
+    }
+    if (i >= n) {
+        return false;
+    }
+    bool negative = false;
+    if (text[i] == '-' || text[i] == '+') {
+        negative = text[i] == '-';
+        i++;
+    }
+    double value = 0.0;
+    bool anyDigit = false;
+    while (i < n && text[i] >= '0' && text[i] <= '9') {
+        value = value * 10.0 + static_cast<double>(text[i] - '0');
+        anyDigit = true;
+        i++;
+    }
+    if (i < n && text[i] == '.') {
+        i++;
+        double scale = 0.1;
+        while (i < n && text[i] >= '0' && text[i] <= '9') {
+            value += static_cast<double>(text[i] - '0') * scale;
+            scale *= 0.1;
+            anyDigit = true;
+            i++;
+        }
+    }
+    if (!anyDigit || !std::isfinite(value)) {
+        return false;
+    }
+    outDb = negative ? -value : value;
+    return true;
+}
+
+// 编码文本段解码为 ASCII 近似（RG 值为 "+x.xx dB" 类数字串，仅数字/符号参与后续解析）：
+// encoding 0=Latin-1 1=UTF-16(BOM 判字节序) 2=UTF-16BE 3=UTF-8；遇终止符停止
+static std::string DecodeTextSegment(const uint8_t* data, size_t size, uint8_t encoding)
+{
+    std::string out;
+    if (encoding == 1 || encoding == 2) {
+        size_t i = 0;
+        bool bigEndian = encoding == 2;
+        if (encoding == 1 && size >= 2) {
+            if (data[0] == 0xFF && data[1] == 0xFE) {
+                bigEndian = false;
+                i = 2;
+            } else if (data[0] == 0xFE && data[1] == 0xFF) {
+                bigEndian = true;
+                i = 2;
+            }
+        }
+        for (; i + 1 < size; i += 2) {
+            const uint16_t unit = bigEndian
+                ? static_cast<uint16_t>((static_cast<uint16_t>(data[i]) << 8) | data[i + 1])
+                : static_cast<uint16_t>(data[i] | (static_cast<uint16_t>(data[i + 1]) << 8));
+            if (unit == 0) {
+                break;
+            }
+            out.push_back(unit < 0x80 ? static_cast<char>(unit) : '?');
+        }
+        return out;
+    }
+    for (size_t i = 0; i < size; i++) {
+        if (data[i] == 0) {
+            break;
+        }
+        out.push_back(static_cast<char>(data[i]));
+    }
+    return out;
+}
+
+// ID3v2 TXXX 帧扫描（仅 v2.3/v2.4，v2.2 无 TXXX；unsync 标签放弃）：
+// 帧内容 = [编码 1B][描述(终止)][值(至帧尾)]；描述比较用 ASCII 近似（RG 描述即 ASCII）
+static void ReadId3ReplayGain(int32_t fd, uint64_t fileSize, ReplayGainTags& out)
+{
+    if (fileSize < 10) {
+        return;
+    }
+    uint8_t header[10] = {};
+    if (pread(fd, header, sizeof(header), 0) != sizeof(header) ||
+        std::memcmp(header, "ID3", 3) != 0) {
+        return;
+    }
+    const uint8_t version = header[3];
+    const uint8_t flags = header[5];
+    const uint32_t tagSize = Id3SyncSafeDecode(header + 6);
+    if (version != 3 && version != 4) {
+        return;
+    }
+    if (tagSize == 0 || tagSize > ID3_MAX_TAG_BYTES ||
+        static_cast<uint64_t>(tagSize) + 10 > fileSize || (flags & 0x80) != 0) {
+        return;
+    }
+    std::vector<uint8_t> tag(tagSize);
+    if (pread(fd, tag.data(), tag.size(), 10) != static_cast<ssize_t>(tag.size())) {
+        return;
+    }
+    size_t offset = 0;
+    if ((flags & 0x40) != 0 && tag.size() >= 4) {
+        const uint32_t extendedSize = version == 4 ? Id3SyncSafeDecode(tag.data()) :
+            (static_cast<uint32_t>(tag[0]) << 24) | (static_cast<uint32_t>(tag[1]) << 16) |
+                (static_cast<uint32_t>(tag[2]) << 8) | static_cast<uint32_t>(tag[3]);
+        offset = version == 4 ? extendedSize : extendedSize + 4;
+    }
+    while (offset + 10 <= tag.size() && !(out.hasTrack && out.hasAlbum)) {
+        const uint8_t* frame = tag.data() + offset;
+        if (frame[0] == 0) {
+            break;
+        }
+        const uint32_t frameSize = version == 4 ? Id3SyncSafeDecode(frame + 4) :
+            (static_cast<uint32_t>(frame[4]) << 24) | (static_cast<uint32_t>(frame[5]) << 16) |
+                (static_cast<uint32_t>(frame[6]) << 8) | static_cast<uint32_t>(frame[7]);
+        if (frameSize == 0 || offset + 10 + frameSize > tag.size()) {
+            break;
+        }
+        if (std::memcmp(frame, "TXXX", 4) == 0 && frameSize >= 2) {
+            const uint8_t* content = frame + 10;
+            const uint8_t encoding = content[0];
+            std::string description;
+            size_t endOffset = 0;
+            double db = 0.0;
+            if (encoding <= 3 && ReadTerminatedStringAscii(content, frameSize, 1, encoding,
+                description, endOffset)) {
+                const std::string value = DecodeTextSegment(content + endOffset,
+                    frameSize - endOffset, encoding);
+                if (AsciiEqualsIgnoreCase(description, "replaygain_track_gain") && !out.hasTrack &&
+                    ParseReplayGainValue(value, db)) {
+                    out.trackGainDb = db;
+                    out.hasTrack = true;
+                } else if (AsciiEqualsIgnoreCase(description, "replaygain_album_gain") &&
+                    !out.hasAlbum && ParseReplayGainValue(value, db)) {
+                    out.albumGainDb = db;
+                    out.hasAlbum = true;
+                }
+            }
+        }
+        offset += 10 + frameSize;
+    }
+}
+
+static uint32_t ReadU32Le(const uint8_t* data)
+{
+    return static_cast<uint32_t>(data[0]) | (static_cast<uint32_t>(data[1]) << 8) |
+        (static_cast<uint32_t>(data[2]) << 16) | (static_cast<uint32_t>(data[3]) << 24);
+}
+
+// VORBIS_COMMENT 内容：厂商串 + 键值对（小端 u32 长度前缀，KEY=value UTF-8）
+static void ParseVorbisComments(const uint8_t* data, size_t size, ReplayGainTags& out)
+{
+    size_t offset = 0;
+    if (offset + 4 > size) {
+        return;
+    }
+    const uint32_t vendorSize = ReadU32Le(data + offset);
+    offset += 4;
+    if (vendorSize > size || offset + vendorSize > size) {
+        return;
+    }
+    offset += vendorSize;
+    if (offset + 4 > size) {
+        return;
+    }
+    const uint32_t count = ReadU32Le(data + offset);
+    offset += 4;
+    if (count > 4096) {
+        return; // 损坏文件防巨循环
+    }
+    for (uint32_t i = 0; i < count && !(out.hasTrack && out.hasAlbum); i++) {
+        if (offset + 4 > size) {
+            return;
+        }
+        const uint32_t length = ReadU32Le(data + offset);
+        offset += 4;
+        if (length > size || offset + length > size) {
+            return;
+        }
+        const std::string entry(reinterpret_cast<const char*>(data + offset), length);
+        offset += length;
+        const size_t eq = entry.find('=');
+        if (eq == std::string::npos || eq == 0) {
+            continue;
+        }
+        const std::string key = entry.substr(0, eq);
+        const std::string value = entry.substr(eq + 1);
+        double db = 0.0;
+        if (AsciiEqualsIgnoreCase(key, "replaygain_track_gain") && !out.hasTrack &&
+            ParseReplayGainValue(value, db)) {
+            out.trackGainDb = db;
+            out.hasTrack = true;
+        } else if (AsciiEqualsIgnoreCase(key, "replaygain_album_gain") && !out.hasAlbum &&
+            ParseReplayGainValue(value, db)) {
+            out.albumGainDb = db;
+            out.hasAlbum = true;
+        }
+    }
+}
+
+// FLAC：baseOffset 处 fLaC 魔数后逐块扫描，仅整读 VORBIS_COMMENT（type 4）块
+static void ReadFlacReplayGain(int32_t fd, uint64_t fileSize, uint64_t baseOffset, ReplayGainTags& out)
+{
+    if (baseOffset + 8 > fileSize) {
+        return;
+    }
+    uint8_t magic[4] = {};
+    if (pread(fd, magic, sizeof(magic), baseOffset) != sizeof(magic) ||
+        std::memcmp(magic, "fLaC", 4) != 0) {
+        return;
+    }
+    uint64_t offset = baseOffset + 4;
+    bool last = false;
+    int guard = 0;
+    while (!last) {
+        if (offset + 4 > fileSize || ++guard > 128) {
+            return;
+        }
+        uint8_t blockHeader[4] = {};
+        if (pread(fd, blockHeader, sizeof(blockHeader), offset) != sizeof(blockHeader)) {
+            return;
+        }
+        last = (blockHeader[0] & 0x80) != 0;
+        const uint8_t type = blockHeader[0] & 0x7F;
+        const uint32_t size = (static_cast<uint32_t>(blockHeader[1]) << 16) |
+            (static_cast<uint32_t>(blockHeader[2]) << 8) | static_cast<uint32_t>(blockHeader[3]);
+        if (size > ID3_MAX_TAG_BYTES || offset + 4 + size > fileSize) {
+            return;
+        }
+        if (type == 4) {
+            std::vector<uint8_t> data(size);
+            if (size > 0 && pread(fd, data.data(), size, offset + 4) != static_cast<ssize_t>(size)) {
+                return;
+            }
+            ParseVorbisComments(data.data(), data.size(), out);
+            return; // 元数据区 VORBIS_COMMENT 只有一个
+        }
+        offset += 4 + size;
+    }
+}
+
+// 读取 ReplayGain 标签：readReplayGain(fd, size) → JSON 字符串
+// {"trackGainDb":x,"albumGainDb":y}（键按存在输出）；无标签/不支持/参数错返回 null。
+// ID3 前缀的 FLAC（foobar2000 写法）两侧都扫，先 ID3 后补扫 fLaC 区
+napi_value ReadReplayGain(napi_env env, napi_callback_info info)
+{
+    size_t argc = 2;
+    napi_value args[2] = { nullptr, nullptr };
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    int32_t fd = -1;
+    int64_t size = 0;
+    if (argc != 2 || napi_get_value_int32(env, args[0], &fd) != napi_ok ||
+        napi_get_value_int64(env, args[1], &size) != napi_ok || fd < 0 || size <= 0) {
+        napi_value nullValue = nullptr;
+        napi_get_null(env, &nullValue);
+        return nullValue;
+    }
+    const uint64_t fileSize = static_cast<uint64_t>(size);
+    ReplayGainTags tags;
+    if (fileSize >= 4) {
+        uint8_t magic[4] = {};
+        if (pread(fd, magic, sizeof(magic), 0) == sizeof(magic)) {
+            if (std::memcmp(magic, "fLaC", 4) == 0) {
+                ReadFlacReplayGain(fd, fileSize, 0, tags);
+            } else if (std::memcmp(magic, "ID3", 3) == 0) {
+                ReadId3ReplayGain(fd, fileSize, tags);
+                if (!tags.hasTrack || !tags.hasAlbum) {
+                    uint8_t id3Header[10] = {};
+                    if (fileSize >= 18 && pread(fd, id3Header, 10, 0) == 10) {
+                        uint64_t id3End = 10 + Id3SyncSafeDecode(id3Header + 6);
+                        if ((id3Header[5] & 0x10) != 0) { // footer 计入跳过区域
+                            id3End += 10;
+                        }
+                        uint8_t flacMagic[4] = {};
+                        if (id3End + 8 <= fileSize && pread(fd, flacMagic, 4, id3End) == 4 &&
+                            std::memcmp(flacMagic, "fLaC", 4) == 0) {
+                            ReadFlacReplayGain(fd, fileSize, id3End, tags);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if (!tags.hasTrack && !tags.hasAlbum) {
+        napi_value nullValue = nullptr;
+        napi_get_null(env, &nullValue);
+        return nullValue;
+    }
+    char trackPart[48] = {};
+    char albumPart[48] = {};
+    std::string json = "{";
+    if (tags.hasTrack) {
+        snprintf(trackPart, sizeof(trackPart), "\"trackGainDb\":%.2f", tags.trackGainDb);
+        json += trackPart;
+    }
+    if (tags.hasAlbum) {
+        snprintf(albumPart, sizeof(albumPart), "%s\"albumGainDb\":%.2f",
+            tags.hasTrack ? "," : "", tags.albumGainDb);
+        json += albumPart;
+    }
+    json += "}";
+    return StringValue(env, json);
+}
+
+napi_value SetReplayGainEnable(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1] = { nullptr };
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    bool enabled = false;
+    if (argc != 1 || napi_get_value_bool(env, args[0], &enabled) != napi_ok) {
+        return BooleanValue(env, false);
+    }
+    NativeAudioPlayer::Instance().SetReplayGainEnable(enabled);
+    return BooleanValue(env, true);
+}
+
+napi_value SetReplayGainDb(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1] = { nullptr };
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    double db = 0;
+    if (argc != 1 || napi_get_value_double(env, args[0], &db) != napi_ok) {
+        return BooleanValue(env, false);
+    }
+    NativeAudioPlayer::Instance().SetReplayGainDb(db);
+    return BooleanValue(env, true);
+}
+
 napi_value SetLowPowerMode(napi_env env, napi_callback_info info)
 {
     size_t argc = 1;
@@ -6140,7 +6657,10 @@ napi_value Init(napi_env env, napi_value exports)
         { "getAlbumCover", nullptr, GetAlbumCover, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "cacheAlbumCover", nullptr, CacheAlbumCover, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "clearAlbumCoverCache", nullptr, ClearAlbumCoverCache, nullptr, nullptr, nullptr, napi_default, nullptr },
-        { "writeAudioTags", nullptr, WriteAudioTags, nullptr, nullptr, nullptr, napi_default, nullptr }
+        { "writeAudioTags", nullptr, WriteAudioTags, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "readReplayGain", nullptr, ReadReplayGain, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "setReplayGainEnable", nullptr, SetReplayGainEnable, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "setReplayGainDb", nullptr, SetReplayGainDb, nullptr, nullptr, nullptr, napi_default, nullptr }
     };
     napi_define_properties(env, exports, sizeof(descriptors) / sizeof(descriptors[0]), descriptors);
     return exports;

@@ -765,13 +765,25 @@ struct MainPage {
     this.loadCurrentLyrics()
   }
 
+  // P0-3：当前播放歌曲对象缓存（按 id 失配重建）——字段读取实时反映歌词偏移等原地更新
+  private currentLyricSong: SongInfo | undefined = undefined
+
+  private currentLyricOffsetMs(): number {
+    if (this.currentLyricSong === undefined || this.currentLyricSong.id !== this.currentSongId) {
+      this.currentLyricSong = this.dataService.getSongById(this.currentSongId)
+    }
+    return this.currentLyricSong !== undefined ? this.currentLyricSong.lyricOffsetMs : 0
+  }
+
   onProgressChange(): void {
+    // 迷你歌词按「进度+每歌偏移」对齐（与 LrcListView 换算口径一致）
+    const matchTime: number = this.playProgress + this.currentLyricOffsetMs()
     let low: number = 0
     let high: number = this.lyricEntries.length - 1
     let currentIndex: number = -1
     while (low <= high) {
       const middle: number = Math.floor((low + high) / 2)
-      if (this.lyricEntries[middle].lineStartTime <= this.playProgress) {
+      if (this.lyricEntries[middle].lineStartTime <= matchTime) {
         currentIndex = middle
         low = middle + 1
       } else {
@@ -1197,6 +1209,12 @@ struct MainPage {
       this.isCtrlPressed(event)) {
       const current: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_HOME_SELECT_ALL_REQUEST) ?? 0
       AppStorage.setOrCreate(AppStorageKeyConstants.KEY_HOME_SELECT_ALL_REQUEST, current + 1)
+      return true
+    }
+    // Ctrl+F：聚焦首页搜索框——打开搜索行并让输入框获焦（由 HomeContent 的 @Watch 处理）
+    if (event.keyCode === KeyCode.KEYCODE_F && this.currentIndex === 0 && this.isCtrlPressed(event)) {
+      const current: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_HOME_SEARCH_FOCUS) ?? 0
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_HOME_SEARCH_FOCUS, current + 1)
       return true
     }
     // Delete 键：多选/编辑态下与删除按钮功能一致，按当前页分发删除请求，由内容页 @Watch 执行

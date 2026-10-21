@@ -49,6 +49,17 @@ export class SongInfo {
   trackCount: string = ''
   fileSize: number = 0
 
+  // 智能音乐库扩展字段（L4 schema）：播放统计、拼音检索、歌词偏移、ReplayGain
+  playCount: number = 0
+  lastPlayedAt: number = 0
+  pinyinFull: string = ''
+  pinyinAbbr: string = ''
+  mbid: string = ''
+  lyricOffsetMs: number = 0
+  // ReplayGain 响度归一：厘分贝（centi-dB），-651 表示 -6.51dB；0 表示无标签
+  rgTrackGain: number = 0
+  rgAlbumGain: number = 0
+
   static createId(): string {
     return 'song_' + Date.now() + '_' + Math.floor(Math.random() * 1000000)
   }

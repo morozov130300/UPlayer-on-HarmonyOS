@@ -21,6 +21,7 @@ import { ColorConversion } from '../common/utils/ColorConversion';
 import { preferences } from '@kit.ArkData';
 import { SettingsStore } from '../common/utils/SettingsStore';
 import { PoetryService } from '../service/PoetryService';
+import { FormUpdateService } from '../service/FormUpdateService';
 
 const DOMAIN = 0x0000;
 const TAG = '[EntryAbility]';
@@ -29,6 +30,10 @@ const TAG = '[EntryAbility]';
 const INIT_WAIT_TIMEOUT_MS: number = 3000;
 
 export default class EntryAbility extends UIAbility {
+  // 桌面播放卡片（F1）：call/router 事件携带的控制动作；冷启动时服务未就绪先暂存
+  private pendingCardAction: string = '';
+  private cardActionReady: boolean = false;
+
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     try {
       this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
@@ -38,6 +43,7 @@ export default class EntryAbility extends UIAbility {
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate');
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT, this.context);
     LiveViewService.getInstance().setContext(this.context);
+    this.pendingCardAction = this.extractCardAction(want);
   }
 
   onDestroy(): void {
@@ -81,7 +87,66 @@ export default class EntryAbility extends UIAbility {
     } catch (err) {
       hilog.error(DOMAIN, 'testTag', 'stopLiveView failed: %{public}s', JSON.stringify(err));
     }
+    try {
+      FormUpdateService.getInstance().shutdown();
+    } catch (err) {
+      hilog.error(DOMAIN, 'testTag', 'FormUpdateService shutdown failed: %{public}s', JSON.stringify(err));
+    }
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onDestroy');
+  }
+
+  onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
+    // 桌面播放卡片（F1）热启动：call/router 事件由此分发
+    const action: string = this.extractCardAction(want);
+    if (action.length === 0) {
+      return;
+    }
+    if (this.cardActionReady) {
+      this.dispatchCardAction(action);
+    } else {
+      this.pendingCardAction = action;
+    }
+  }
+
+  // 从 want.parameters 提取卡片控制动作（toggle/next/open，open 仅拉起前台无动作）
+  private extractCardAction(want: Want): string {
+    const raw: Object | undefined = want.parameters !== undefined ?
+      want.parameters['uplayer_card_action'] : undefined;
+    return typeof raw === 'string' ? raw : '';
+  }
+
+  private consumePendingCardAction(): void {
+    if (this.pendingCardAction.length > 0) {
+      const action: string = this.pendingCardAction;
+      this.pendingCardAction = '';
+      this.dispatchCardAction(action);
+    }
+  }
+
+  private dispatchCardAction(action: string): void {
+    Logger.info(TAG, `dispatch card action: ${action}`);
+    if (action === 'toggle') {
+      const playing: boolean = AppStorage.get<boolean>(AppStorageKeyConstants.KEY_IS_PLAY) ?? false;
+      const songId: string = AppStorage.get<string>('uplayer_current_song_id') ?? '';
+      if (playing) {
+        AVPlayerService.getInstance().pause();
+      } else if (songId.length > 0) {
+        AVPlayerService.getInstance().resume();
+      } else {
+        AVPlayerService.getInstance().restoreLastPlayback().catch((err: Error): void => {
+          Logger.error(TAG, `card toggle restore failed: ${JSON.stringify(err)}`);
+        });
+      }
+    } else if (action === 'next') {
+      const songId: string = AppStorage.get<string>('uplayer_current_song_id') ?? '';
+      if (songId.length > 0) {
+        AVPlayerService.getInstance().playNextSong();
+      } else {
+        AVPlayerService.getInstance().restoreLastPlayback().catch((err: Error): void => {
+          Logger.error(TAG, `card next restore failed: ${JSON.stringify(err)}`);
+        });
+      }
+    }
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
@@ -229,7 +294,7 @@ export default class EntryAbility extends UIAbility {
     this.safeRun('AudioFocusService.init', () => {
       AudioFocusService.getInstance().init();
     });
-    // 通知/提示音不压低音量：按落库设置激活或去激活「并发播放」AudioSession
+    // 与其他音频同时播放（含通知/提示音不压低音量，同一开关）：按落库设置激活或去激活「并发播放」AudioSession
     this.safeRun('applyIgnoreNotificationDuck', () => {
       AudioFocusService.getInstance().applyIgnoreNotificationDuck(settings.ignoreNotificationDuck);
     });
@@ -245,6 +310,19 @@ export default class EntryAbility extends UIAbility {
     this.safeRun('syncEffectsFromDisk', () => {
       AVPlayerService.getInstance().syncEffectsFromDisk();
     });
+    // 断点续播（P0-2）：冷启动恢复上次播放歌曲与进度（「启动时恢复上次播放」关则内部跳过）
+    this.safeRun('restoreLastPlayback', () => {
+      AVPlayerService.getInstance().restoreLastPlayback().catch((err: Error) => {
+        Logger.error(TAG, `restoreLastPlayback failed: ${JSON.stringify(err)}`);
+      });
+    });
+    // 桌面播放卡片（F1）：应用进程侧卡片更新器（发现已加桌卡片 + 1s 节流推送）
+    this.safeRun('FormUpdateService.init', () => {
+      FormUpdateService.getInstance().init(this.context);
+    });
+    // 卡片控制动作（冷启动暂存的 pendingCardAction 或本次启动 want 携带）此时服务已就绪
+    this.cardActionReady = true;
+    this.consumePendingCardAction();
     Logger.info(TAG, 'post-frame services init end');
   }
 
@@ -261,6 +339,12 @@ export default class EntryAbility extends UIAbility {
   }
 
   onBackground(): void {
+    // 断点续播（P0-2）：退后台立即落盘当前播放位置（后台被杀最多丢一个周期 ≈5s 进度）
+    try {
+      AVPlayerService.getInstance().persistLastPlayback(true);
+    } catch (err) {
+      hilog.error(DOMAIN, 'testTag', 'persistLastPlayback failed: %{public}s', JSON.stringify(err));
+    }
     DataService.getInstance().flushPendingSongWrites();
     SettingsStore.getInstance().flushPendingSaves();
     // 退到后台时收敛一次数据库 WAL，避免 wal 文件长期只增不减撑大本地数据

@@ -23,6 +23,8 @@ const NONE_LINE: number = -1;
 @Component
 export default struct LrcListView {
   @Prop @Watch('onTimeUpdated') lyricMilliSecondsTime: number;
+  // P0-3 每歌歌词偏移：>0 歌词提前、<0 歌词延后；高亮与点击跳转都按「进度+偏移」换算
+  @Prop @Watch('onTimeUpdated') lyricOffsetMs: number = 0;
   @Prop @Watch('onLyricUpdated') mLrcEntryList: Array<LrcEntry> = [];
   // 三态渲染：加载中 →「正在加载歌词…」；加载完成有歌词 → 列表；加载完成无歌词 →「无歌词」
   @Prop isLyricLoading: boolean = false;
@@ -42,7 +44,7 @@ export default struct LrcListView {
       this.isHasLyric = false;
       return;
     }
-    let line = this.findShowLine(this.lyricMilliSecondsTime);
+    let line = this.findShowLine(this.lyricMilliSecondsTime + this.lyricOffsetMs);
     if (line !== this.mCurrentLine) {
       this.mCurrentLine = line;
       // line 可能为 NONE_LINE（进度早于首行），此时不能滚动，否则 scrollToIndex(-1) 属于非法入参
@@ -103,7 +105,8 @@ export default struct LrcListView {
       clearTimeout(this.scrollDebounceTimer);
       this.scrollDebounceTimer = -1;
     }
-    this.avPlayerService.seek(entry.lineStartTime);
+    // 点击跳转做偏移补偿：点击行时刻 T，seek 到 T-offset，使换算后的「进度+偏移」恰好等于 T
+    this.avPlayerService.seek(Math.max(0, entry.lineStartTime - this.lyricOffsetMs));
   }
 
   aboutToDisappear() {

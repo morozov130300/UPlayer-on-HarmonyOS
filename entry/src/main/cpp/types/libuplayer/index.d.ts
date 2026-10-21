@@ -41,3 +41,6 @@ export const getAlbumCover: (fd: number, size: number, cacheKey: string) => Arra
 export const cacheAlbumCover: (cacheKey: string, data: ArrayBuffer) => boolean
 export const clearAlbumCoverCache: () => boolean
 export const writeAudioTags: (fd: number, tags: object) => string
+export const readReplayGain: (fd: number, size: number) => string | null
+export const setReplayGainEnable: (enabled: boolean) => boolean
+export const setReplayGainDb: (db: number) => boolean

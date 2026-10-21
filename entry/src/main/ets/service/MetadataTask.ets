@@ -10,6 +10,12 @@ import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstan
 
 const TAG = 'MetadataTask'
 
+// native readReplayGain 返回的 JSON 模型（键可缺失）：{"trackGainDb":x,"albumGainDb":y}
+class ReplayGainTagJson {
+  trackGainDb: number = 0
+  albumGainDb: number = 0
+}
+
 // 封面提取结果（主线程消费）：
 // ok=true 时 tempPath 指向沙箱内已写好的封面 JPEG 临时文件（消费方用完必须 unlink）
 // none=true 时表示确认文件无嵌入封面（调用方进入负缓存）
@@ -235,6 +241,21 @@ async function extractMetadataTask(fd: number): Promise<string> {
       if (conductorVal !== undefined && conductorVal.length > 0) {
         record['conductor'] = conductorVal
       }
+    }
+    // ReplayGain 标签（P2-1）：ID3v2 TXXX / FLAC Vorbis Comment；存库值 = round(db*100)（centi-dB）
+    try {
+      const rgRaw: string | null = uplayer.readReplayGain(fd, fileSize)
+      if (rgRaw !== null && rgRaw.length > 0) {
+        const rg: ReplayGainTagJson = JSON.parse(rgRaw) as ReplayGainTagJson
+        if (Number.isFinite(rg.trackGainDb)) {
+          record['rgTrackGain'] = '' + Math.round(rg.trackGainDb * 100)
+        }
+        if (Number.isFinite(rg.albumGainDb)) {
+          record['rgAlbumGain'] = '' + Math.round(rg.albumGainDb * 100)
+        }
+      }
+    } catch (rgErr) {
+      // RG 读取失败不阻塞元数据主流程
     }
     return JSON.stringify(record)
   } catch (err) {
@@ -722,5 +743,123 @@ export function applyMetadataToSong(song: SongInfo, record: Record<string, strin
   const conductorVal: string | undefined = record['conductor']
   if (conductorVal !== undefined && conductorVal.length > 0) {
     song.conductor = conductorVal
+  }
+  // ReplayGain（P2-1）：centi-dB 整数（round(db*100)），0 = 无标签
+  const rgTrackVal: string | undefined = record['rgTrackGain']
+  if (rgTrackVal !== undefined) {
+    const rgNum: number = Number(rgTrackVal)
+    if (Number.isFinite(rgNum)) {
+      song.rgTrackGain = Math.round(rgNum)
+    }
+  }
+  const rgAlbumVal: string | undefined = record['rgAlbumGain']
+  if (rgAlbumVal !== undefined) {
+    const rgNum: number = Number(rgAlbumVal)
+    if (Number.isFinite(rgNum)) {
+      song.rgAlbumGain = Math.round(rgNum)
+    }
+  }
+}
+
+// ReplayGain 存量回填（P2-1）：老库歌曲无 RG 列数据，升级后经此批量补扫。
+// 输入输出均 JSON 字符串（TaskPool 已验证可靠的序列化类型）；结果 centi-dB（round(db*100)）。
+// 任务体内只允许 import/局部变量与类型位引用（PinyinTask 同款约束），
+// 结果项用 Record<string, string> 组装，不用文件作用域类实例化
+interface ReplayGainInputItem {
+  id: string
+  uri: string
+}
+
+@Concurrent
+function readReplayGainBatchTask(itemsJson: string): string {
+  const items: ReplayGainInputItem[] = JSON.parse(itemsJson) as ReplayGainInputItem[]
+  const results: Record<string, string>[] = []
+  for (let i = 0; i < items.length; i++) {
+    let fd: number = -1
+    try {
+      const file: fs.File = fs.openSync(items[i].uri, fs.OpenMode.READ_ONLY)
+      fd = file.fd
+      const size: number = fs.statSync(fd).size
+      if (size <= 0) {
+        continue
+      }
+      const raw: string | null = uplayer.readReplayGain(fd, size)
+      if (raw === null || raw.length === 0) {
+        continue
+      }
+      const parsed: ReplayGainTagJson = JSON.parse(raw) as ReplayGainTagJson
+      // 两个键都写入（缺失标签按 0），解析侧无需判空
+      let trackCenti: string = '0'
+      let albumCenti: string = '0'
+      let touched: boolean = false
+      if (Number.isFinite(parsed.trackGainDb)) {
+        trackCenti = '' + Math.round(parsed.trackGainDb * 100)
+        touched = true
+      }
+      if (Number.isFinite(parsed.albumGainDb)) {
+        albumCenti = '' + Math.round(parsed.albumGainDb * 100)
+        touched = true
+      }
+      if (touched) {
+        const item: Record<string, string> = {
+          'id': items[i].id,
+          'trackGain': trackCenti,
+          'albumGain': albumCenti
+        }
+        results.push(item)
+      }
+    } catch (err) {
+      // 单文件失败继续下一首（回填幂等，下次可重试）
+    } finally {
+      if (fd >= 0) {
+        try {
+          fs.closeSync(fd)
+        } catch (closeErr) {
+        }
+      }
+    }
+  }
+  return JSON.stringify(results)
+}
+
+// 为一批歌曲回填 rgTrackGain/rgAlbumGain（centi-dB）：直接改写 batch 内对象（拼音回填同款）
+export async function backfillReplayGainForSongs(batch: SongInfo[]): Promise<void> {
+  if (batch.length === 0) {
+    return
+  }
+  const items: ReplayGainInputItem[] = []
+  for (let i = 0; i < batch.length; i++) {
+    const uri: string = batch[i].uri.length > 0 ? batch[i].uri : batch[i].filePath
+    if (uri.length === 0) {
+      continue
+    }
+    const input: ReplayGainInputItem = { id: batch[i].id, uri: uri }
+    items.push(input)
+  }
+  if (items.length === 0) {
+    return
+  }
+  try {
+    const raw: string = await taskpool.execute(readReplayGainBatchTask, JSON.stringify(items)) as string
+    const results: Record<string, string>[] = JSON.parse(raw) as Record<string, string>[]
+    const byId: Map<string, Record<string, string>> = new Map<string, Record<string, string>>()
+    for (let i = 0; i < results.length; i++) {
+      byId.set(results[i]['id'], results[i])
+    }
+    for (let i = 0; i < batch.length; i++) {
+      const found: Record<string, string> | undefined = byId.get(batch[i].id)
+      if (found !== undefined) {
+        const trackVal: number = Number(found['trackGain'])
+        const albumVal: number = Number(found['albumGain'])
+        if (Number.isFinite(trackVal)) {
+          batch[i].rgTrackGain = Math.round(trackVal)
+        }
+        if (Number.isFinite(albumVal)) {
+          batch[i].rgAlbumGain = Math.round(albumVal)
+        }
+      }
+    }
+  } catch (err) {
+    Logger.warn(TAG, `backfillReplayGainForSongs failed: ${JSON.stringify(err)}`)
   }
 }

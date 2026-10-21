@@ -2,7 +2,8 @@
 import { common } from '@kit.AbilityKit'
 import { FolderInfo } from '../model/FolderInfo'
 import { SongInfo } from '../model/SongInfo'
-import { DataService, AppSettingsData, LibraryDeleteResult } from '../service/DataService'
+import { PlaylistInfo } from '../model/PlaylistInfo'
+import { DataService, AppSettingsData, LibraryDeleteResult, FilterDimensions } from '../service/DataService'
 import { importSongsWithToast } from '../service/SongScanner'
 import { AVPlayerService } from '../service/AVPlayerService'
 import { AVSessionController } from '../common/utils/mediautils/AVSessionController'
@@ -13,9 +14,18 @@ import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstan
 import { StyleConstants } from '../common/constants/StyleConstants'
 import { display } from '@kit.ArkUI'
 import { deviceInfo } from '@kit.BasicServicesKit'
+import { AlbumCover } from '../component/AlbumCover'
+import { AlbumCoverSize } from '../service/AudioMetadataService'
 
 const TAG = 'PlaylistContent'
 const FAVORITES_FOLDER_ID: string = '__favorites__'
+
+// 歌单卡片展示模型（P2-3）：coverSongs 为拼贴用的前 4 首（不足补占位格）
+class PlaylistCardData {
+  playlist: PlaylistInfo = new PlaylistInfo()
+  coverSongs: SongInfo[] = []
+  count: number = 0
+}
 
 @Component
 export struct PlaylistContent {
@@ -51,10 +61,21 @@ export struct PlaylistContent {
   @State isEditMode: boolean = false
   @State editSelectedFolderIds: string[] = []
   @State gridColumns: number = 2
+  // 自定义歌单（P2-3）：卡片数据 + 歌单名输入弹窗 + 长按操作面板 + 删除二次确认
+  @StorageLink(AppStorageKeyConstants.KEY_PLAYLIST_REVISION) @Watch('onPlaylistRevisionChange')
+  playlistRevision: number = 0
+  @State playlistCards: PlaylistCardData[] = []
+  @State isPlaylistDialogVisible: boolean = false
+  @State playlistDialogMode: string = 'create'
+  @State playlistDialogText: string = ''
+  private renamingPlaylistId: string = ''
+  @State playlistActionCardId: string = ''
+  @State playlistDeleteConfirmId: string = ''
 
   aboutToAppear(): void {
     this.loadData()
     this.updateGridColumns()
+    this.buildPlaylistCards()
     this.publishPlusVisible()
   }
 
@@ -70,11 +91,18 @@ export struct PlaylistContent {
 
   onLibraryChange(): void {
     this.loadData()
+    this.buildPlaylistCards()
   }
 
   onFilterChange(): void {
     this.selectedFolderPaths = this.dataService.getSelectedFolderPaths()
     this.favoritesSelected = this.dataService.isFavoritesSelected()
+    this.buildPlaylistCards()
+  }
+
+  // 歌单集合/曲目变化（KEY_PLAYLIST_REVISION +1）：重建卡片数据
+  onPlaylistRevisionChange(): void {
+    this.buildPlaylistCards()
   }
 
   private updateGridColumns(): void {
@@ -332,6 +360,86 @@ export struct PlaylistContent {
     return count
   }
 
+  // ═══════════ 自定义歌单（P2-3）═══════════
+
+  // 重建歌单卡片数据：封面拼贴取歌单前 4 首歌（按加入顺序）
+  buildPlaylistCards(): void {
+    const playlists: PlaylistInfo[] = this.dataService.getPlaylists()
+    const songMap: Map<string, SongInfo> = new Map<string, SongInfo>()
+    for (let i = 0; i < this.songs.length; i++) {
+      songMap.set(this.songs[i].id, this.songs[i])
+    }
+    const cards: PlaylistCardData[] = []
+    for (let i = 0; i < playlists.length; i++) {
+      const card: PlaylistCardData = new PlaylistCardData()
+      card.playlist = playlists[i]
+      const songIds: string[] = this.dataService.getPlaylistItemSongIds(playlists[i].id)
+      card.count = songIds.length
+      for (let j = 0; j < songIds.length && card.coverSongs.length < 4; j++) {
+        const song: SongInfo | undefined = songMap.get(songIds[j])
+        if (song !== undefined) {
+          card.coverSongs.push(song)
+        }
+      }
+      cards.push(card)
+    }
+    this.playlistCards = cards
+  }
+
+  // 该歌单是否为当前筛选态激活的歌单（卡片高亮）
+  isPlaylistCardActive(card: PlaylistCardData): boolean {
+    return this.dataService.getFilterPlaylistId() === card.playlist.id
+  }
+
+  // 点击歌单卡：设/取消歌单筛选（与文件夹/收藏互斥——歌单是并列的顶级列表来源），
+  // 首页胶囊显示歌单名、列表即歌单曲目（复用全部现有链路）
+  onPlaylistToggle(card: PlaylistCardData): void {
+    const activeId: string = this.dataService.getFilterPlaylistId()
+    const dims: FilterDimensions = new FilterDimensions()
+    dims.playlistId = activeId === card.playlist.id ? '' : card.playlist.id
+    this.dataService.setFilterState([], false, dims)
+    this.buildPlaylistCards()
+  }
+
+  openPlaylistCreateDialog(): void {
+    this.playlistDialogMode = 'create'
+    this.playlistDialogText = ''
+    this.isPlaylistDialogVisible = true
+  }
+
+  openPlaylistRenameDialog(card: PlaylistCardData): void {
+    this.renamingPlaylistId = card.playlist.id
+    this.playlistDialogMode = 'rename'
+    this.playlistDialogText = card.playlist.name
+    this.isPlaylistDialogVisible = true
+  }
+
+  // 新建/改名确认：空名与超长（>30 字符）不落库
+  async confirmPlaylistDialog(): Promise<void> {
+    const name: string = this.playlistDialogText.trim()
+    if (name.length === 0 || name.length > 30) {
+      return
+    }
+    if (this.playlistDialogMode === 'rename') {
+      await this.dataService.renamePlaylist(this.renamingPlaylistId, name)
+    } else {
+      await this.dataService.createPlaylist(name)
+    }
+    this.isPlaylistDialogVisible = false
+    this.buildPlaylistCards()
+  }
+
+  // 删除二次确认：只删歌单与关联关系，歌曲文件与曲库不受影响
+  async confirmPlaylistDelete(): Promise<void> {
+    const playlistId: string = this.playlistDeleteConfirmId
+    this.playlistDeleteConfirmId = ''
+    if (playlistId.length === 0) {
+      return
+    }
+    await this.dataService.deletePlaylist(playlistId)
+    this.buildPlaylistCards()
+  }
+
   build() {
     Stack() {
       Column() {
@@ -357,6 +465,8 @@ export struct PlaylistContent {
 
         Scroll(this.scroller) {
           Column() {
+            // 我的歌单（P2-3）：歌单卡片 + 新建入口，位于文件夹区上方
+            this.playlistSection()
             if (this.folders.length > 0) {
               Grid() {
                 ForEach(this.folders, (item: FolderInfo) => {
@@ -441,11 +551,357 @@ export struct PlaylistContent {
 
       // 全局悬浮加号由 Index 统一渲染（首页/歌单共用，切页不位移，设置页隐藏），
       // 可见性由 publishPlusVisible 上报，本页不再挂按钮
+
+      // 自定义歌单弹层（P2-3）：输入弹窗 / 长按操作面板 / 删除二次确认
+      if (this.isPlaylistDialogVisible) {
+        this.playlistNameDialog()
+      }
+      if (this.playlistActionCardId.length > 0) {
+        this.playlistActionPanel()
+      }
+      if (this.playlistDeleteConfirmId.length > 0) {
+        this.playlistDeleteConfirm()
+      }
     }
     .width('100%')
     .height('100%')
     // 背景使用预设纯色（明暗自适应），不应用任何玻璃/模糊/透明度效果
     .backgroundColor($r('app.color.page_background_sm'))
+  }
+
+  // ═══════════ 自定义歌单 UI（P2-3）═══════════
+
+  @Builder
+  playlistSection(): void {
+    Column() {
+      Text('我的歌单')
+        .fontSize(Math.round(14 * this.fontSizeScale))
+        .fontColor($r('app.color.text_primary'))
+        .fontWeight(FontWeight.Bold)
+        .width('100%')
+        .padding({ left: 16, right: 16 })
+      Grid() {
+        ForEach(this.playlistCards, (card: PlaylistCardData) => {
+          GridItem() {
+            this.playlistCard(card)
+          }
+        }, (card: PlaylistCardData) =>
+          card.playlist.id + '_' + card.playlist.name + '_' + card.count + '_' +
+          (this.isPlaylistCardActive(card) ? '1' : '0'))
+        GridItem() {
+          this.newPlaylistCard()
+        }
+      }
+      .columnsTemplate('1fr '.repeat(this.gridColumns).trim())
+      .columnsGap(10)
+      .rowsGap(10)
+      .padding({ left: 16, right: 16, top: 12 })
+      .width('100%')
+    }
+    .width('100%')
+    .margin({ top: 4 })
+  }
+
+  @Builder
+  playlistCard(card: PlaylistCardData): void {
+    Column() {
+      Column() {
+        Row() {
+          this.collageCell(card, 0)
+          this.collageCell(card, 1)
+        }
+        .width('100%')
+        .layoutWeight(1)
+
+        Row() {
+          this.collageCell(card, 2)
+          this.collageCell(card, 3)
+        }
+        .width('100%')
+        .layoutWeight(1)
+      }
+      .width('100%')
+      .aspectRatio(1)
+      .borderRadius(12)
+      .clip(true)
+
+      Text(card.playlist.name)
+        .fontSize(Math.round(12 * this.fontSizeScale))
+        .fontColor($r('app.color.text_primary'))
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .margin({ top: 6 })
+      Text(card.count + ' 首')
+        .fontSize(10)
+        .fontColor($r('app.color.text_sixty_color'))
+        .margin({ top: 2 })
+    }
+    .width('100%')
+    .padding(6)
+    .borderRadius(16)
+    .alignItems(HorizontalAlign.Center)
+    .backgroundColor(this.isPlaylistCardActive(card) ?
+      ColorHelper.hexWithAlpha(this.primaryColor, '22') : 'rgba(0,0,0,0.03)')
+    .border({ width: this.isPlaylistCardActive(card) ? 2 : 1,
+      color: this.isPlaylistCardActive(card) ? this.primaryColor : $r('app.color.list_divider') })
+    .onClick(() => {
+      this.onPlaylistToggle(card)
+    })
+    .gesture(
+      LongPressGesture()
+        .onAction(() => {
+          this.playlistActionCardId = card.playlist.id
+        })
+    )
+  }
+
+  // 封面拼贴单格（P2-3）：前 4 首歌封面 2×2；不足的格子铺占位底色
+  @Builder
+  collageCell(card: PlaylistCardData, index: number): void {
+    Stack() {
+      if (index < card.coverSongs.length) {
+        AlbumCover({ song: card.coverSongs[index], coverWidth: '100%', coverHeight: '100%',
+          coverRadius: 0, decodeSize: AlbumCoverSize.SMALL })
+      } else {
+        Column()
+          .width('100%')
+          .height('100%')
+          .backgroundColor('rgba(0,0,0,0.04)')
+      }
+    }
+    .layoutWeight(1)
+    .height('100%')
+  }
+
+  @Builder
+  newPlaylistCard(): void {
+    Column() {
+      Stack() {
+        Image($r('app.media.ic_public_add_norm_filled'))
+          .width(24)
+          .height(24)
+          .fillColor(this.primaryColor)
+      }
+      .width('100%')
+      .aspectRatio(1)
+      .borderRadius(12)
+      .backgroundColor(ColorHelper.hexWithAlpha(this.primaryColor, '14'))
+
+      Text('新建歌单')
+        .fontSize(Math.round(12 * this.fontSizeScale))
+        .fontColor($r('app.color.text_sixty_color'))
+        .maxLines(1)
+        .margin({ top: 6 })
+      // 与歌单卡两行文案对齐占位（不可见空行）
+      Text('\u00A0')
+        .fontSize(10)
+        .margin({ top: 2 })
+    }
+    .width('100%')
+    .padding(6)
+    .borderRadius(16)
+    .alignItems(HorizontalAlign.Center)
+    .backgroundColor('rgba(0,0,0,0.03)')
+    .border({ width: 1, color: $r('app.color.list_divider') })
+    .onClick(() => {
+      this.openPlaylistCreateDialog()
+    })
+  }
+
+  // 歌单名输入弹窗（新建/改名共用）
+  @Builder
+  playlistNameDialog(): void {
+    Stack({ alignContent: Alignment.Center }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor('rgba(0,0,0,0.35)')
+        .onClick(() => {
+          this.isPlaylistDialogVisible = false
+        })
+
+      Column({ space: 14 }) {
+        Text(this.playlistDialogMode === 'rename' ? '重命名歌单' : '新建歌单')
+          .fontSize(Math.round(16 * this.fontSizeScale))
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('app.color.text_primary'))
+          .width('100%')
+
+        TextInput({ text: this.playlistDialogText, placeholder: '输入歌单名称' })
+          .height(this.scaledSize(38))
+          .fontSize(Math.round(14 * this.fontSizeScale))
+          .backgroundColor('rgba(0,0,0,0.04)')
+          .borderRadius(12)
+          .onChange((value: string) => {
+            this.playlistDialogText = value
+          })
+
+        Row({ space: 10 }) {
+          Text('取消')
+            .fontSize(Math.round(14 * this.fontSizeScale))
+            .fontColor($r('app.color.text_sixty_color'))
+            .layoutWeight(1)
+            .textAlign(TextAlign.Center)
+            .padding({ top: 8, bottom: 8 })
+            .borderRadius(16)
+            .backgroundColor('rgba(0,0,0,0.05)')
+            .onClick(() => {
+              this.isPlaylistDialogVisible = false
+            })
+          Text(this.playlistDialogMode === 'rename' ? '保存' : '创建')
+            .fontSize(Math.round(14 * this.fontSizeScale))
+            .fontColor(Color.White)
+            .layoutWeight(1)
+            .textAlign(TextAlign.Center)
+            .padding({ top: 8, bottom: 8 })
+            .borderRadius(16)
+            .backgroundColor(this.primaryColor)
+            .onClick(() => {
+              this.confirmPlaylistDialog().catch((err: Error) => {
+                Logger.error(TAG, `confirmPlaylistDialog failed: ${JSON.stringify(err)}`)
+              })
+            })
+        }
+        .width('100%')
+      }
+      .width('76%')
+      .padding(18)
+      .borderRadius(20)
+      .backgroundColor($r('app.color.page_background_sm'))
+    }
+    .width('100%')
+    .height('100%')
+    .zIndex(30)
+  }
+
+  // 长按歌单卡操作面板：改名 / 删除 / 取消
+  @Builder
+  playlistActionPanel(): void {
+    Stack({ alignContent: Alignment.Bottom }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor('rgba(0,0,0,0.35)')
+        .onClick(() => {
+          this.playlistActionCardId = ''
+        })
+
+      Column() {
+        Text('改名')
+          .fontSize(Math.round(15 * this.fontSizeScale))
+          .fontColor($r('app.color.text_primary'))
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .padding({ top: 14, bottom: 14 })
+          .onClick(() => {
+            const card: PlaylistCardData | undefined = this.findPlaylistCard(this.playlistActionCardId)
+            this.playlistActionCardId = ''
+            if (card !== undefined) {
+              this.openPlaylistRenameDialog(card)
+            }
+          })
+        Divider()
+          .color($r('app.color.list_divider'))
+        Text('删除歌单')
+          .fontSize(Math.round(15 * this.fontSizeScale))
+          .fontColor(StyleConstants.COLOR_DANGER_RED)
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .padding({ top: 14, bottom: 14 })
+          .onClick(() => {
+            this.playlistDeleteConfirmId = this.playlistActionCardId
+            this.playlistActionCardId = ''
+          })
+        Divider()
+          .color($r('app.color.list_divider'))
+        Text('取消')
+          .fontSize(Math.round(15 * this.fontSizeScale))
+          .fontColor($r('app.color.text_sixty_color'))
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .padding({ top: 14, bottom: 14 })
+          .onClick(() => {
+            this.playlistActionCardId = ''
+          })
+      }
+      .width('100%')
+      .padding({ left: 16, right: 16, bottom: this.bottomOverlayInset() })
+      .borderRadius({ topLeft: 20, topRight: 20 })
+      .backgroundColor($r('app.color.page_background_sm'))
+    }
+    .width('100%')
+    .height('100%')
+    .zIndex(30)
+  }
+
+  // 删除歌单二次确认：明确告知歌曲本身不会被删除
+  @Builder
+  playlistDeleteConfirm(): void {
+    Stack({ alignContent: Alignment.Center }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor('rgba(0,0,0,0.35)')
+        .onClick(() => {
+          this.playlistDeleteConfirmId = ''
+        })
+
+      Column({ space: 12 }) {
+        Text('删除歌单')
+          .fontSize(Math.round(16 * this.fontSizeScale))
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('app.color.text_primary'))
+          .width('100%')
+        Text('删除后无法恢复，歌单内的歌曲不会从曲库移除。')
+          .fontSize(Math.round(13 * this.fontSizeScale))
+          .fontColor($r('app.color.text_sixty_color'))
+          .width('100%')
+
+        Row({ space: 10 }) {
+          Text('取消')
+            .fontSize(Math.round(14 * this.fontSizeScale))
+            .fontColor($r('app.color.text_sixty_color'))
+            .layoutWeight(1)
+            .textAlign(TextAlign.Center)
+            .padding({ top: 8, bottom: 8 })
+            .borderRadius(16)
+            .backgroundColor('rgba(0,0,0,0.05)')
+            .onClick(() => {
+              this.playlistDeleteConfirmId = ''
+            })
+          Text('删除')
+            .fontSize(Math.round(14 * this.fontSizeScale))
+            .fontColor(Color.White)
+            .layoutWeight(1)
+            .textAlign(TextAlign.Center)
+            .padding({ top: 8, bottom: 8 })
+            .borderRadius(16)
+            .backgroundColor(StyleConstants.COLOR_DANGER_RED)
+            .onClick(() => {
+              this.confirmPlaylistDelete().catch((err: Error) => {
+                Logger.error(TAG, `confirmPlaylistDelete failed: ${JSON.stringify(err)}`)
+              })
+            })
+        }
+        .width('100%')
+      }
+      .width('76%')
+      .padding(18)
+      .borderRadius(20)
+      .backgroundColor($r('app.color.page_background_sm'))
+    }
+    .width('100%')
+    .height('100%')
+    .zIndex(30)
+  }
+
+  private findPlaylistCard(playlistId: string): PlaylistCardData | undefined {
+    for (let i = 0; i < this.playlistCards.length; i++) {
+      if (this.playlistCards[i].playlist.id === playlistId) {
+        return this.playlistCards[i]
+      }
+    }
+    return undefined
   }
 
   @Builder

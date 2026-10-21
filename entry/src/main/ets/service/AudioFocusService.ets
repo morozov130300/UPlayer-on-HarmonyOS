@@ -6,11 +6,13 @@ import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstan
 const TAG = 'AudioFocusService'
 
 /**
- * 音频焦点策略服务：控制「系统通知/提示音响起时是否压低本应用音量」。
+ * 音频焦点策略服务：控制「是否与其它音频并发播放」——统一开关同时涵盖
+ * 「与其它应用音频同时播放」与「系统通知/提示音不压低本应用音量」两种效果。
  *
  * 系统默认焦点策略下，通知音（STREAM_USAGE_NOTIFICATION）等流启动时会对正在播放的音乐流
- * 执行 duck（压低到约 20%），结束后再 unduck。该行为由系统按流类型决策，应用侧没有「关闭 duck」的开关；
- * 官方给出的绕开方式是 AudioSession 并发策略：
+ * 执行 duck（压低到约 20%），结束后再 unduck；其它应用音频流启动时会暂停/停止本应用。
+ * AudioSession 只提供一个全局 concurrencyMode、不区分对方流类型，因此两种效果无法独立控制、
+ * 共用同一开关；官方给出的实现方式是 AudioSession 并发策略：
  *
  *   - CONCURRENCY_MIX_WITH_OTHERS：与其它音频流并发播放。官方明确该模式
  *     「在本应用请求焦点时，以及其它应用后续请求焦点时，均生效」，
@@ -18,8 +20,7 @@ const TAG = 'AudioFocusService'
  *   - CONCURRENCY_DUCK_OTHERS / CONCURRENCY_PAUSE_OTHERS：只在自身请求焦点时生效，
  *     其它应用后续请求焦点时以对方策略为准，达不到本诉求。
  *
- * 代价：并发模式下其它应用播放音频时本应用不会被暂停（双方同时出声）。
- * 因此设置项默认关闭，由用户在「播放」设置中自行开启。
+ * 设置项默认关闭，由用户在「播放」设置中自行开启。
  */
 export class AudioFocusService {
   private static instance: AudioFocusService = new AudioFocusService()
@@ -74,7 +75,7 @@ export class AudioFocusService {
   }
 
   // 按设置开关激活/去激活「并发播放」AudioSession。
-  // 关闭时去激活，回到系统默认焦点策略（通知音响起会压低本应用音量）。
+  // 关闭时去激活，回到系统默认焦点策略（通知音响起会压低本应用音量、其它应用音频会暂停本应用）。
   applyIgnoreNotificationDuck(enabled: boolean): void {
     const manager: audio.AudioSessionManager | undefined = this.getSessionManager()
     if (manager === undefined) {
@@ -99,7 +100,7 @@ export class AudioFocusService {
   }
 
   // AudioSession 若在「已激活但无音频流运行」状态持续一段时间，会被系统超时去激活。
-  // 因此每次开始播放前按当前设置补一次激活，保证通知音到达时并发策略仍然有效。
+  // 因此每次开始播放前按当前设置补一次激活，保证「与其他音频同时播放」的并发策略在整个播放期间仍然有效。
   ensureStrategy(): void {
     if (AppStorage.get<boolean>(AppStorageKeyConstants.KEY_IGNORE_NOTIFICATION_DUCK) !== true) {
       return

@@ -17,11 +17,12 @@ import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstan
 import { audio } from '@kit.AudioKit';
 import { AVCastPicker } from '@kit.AVSessionKit';
 import { AudioRoutingService } from '../service/AudioRoutingService';
+import { BluetoothAudioService } from '../service/BluetoothAudioService';
 import { BusinessError, SuppressWarnings, SuppressWarningsType } from '@kit.BasicServicesKit';
 import { AlbumCover } from '../component/AlbumCover';
 import { AVSessionController } from '../common/utils/mediautils/AVSessionController';
 import { DataService } from '../service/DataService';
-import { createToastGlassMaterial, DEFAULT_GLASS_STYLE, showToastGlassMaterial } from '../common/utils/GlassUtil';
+import { createStyleAccentGlassMaterial, createStyleGlassMaterial, createToastGlassMaterial, DEFAULT_GLASS_STYLE, showToastGlassMaterial } from '../common/utils/GlassUtil';
 import { isDarkThemeEffective } from '../common/utils/ThemeUtil';
 import { applyMetadataToSong, extractSongMetadata, saveSongTagsToFile, TagsWriteResult } from '../service/MetadataTask';
 import { ScaleButton } from '../component/ScaleButton';
@@ -30,6 +31,7 @@ const TAG = 'ControlAreaComponent';
 const SEEK_SETTLE_MS: number = 2000;
 const SKIP_MS: number = 15000;
 const TIMER_PRESET_MINUTES: number[] = [5, 10, 15, 20, 30, 45, 60];
+const TIMER_SONG_PRESETS: number[] = [1, 3, 5, 10];
 
 @Component
 @SuppressWarnings({rules: [SuppressWarningsType.SYSCAP, SuppressWarningsType.COMPATIBILITY]})
@@ -67,6 +69,12 @@ export struct ControlAreaComponent {
   @State customSeconds: number = 0;
   @State selectedPresetMinutes: number = -1;
   @State isShowCustomPicker: boolean = false;
+  // 按歌曲数定时（P0-1）：AVPlayerService 在每首自然完曲时递减并写回，
+  // 这里仅 @StorageProp 单向同步展示；写路径全部经 AppStorage.setOrCreate
+  @StorageProp(AppStorageKeyConstants.KEY_TIMER_SONGS_REMAINING) timerSongsRemaining: number = 0;
+  @State activePresetSongs: number = -1;
+  @State isShowSongCountPicker: boolean = false;
+  @State customSongCountText: string = '';
   @State edittingFieldIndex: number = -1;
   @State edittingValue: string = '';
   private scroller: Scroller = new Scroller();
@@ -86,6 +94,12 @@ export struct ControlAreaComponent {
   @StorageProp(AppStorageKeyConstants.KEY_OUTPUT_DEVICE_REVISION) @Watch('onOutputDeviceRevision')
   private outputDeviceRevision: number = 0;
   private audioRoutingService: AudioRoutingService = AudioRoutingService.getInstance();
+  // 「更多」面板：蓝牙 A2DP 音频行（P1-4）。编解码能力为系统应用接口三方不可查，
+  // 仅展示 设备名/连接态/播放态；KEY_BLUETOOTH_AUDIO_REVISION 变化时刷新
+  @StorageProp(AppStorageKeyConstants.KEY_BLUETOOTH_AUDIO_REVISION) @Watch('onBluetoothAudioRevision')
+  private bluetoothAudioRevision: number = 0;
+  @State bluetoothAudioLabel: string = '';
+  private bluetoothAudioService: BluetoothAudioService = BluetoothAudioService.getInstance();
 
   private settingTextColor(): ResourceColor {
     const themeMode: string = AppStorage.get<string>('uplayer_theme_mode') ?? 'system'
@@ -129,6 +143,8 @@ export struct ControlAreaComponent {
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0;
   // 显示大小必须用 @StorageLink 响应式读取：AppStorage.get 非响应式，调节后组件不刷新
   @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0;
+  // 组件风格（immersive 玻璃 / classic 经典）：驱动弹窗类（Popup/Sheet）与选择类（Slider）材质
+  @StorageLink('uplayer_tab_style') tabStyle: string = 'classic';
 
   private scaledFont(size: number): number {
     return Math.round(size * this.fontSizeScale)
@@ -144,12 +160,25 @@ export struct ControlAreaComponent {
     return createToastGlassMaterial(DEFAULT_GLASS_STYLE)
   }
 
+  // 组件风格驱动的弹窗与滑块材质：玻璃风格 → 液态玻璃；经典风格 → Material.empty 显式关闭；
+  // 设备不支持 → undefined（低版本不得触碰 uiMaterial.Material.empty 符号）
+  private styleGlassMaterial(): uiMaterial.Material | undefined {
+    return createStyleGlassMaterial(this.tabStyle, DEFAULT_GLASS_STYLE)
+  }
+
+  // 组件风格驱动的强调按钮材质：在 styleGlassMaterial 基础上携带 materialColor，
+  // 保留实心主题色按钮的强调层级与白字对比度（玻璃生效后自定义背景色会被系统置透明）
+  private accentGlassMaterial(color: string): uiMaterial.Material | undefined {
+    return createStyleAccentGlassMaterial(this.tabStyle, DEFAULT_GLASS_STYLE, color)
+  }
+
   aboutToAppear(): void {
     this.songDataSource.reloadData(this.songList);
     this.syncPlayModeIndex();
     this.syncSystemVolume();
     this.restoreTimerState();
     this.refreshOutputDeviceInfo();
+    this.updateBluetoothAudioLabel();
   }
 
   aboutToDisappear(): void {
@@ -216,6 +245,57 @@ export struct ControlAreaComponent {
     this.outputDeviceList = this.audioRoutingService.getAvailableOutputDevices();
   }
 
+  // ─── 蓝牙音频行（P1-4）：A2DP 状态展示 ───
+
+  onBluetoothAudioRevision(): void {
+    this.updateBluetoothAudioLabel();
+  }
+
+  updateBluetoothAudioLabel(): void {
+    const svc: BluetoothAudioService = this.bluetoothAudioService;
+    if (!svc.isPermissionGranted()) {
+      this.bluetoothAudioLabel = '未授权，点击重试';
+      return;
+    }
+    if (!svc.isSupported()) {
+      this.bluetoothAudioLabel = '设备不支持蓝牙音频';
+      return;
+    }
+    if (!svc.isBluetoothEnabled()) {
+      this.bluetoothAudioLabel = '蓝牙未开启';
+      return;
+    }
+    if (!svc.isConnectedDevice()) {
+      this.bluetoothAudioLabel = '未连接蓝牙音频设备';
+      return;
+    }
+    const playState: string = svc.isPlaying() ? '正在播放' : '已连接';
+    this.bluetoothAudioLabel = `${svc.getDeviceName()} · ${playState}`;
+  }
+
+  // 整行灰显判据：设备不支持 / 已授权但蓝牙关闭；未授权可点击重试，不灰显
+  private isBluetoothRowDisabled(): boolean {
+    const svc: BluetoothAudioService = this.bluetoothAudioService;
+    if (!svc.isPermissionGranted()) {
+      return false;
+    }
+    if (!svc.isSupported()) {
+      return true;
+    }
+    return !svc.isBluetoothEnabled();
+  }
+
+  // 打开「更多」面板或点击行时触发：申请权限（已授权则只刷新状态）
+  private initBluetoothAudio(): void {
+    this.bluetoothAudioService.ensurePermissionAndInit(this.context)
+      .then((): void => {
+        this.updateBluetoothAudioLabel();
+      })
+      .catch((err: BusinessError): void => {
+        Logger.warn(TAG, `bluetooth ensurePermissionAndInit failed: ${JSON.stringify(err)}`);
+      });
+  }
+
   private syncPlayModeIndex(): void {
     const index: number = PlayModeSwitchList.indexOf(this.playMode);
     this.playModeIndex = index >= 0 ? index : 0;
@@ -273,6 +353,8 @@ export struct ControlAreaComponent {
       this.activePresetMinutes = TIMER_PRESET_MINUTES.indexOf(storedPreset) >= 0 ? storedPreset : -1
       this.startTimer()
     }
+    // 按歌曲数定时恢复（P0-1）：计数经 @StorageProp 自动同步，这里只恢复预设高亮
+    this.activePresetSongs = AppStorage.get<number>(AppStorageKeyConstants.KEY_TIMER_PRESET_SONGS) ?? -1
   }
 
   private startTimer(): void {
@@ -284,7 +366,8 @@ export struct ControlAreaComponent {
       if (this.timerRemainingSeconds <= 1) {
         this.clearTimer()
         try {
-          this.avPlayerService.stop()
+          // 时间模式到期：按设置的淡出时长平滑降至静音后停止（P0-1）
+          this.avPlayerService.fadeOutAndStop()
         } catch (e) {
           Logger.error(TAG, `timer stop failed: ${JSON.stringify(e)}`)
         }
@@ -295,12 +378,21 @@ export struct ControlAreaComponent {
     }, 1000)
   }
 
-  private clearTimer(): void {
+  // 仅清时间定时（切换到按歌曲数模式时的互斥清理）
+  private clearTimeTimer(): void {
     this.stopTimer()
     this.timerRemainingSeconds = 0
     this.activePresetMinutes = -1
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_REMAINING, 0)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_PRESET_MINUTES, -1)
+  }
+
+  private clearTimer(): void {
+    this.clearTimeTimer()
+    // 同步清按歌曲数定时（P0-1）
+    this.activePresetSongs = -1
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_SONGS_REMAINING, 0)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_PRESET_SONGS, -1)
   }
 
   private stopTimer(): void {
@@ -314,11 +406,49 @@ export struct ControlAreaComponent {
     if (totalSeconds <= 0) {
       return
     }
+    // 时间模式与按歌曲数模式互斥：启动时间定时即取消歌曲数定时（P0-1）
+    this.activePresetSongs = -1
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_SONGS_REMAINING, 0)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_PRESET_SONGS, -1)
     this.timerRemainingSeconds = totalSeconds
     this.activePresetMinutes = this.matchPresetMinutes(totalSeconds)
     this.startTimer()
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_REMAINING, totalSeconds)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_PRESET_MINUTES, this.activePresetMinutes)
+  }
+
+  // ═══════════ 按歌曲数定时（P0-1）═══════════
+
+  // 启动歌曲数定时：与时间模式互斥；AVPlayerService 每首自然完曲递减，
+  // 最后一首曲尾按淡出时长设置平滑淡出后停止
+  private setTimerSongs(count: number): void {
+    if (count <= 0 || count > 99) {
+      return
+    }
+    this.clearTimeTimer()
+    this.activePresetSongs = TIMER_SONG_PRESETS.indexOf(count) >= 0 ? count : -1
+    this.isShowSongCountPicker = false
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_SONGS_REMAINING, count)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_PRESET_SONGS, this.activePresetSongs)
+  }
+
+  private isTimerSongsPresetActive(count: number): boolean {
+    return this.timerSongsRemaining > 0 && this.activePresetSongs === count
+  }
+
+  // 歌曲数模式自定义定时进行中（非预设值）：高亮「自定义」入口
+  private isTimerSongsCustomActive(): boolean {
+    return this.timerSongsRemaining > 0 && this.activePresetSongs < 0
+  }
+
+  // 自定义歌曲数输入合法性（1-99 的整数）
+  private isCustomSongCountValid(): boolean {
+    const parsed: number = parseInt(this.customSongCountText)
+    return Number.isFinite(parsed) && parsed >= 1 && parsed <= 99
+  }
+
+  private customSongCountValue(): number {
+    return parseInt(this.customSongCountText)
   }
 
   private formatTimerCountdown(totalSeconds: number): string {
@@ -730,6 +860,7 @@ export struct ControlAreaComponent {
               title: this.playListTitle(),
               showClose: true,
               preferType: SheetType.CENTER,
+              systemMaterial: this.styleGlassMaterial(),
               onWillAppear: () => {
                 Logger.info(TAG, 'musicListBuilder');
                 this.scroller.scrollToIndex(this.selectIndex, false, ScrollAlign.CENTER);
@@ -751,6 +882,7 @@ export struct ControlAreaComponent {
               builder: this.speedPopupBuilder,
               placement: Placement.Top,
               showInSubWindow: false,
+              systemMaterial: this.styleGlassMaterial(),
               onStateChange: (e) => {
                 if (!e.isVisible) {
                   this.isShowSpeedBuild = false;
@@ -774,6 +906,7 @@ export struct ControlAreaComponent {
               builder: this.volumePopupBuilder,
               placement: Placement.Top,
               showInSubWindow: false,
+              systemMaterial: this.styleGlassMaterial(),
               onStateChange: (e) => {
                 if (!e.isVisible) {
                   this.isShowVolumeBuild = false;
@@ -785,7 +918,10 @@ export struct ControlAreaComponent {
         ScaleButton({
           pressScale: 0.8,
           hoverScale: 1.1,
-          onButtonTap: () => { this.isShowMorePanel = true; }
+          onButtonTap: () => {
+            this.isShowMorePanel = true;
+            this.initBluetoothAudio();
+          }
         }) {
           Image($r('app.media.ic_public_more'))
             .width(26)
@@ -798,6 +934,7 @@ export struct ControlAreaComponent {
               title: this.morePanelTitle(),
               showClose: true,
               preferType: SheetType.CENTER,
+              systemMaterial: this.styleGlassMaterial(),
               onWillDisappear: () => {
                 this.isShowMorePanel = false;
                 // 关闭后回到主列表，下次打开不从二级页恢复
@@ -805,6 +942,8 @@ export struct ControlAreaComponent {
                 this.morePanelLevel = 0;
                 this.selectedPresetMinutes = -1;
                 this.isShowCustomPicker = false;
+                this.isShowSongCountPicker = false;
+                this.customSongCountText = '';
               }
             })
         }
@@ -890,6 +1029,10 @@ export struct ControlAreaComponent {
             Text(`剩余 ${this.formatTimerCountdown(this.timerRemainingSeconds)}`)
               .fontSize(this.scaledFont(12))
               .fontColor(this.primaryColor)
+          } else if (this.timerSongsRemaining > 0) {
+            Text(`剩余 ${this.timerSongsRemaining} 首`)
+              .fontSize(this.scaledFont(12))
+              .fontColor(this.primaryColor)
           }
         }
         .alignItems(HorizontalAlign.Start)
@@ -967,8 +1110,38 @@ export struct ControlAreaComponent {
       .padding({ left: 16, right: 16 })
       .backgroundColor($r('app.color.player_bg_color'))
       .borderRadius(this.scaledSize(10))
+
+      // 蓝牙音频行（P1-4）：A2DP 连接状态展示；编解码能力为系统应用接口三方不可查，
+      // 仅展示 设备名/连接态/播放态，点击重试授权或刷新状态
+      Row() {
+        Column({ space: 2 }) {
+          Text('蓝牙音频')
+            .fontSize(this.scaledFont(14))
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.isBluetoothRowDisabled() ?
+              $r('app.color.text_twenty_color') : this.settingTextColor())
+          Text(this.bluetoothAudioLabel)
+            .fontSize(this.scaledFont(12))
+            .fontColor(this.isBluetoothRowDisabled() ?
+              $r('app.color.text_twenty_color') : $r('app.color.text_sixty_color'))
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+        Blank()
+      }
+      .width('100%')
+      .height(52)
+      .padding({ left: 16, right: 16 })
+      .backgroundColor($r('app.color.player_bg_color'))
+      .borderRadius(this.scaledSize(10))
+      .onClick(() => {
+        this.initBluetoothAudio();
+      })
     }
     .width(StyleConstants.FULL_WIDTH)
+    .transition(this.morePanelTransition(false))
   }
 
   // 输出设备选择 sheet：系统接口返回的可用媒体输出设备列表 + 应用级设备选择（API 26 增强路由）
@@ -1026,6 +1199,7 @@ export struct ControlAreaComponent {
       }, (device: audio.AudioDeviceDescriptor) => `dev_${device.deviceType}_${device.id}`)
     }
     .width(StyleConstants.FULL_WIDTH)
+    .transition(this.morePanelTransition(true))
   }
 
   @Builder
@@ -1115,6 +1289,7 @@ export struct ControlAreaComponent {
       .height(StyleConstants.FULL_HEIGHT)
       .justifyContent(FlexAlign.Start)
       .alignItems(HorizontalAlign.Start)
+      .transition(this.morePanelTransition(true))
     }
   }
 
@@ -1152,6 +1327,7 @@ export struct ControlAreaComponent {
           .borderRadius(4)
           .margin({ left: 8 })
           .padding({ left: 10, right: 10 })
+          .systemMaterial(this.accentGlassMaterial(this.primaryColor))
           .onClick(() => { this.saveEditField() })
         Button('取消')
           .height(this.scaledFont(32))
@@ -1161,6 +1337,7 @@ export struct ControlAreaComponent {
           .borderRadius(4)
           .margin({ left: 8 })
           .padding({ left: 10, right: 10 })
+          .systemMaterial(this.styleGlassMaterial())
           .onClick(() => { this.cancelEditField() })
       } else {
         Text(value && value.length > 0 ? value : '-')
@@ -1214,6 +1391,7 @@ export struct ControlAreaComponent {
             .fontColor(this.settingTextColor())
             .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.08))
             .borderRadius(this.scaledSize(10))
+            .systemMaterial(this.styleGlassMaterial())
             .onClick(() => {
               this.isShowCustomPicker = false
             })
@@ -1225,12 +1403,59 @@ export struct ControlAreaComponent {
             .backgroundColor(this.customHours * 3600 + this.customMinutes * 60 + this.customSeconds > 0 ? this.primaryColor : '#555555')
             .borderRadius(this.scaledSize(10))
             .enabled(this.customHours * 3600 + this.customMinutes * 60 + this.customSeconds > 0)
+            .systemMaterial(this.customHours * 3600 + this.customMinutes * 60 + this.customSeconds > 0 ?
+              this.accentGlassMaterial(this.primaryColor) : undefined)
             .onClick(() => {
               this.setTimerSeconds(this.customHours * 3600 + this.customMinutes * 60 + this.customSeconds)
               this.customHours = 0
               this.customMinutes = 0
               this.customSeconds = 0
               this.isShowCustomPicker = false
+            })
+        }
+        .width('100%')
+      } else if (this.isShowSongCountPicker) {
+        // 按歌曲数自定义（1-99 首）：点确定立即生效，非法输入保持本页等待重输
+        Column({ space: this.scaledSize(12) }) {
+          Text('自定义歌曲数（1-99 首）')
+            .fontSize(this.scaledFont(14))
+            .fontColor(this.settingTextColor())
+            .fontWeight(FontWeight.Medium)
+            .width('100%')
+
+          Row({ space: this.scaledSize(8) }) {
+            TextInput({ text: this.customSongCountText, placeholder: '1-99' })
+              .type(InputType.Number)
+              .height(this.scaledSize(40))
+              .fontSize(this.scaledFont(14))
+              .fontColor(this.settingTextColor())
+              .layoutWeight(1)
+              .onChange((newValue: string) => {
+                this.customSongCountText = newValue
+              })
+
+            Button('确定')
+              .height(this.scaledSize(40))
+              .fontSize(this.scaledFont(14))
+              .fontColor(this.isCustomSongCountValid() ? Color.White : 'rgba(255,255,255,0.4)')
+              .backgroundColor(this.isCustomSongCountValid() ? this.primaryColor : '#555555')
+              .borderRadius(this.scaledSize(10))
+              .enabled(this.isCustomSongCountValid())
+              .onClick(() => {
+                this.setTimerSongs(this.customSongCountValue())
+              })
+          }
+          .width('100%')
+
+          Button('返回')
+            .width('100%')
+            .height(this.scaledSize(40))
+            .fontSize(this.scaledFont(14))
+            .fontColor(this.settingTextColor())
+            .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.08))
+            .borderRadius(this.scaledSize(10))
+            .onClick(() => {
+              this.isShowSongCountPicker = false
             })
         }
         .width('100%')
@@ -1307,12 +1532,74 @@ export struct ControlAreaComponent {
           .backgroundColor(this.selectedPresetMinutes > 0 ? this.primaryColor : '#555555')
           .borderRadius(this.scaledSize(10))
           .enabled(this.selectedPresetMinutes > 0)
+          .systemMaterial(this.selectedPresetMinutes > 0 ? this.accentGlassMaterial(this.primaryColor) : undefined)
           .onClick(() => {
             this.setTimerSeconds(this.selectedPresetMinutes * 60)
             this.selectedPresetMinutes = -1
           })
 
-        if (this.timerRemainingSeconds > 0) {
+        // ─── 按歌曲数（P0-1）：点击预设立即生效，再点同一预设取消 ───
+        Row() {
+          Text('按歌曲数')
+            .fontSize(this.scaledFont(13))
+            .fontColor(this.settingTextColor())
+            .fontWeight(FontWeight.Medium)
+
+          Blank()
+
+          if (this.timerSongsRemaining > 0) {
+            Text(`剩余 ${this.timerSongsRemaining} 首`)
+              .fontSize(this.scaledFont(13))
+              .fontWeight(FontWeight.Bold)
+              .fontColor(this.isEffectiveDarkMode() ? '#FFFFFF' : this.primaryColor)
+          }
+        }
+        .width('100%')
+
+        Flex({ wrap: FlexWrap.Wrap }) {
+          ForEach(TIMER_SONG_PRESETS, (count: number) => {
+            Text(`${count}首`)
+              .fontSize(this.scaledFont(13))
+              .fontColor(this.isTimerSongsPresetActive(count) ? '#FFFFFF' : this.settingTextColor())
+              .textAlign(TextAlign.Center)
+              .height(this.scaledSize(36))
+              .constraintSize({ minWidth: this.scaledSize(64) })
+              .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+              .borderRadius(this.scaledSize(8))
+              .backgroundColor(this.isTimerSongsPresetActive(count) ? this.primaryColor
+                : (this.isEffectiveDarkMode() ? '#333333' : ColorHelper.hexToRgba(this.primaryColor, 0.08)))
+              .margin({ right: this.scaledSize(8), bottom: this.scaledSize(4) })
+              .onClick(() => {
+                if (this.isTimerSongsPresetActive(count)) {
+                  this.clearTimer()
+                } else {
+                  this.setTimerSongs(count)
+                }
+              })
+          }, (count: number) => `songs-${count}`)
+
+          Text('自定义')
+            .fontSize(this.scaledFont(13))
+            .fontColor(this.isTimerSongsCustomActive() ? '#FFFFFF' : this.settingTextColor())
+            .textAlign(TextAlign.Center)
+            .height(this.scaledSize(36))
+            .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+            .borderRadius(this.scaledSize(8))
+            .backgroundColor(this.isTimerSongsCustomActive() ? this.primaryColor
+              : (this.isEffectiveDarkMode() ? '#333333' : ColorHelper.hexToRgba(this.primaryColor, 0.08)))
+            .margin({ right: this.scaledSize(8), bottom: this.scaledSize(4) })
+            .onClick(() => {
+              if (this.isTimerSongsCustomActive()) {
+                this.clearTimer()
+              } else {
+                this.customSongCountText = ''
+                this.isShowSongCountPicker = true
+              }
+            })
+        }
+        .width('100%')
+
+        if (this.timerRemainingSeconds > 0 || this.timerSongsRemaining > 0) {
           Button('取消定时')
             .width('100%')
             .height(this.scaledSize(40))
@@ -1320,6 +1607,7 @@ export struct ControlAreaComponent {
             .fontColor(StyleConstants.COLOR_DANGER_RED)
             .backgroundColor(Color.Transparent)
             .border({ width: 1, color: StyleConstants.COLOR_DANGER_RED, radius: this.scaledSize(10) })
+            .systemMaterial(this.styleGlassMaterial())
             .onClick(() => {
               this.clearTimer()
             })
@@ -1328,6 +1616,7 @@ export struct ControlAreaComponent {
     }
     .width(StyleConstants.FULL_WIDTH)
     .padding({ top: 16, bottom: 16, left: 16, right: 16 })
+    .transition(this.morePanelTransition(true))
   }
 
   private infoValue(index: number): string {
@@ -1418,6 +1707,7 @@ export struct ControlAreaComponent {
         .blockSize({ width: 20, height: 20 })
         .blockBorderColor(this.primaryColor)
         .blockBorderWidth(3)
+        .systemMaterial(this.styleGlassMaterial())
         .onChange((value: number, mode: SliderChangeMode) => {
           this.speed = Math.round(value * 4) / 4
           AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_SPEED, this.speed)
@@ -1473,6 +1763,7 @@ export struct ControlAreaComponent {
         .blockSize({ width: 20, height: 20 })
         .blockBorderColor(this.primaryColor)
         .blockBorderWidth(3)
+        .systemMaterial(this.styleGlassMaterial())
         .onChange((value: number, mode: SliderChangeMode) => {
           const level: number = Math.round(value);
           this.volume = this.maxVolumeLevel > 0 ? level / this.maxVolumeLevel : 0;
@@ -1550,6 +1841,14 @@ export struct ControlAreaComponent {
       this.isShowCustomPicker = false
     }
     this.morePanelLevel = 0
+  }
+
+  // 「更多」面板一级/二级切换过渡：主列表左进左出、二级页右进右出，
+  // 进出方向与「进入二级页 / 返回主列表」天然对应，避免生硬硬切
+  private morePanelTransition(fromRight: boolean): TransitionEffect {
+    return TransitionEffect.OPACITY
+      .combine(TransitionEffect.translate({ x: fromRight ? 48 : -48 }))
+      .animation({ duration: 320, curve: Curve.EaseOut })
   }
 }
 
