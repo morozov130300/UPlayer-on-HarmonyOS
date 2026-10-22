@@ -44,6 +44,11 @@ struct MainPage {
   @State greetingOpacity: number = 0
   // 主页多选状态（由 HomeContent 写入）：进入多选时问候语整体上滑淡出，退出时回落淡入
   @StorageLink(AppStorageKeyConstants.KEY_HOME_MULTI_SELECT) homeMultiSelect: boolean = false
+  // 歌单页多选状态（由 PlaylistContent 写入）：与首页多选同一套机制，
+  // 页面级返回键/ESC 需要能把它收回去，故同样挂 AppStorage
+  @StorageLink(AppStorageKeyConstants.KEY_PLAYLIST_MULTI_SELECT) playlistMultiSelect: boolean = false
+  // 歌单页文件夹编辑态：同属歌单页的批量操作，返回键/ESC 也要能收回
+  @StorageLink(AppStorageKeyConstants.KEY_PLAYLIST_FOLDER_EDIT) playlistFolderEdit: boolean = false
   // 全局悬浮加号可见性（由各内容页上报）：滚动隐藏、多选/编辑态变化时写入，
   // 首页/歌单共用 Index 上的一颗加号，切页不重建不位移，设置页隐藏
   @StorageLink(AppStorageKeyConstants.KEY_HOME_PLUS_VISIBLE) homePlusVisible: boolean = true
@@ -1161,11 +1166,22 @@ struct MainPage {
 
   // KeyCode 与 KeyEvent/KeyType 的用法与 MusicPlayer.handleKeyEvent 保持一致。
   private tryExitMultiSelect(): boolean {
-    if (this.currentIndex !== 0 || !this.homeMultiSelect) {
-      return false
-    } // isMultiSelectMode 已是 @StorageLink，写入 AppStorage 即可让 HomeContent 退出多选， // 并由它的 @Watch 顺带清空选中集合
-    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_HOME_MULTI_SELECT, false)
-    return true
+    // 首页多选：写入 AppStorage 即可让 HomeContent 退出，并由它的 @Watch 清空选中集合
+    if (this.currentIndex === 0 && this.homeMultiSelect) {
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_HOME_MULTI_SELECT, false)
+      return true
+    }
+    // 歌单页多选：同一套机制（PlaylistContent 的 @Watch 负责清空选中集合）
+    if (this.currentIndex === 1 && this.playlistMultiSelect) {
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PLAYLIST_MULTI_SELECT, false)
+      return true
+    }
+    // 歌单页文件夹编辑态：同一套退出路径
+    if (this.currentIndex === 1 && this.playlistFolderEdit) {
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PLAYLIST_FOLDER_EDIT, false)
+      return true
+    }
+    return false
   }
 
   // Ctrl 是否按下：getModifierKeyState 为 API 12+ 的可选方法，低版本设备上不存在则视为未按下
@@ -1194,11 +1210,18 @@ struct MainPage {
       }
       return true
     }
-    if (event.keyCode === KeyCode.KEYCODE_A && this.currentIndex === 0 && this.homeMultiSelect &&
-      this.isCtrlPressed(event)) {
-      const current: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_HOME_SELECT_ALL_REQUEST) ?? 0
-      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_HOME_SELECT_ALL_REQUEST, current + 1)
-      return true
+    // Ctrl+A：多选态下全选当前页可见项（首页=可见歌曲 / 歌单页=全部歌单卡）
+    if (event.keyCode === KeyCode.KEYCODE_A && this.isCtrlPressed(event)) {
+      if (this.currentIndex === 0 && this.homeMultiSelect) {
+        const current: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_HOME_SELECT_ALL_REQUEST) ?? 0
+        AppStorage.setOrCreate(AppStorageKeyConstants.KEY_HOME_SELECT_ALL_REQUEST, current + 1)
+        return true
+      }
+      if (this.currentIndex === 1 && (this.playlistMultiSelect || this.playlistFolderEdit)) {
+        const current: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_PLAYLIST_SELECT_ALL_REQUEST) ?? 0
+        AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PLAYLIST_SELECT_ALL_REQUEST, current + 1)
+        return true
+      }
     }
     // Ctrl+F：聚焦首页搜索框——打开搜索行并让输入框获焦（由 HomeContent 的 @Watch 处理）
     if (event.keyCode === KeyCode.KEYCODE_F && this.currentIndex === 0 && this.isCtrlPressed(event)) {

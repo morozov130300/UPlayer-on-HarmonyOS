@@ -17,7 +17,8 @@ import { deviceInfo } from '@kit.BasicServicesKit'
 import { AlbumCover } from '../component/AlbumCover'
 import { PlaylistCreateDialog } from '../component/PlaylistCreateDialog'
 import { AlbumCoverSize } from '../service/AudioMetadataService'
-import { createStyleGlassMaterial, DEFAULT_GLASS_STYLE } from '../common/utils/GlassUtil'
+import { createBarGlassMaterial, createStyleGlassMaterial, DEFAULT_GLASS_STYLE } from '../common/utils/GlassUtil'
+import { GlassBackButton } from '../view/GlassBackButton'
 
 const TAG = 'PlaylistContent'
 const FAVORITES_FOLDER_ID: string = '__favorites__'
@@ -60,7 +61,9 @@ export struct PlaylistContent {
   private scroller: Scroller = new Scroller()
   private previousFolderPaths: string[] = []
   private isPC: boolean = deviceInfo.deviceType === '2in1'
-  @State isEditMode: boolean = false
+  // 文件夹编辑态（多选删除歌曲）：与歌单多选同构，状态上提 AppStorage 供返回键/ESC 收回
+  @StorageLink(AppStorageKeyConstants.KEY_PLAYLIST_FOLDER_EDIT) @Watch('onFolderEditModeChange')
+  isEditMode: boolean = false
   @State editSelectedFolderIds: string[] = []
   @State gridColumns: number = 2
   // 自定义歌单（P2-3）：卡片数据 + 新建/编辑歌单弹层 + 长按冒泡菜单 + 歌单多选 + 删除二次确认
@@ -73,9 +76,14 @@ export struct PlaylistContent {
   private editingPlaylistId: string = ''
   // 长按冒泡菜单：当前目标歌单卡（bindPopup 显示条件）
   @State playlistActionCardId: string = ''
-  // 歌单多选模式：批量删除
-  @State isPlaylistEditMode: boolean = false
+  // 歌单多选模式：批量删除。状态挂在 AppStorage 上双向绑定，与首页多选完全同构：
+  // 返回键/ESC 由 Index 的页面级事件写入 false，本页 @Watch 收到后顺带清空选中集合
+  @StorageLink(AppStorageKeyConstants.KEY_PLAYLIST_MULTI_SELECT) @Watch('onPlaylistMultiSelectChange')
+  isPlaylistEditMode: boolean = false
   @State playlistEditSelectedIds: string[] = []
+  // Ctrl+A 全选请求（Index 页面级键盘事件 +1）：多选态下全选可见歌单
+  @StorageLink(AppStorageKeyConstants.KEY_PLAYLIST_SELECT_ALL_REQUEST) @Watch('onSelectAllRequest')
+  selectAllRequest: number = 0
   @State playlistDeleteConfirmId: string = ''
 
   aboutToAppear(): void {
@@ -83,6 +91,15 @@ export struct PlaylistContent {
     this.updateGridColumns()
     this.buildPlaylistCards()
     this.publishPlusVisible()
+    // 与首页一致：进入页面时复位多选状态，避免上次残留把工具栏带进来
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PLAYLIST_MULTI_SELECT, false)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PLAYLIST_FOLDER_EDIT, false)
+  }
+
+  aboutToDisappear(): void {
+    // 切页/页面销毁时收起多选：否则下次进入仍是多选态且带着旧选中项
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PLAYLIST_MULTI_SELECT, false)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PLAYLIST_FOLDER_EDIT, false)
   }
 
   private scaledSize(size: number): number {
@@ -330,8 +347,17 @@ export struct PlaylistContent {
     return this.editSelectedFolderIds.indexOf(folderId) >= 0
   }
 
-  // Delete 键：编辑态且有选中时执行与删除按钮相同的逻辑；空选/非编辑态忽略
+  // Delete 键：歌单多选/文件夹编辑态且有选中时执行与删除按钮相同的逻辑；空选/非编辑态忽略
   onDeleteRequest(): void {
+    if (this.isPlaylistEditMode) {
+      if (this.playlistEditSelectedIds.length === 0) {
+        return
+      }
+      this.deletePlaylistEditSelected().catch((err: Error) => {
+        Logger.error(TAG, `delete selected playlists failed: ${JSON.stringify(err)}`)
+      })
+      return
+    }
     if (!this.isEditMode || this.editSelectedFolderIds.length === 0) {
       return
     }
@@ -490,14 +516,37 @@ export struct PlaylistContent {
     this.isPlaylistEditVisible = true
   }
 
-  // ═══════════ 歌单多选模式（批量删除）═══════════
+  // ═══════════ 歌单多选模式（批量删除，逻辑与首页歌曲多选一致）═══════════
 
-  enterPlaylistEditMode(): void {
+  // 多选状态变化统一收口在这里（与 HomeContent.onMultiSelectModeChange 同构）：
+  // 退出多选时必须一并清空选中集合——返回键/ESC 触发的退出不经过 exitPlaylistEditMode()，
+  // 若不清空，下次进入多选会带着上次残留的选中项
+  onPlaylistMultiSelectChange(): void {
+    if (!this.isPlaylistEditMode) {
+      this.playlistEditSelectedIds = []
+      this.playlistActionCardId = ''
+    }
+    this.publishPlusVisible()
+  }
+
+  // Ctrl+A：只做全选，不做取消全选；非多选态一律忽略（与首页一致）
+  onSelectAllRequest(): void {
+    if (!this.isAnySelectMode()) {
+      return
+    }
+    this.setCurrentSelectedIds(this.currentVisibleIds())
+  }
+
+  // 进入多选：与首页长按一致——进入的同时把当前长按的歌单卡选中
+  enterPlaylistEditMode(playlistId: string): void {
     if (this.isEditMode) {
       this.exitEditMode()
     }
-    this.isPlaylistEditMode = true
     this.playlistEditSelectedIds = []
+    if (playlistId.length > 0) {
+      this.playlistEditSelectedIds.push(playlistId)
+    }
+    this.isPlaylistEditMode = true
     this.publishPlusVisible()
   }
 
@@ -511,20 +560,31 @@ export struct PlaylistContent {
     const idx: number = this.playlistEditSelectedIds.indexOf(playlistId)
     if (idx >= 0) {
       this.playlistEditSelectedIds.splice(idx, 1)
-      this.playlistEditSelectedIds = [...this.playlistEditSelectedIds]
     } else {
       this.playlistEditSelectedIds.push(playlistId)
-      this.playlistEditSelectedIds = [...this.playlistEditSelectedIds]
     }
+    this.playlistEditSelectedIds = this.playlistEditSelectedIds.slice()
   }
 
   isPlaylistEditSelected(playlistId: string): boolean {
     return this.playlistEditSelectedIds.indexOf(playlistId) >= 0
   }
 
+  // 当前全部歌单卡 id（歌单页无隐藏项，等价于首页的「可见歌曲」集合）
+  getVisiblePlaylistIds(): string[] {
+    const ids: string[] = []
+    for (let i = 0; i < this.playlistCards.length; i++) {
+      ids.push(this.playlistCards[i].playlist.id)
+    }
+    return ids
+  }
+
   // 批量删除选中歌单：只删歌单与关联关系，歌曲文件与曲库不受影响
   async deletePlaylistEditSelected(): Promise<void> {
     const ids: string[] = this.playlistEditSelectedIds.slice()
+    if (ids.length === 0) {
+      return
+    }
     for (let i = 0; i < ids.length; i++) {
       await this.dataService.deletePlaylist(ids[i])
     }
@@ -546,25 +606,30 @@ export struct PlaylistContent {
   build() {
     Stack() {
       Column() {
-        Row() {
-          Text('歌单')
-            .fontSize(Math.round(18 * this.fontSizeScale))
-            .fontColor($r('app.color.text_primary'))
-            .fontWeight(FontWeight.Bold)
-          Text(this.sortModeLabel())
-            .fontSize(Math.round(12 * this.fontSizeScale))
-            .fontColor($r('app.color.text_sixty_color'))
-            .margin({ left: 10 })
-            .onClick(() => { this.cycleSortMode() })
+        // 顶部标题带：任一多选/编辑态由多选菜单栏原地替换标题（与首页替换问候语同构）
+        if (this.isAnySelectMode()) {
+          this.playlistMultiSelectBar()
+        } else {
+          Row() {
+            Text('歌单')
+              .fontSize(Math.round(18 * this.fontSizeScale))
+              .fontColor($r('app.color.text_primary'))
+              .fontWeight(FontWeight.Bold)
+            Text(this.sortModeLabel())
+              .fontSize(Math.round(12 * this.fontSizeScale))
+              .fontColor($r('app.color.text_sixty_color'))
+              .margin({ left: 10 })
+              .onClick(() => { this.cycleSortMode() })
+          }
+          .width('100%')
+          .height(this.topContentPadding + this.topBandHeight)
+          .padding({
+            left: 20,
+            right: this.isPC ? Math.max(this.titleButtonWidth, 140) + 12 : 8,
+            top: this.topContentPadding
+          })
+          .alignItems(VerticalAlign.Center)
         }
-        .width('100%')
-        .height(this.topContentPadding + this.topBandHeight)
-        .padding({
-          left: 20,
-          right: this.isPC ? Math.max(this.titleButtonWidth, 140) + 12 : 8,
-          top: this.topContentPadding
-        })
-        .alignItems(VerticalAlign.Center)
 
         Scroll(this.scroller) {
           Column() {
@@ -620,62 +685,6 @@ export struct PlaylistContent {
             }
           }
         })
-
-        if (this.isPlaylistEditMode) {
-          Row() {
-            Text('已选 ' + this.playlistEditSelectedIds.length + ' 个')
-              .fontSize(Math.round(14 * this.fontSizeScale))
-              .fontColor($r('app.color.text_primary'))
-            Blank()
-            Text('取消')
-              .fontSize(Math.round(14 * this.fontSizeScale))
-              .fontColor(this.primaryColor)
-              .margin({ right: 16 })
-              .onClick(() => { this.exitPlaylistEditMode() })
-            Text('删除')
-              .fontSize(Math.round(14 * this.fontSizeScale))
-              .fontColor(StyleConstants.COLOR_DANGER_RED)
-              .onClick(() => {
-                this.deletePlaylistEditSelected().catch((err: Error) => {
-                  Logger.error(TAG, `delete selected playlists failed: ${JSON.stringify(err)}`)
-                })
-              })
-          }
-          .width('100%')
-          .height(48)
-          .padding({ left: 16, right: 16 })
-          .backgroundColor($r('app.color.page_background_sm'))
-          .border({ width: 1, color: $r('app.color.list_divider') })
-          .margin({ bottom: this.bottomOverlayInset() })
-        }
-
-        if (this.isEditMode) {
-          Row() {
-            Text('已选 ' + this.editSelectedFolderIds.length + ' 个')
-              .fontSize(Math.round(14 * this.fontSizeScale))
-              .fontColor($r('app.color.text_primary'))
-            Blank()
-            Text('取消')
-              .fontSize(Math.round(14 * this.fontSizeScale))
-              .fontColor(this.primaryColor)
-              .margin({ right: 16 })
-              .onClick(() => { this.exitEditMode() })
-            Text('删除')
-              .fontSize(Math.round(14 * this.fontSizeScale))
-              .fontColor(StyleConstants.COLOR_DANGER_RED)
-              .onClick(() => {
-                this.deleteEditSelected().catch((err: Error) => {
-                  Logger.error(TAG, `delete selected failed: ${JSON.stringify(err)}`)
-                })
-              })
-          }
-          .width('100%')
-          .height(48)
-          .padding({ left: 16, right: 16 })
-          .backgroundColor($r('app.color.page_background_sm'))
-          .border({ width: 1, color: $r('app.color.list_divider') })
-          .margin({ bottom: this.bottomOverlayInset() })
-        }
       }
       .width('100%')
       .height('100%')
@@ -714,6 +723,177 @@ export struct PlaylistContent {
       preferType: SheetType.CENTER,
       systemMaterial: this.styleGlassMaterial()
     })
+  }
+
+  // ═══════════ 多选工具栏统一入口（歌单多选 / 文件夹编辑共用一套，逻辑对齐首页）═══════════
+
+  onFolderEditModeChange(): void {
+    if (!this.isEditMode) {
+      this.editSelectedFolderIds = []
+    }
+    this.publishPlusVisible()
+  }
+
+  // 两种模式互斥且共用同一条顶部工具栏
+  private isAnySelectMode(): boolean {
+    return this.isPlaylistEditMode || this.isEditMode
+  }
+
+  private selectedCount(): number {
+    return this.isPlaylistEditMode ? this.playlistEditSelectedIds.length : this.editSelectedFolderIds.length
+  }
+
+  private currentVisibleIds(): string[] {
+    if (this.isPlaylistEditMode) {
+      return this.getVisiblePlaylistIds()
+    }
+    const ids: string[] = []
+    for (let i = 0; i < this.folders.length; i++) {
+      ids.push(this.folders[i].id)
+    }
+    return ids
+  }
+
+  private currentSelectedIds(): string[] {
+    return this.isPlaylistEditMode ? this.playlistEditSelectedIds : this.editSelectedFolderIds
+  }
+
+  private setCurrentSelectedIds(ids: string[]): void {
+    if (this.isPlaylistEditMode) {
+      this.playlistEditSelectedIds = ids
+    } else {
+      this.editSelectedFolderIds = ids
+    }
+  }
+
+  private isAllSelected(): boolean {
+    const visibleIds: string[] = this.currentVisibleIds()
+    const selected: string[] = this.currentSelectedIds()
+    if (visibleIds.length === 0 || selected.length !== visibleIds.length) {
+      return false
+    }
+    for (let i = 0; i < visibleIds.length; i++) {
+      if (selected.indexOf(visibleIds[i]) < 0) {
+        return false
+      }
+    }
+    return true
+  }
+
+  private toggleSelectAll(): void {
+    if (this.isAllSelected()) {
+      this.setCurrentSelectedIds([])
+      return
+    }
+    this.setCurrentSelectedIds(this.currentVisibleIds())
+  }
+
+  // 反选：翻转可见项选中态，结果按列表顺序重排（与首页 invertVisibleSelection 一致）
+  private invertSelection(): void {
+    const visibleIds: string[] = this.currentVisibleIds()
+    const selectedSet: Set<string> = new Set(this.currentSelectedIds())
+    const result: string[] = []
+    for (let i = 0; i < visibleIds.length; i++) {
+      if (!selectedSet.has(visibleIds[i])) {
+        result.push(visibleIds[i])
+      }
+    }
+    this.setCurrentSelectedIds(result)
+  }
+
+  private deleteInSelectMode(): void {
+    if (this.isPlaylistEditMode) {
+      this.deletePlaylistEditSelected().catch((err: Error) => {
+        Logger.error(TAG, `delete selected playlists failed: ${JSON.stringify(err)}`)
+      })
+      return
+    }
+    this.deleteEditSelected().catch((err: Error) => {
+      Logger.error(TAG, `delete selected failed: ${JSON.stringify(err)}`)
+    })
+  }
+
+  private exitSelectMode(): void {
+    if (this.isPlaylistEditMode) {
+      this.exitPlaylistEditMode()
+      return
+    }
+    this.exitEditMode()
+  }
+
+  // ═══════════ 歌单多选菜单栏（与首页多选栏同款：返回键退出 + 全选/反选/删除）═══════════
+
+  // 经典样式下不挂任何背景效果（与首页 multiSelectBarMaterial 策略一致）
+  private playlistBarMaterial(): uiMaterial.Material | undefined {
+    if (this.settings.tabStyle === 'classic') {
+      return undefined
+    }
+    return createBarGlassMaterial(DEFAULT_GLASS_STYLE, true, this.primaryColor)
+  }
+
+  @Builder
+  playlistMultiSelectBar(): void {
+    Row() {
+      // 返回按钮：与首页/设置页/播放页共用同一组件，圆形玻璃材质与底部 Tab 栏同源
+      GlassBackButton({
+        clickSize: this.scaledSize(48),
+        iconSize: this.scaledSize(15),
+        iconColor: $r('app.color.text_primary'),
+        iconOpacity: 0.9,
+        onBack: () => { this.exitSelectMode() }
+      })
+
+      Text('已选 ' + this.selectedCount() + ' 个')
+        .fontSize(Math.round(14 * this.fontSizeScale))
+        .fontColor($r('app.color.text_primary'))
+      Blank()
+      // 全选按钮 - 带图标（与首页一致：全选后变为取消全选）
+      Row({ space: 4 }) {
+        Image(this.isAllSelected() ? $r('app.media.ic_public_deselect_all') : $r('app.media.ic_public_select_all'))
+          .width(Math.round(16 * this.fontSizeScale))
+          .height(Math.round(16 * this.fontSizeScale))
+          .fillColor(this.primaryColor)
+        Text(this.isAllSelected() ? '取消全选' : '全选')
+          .fontSize(Math.round(14 * this.fontSizeScale))
+          .fontColor(this.primaryColor)
+      }
+      .margin({ right: 16 })
+      .onClick(() => { this.toggleSelectAll() })
+
+      // 反选 - 纯文字按钮（图标库无对应图标，置于全选后）
+      Text('反选')
+        .fontSize(Math.round(14 * this.fontSizeScale))
+        .fontColor(this.primaryColor)
+        .margin({ right: 16 })
+        .onClick(() => { this.invertSelection() })
+
+      // 删除按钮 - 带图标：歌单多选只删歌单与关联关系；文件夹编辑走原有的曲库删除确认
+      Row({ space: 4 }) {
+        Image($r('app.media.ic_public_delete'))
+          .width(Math.round(16 * this.fontSizeScale))
+          .height(Math.round(16 * this.fontSizeScale))
+          .fillColor(StyleConstants.COLOR_DANGER_RED)
+        Text('删除')
+          .fontSize(Math.round(14 * this.fontSizeScale))
+          .fontColor(StyleConstants.COLOR_DANGER_RED)
+      }
+      .onClick(() => { this.deleteInSelectMode() })
+    }
+    .width('100%')
+    .height(this.topContentPadding + this.topBandHeight)
+    .padding({
+      left: 4,
+      right: this.isPC ? Math.max(this.titleButtonWidth, 140) + 12 : 16,
+      top: this.topContentPadding
+    })
+    .alignItems(VerticalAlign.Center)
+    .backgroundColor(Color.Transparent)
+    .backgroundEffect(this.settings.tabStyle !== 'classic' ? {
+      radius: 20,
+      saturation: 1.0,
+      brightness: 1.0
+    } : undefined)
+    .systemMaterial(this.playlistBarMaterial())
   }
 
   // ═══════════ 自定义歌单 UI（P2-3）═══════════
@@ -815,13 +995,13 @@ export struct PlaylistContent {
     .gesture(
       LongPressGesture()
         .onAction(() => {
-          if (!this.isPlaylistEditMode) {
+          if (!this.isAnySelectMode()) {
             this.playlistActionCardId = card.playlist.id
           }
         })
     )
     // 长按冒泡菜单（倍速弹窗同款 bindPopup 气泡）：编辑 / 多选 / 删除
-    .bindPopup(!this.isPlaylistEditMode && this.playlistActionCardId === card.playlist.id, {
+    .bindPopup(!this.isAnySelectMode() && this.playlistActionCardId === card.playlist.id, {
       builder: this.playlistActionPopupBuilder,
       placement: Placement.Bottom,
       showInSubWindow: false,
@@ -904,8 +1084,10 @@ export struct PlaylistContent {
         .textAlign(TextAlign.Center)
         .padding({ top: 12, bottom: 12 })
         .onClick(() => {
+          const playlistId: string = this.playlistActionCardId
           this.playlistActionCardId = ''
-          this.enterPlaylistEditMode()
+          // 与首页长按进入多选一致：进入即把目标卡置为选中
+          this.enterPlaylistEditMode(playlistId)
         })
       Divider()
         .color($r('app.color.list_divider'))
