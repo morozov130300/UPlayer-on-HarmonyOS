@@ -999,7 +999,7 @@ export struct ControlAreaComponent {
       .width('100%')
       .height(52)
       .padding({ left: 16, right: 16 })
-      .backgroundColor($r('app.color.player_bg_color'))
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(this.scaledSize(10))
       .onClick(() => {
         this.refreshSongMetadataIfNeeded()
@@ -1033,7 +1033,7 @@ export struct ControlAreaComponent {
       .width('100%')
       .height(52)
       .padding({ left: 16, right: 16 })
-      .backgroundColor($r('app.color.player_bg_color'))
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(this.scaledSize(10))
       .onClick(() => {
         this.morePanelLevel = 2
@@ -1048,7 +1048,7 @@ export struct ControlAreaComponent {
       })
         .width('100%')
         .height(52)
-        .backgroundColor($r('app.color.player_bg_color'))
+        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
         .borderRadius(this.scaledSize(10))
 
       // 蓝牙音频行（P1-4）：A2DP 连接状态展示；编解码能力为系统应用接口三方不可查，
@@ -1074,7 +1074,7 @@ export struct ControlAreaComponent {
       .width('100%')
       .height(52)
       .padding({ left: 16, right: 16 })
-      .backgroundColor($r('app.color.player_bg_color'))
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(this.scaledSize(10))
       .onClick(() => {
         // 用户主动点行才申请权限：允许弹系统权限框
@@ -1188,7 +1188,7 @@ export struct ControlAreaComponent {
         TextInput({ text: this.edittingValue })
           .fontSize(this.scaledFont(13))
           .fontColor($r('app.color.text_primary'))
-          .backgroundColor($r('app.color.player_bg_color'))
+          .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.06))
           .borderRadius(4)
           .height(this.scaledFont(32))
           // 编辑态文字起点必须与显示态值文字对齐（标签列 64vp 右缘）：左内边距为 0，
@@ -1216,7 +1216,7 @@ export struct ControlAreaComponent {
           .height(this.scaledFont(32))
           .fontSize(this.scaledFont(12))
           .fontColor($r('app.color.text_sixty_color'))
-          .backgroundColor($r('app.color.player_bg_color'))
+          .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.06))
           .borderRadius(4)
           .margin({ left: 8 })
           .padding({ left: 10, right: 10 })
