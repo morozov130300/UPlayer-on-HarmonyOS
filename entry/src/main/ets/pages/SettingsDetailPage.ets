@@ -621,6 +621,9 @@ struct SettingsDetailPage {
   }
 
   setTabStyle(style: string): void {
+    // 先广播到 AppStorage：底部 Tab 栏/多选栏/弹窗材质的消费方都是 @StorageLink，
+    // 先写键再落盘，切换当天立即重绘，不必等 saveSettings（之前顺序反了，切换有一帧滞后）
+    AppStorage.setOrCreate('uplayer_tab_style', style)
     // 切换样式时同步更新与样式挂钩的设置项可见性（磨砂强度卡片/底部栏触摸指示行）：
     // 新设备上玻璃样式不需要磨砂兜底（液态玻璃接管），经典样式需要；老设备两种样式都用磨砂兜底，始终显示。
     // 可见性翻转必须与样式切换同处一个统一触发动画，卡片显隐过渡才会播放
@@ -629,10 +632,8 @@ struct SettingsDetailPage {
         this.showClassicBlurStrength = style === 'classic'
       }
       this.settings.tabStyle = style
-      this.settings = this.settings
     })
     this.updateSetting()
-    AppStorage.setOrCreate('uplayer_tab_style', style)
   }
 
   // Tab 栏磨砂半径：与 Index 磨砂层同公式（模糊强度 × 0.5），连续值，滑杆拖动时实时变化；

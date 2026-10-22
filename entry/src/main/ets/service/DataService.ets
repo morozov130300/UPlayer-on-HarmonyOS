@@ -1310,6 +1310,20 @@ return result
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CONTINUE_PLAY_ON_UNPLUG, settings.continuePlayOnHeadsetUnplug)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_IGNORE_NOTIFICATION_DUCK, settings.ignoreNotificationDuck)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_ARTIST_SEPARATORS, settings.artistSeparators)
+    // 外观类字段必须在这里统一广播：它们是跨页实时生效的独立消费键。
+    // 之前只在设置页的 setTabStyle 里手工补写 tabStyle，任何其他改设置的路径
+    //（恢复默认、主题色/磨砂强度联动、批量导入配置）都不会推送，导致页面停留在旧样式，
+    // 表现为「切了玻璃/经典但不立即生效」
+    AppStorage.setOrCreate('uplayer_tab_style', settings.tabStyle)
+    AppStorage.setOrCreate('uplayer_glass_blur_strength', settings.glassBlurStrength)
+    AppStorage.setOrCreate('uplayer_home_top_blur_strength', settings.homeTopBlurStrength)
+    AppStorage.setOrCreate('uplayer_tab_indicator_opacity', settings.tabIndicatorOpacity)
+    AppStorage.setOrCreate('uplayer_tab_touch_indicator', settings.tabTouchIndicator)
+    AppStorage.setOrCreate('uplayer_tab_light_color', settings.tabLightColor)
+    AppStorage.setOrCreate('uplayer_primary_color', settings.primaryColor)
+    AppStorage.setOrCreate('uplayer_theme_mode', settings.themeMode)
+    AppStorage.setOrCreate('uplayer_font_size_scale', settings.fontSizeScale)
+    AppStorage.setOrCreate('uplayer_display_size_scale', settings.displaySizeScale)
   }
 
   // ═══════════ Simple string flags ═══════════

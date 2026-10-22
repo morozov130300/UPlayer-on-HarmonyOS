@@ -47,6 +47,9 @@ export struct PlaylistContent {
   @State favoritesSelected: boolean = false
   @StorageLink(AppStorageKeyConstants.KEY_TITLE_BUTTON_WIDTH) titleButtonWidth: number = 140
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
+  // 组件风格（玻璃/经典）必须走 AppStorage 实时键：settings 是 loadData 时的快照副本，
+  // 在设置页切换风格后它不会变，会让本页弹窗材质/多选栏停在旧样式（表现为「切换不立即生效」）
+  @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
   @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
   @StorageLink(AppStorageKeyConstants.KEY_LIBRARY_REVISION) @Watch('onLibraryChange') libraryRevision: number = 0
@@ -444,7 +447,7 @@ export struct PlaylistContent {
   // 组件风格（tabStyle）驱动的弹窗材质（bindSheet options 的 systemMaterial 字段）：
   // 玻璃风格 → 液态玻璃；经典风格 → Material.empty 显式关闭；设备不支持 → undefined
   private styleGlassMaterial(): uiMaterial.Material | undefined {
-    return createStyleGlassMaterial(this.settings.tabStyle, DEFAULT_GLASS_STYLE)
+    return createStyleGlassMaterial(this.tabStyle, DEFAULT_GLASS_STYLE)
   }
 
   // 新建歌单半模态弹层标题（bindSheet 官方标题栏）
@@ -825,7 +828,7 @@ export struct PlaylistContent {
 
   // 经典样式下不挂任何背景效果（与首页 multiSelectBarMaterial 策略一致）
   private playlistBarMaterial(): uiMaterial.Material | undefined {
-    if (this.settings.tabStyle === 'classic') {
+    if (this.tabStyle === 'classic') {
       return undefined
     }
     return createBarGlassMaterial(DEFAULT_GLASS_STYLE, true, this.primaryColor)
@@ -888,7 +891,7 @@ export struct PlaylistContent {
     })
     .alignItems(VerticalAlign.Center)
     .backgroundColor(Color.Transparent)
-    .backgroundEffect(this.settings.tabStyle !== 'classic' ? {
+    .backgroundEffect(this.tabStyle !== 'classic' ? {
       radius: 20,
       saturation: 1.0,
       brightness: 1.0
