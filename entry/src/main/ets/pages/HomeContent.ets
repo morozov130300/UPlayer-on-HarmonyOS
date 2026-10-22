@@ -118,8 +118,6 @@ export struct HomeContent {
   @State panelAlbumOptions: FilterChipOption[] = []
   @State panelGenreOptions: FilterChipOption[] = []
   @State panelYearOptions: FilterChipOption[] = []
-  // 最近播放模式（P0-4）：lastPlayedAt 倒序前 20 覆盖排序展示，再点退出
-  @State isRecentMode: boolean = false
   // 自定义歌单（P2-3）：筛选态激活的歌单 id 缓存（refreshFilterLabel 同步），
   // 歌单集合变化经 KEY_PLAYLIST_REVISION @Watch 刷新列表；多选「加入歌单」弹窗状态
   @State playlistFilterId: string = ''
@@ -445,8 +443,8 @@ export struct HomeContent {
       this.buildDisplayItems(capped)
       return
     }
-    if (this.isRecentMode) {
-      // 最近播放模式（P0-4）：仅展示播过的歌，lastPlayedAt 倒序前 20，覆盖常规排序
+    if (this.sortMode === 'recent') {
+      // 最近播放排序（P0-4）：仅展示播过的歌，lastPlayedAt 倒序前 20，覆盖常规排序
       const played: SongInfo[] = []
       for (let i = 0; i < result.length; i++) {
         if (result[i].lastPlayedAt > 0) {
@@ -960,6 +958,8 @@ export struct HomeContent {
       this.sortMode = 'date'
     } else if (this.sortMode === 'date') {
       this.sortMode = 'custom'
+    } else if (this.sortMode === 'custom') {
+      this.sortMode = 'recent'
     } else {
       this.sortMode = 'name'
     }
@@ -1237,6 +1237,8 @@ export struct HomeContent {
       return '名称排序'
     } else if (this.sortMode === 'date') {
       return '添加时间'
+    } else if (this.sortMode === 'recent') {
+      return '最近播放'
     }
     return '自定义'
   }
@@ -1432,35 +1434,24 @@ export struct HomeContent {
               .borderRadius(16)
               .onClick(() => { this.openFilterPanel() })
 
-            // 最近播放入口（P0-4）：激活时以 lastPlayedAt 倒序前 20 覆盖排序展示
-            Text('最近播放')
-              .fontSize(Math.round(12 * this.fontSizeScale))
-              .fontColor(this.isRecentMode ? Color.White : $r('app.color.text_primary'))
-              .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-              .margin({ left: 8 })
-              .backgroundColor(this.isRecentMode ? this.primaryColor : 'rgba(0,0,0,0.05)')
-              .borderRadius(16)
-              .onClick(() => {
-                this.isRecentMode = !this.isRecentMode
-                this.applyFilters()
-              })
-
             Blank()
 
             // 模糊搜索入口（S2）：展开/收起搜索行，Ctrl+F 亦可触发
-            Image($r('app.media.ic_public_search'))
-              .width(16).height(16)
-              .fillColor($r('app.color.text_primary'))
-              .padding({ left: 10, right: 10, top: 8, bottom: 8 })
-              .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-              .borderRadius(16)
-              .onClick(() => {
-                if (this.isSearchActive) {
-                  this.closeSearch()
-                } else {
-                  this.openSearch()
-                }
-              })
+            Row() {
+              Image($r('app.media.ic_public_search'))
+                .width(16).height(16)
+                .fillColor($r('app.color.text_primary'))
+            }
+            .padding({ left: 10, right: 10, top: 8, bottom: 8 })
+            .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+            .borderRadius(16)
+            .onClick(() => {
+              if (this.isSearchActive) {
+                this.closeSearch()
+              } else {
+                this.openSearch()
+              }
+            })
 
             Row() {
               Image($r('app.media.ic_sort_list'))

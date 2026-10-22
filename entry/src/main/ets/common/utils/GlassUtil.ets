@@ -152,22 +152,6 @@ export function createStyleGlassMaterial(tabStyle: string, strength: number): ui
   })
 }
 
-// 组件风格驱动的强调按钮材质：与 createStyleGlassMaterial 同一套风格/算力/能力守卫，
-// 额外携带 materialColor 保留主题色强调层级（高/中算力=材质滤镜混纯色）。
-// 强调按钮原为实心主题色+白字，无色玻璃会丢失强调与字色对比度，故必须染色。
-export function createStyleAccentGlassMaterial(tabStyle: string, strength: number,
-  color: string): uiMaterial.Material | undefined {
-  if (!isLiquidGlassAvailable()) {
-    return undefined
-  }
-  if (tabStyle !== 'immersive' || isGlassOff(strength) || isLowPowerGlassDevice()) {
-    return uiMaterial.Material.empty
-  }
-  return new uiMaterial.ImmersiveMaterial({
-    style: glassImmersiveStyleFromStrength(strength),
-    materialColor: color
-  })
-}
 
 // 统一 Toast：设备支持液态玻璃时自动挂材质（原「系统组件液态玻璃」设置项已删除，
 // 消费点固定开启）；能力不足返回 undefined → 系统默认样式

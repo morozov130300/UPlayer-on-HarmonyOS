@@ -18,7 +18,7 @@ import { HoldingHandService, HOLDING_HAND_CONFIRM_WINDOW_MAX_MS, HOLDING_HAND_CO
   KEY_HOLDING_HAND_CONFIRM_WINDOW_MS, KEY_HOLDING_HAND_ENABLED, KEY_HOLDING_HAND_LEFT,
   KEY_HOLDING_HAND_SOFT_FALLBACK_MS } from '../service/HoldingHandService'
 import { ColorConversion } from '../common/utils/ColorConversion'
-import { createStyleAccentGlassMaterial, createStyleGlassMaterial, DEFAULT_GLASS_STYLE, isLiquidGlassAvailable,
+import { createStyleGlassMaterial, DEFAULT_GLASS_STYLE, isLiquidGlassAvailable,
   showToastGlassMaterial, topBlurRadiusFromStrength } from '../common/utils/GlassUtil'
 import { StyleConstants } from '../common/constants/StyleConstants'
 import { GlassBackButton } from '../view/GlassBackButton'
@@ -111,6 +111,29 @@ class TopPlayedEntry {
   title: string = ''
   artist: string = ''
   playCount: number = 0
+}
+
+// 快捷键速查条目：keys 为按键徽标序列（如 ['Ctrl', 'A']），description 为功能说明
+class ShortcutEntry {
+  keys: string[] = []
+  description: string = ''
+}
+
+// 全局快捷键速查（关于分区展示）：与 Index.handleKeyEvent / MusicPlayer.handleKeyEvent 一一对应
+class ShortcutTable {
+  static readonly MAIN_PAGE: ShortcutEntry[] = [
+    { keys: ['Esc'], description: '退出首页多选模式' },
+    { keys: ['←', '→'], description: '切换标签页（首页/歌单/设置）' },
+    { keys: ['Ctrl', 'A'], description: '全选歌曲（首页多选态）' },
+    { keys: ['Ctrl', 'F'], description: '打开首页搜索并聚焦' },
+    { keys: ['Delete'], description: '删除选中歌曲（首页/歌单多选态）' }
+  ]
+  static readonly PLAYER_PAGE: ShortcutEntry[] = [
+    { keys: ['Esc'], description: '返回上一页' },
+    { keys: ['Space'], description: '播放 / 暂停' },
+    { keys: ['←'], description: '上一首' },
+    { keys: ['→'], description: '下一首' }
+  ]
 }
 
 @Entry
@@ -1077,12 +1100,6 @@ struct SettingsDetailPage {
     return createStyleGlassMaterial(this.settings.tabStyle, DEFAULT_GLASS_STYLE)
   }
 
-  // 组件风格驱动的强调按钮材质：在 styleGlassMaterial 基础上携带 materialColor，
-  // 保留实心主题色按钮的强调层级与白字对比度（玻璃生效后自定义背景色会被系统置透明）
-  private accentGlassMaterial(color: string): uiMaterial.Material | undefined {
-    return createStyleAccentGlassMaterial(this.settings.tabStyle, DEFAULT_GLASS_STYLE, color)
-  }
-
   // 玻璃效果生效范围说明弹窗（bindSheet 半模态内容）
   @Builder
   glassScopeSheetBuilder(): void {
@@ -1126,7 +1143,6 @@ struct SettingsDetailPage {
           .fontColor('#FFFFFF')
           .backgroundColor(this.primaryColor)
           .borderRadius(this.scaledSize(15))
-          .systemMaterial(this.accentGlassMaterial(this.primaryColor))
           .onClick(() => {
             this.showGlassScope = false
           })
@@ -2025,7 +2041,6 @@ struct SettingsDetailPage {
             .height(this.scaledSize(38))
             .fontColor(this.settingTextColor())
             .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.08))
-            .systemMaterial(this.styleGlassMaterial())
             .onClick(() => {
               this.cancelColorPicker()
             })
@@ -2034,7 +2049,6 @@ struct SettingsDetailPage {
             .height(this.scaledSize(38))
             .fontColor('#FFFFFF')
             .backgroundColor(this.currentPickerColor())
-            .systemMaterial(this.accentGlassMaterial(this.currentPickerColor()))
             .onClick(() => {
               this.confirmColorPicker()
             })
@@ -2390,6 +2404,24 @@ struct SettingsDetailPage {
                 this.toggleArtistSeparator(sep)
               })
           }, (sep: string) => sep + (this.settings.artistSeparators.indexOf(sep) >= 0 ? '_on' : '_off'))
+          // 自定义分隔符紧随预置候选同一行/同一样式（启用态主色 + ×，点击移除）
+          ForEach(this.customArtistSeparators(), (sep: string) => {
+            Text(sep + ' ×')
+              .fontSize(this.scaledFont(12))
+              .fontColor('#FFFFFF')
+              .padding({
+                left: this.scaledSize(10),
+                right: this.scaledSize(10),
+                top: this.scaledSize(5),
+                bottom: this.scaledSize(5)
+              })
+              .margin({ right: this.scaledSize(6), bottom: this.scaledSize(6) })
+              .backgroundColor(this.primaryColor)
+              .borderRadius(this.scaledSize(15))
+              .onClick(() => {
+                this.removeArtistSeparator(sep)
+              })
+          }, (sep: string) => 'custom_' + sep)
         }
         .width('100%')
         .margin({ top: this.scaledSize(8) })
@@ -2421,30 +2453,6 @@ struct SettingsDetailPage {
         }
         .width('100%')
         .margin({ top: this.scaledSize(2) })
-
-        if (this.customArtistSeparators().length > 0) {
-          Flex({ wrap: FlexWrap.Wrap }) {
-            ForEach(this.customArtistSeparators(), (sep: string) => {
-              Text(`「${sep}」 ×`)
-                .fontSize(this.scaledFont(12))
-                .fontColor(this.settingTextColor())
-                .padding({
-                  left: this.scaledSize(10),
-                  right: this.scaledSize(10),
-                  top: this.scaledSize(5),
-                  bottom: this.scaledSize(5)
-                })
-                .margin({ right: this.scaledSize(6), bottom: this.scaledSize(6) })
-                .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.08))
-                .borderRadius(this.scaledSize(15))
-                .onClick(() => {
-                  this.removeArtistSeparator(sep)
-                })
-            }, (sep: string) => 'custom_' + sep)
-          }
-          .width('100%')
-          .margin({ top: this.scaledSize(2) })
-        }
       }
       .width('100%')
       .padding({
@@ -3200,6 +3208,19 @@ struct SettingsDetailPage {
       }
       .width('100%')
 
+      // 全局快捷键速查：数据来源 Index.handleKeyEvent / MusicPlayer.handleKeyEvent
+      Column({ space: this.scaledSize(6) }) {
+        Text('快捷键')
+          .fontSize(this.scaledFont(13))
+          .fontColor(this.settingTextColor())
+          .fontWeight(FontWeight.Bold)
+          .width('100%')
+          .padding({ left: this.scaledSize(4) })
+        this.shortcutGroup('主页', ShortcutTable.MAIN_PAGE)
+        this.shortcutGroup('播放器页', ShortcutTable.PLAYER_PAGE)
+      }
+      .width('100%')
+
       // 最常播放 Top 20（P0-4）：playCount 倒序，实时读取曲库统计
       Column({ space: this.scaledSize(6) }) {
         Text('最常播放 Top 20')
@@ -3295,6 +3316,57 @@ struct SettingsDetailPage {
         .margin({ top: index === 0 ? 0 : this.scaledSize(4) })
       }, (entry: TopPlayedEntry, index: number) => 'top_' + index + '_' + entry.playCount)
     }
+  }
+
+  // 快捷键分组（关于分区「快捷键」）：组名 + 快捷键行（说明居左、按键徽标居右）
+  @Builder
+  shortcutGroup(groupName: string, entries: ShortcutEntry[]): void {
+    Column({ space: this.scaledSize(4) }) {
+      Text(groupName)
+        .fontSize(this.scaledFont(12))
+        .fontColor(this.settingTextColor())
+        .fontWeight(FontWeight.Medium)
+        .opacity(0.75)
+        .width('100%')
+        .padding({ left: this.scaledSize(4) })
+      ForEach(entries, (entry: ShortcutEntry) => {
+        Row() {
+          Text(entry.description)
+            .fontSize(this.scaledFont(13))
+            .fontColor(this.settingTextColor())
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .layoutWeight(1)
+          Row({ space: this.scaledSize(4) }) {
+            ForEach(entry.keys, (key: string) => {
+              Text(key)
+                .fontSize(this.scaledFont(11))
+                .fontColor(this.settingTextColor())
+                .padding({
+                  left: this.scaledSize(7),
+                  right: this.scaledSize(7),
+                  top: this.scaledSize(3),
+                  bottom: this.scaledSize(3)
+                })
+                .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.08))
+                .borderRadius(this.scaledSize(6))
+                .constraintSize({ minWidth: this.scaledSize(22) })
+                .textAlign(TextAlign.Center)
+            }, (key: string) => key)
+          }
+          .flexShrink(0)
+          .margin({ left: this.scaledSize(8) })
+        }
+        .width('100%')
+        .constraintSize({ minWidth: 0, maxWidth: '100%' })
+        .height(this.scaledSize(38))
+        .alignItems(VerticalAlign.Center)
+        .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+        .borderRadius(this.scaledSize(10))
+      }, (entry: ShortcutEntry) => entry.description)
+    }
+    .width('100%')
   }
 
   // 检查更新行：点击调用应用市场更新服务（checkAppUpdate + showUpdateDialog）

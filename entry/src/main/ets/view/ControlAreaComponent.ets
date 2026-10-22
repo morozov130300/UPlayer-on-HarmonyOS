@@ -16,13 +16,12 @@ import { MediaTools } from '../common/utils/mediautils/MediaTools';
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
 import { audio } from '@kit.AudioKit';
 import { AVCastPicker } from '@kit.AVSessionKit';
-import { AudioRoutingService } from '../service/AudioRoutingService';
 import { BluetoothAudioService } from '../service/BluetoothAudioService';
 import { BusinessError, SuppressWarnings, SuppressWarningsType } from '@kit.BasicServicesKit';
 import { AlbumCover } from '../component/AlbumCover';
 import { AVSessionController } from '../common/utils/mediautils/AVSessionController';
 import { DataService } from '../service/DataService';
-import { createStyleAccentGlassMaterial, createStyleGlassMaterial, createToastGlassMaterial, DEFAULT_GLASS_STYLE, showToastGlassMaterial } from '../common/utils/GlassUtil';
+import { createStyleGlassMaterial, createToastGlassMaterial, DEFAULT_GLASS_STYLE, showToastGlassMaterial } from '../common/utils/GlassUtil';
 import { isDarkThemeEffective } from '../common/utils/ThemeUtil';
 import { applyMetadataToSong, extractSongMetadata, saveSongTagsToFile, TagsWriteResult } from '../service/MetadataTask';
 import { ScaleButton } from '../component/ScaleButton';
@@ -88,12 +87,6 @@ export struct ControlAreaComponent {
   // 系统媒体音量最大格数（getMaxVolumeByStream，API 20+）：手机常见 15，PC 可能是 20/100，
   // 归一化显示与 AVVolumePanel 档位映射都必须用它，不能硬编码
   @State maxVolumeLevel: number = 15;
-  // 「更多」面板：输出设备选择（AudioRoutingManager + AudioDeviceEnhanceManager 系统接口）
-  @State outputDeviceList: audio.AudioDeviceDescriptors = [];
-  @State currentOutputDeviceLabel: string = '';
-  @StorageProp(AppStorageKeyConstants.KEY_OUTPUT_DEVICE_REVISION) @Watch('onOutputDeviceRevision')
-  private outputDeviceRevision: number = 0;
-  private audioRoutingService: AudioRoutingService = AudioRoutingService.getInstance();
   // 「更多」面板：蓝牙 A2DP 音频行（P1-4）。编解码能力为系统应用接口三方不可查，
   // 仅展示 设备名/连接态/播放态；KEY_BLUETOOTH_AUDIO_REVISION 变化时刷新
   @StorageProp(AppStorageKeyConstants.KEY_BLUETOOTH_AUDIO_REVISION) @Watch('onBluetoothAudioRevision')
@@ -166,18 +159,11 @@ export struct ControlAreaComponent {
     return createStyleGlassMaterial(this.tabStyle, DEFAULT_GLASS_STYLE)
   }
 
-  // 组件风格驱动的强调按钮材质：在 styleGlassMaterial 基础上携带 materialColor，
-  // 保留实心主题色按钮的强调层级与白字对比度（玻璃生效后自定义背景色会被系统置透明）
-  private accentGlassMaterial(color: string): uiMaterial.Material | undefined {
-    return createStyleAccentGlassMaterial(this.tabStyle, DEFAULT_GLASS_STYLE, color)
-  }
-
   aboutToAppear(): void {
     this.songDataSource.reloadData(this.songList);
     this.syncPlayModeIndex();
     this.syncSystemVolume();
     this.restoreTimerState();
-    this.refreshOutputDeviceInfo();
     this.updateBluetoothAudioLabel();
   }
 
@@ -232,17 +218,6 @@ export struct ControlAreaComponent {
   // 音量键变化经 streamVolumeChange 同步进 Slider
   toggleVolumePanel(): void {
     this.isShowVolumeBuild = !this.isShowVolumeBuild;
-  }
-
-  // ─── 输出设备（系统接口：AudioRoutingManager + AudioDeviceEnhanceManager） ───
-
-  onOutputDeviceRevision(): void {
-    this.refreshOutputDeviceInfo();
-  }
-
-  refreshOutputDeviceInfo(): void {
-    this.currentOutputDeviceLabel = this.audioRoutingService.getCurrentOutputDeviceLabel();
-    this.outputDeviceList = this.audioRoutingService.getAvailableOutputDevices();
   }
 
   // ─── 蓝牙音频行（P1-4）：A2DP 状态展示 ───
@@ -954,10 +929,23 @@ export struct ControlAreaComponent {
     }
   }
 
-  // 投送设备行右侧图标：customPicker 自绘为与其他条目一致的右箭头（点击仍唤起系统投播面板）
+  // 投播设备行整行内容：由 AVCastPicker customPicker 自绘，整行均可点击唤起系统投播面板
   @Builder
-  castPickerArrowBuilder() {
-    Stack() {
+  castPickerRowBuilder() {
+    Row() {
+      Column({ space: 2 }) {
+        Text('投播设备')
+          .fontSize(this.scaledFont(14))
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.settingTextColor())
+          Text('投播 / 输出到其它设备')
+          .fontSize(this.scaledFont(12))
+          .fontColor($r('app.color.text_sixty_color'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }
+      .alignItems(HorizontalAlign.Start)
+      Blank()
       Image($r('app.media.ic_public_arrow_right'))
         .width(this.scaledSize(18))
         .height(this.scaledSize(18))
@@ -965,7 +953,7 @@ export struct ControlAreaComponent {
     }
     .width('100%')
     .height('100%')
-    .alignContent(Alignment.End)
+    .padding({ left: 16, right: 16 })
   }
 
   // 「更多」sheet 内容入口：按层级切换，二级页在同一个 sheet 内原地覆盖，不再弹新窗口
@@ -975,8 +963,6 @@ export struct ControlAreaComponent {
       this.songInfoPanelBuilder()
     } else if (this.morePanelLevel === 2) {
       this.timerPanelBuilder()
-    } else if (this.morePanelLevel === 3) {
-      this.outputDevicePanelBuilder()
     } else {
       this.morePanelMainBuilder()
     }
@@ -1051,65 +1037,17 @@ export struct ControlAreaComponent {
         this.morePanelLevel = 2
       })
 
-      // 输出设备行：显示系统首选输出设备，点击打开系统设备列表（AudioRoutingManager + 增强路由）
-      Row() {
-        Column({ space: 2 }) {
-          Text('输出设备')
-            .fontSize(this.scaledFont(14))
-            .fontWeight(FontWeight.Medium)
-            .fontColor(this.settingTextColor())
-          Text(this.currentOutputDeviceLabel.length > 0 ? this.currentOutputDeviceLabel : '系统默认')
-            .fontSize(this.scaledFont(12))
-            .fontColor($r('app.color.text_sixty_color'))
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
+      // 投播设备行：系统 AVCastPicker 组件整行铺满（设备发现/连接/认证/切换全部系统接管）
+      AVCastPicker({
+        sessionType: 'audio',
+        customPicker: (): void => {
+          this.castPickerRowBuilder()
         }
-        .alignItems(HorizontalAlign.Start)
-        Blank()
-        Image($r('app.media.ic_public_arrow_right'))
-          .width(this.scaledSize(18))
-          .height(this.scaledSize(18))
-          .fillColor($r('app.color.text_twenty_color'))
-      }
-      .width('100%')
-      .height(52)
-      .padding({ left: 16, right: 16 })
-      .backgroundColor($r('app.color.player_bg_color'))
-      .borderRadius(this.scaledSize(10))
-      .onClick(() => {
-        this.refreshOutputDeviceInfo()
-        this.morePanelLevel = 3
       })
-
-      // 投送设备行：系统 AVCastPicker 组件（设备发现/连接/认证/切换全部系统接管）
-      Row() {
-        Column({ space: 2 }) {
-          Text('投送设备')
-            .fontSize(this.scaledFont(14))
-            .fontWeight(FontWeight.Medium)
-            .fontColor(this.settingTextColor())
-          Text('投送 / 输出到其它设备')
-            .fontSize(this.scaledFont(12))
-            .fontColor($r('app.color.text_sixty_color'))
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-        }
-        .alignItems(HorizontalAlign.Start)
-        Blank()
-        AVCastPicker({
-          sessionType: 'audio',
-          customPicker: (): void => {
-            this.castPickerArrowBuilder()
-          }
-        })
-          .width(this.scaledSize(32))
-          .height(this.scaledSize(32))
-      }
-      .width('100%')
-      .height(52)
-      .padding({ left: 16, right: 16 })
-      .backgroundColor($r('app.color.player_bg_color'))
-      .borderRadius(this.scaledSize(10))
+        .width('100%')
+        .height(52)
+        .backgroundColor($r('app.color.player_bg_color'))
+        .borderRadius(this.scaledSize(10))
 
       // 蓝牙音频行（P1-4）：A2DP 连接状态展示；编解码能力为系统应用接口三方不可查，
       // 仅展示 设备名/连接态/播放态，点击重试授权或刷新状态
@@ -1141,65 +1079,8 @@ export struct ControlAreaComponent {
       })
     }
     .width(StyleConstants.FULL_WIDTH)
+    .padding({ left: 16, right: 16 })
     .transition(this.morePanelTransition(false))
-  }
-
-  // 输出设备选择 sheet：系统接口返回的可用媒体输出设备列表 + 应用级设备选择（API 26 增强路由）
-  @Builder
-  outputDevicePanelBuilder() {
-    Column({ space: 8 }) {
-      if (this.outputDeviceList.length === 0) {
-        Text('暂无可切换的输出设备')
-          .fontSize(this.scaledFont(13))
-          .fontColor($r('app.color.text_sixty_color'))
-          .width('100%')
-          .padding({ top: 20, bottom: 20 })
-      }
-      ForEach(this.outputDeviceList, (device: audio.AudioDeviceDescriptor) => {
-        Row() {
-          Text(this.audioRoutingService.getDeviceLabel(device))
-            .fontSize(this.scaledFont(14))
-            .fontColor($r('app.color.text_primary'))
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .layoutWeight(1)
-          Radio({
-            value: `dev_${device.deviceType}_${device.id}`,
-            group: 'output_device_group'
-          })
-            .checked(this.currentOutputDeviceLabel.length > 0 &&
-              this.audioRoutingService.getDeviceLabel(device) === this.currentOutputDeviceLabel)
-            .width(this.scaledSize(20))
-            .height(this.scaledSize(20))
-            .radioStyle({ checkedBackgroundColor: this.primaryColor })
-            .margin({ left: 8 })
-            .hitTestBehavior(HitTestMode.None)
-        }
-        .width('100%')
-        .height(52)
-        .padding({ left: 16, right: 16 })
-        .backgroundColor($r('app.color.player_bg_color'))
-        .borderRadius(this.scaledSize(10))
-        .onClick(() => {
-          if (!this.audioRoutingService.isEnhancedRoutingSupported()) {
-            try {
-              this.promptAction.openToast({
-                message: '当前设备不支持应用级设备选择，使用系统默认路由',
-                systemMaterial: this.toastGlassMaterial(),
-              }).catch((err: BusinessError) => {
-                Logger.error(TAG, `openToast rejected: code=${err.code}, message=${err.message}`);
-              });
-            } catch (err) {
-              Logger.error(TAG, `openToast failed: ${JSON.stringify(err)}`);
-            }
-            return
-          }
-          this.audioRoutingService.selectOutputDevice(device)
-        })
-      }, (device: audio.AudioDeviceDescriptor) => `dev_${device.deviceType}_${device.id}`)
-    }
-    .width(StyleConstants.FULL_WIDTH)
-    .transition(this.morePanelTransition(true))
   }
 
   @Builder
@@ -1327,7 +1208,6 @@ export struct ControlAreaComponent {
           .borderRadius(4)
           .margin({ left: 8 })
           .padding({ left: 10, right: 10 })
-          .systemMaterial(this.accentGlassMaterial(this.primaryColor))
           .onClick(() => { this.saveEditField() })
         Button('取消')
           .height(this.scaledFont(32))
@@ -1337,7 +1217,6 @@ export struct ControlAreaComponent {
           .borderRadius(4)
           .margin({ left: 8 })
           .padding({ left: 10, right: 10 })
-          .systemMaterial(this.styleGlassMaterial())
           .onClick(() => { this.cancelEditField() })
       } else {
         Text(value && value.length > 0 ? value : '-')
@@ -1391,7 +1270,6 @@ export struct ControlAreaComponent {
             .fontColor(this.settingTextColor())
             .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.08))
             .borderRadius(this.scaledSize(10))
-            .systemMaterial(this.styleGlassMaterial())
             .onClick(() => {
               this.isShowCustomPicker = false
             })
@@ -1403,8 +1281,6 @@ export struct ControlAreaComponent {
             .backgroundColor(this.customHours * 3600 + this.customMinutes * 60 + this.customSeconds > 0 ? this.primaryColor : '#555555')
             .borderRadius(this.scaledSize(10))
             .enabled(this.customHours * 3600 + this.customMinutes * 60 + this.customSeconds > 0)
-            .systemMaterial(this.customHours * 3600 + this.customMinutes * 60 + this.customSeconds > 0 ?
-              this.accentGlassMaterial(this.primaryColor) : undefined)
             .onClick(() => {
               this.setTimerSeconds(this.customHours * 3600 + this.customMinutes * 60 + this.customSeconds)
               this.customHours = 0
@@ -1532,7 +1408,6 @@ export struct ControlAreaComponent {
           .backgroundColor(this.selectedPresetMinutes > 0 ? this.primaryColor : '#555555')
           .borderRadius(this.scaledSize(10))
           .enabled(this.selectedPresetMinutes > 0)
-          .systemMaterial(this.selectedPresetMinutes > 0 ? this.accentGlassMaterial(this.primaryColor) : undefined)
           .onClick(() => {
             this.setTimerSeconds(this.selectedPresetMinutes * 60)
             this.selectedPresetMinutes = -1
@@ -1607,7 +1482,6 @@ export struct ControlAreaComponent {
             .fontColor(StyleConstants.COLOR_DANGER_RED)
             .backgroundColor(Color.Transparent)
             .border({ width: 1, color: StyleConstants.COLOR_DANGER_RED, radius: this.scaledSize(10) })
-            .systemMaterial(this.styleGlassMaterial())
             .onClick(() => {
               this.clearTimer()
             })
@@ -1825,8 +1699,6 @@ export struct ControlAreaComponent {
         return '歌曲信息'
       case 2:
         return '定时关闭'
-      case 3:
-        return '输出设备'
       default:
         return '更多'
     }
