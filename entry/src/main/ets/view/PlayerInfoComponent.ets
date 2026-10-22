@@ -41,8 +41,6 @@ export struct PlayerInfoComponent {
   @State isBackgroundReady: boolean = false;
   @State isShowControl: boolean = true;
   @StorageLink(AppStorageKeyConstants.KEY_PAGE_SHOW_TIME) pageShowTime: number = 0;
-  // 歌词偏移滑轨是否展开：展开期间禁用 Swiper 横滑，否则横向拖拽会被翻页手势抢走，滑块拖不动
-  @StorageLink(AppStorageKeyConstants.KEY_LYRIC_OFFSET_PANEL) lyricOffsetPanelVisible: boolean = false;
   @StorageLink('uplayer_theme_mode') themeMode: string = 'system';
   @State intervalID: number = 0;
   // 手机断点一镜到底：0 = 大封面页，1 = 歌词页；由 Swiper 逐帧回调驱动浮层封面插值
@@ -292,9 +290,6 @@ export struct PlayerInfoComponent {
             .width('100%')
             .height('100%')
             .loop(false)
-            // 歌词偏移滑轨展开时禁掉横滑翻页：Swiper 的横向手势优先级高于滑块拖拽，
-            // 不禁用的话手指一横拖就被判成翻页，滑块纹丝不动
-            .disableSwipe(this.lyricOffsetPanelVisible)
             .curve(curves.springMotion(0.5, 0.8))
             .indicator(
               // 未选中圆点 6×6，当前页拉成 22×6 椭圆长条（高度 6 → 端部圆角半径 3）
