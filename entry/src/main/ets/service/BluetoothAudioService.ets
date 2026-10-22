@@ -1,5 +1,5 @@
 import { a2dp, access, baseProfile, connection } from '@kit.ConnectivityKit'
-import { abilityAccessCtrl, common, Permissions } from '@kit.AbilityKit'
+import { abilityAccessCtrl, bundleManager, common, Permissions } from '@kit.AbilityKit'
 import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 
@@ -56,9 +56,12 @@ export class BluetoothAudioService {
     return this.playing
   }
 
-  // ─── 授权 + 初始化（打开「更多」面板时调用；拒绝后点「蓝牙音频」行重试） ───
-
-  async ensurePermissionAndInit(context: common.UIAbilityContext | undefined): Promise<void> {
+  // ─── 授权 + 初始化 ───
+  // allowPrompt=false 时只做「静默检查已授权」，绝不弹系统权限框：
+  // 打开「更多」面板不能触发权限弹窗——首次安装时该弹窗会与半模态争抢焦点，
+  // 面板既不显示、又把页面输入（含键盘快捷键）全部吞掉，表现为「点了没反应」
+  async ensurePermissionAndInit(context: common.UIAbilityContext | undefined,
+    allowPrompt: boolean = true): Promise<void> {
     if (this.permissionGranted) {
       if (this.initialized) {
         this.refresh()
@@ -67,6 +70,15 @@ export class BluetoothAudioService {
     }
     if (context === undefined) {
       Logger.warn(TAG, 'ensurePermissionAndInit skipped: no UIAbilityContext')
+      return
+    }
+    if (!allowPrompt) {
+      const granted: boolean = await this.checkPermissionSilently()
+      if (!granted) {
+        return
+      }
+      this.permissionGranted = true
+      this.initInternal()
       return
     }
     try {
@@ -83,6 +95,21 @@ export class BluetoothAudioService {
       this.initInternal()
     } catch (err) {
       Logger.error(TAG, `requestPermissionsFromUser failed: ${JSON.stringify(err)}`)
+    }
+  }
+
+  // 静默查询授权状态：checkAccessTokenSync 不会弹窗，可安全用于面板打开等被动场景
+  private async checkPermissionSilently(): Promise<boolean> {
+    try {
+      const atManager: abilityAccessCtrl.AtManager = abilityAccessCtrl.createAtManager()
+      const info: bundleManager.BundleInfo = await bundleManager.getBundleInfoForSelf(
+        bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION)
+      const status: abilityAccessCtrl.GrantStatus =
+        atManager.checkAccessTokenSync(info.appInfo.accessTokenId, 'ohos.permission.ACCESS_BLUETOOTH')
+      return status === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED
+    } catch (err) {
+      Logger.warn(TAG, `checkPermissionSilently failed: ${JSON.stringify(err)}`)
+      return false
     }
   }
 

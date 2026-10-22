@@ -260,9 +260,11 @@ export struct ControlAreaComponent {
     return !svc.isBluetoothEnabled();
   }
 
-  // 打开「更多」面板或点击行时触发：申请权限（已授权则只刷新状态）
-  private initBluetoothAudio(): void {
-    this.bluetoothAudioService.ensurePermissionAndInit(this.context)
+  // 打开「更多」面板时调用：allowPrompt=false 只静默查询已授权状态，绝不弹权限框
+  //（首次安装时弹框与半模态抢焦点会让面板打不开且吞掉所有输入）
+  // 点击「蓝牙音频」行时调用：allowPrompt=true，由用户主动触发授权
+  private initBluetoothAudio(allowPrompt: boolean): void {
+    this.bluetoothAudioService.ensurePermissionAndInit(this.context, allowPrompt)
       .then((): void => {
         this.updateBluetoothAudioLabel();
       })
@@ -895,7 +897,7 @@ export struct ControlAreaComponent {
           hoverScale: 1.1,
           onButtonTap: () => {
             this.isShowMorePanel = true;
-            this.initBluetoothAudio();
+            this.initBluetoothAudio(false);
           }
         }) {
           Image($r('app.media.ic_public_more'))
@@ -1075,7 +1077,8 @@ export struct ControlAreaComponent {
       .backgroundColor($r('app.color.player_bg_color'))
       .borderRadius(this.scaledSize(10))
       .onClick(() => {
-        this.initBluetoothAudio();
+        // 用户主动点行才申请权限：允许弹系统权限框
+        this.initBluetoothAudio(true);
       })
     }
     .width(StyleConstants.FULL_WIDTH)
