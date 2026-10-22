@@ -911,6 +911,11 @@ export struct ControlAreaComponent {
               title: this.morePanelTitle(),
               showClose: true,
               preferType: SheetType.CENTER,
+              // 半透明浅灰底板：亮/暗统一同一色值（不再吃系统默认底板，暗色下不会发死灰）。
+              // alpha 压到 0.18，能直接透过弹窗看到底下的页面内容；
+              // 不挂 backgroundBlurStyle，避免把透出来的内容磨成一片灰糊
+              backgroundColor: 'rgba(206,206,210,0.18)',
+              backgroundBlurStyle: BlurStyle.NONE,
               systemMaterial: this.styleGlassMaterial(),
               onWillDisappear: () => {
                 this.isShowMorePanel = false;
