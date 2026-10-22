@@ -279,7 +279,8 @@ export struct PlaylistCreateDialog {
                   .fillColor(this.isSelected(song.id) ? this.primaryColor : $r('app.color.text_sixty_color'))
               }
               .width('100%')
-              .padding({ top: 7, bottom: 7 })
+              // 右侧留出滚动条宽度：否则列表滚动条会压在行尾的选中图标上
+              .padding({ top: 7, bottom: 7, right: this.scaledSize(10) })
               .onClick(() => {
                 this.toggleSong(song.id)
               })
