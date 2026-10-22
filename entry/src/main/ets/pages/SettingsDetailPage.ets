@@ -164,6 +164,7 @@ struct SettingsDetailPage {
   @State previewTabIndex: number = 0
   @State showColorPicker: boolean = false
   @State showGlassScope: boolean = false
+  @State showShortcutSheet: boolean = false
   @State pickerHue: number = 210
   @State pickerSaturation: number = 1
   @State pickerValue: number = 1
@@ -983,6 +984,14 @@ struct SettingsDetailPage {
       systemMaterial: this.styleGlassMaterial(),
       backgroundColor: $r('app.color.page_background_other')
     })
+    .bindSheet($$this.showShortcutSheet, this.shortcutSheetBuilder(), {
+      height: SheetSize.FIT_CONTENT,
+      dragBar: false,
+      preferType: SheetType.CENTER,
+      showClose: true,
+      systemMaterial: this.styleGlassMaterial(),
+      backgroundColor: $r('app.color.page_background_other')
+    })
   }
 
   // 右侧预留 PC 窗口标题按钮区（titleButtonWidth + 12），沿用原 titleBand 的避让逻辑。
@@ -1116,10 +1125,10 @@ struct SettingsDetailPage {
         .fontColor(this.settingSubTextColor())
         .width('100%')
         .padding({ top: this.scaledSize(2) })
-      this.scopeLine('• 底部 Tab 栏（沉浸式玻璃，带光效跟手 + 按压 Q 弹形变）')
-      this.scopeLine('• 右下角播控条')
-      this.scopeLine('• 顶部的模糊层（首页顶部标题区，覆盖首页第一屏）')
-      this.scopeLine('• 首页长按歌曲进入多选后的顶部菜单栏')
+      this.scopeLine('• 底部 Tab 栏：玻璃样式下挂液态玻璃（跟手光效由「跟手光效颜色」决定，设为「无」即关闭）；经典样式为磨砂，强度随「Tab栏与播控条模糊强度」')
+      this.scopeLine('• 右下角播控条：不在系统液态玻璃生效区，统一使用磨砂底板（大屏迷你栏底板跟随页签栏）')
+      this.scopeLine('• 首页上端与设置详情页顶部的渐变模糊层（随「首页上端模糊强度」设置变化）')
+      this.scopeLine('• 首页长按歌曲进入多选后的顶部菜单栏：玻璃样式下液态玻璃叠加磨砂兜底，经典样式不挂背景效果')
       this.scopeLine('• 各页面左上角圆形返回按钮（设置详情、播放器等页面；玻璃样式出真玻璃，经典样式为磨砂兜底）')
       this.scopeLine('• 全局悬浮加号按钮（磨砂玻璃盘）')
       this.scopeLine(
@@ -1132,9 +1141,9 @@ struct SettingsDetailPage {
         .fontColor(this.settingSubTextColor())
         .width('100%')
         .padding({ top: this.scaledSize(6) })
-      this.scopeLine('• 首页 / 歌单 / 设置 / 设置详情 四个一级页面的顶层背景（均使用预设纯色背景，明暗自适应）')
+      this.scopeLine('• 首页 / 歌单 / 设置 / 设置详情 页面的顶层背景（均使用预设纯色背景，明暗自适应）')
       this.scopeLine('• 音乐播放器页面背景（仅左上角返回按钮使用玻璃）')
-      this.scopeLine('• 系统 API < 26 的设备（液态玻璃材质自动降级为磨砂模糊）')
+      this.scopeLine('• 系统 API < 26 或未声明支持沉浸式材质的设备（液态玻璃自动降级为磨砂模糊）')
 
       Row() {
         Button('知道了')
@@ -3209,6 +3218,7 @@ struct SettingsDetailPage {
       .width('100%')
 
       // 全局快捷键速查：数据来源 Index.handleKeyEvent / MusicPlayer.handleKeyEvent
+      // 内容移入二级弹窗（bindSheet 半模态），正文只保留入口行
       Column({ space: this.scaledSize(6) }) {
         Text('快捷键')
           .fontSize(this.scaledFont(13))
@@ -3216,8 +3226,7 @@ struct SettingsDetailPage {
           .fontWeight(FontWeight.Bold)
           .width('100%')
           .padding({ left: this.scaledSize(4) })
-        this.shortcutGroup('主页', ShortcutTable.MAIN_PAGE)
-        this.shortcutGroup('播放器页', ShortcutTable.PLAYER_PAGE)
+        this.shortcutEntryRow()
       }
       .width('100%')
 
@@ -3316,6 +3325,70 @@ struct SettingsDetailPage {
         .margin({ top: index === 0 ? 0 : this.scaledSize(4) })
       }, (entry: TopPlayedEntry, index: number) => 'top_' + index + '_' + entry.playCount)
     }
+  }
+
+  // 快捷键入口行（关于分区）：点击打开二级弹窗查看完整快捷键速查
+  @Builder
+  shortcutEntryRow(): void {
+    Row() {
+      Text('查看快捷键速查')
+        .fontSize(this.scaledFont(14))
+        .fontColor(this.settingTextColor())
+        .fontWeight(FontWeight.Medium)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .layoutWeight(1)
+      Text('主页 / 播放器页')
+        .fontSize(this.scaledFont(12))
+        .fontColor(this.primaryColor)
+        .maxLines(1)
+        .flexShrink(0)
+        .margin({ left: this.scaledSize(8) })
+    }
+    .width('100%')
+    .constraintSize({ minWidth: 0, maxWidth: '100%' })
+    .height(this.scaledSize(44))
+    .alignItems(VerticalAlign.Center)
+    .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+    .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+    .borderRadius(this.scaledSize(10))
+    .onClick(() => {
+      this.showShortcutSheet = true
+    })
+  }
+
+  // 快捷键速查二级弹窗（bindSheet 半模态内容）：主页 + 播放器页两组
+  @Builder
+  shortcutSheetBuilder(): void {
+    Column({ space: this.scaledSize(10) }) {
+      Text('快捷键速查')
+        .fontSize(this.scaledFont(16))
+        .fontColor(this.settingTextColor())
+        .fontWeight(FontWeight.Bold)
+        .width('100%')
+        .textAlign(TextAlign.Start)
+
+      Scroll() {
+        Column({ space: this.scaledSize(10) }) {
+          this.shortcutGroup('主页', ShortcutTable.MAIN_PAGE)
+          this.shortcutGroup('播放器页', ShortcutTable.PLAYER_PAGE)
+        }
+        .width('100%')
+        .constraintSize({ minWidth: 0, maxWidth: '100%' })
+      }
+      .width('100%')
+      .constraintSize({ maxHeight: '70%' })
+      .align(Alignment.Top)
+      .edgeEffect(EdgeEffect.Spring)
+    }
+    .width('100%')
+    .constraintSize({ minWidth: 0, maxWidth: '100%' })
+    .padding({
+      left: this.scaledSize(18),
+      right: this.scaledSize(18),
+      top: this.scaledSize(16),
+      bottom: this.scaledSize(12)
+    })
   }
 
   // 快捷键分组（关于分区「快捷键」）：组名 + 快捷键行（说明居左、按键徽标居右）
