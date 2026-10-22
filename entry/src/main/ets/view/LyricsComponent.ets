@@ -34,8 +34,9 @@ export struct LyricsComponent {
   @Link isShowControl: boolean;
   @StorageLink(AppStorageKeyConstants.KEY_PAGE_SHOW_TIME) pageShowTime: number = 0;
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0;
-  // P0-3 每歌歌词偏移：滑条调节（-5s ~ +5s，步进 0.1s），拖动实时生效、松手单曲落库
-  @State lyricOffsetMs: number = 0;
+  // P0-3 每歌歌词偏移：滑条已移入播放器「更多」半模态（ControlAreaComponent），
+  // 这里只消费同一个 AppStorage 键驱动高亮/点击跳转换算
+  @StorageLink(AppStorageKeyConstants.KEY_LYRIC_OFFSET_MS) lyricOffsetMs: number = 0;
   private lyricLoadRequestId: number = 0;
 
   aboutToAppear() {
@@ -44,12 +45,6 @@ export struct LyricsComponent {
 
   private currentSong(): SongInfo {
     return DataService.currentSongFromList(this.songList, this.currentSongId)
-  }
-
-  // P0-3：偏移值格式化（+0.5s / -1.2s / 0.0s）
-  private formatLyricOffset(offsetMs: number): string {
-    const seconds: number = offsetMs / 1000
-    return (seconds > 0 ? '+' : '') + seconds.toFixed(1) + 's'
   }
 
   // 窄屏判定与 PlayerInfoComponent 保持一致：XS/SM 断点（手机、分屏、缩小后的 PC 窗口）
@@ -128,38 +123,7 @@ export struct LyricsComponent {
         isLyricLoading: this.isLyricLoading, lyricOffsetMs: this.lyricOffsetMs })
         .layoutWeight(1)
 
-      // P0-3 歌词偏移调节行：仅在有歌词时显示；Block 阻断触摸冒泡，避免拖滑条触发
-      // 根容器的 onClick（窄屏下会切换控制区显隐）
-      if (!this.isLyricLoading && this.mLrcEntryList.length > 0) {
-        Row({ space: 10 }) {
-          Text('歌词偏移')
-            .fontSize(Math.round(12 * this.fontSizeScale))
-            .fontColor('#B3ffffff')
-          Slider({ value: this.lyricOffsetMs, min: -5000, max: 5000, step: 100 })
-            .layoutWeight(1)
-            .selectedColor('#FFFFFF')
-            .trackColor('#33FFFFFF')
-            .blockColor('#FFFFFF')
-            .onChange((value: number, mode: SliderChangeMode) => {
-              const clamped: number = Math.round(value / 100) * 100
-              this.lyricOffsetMs = clamped
-              if (this.currentSongId.length > 0) {
-                // 拖动过程只改内存（对象引用共享，歌词高亮实时跟随），
-                // End/Click 时才单曲增量落库，避免拖动产生大量 DB 写
-                DataService.getInstance().setLyricOffset(this.currentSongId, clamped,
-                  mode === SliderChangeMode.End || mode === SliderChangeMode.Click)
-              }
-            })
-          Text(this.formatLyricOffset(this.lyricOffsetMs))
-            .fontSize(Math.round(12 * this.fontSizeScale))
-            .fontColor('#FFFFFF')
-            .width(48)
-            .textAlign(TextAlign.End)
-        }
-        .width(StyleConstants.FULL_WIDTH)
-        .padding({ left: 8, right: 8, top: 8 })
-        .hitTestBehavior(HitTestMode.Block)
-      }
+      // P0-3 歌词偏移滑条已移入播放器「更多」半模态（位置见 ControlAreaComponent.morePanelMainBuilder）
 
       if (this.isNarrowLayout() && this.isShowControl) {
         ControlAreaComponent()

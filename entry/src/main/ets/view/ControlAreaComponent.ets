@@ -48,7 +48,10 @@ export struct ControlAreaComponent {
   playMode: MusicPlayMode = PlayModeSwitchList[this.playModeIndex];
   @StorageLink(AppStorageKeyConstants.KEY_SELECT_INDEX) selectIndex: number = 0;
   // 按 id 解析当前播放歌曲用于显示，避免队列下标失配
-  @StorageLink('uplayer_current_song_id') currentSongId: string = '';
+  @StorageLink('uplayer_current_song_id') @Watch('syncLyricOffset') currentSongId: string = '';
+  // 歌词偏移（每歌，-5s~+5s，步进 0.1s）：与播放页歌词区共用 AppStorage 键，
+  // 拖动即时生效（歌词高亮同帧跟随），松手才单曲落库
+  @StorageLink(AppStorageKeyConstants.KEY_LYRIC_OFFSET_MS) lyricOffsetMs: number = 0;
   @StorageLink(AppStorageKeyConstants.KEY_CURRENT_SPEED) speed: number = 1;
   @StorageLink(AppStorageKeyConstants.KEY_CURRENT_VOLUME) volume: number = 0;
   @State isShowSpeedBuild: boolean = false;
@@ -452,6 +455,28 @@ export struct ControlAreaComponent {
 
   private currentSong(): SongInfo {
     return DataService.currentSongFromList(this.songList, this.currentSongId);
+  }
+
+  // 切歌：把该曲目已保存的歌词偏移同步到滑条（与 LyricsComponent 的加载同源）
+  private syncLyricOffset(): void {
+    this.lyricOffsetMs = this.currentSong().lyricOffsetMs;
+  }
+
+  // 偏移值格式化：+0.5s / -1.2s / 0.0s
+  private formatLyricOffset(offsetMs: number): string {
+    const seconds: number = offsetMs / 1000;
+    return (seconds > 0 ? '+' : '') + seconds.toFixed(1) + 's';
+  }
+
+  // 拖动：内存即时生效（歌词高亮实时跟随）；松手/点击才单曲落库，避免拖动刷大量 DB 写
+  private onLyricOffsetChange(value: number, mode: SliderChangeMode): void {
+    const clamped: number = Math.round(value / 100) * 100;
+    this.lyricOffsetMs = clamped;
+    if (this.currentSongId.length === 0) {
+      return;
+    }
+    DataService.getInstance().setLyricOffset(this.currentSongId, clamped,
+      mode === SliderChangeMode.End || mode === SliderChangeMode.Click);
   }
 
   // 文件大小格式化：B/KB/MB
@@ -1080,6 +1105,52 @@ export struct ControlAreaComponent {
         // 用户主动点行才申请权限：允许弹系统权限框
         this.initBluetoothAudio(true);
       })
+
+      // 歌词偏移（原播放页歌词区滑条移入此处）：卡片与上方入口行同一套外观
+      Column({ space: this.scaledSize(4) }) {
+        Row() {
+          Text('歌词偏移')
+            .fontSize(this.scaledFont(14))
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.settingTextColor())
+          Blank()
+          Text(this.formatLyricOffset(this.lyricOffsetMs))
+            .fontSize(this.scaledFont(13))
+            .fontColor(this.primaryColor)
+        }
+        .width('100%')
+
+        Slider({ value: this.lyricOffsetMs, min: -5000, max: 5000, step: 100 })
+          .width('100%')
+          .selectedColor(this.primaryColor)
+          .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+          .blockColor('#FFFFFF')
+          .blockBorderColor(this.primaryColor)
+          .blockBorderWidth(2)
+          .onChange((value: number, mode: SliderChangeMode) => {
+            this.onLyricOffsetChange(value, mode);
+          })
+
+        // 方向说明：正值=歌词提前，负值=歌词延后
+        Row() {
+          Text('延后 5s')
+            .fontSize(this.scaledFont(10))
+            .fontColor($r('app.color.text_twenty_color'))
+          Blank()
+          Text('0')
+            .fontSize(this.scaledFont(10))
+            .fontColor($r('app.color.text_twenty_color'))
+          Blank()
+          Text('提前 5s')
+            .fontSize(this.scaledFont(10))
+            .fontColor($r('app.color.text_twenty_color'))
+        }
+        .width('100%')
+      }
+      .width('100%')
+      .padding({ left: 16, right: 16, top: 10, bottom: 10 })
+      .backgroundColor('rgba(206,206,210,0.22)')
+      .borderRadius(this.scaledSize(10))
     }
     .width(StyleConstants.FULL_WIDTH)
     .padding({ left: 16, right: 16 })

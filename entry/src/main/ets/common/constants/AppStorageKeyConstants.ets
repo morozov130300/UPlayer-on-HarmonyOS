@@ -73,6 +73,9 @@ export class AppStorageKeyConstants {
     BaseConstants.KEY_PREFIX + 'PlaylistSelectAllRequest'
   // 歌单页「文件夹编辑态」：同样上提 AppStorage，返回键/ESC 才能收回（与多选同构）
   public static readonly KEY_PLAYLIST_FOLDER_EDIT: string = BaseConstants.KEY_PREFIX + 'PlaylistFolderEdit'
+  // 当前歌曲的歌词偏移（毫秒）：歌词高亮与「更多」面板滑条共用的唯一真源。
+  // 放在 AppStorage 是为了让播放页歌词区与半模态面板实时联动（拖动即时生效）
+  public static readonly KEY_LYRIC_OFFSET_MS: string = BaseConstants.KEY_PREFIX + 'LyricOffsetMs'
   // 全局悬浮加号可见性（由各内容页上报）：滚动隐藏/多选/编辑态变化时写入，
   // Index 按当前激活页读取——首页↔歌单切换时加号不重建、不位移，设置页隐藏
   public static readonly KEY_HOME_PLUS_VISIBLE: string = BaseConstants.KEY_PREFIX + 'HomePlusVisible'
