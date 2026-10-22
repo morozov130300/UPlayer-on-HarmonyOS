@@ -12,11 +12,12 @@ import { ColorHelper } from '../common/utils/ColorHelper'
 import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { StyleConstants } from '../common/constants/StyleConstants'
-import { display } from '@kit.ArkUI'
+import { display, uiMaterial } from '@kit.ArkUI'
 import { deviceInfo } from '@kit.BasicServicesKit'
 import { AlbumCover } from '../component/AlbumCover'
 import { PlaylistCreateDialog } from '../component/PlaylistCreateDialog'
 import { AlbumCoverSize } from '../service/AudioMetadataService'
+import { createStyleGlassMaterial, DEFAULT_GLASS_STYLE } from '../common/utils/GlassUtil'
 
 const TAG = 'PlaylistContent'
 const FAVORITES_FOLDER_ID: string = '__favorites__'
@@ -62,15 +63,19 @@ export struct PlaylistContent {
   @State isEditMode: boolean = false
   @State editSelectedFolderIds: string[] = []
   @State gridColumns: number = 2
-  // 自定义歌单（P2-3）：卡片数据 + 歌单名输入弹窗 + 长按操作面板 + 删除二次确认
+  // 自定义歌单（P2-3）：卡片数据 + 新建/编辑歌单弹层 + 长按冒泡菜单 + 歌单多选 + 删除二次确认
   @StorageLink(AppStorageKeyConstants.KEY_PLAYLIST_REVISION) @Watch('onPlaylistRevisionChange')
   playlistRevision: number = 0
   @State playlistCards: PlaylistCardData[] = []
-  @State isPlaylistDialogVisible: boolean = false
   @State isPlaylistCreateVisible: boolean = false
-  @State playlistDialogText: string = ''
-  private renamingPlaylistId: string = ''
+  // 编辑歌单弹层（复用新建歌单组件，编辑模式：整体替换曲目 + 改名）
+  @State isPlaylistEditVisible: boolean = false
+  private editingPlaylistId: string = ''
+  // 长按冒泡菜单：当前目标歌单卡（bindPopup 显示条件）
   @State playlistActionCardId: string = ''
+  // 歌单多选模式：批量删除
+  @State isPlaylistEditMode: boolean = false
+  @State playlistEditSelectedIds: string[] = []
   @State playlistDeleteConfirmId: string = ''
 
   aboutToAppear(): void {
@@ -263,6 +268,9 @@ export struct PlaylistContent {
   }
 
   enterEditMode(folderId: string): void {
+    if (this.isPlaylistEditMode) {
+      this.exitPlaylistEditMode()
+    }
     this.isEditMode = true
     this.editSelectedFolderIds = [folderId]
     this.publishPlusVisible()
@@ -336,7 +344,8 @@ export struct PlaylistContent {
   // （编辑态隐藏 + 滚动隐藏设置 + 滚动方向），由 Index 读取渲染
   private publishPlusVisible(): void {
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PLAYLIST_PLUS_VISIBLE,
-      !this.isEditMode && (this.isPlusVisible || !this.plusButtonScrollHide))
+      !this.isEditMode && !this.isPlaylistEditMode &&
+      (this.isPlusVisible || !this.plusButtonScrollHide))
   }
 
   // 设置页「向下滑动时隐藏加号按钮」变更：立即按新值重算并上报加号可见性
@@ -406,20 +415,120 @@ export struct PlaylistContent {
     this.isPlaylistCreateVisible = true
   }
 
-  openPlaylistRenameDialog(card: PlaylistCardData): void {
-    this.renamingPlaylistId = card.playlist.id
-    this.playlistDialogText = card.playlist.name
-    this.isPlaylistDialogVisible = true
+  // 组件风格（tabStyle）驱动的弹窗材质（bindSheet options 的 systemMaterial 字段）：
+  // 玻璃风格 → 液态玻璃；经典风格 → Material.empty 显式关闭；设备不支持 → undefined
+  private styleGlassMaterial(): uiMaterial.Material | undefined {
+    return createStyleGlassMaterial(this.settings.tabStyle, DEFAULT_GLASS_STYLE)
   }
 
-  // 重命名确认：空名与超长（>30 字符）不落库
-  async confirmPlaylistDialog(): Promise<void> {
-    const name: string = this.playlistDialogText.trim()
-    if (name.length === 0 || name.length > 30) {
-      return
+  // 新建歌单半模态弹层标题（bindSheet 官方标题栏）
+  @Builder
+  playlistCreateSheetTitle(): void {
+    Text('新建歌单')
+      .fontSize(Math.round(20 * this.fontSizeScale))
+      .fontColor($r('app.color.text_primary'))
+      .fontWeight(FontWeight.Bold)
+      .maxLines(1)
+      .width('100%')
+  }
+
+  // 新建歌单半模态弹层内容：与首页共用的统一组件（官方 bindSheet 配置由本页宿主挂载）；
+  // 每次打开弹层 builder 重新执行，组件 aboutToAppear 重跑预选
+  @Builder
+  playlistCreateSheetBuilder(): void {
+    PlaylistCreateDialog({
+      songs: this.songs,
+      preselectedIds: [],
+      primaryColor: this.primaryColor,
+      fontSizeScale: this.fontSizeScale,
+      displaySizeScale: this.displaySizeScale,
+      onDone: (_addedCount: number) => {
+        this.isPlaylistCreateVisible = false
+        this.buildPlaylistCards()
+      }
+    })
+  }
+
+  // 编辑歌单弹层标题（bindSheet 官方标题栏）
+  @Builder
+  playlistEditSheetTitle(): void {
+    Text('编辑歌单')
+      .fontSize(Math.round(20 * this.fontSizeScale))
+      .fontColor($r('app.color.text_primary'))
+      .fontWeight(FontWeight.Bold)
+      .maxLines(1)
+      .width('100%')
+  }
+
+  // 编辑歌单半模态弹层内容：与新建共用的统一组件（编辑模式：预选歌单现有曲目 + 可改名）
+  @Builder
+  playlistEditSheetBuilder(): void {
+    PlaylistCreateDialog({
+      songs: this.songs,
+      preselectedIds: this.dataService.getPlaylistItemSongIds(this.editingPlaylistId),
+      editingPlaylistId: this.editingPlaylistId,
+      initialName: this.editingPlaylistName(),
+      primaryColor: this.primaryColor,
+      fontSizeScale: this.fontSizeScale,
+      displaySizeScale: this.displaySizeScale,
+      onDone: (_savedCount: number) => {
+        this.isPlaylistEditVisible = false
+        this.buildPlaylistCards()
+      }
+    })
+  }
+
+  // 当前编辑目标的歌单名（弹层预填）
+  private editingPlaylistName(): string {
+    const card: PlaylistCardData | undefined = this.findPlaylistCard(this.editingPlaylistId)
+    return card !== undefined ? card.playlist.name : ''
+  }
+
+  // 长按冒泡菜单 → 编辑：打开编辑歌单弹层
+  openPlaylistEdit(playlistId: string): void {
+    this.editingPlaylistId = playlistId
+    this.isPlaylistEditVisible = true
+  }
+
+  // ═══════════ 歌单多选模式（批量删除）═══════════
+
+  enterPlaylistEditMode(): void {
+    if (this.isEditMode) {
+      this.exitEditMode()
     }
-    await this.dataService.renamePlaylist(this.renamingPlaylistId, name)
-    this.isPlaylistDialogVisible = false
+    this.isPlaylistEditMode = true
+    this.playlistEditSelectedIds = []
+    this.publishPlusVisible()
+  }
+
+  exitPlaylistEditMode(): void {
+    this.isPlaylistEditMode = false
+    this.playlistEditSelectedIds = []
+    this.publishPlusVisible()
+  }
+
+  togglePlaylistEditSelect(playlistId: string): void {
+    const idx: number = this.playlistEditSelectedIds.indexOf(playlistId)
+    if (idx >= 0) {
+      this.playlistEditSelectedIds.splice(idx, 1)
+      this.playlistEditSelectedIds = [...this.playlistEditSelectedIds]
+    } else {
+      this.playlistEditSelectedIds.push(playlistId)
+      this.playlistEditSelectedIds = [...this.playlistEditSelectedIds]
+    }
+  }
+
+  isPlaylistEditSelected(playlistId: string): boolean {
+    return this.playlistEditSelectedIds.indexOf(playlistId) >= 0
+  }
+
+  // 批量删除选中歌单：只删歌单与关联关系，歌曲文件与曲库不受影响
+  async deletePlaylistEditSelected(): Promise<void> {
+    const ids: string[] = this.playlistEditSelectedIds.slice()
+    for (let i = 0; i < ids.length; i++) {
+      await this.dataService.deletePlaylist(ids[i])
+    }
+    this.exitPlaylistEditMode()
     this.buildPlaylistCards()
   }
 
@@ -512,6 +621,34 @@ export struct PlaylistContent {
           }
         })
 
+        if (this.isPlaylistEditMode) {
+          Row() {
+            Text('已选 ' + this.playlistEditSelectedIds.length + ' 个')
+              .fontSize(Math.round(14 * this.fontSizeScale))
+              .fontColor($r('app.color.text_primary'))
+            Blank()
+            Text('取消')
+              .fontSize(Math.round(14 * this.fontSizeScale))
+              .fontColor(this.primaryColor)
+              .margin({ right: 16 })
+              .onClick(() => { this.exitPlaylistEditMode() })
+            Text('删除')
+              .fontSize(Math.round(14 * this.fontSizeScale))
+              .fontColor(StyleConstants.COLOR_DANGER_RED)
+              .onClick(() => {
+                this.deletePlaylistEditSelected().catch((err: Error) => {
+                  Logger.error(TAG, `delete selected playlists failed: ${JSON.stringify(err)}`)
+                })
+              })
+          }
+          .width('100%')
+          .height(48)
+          .padding({ left: 16, right: 16 })
+          .backgroundColor($r('app.color.page_background_sm'))
+          .border({ width: 1, color: $r('app.color.list_divider') })
+          .margin({ bottom: this.bottomOverlayInset() })
+        }
+
         if (this.isEditMode) {
           Row() {
             Text('已选 ' + this.editSelectedFolderIds.length + ' 个')
@@ -542,41 +679,41 @@ export struct PlaylistContent {
       }
       .width('100%')
       .height('100%')
+      // 编辑歌单弹层（长按菜单 → 编辑）：同新建弹层的半模态配置（挂在内层，避免同节点双 bindSheet）
+      .bindSheet($$this.isPlaylistEditVisible, this.playlistEditSheetBuilder(), {
+        detents: [SheetSize.MEDIUM],
+        dragBar: false,
+        title: this.playlistEditSheetTitle(),
+        showClose: true,
+        preferType: SheetType.CENTER,
+        systemMaterial: this.styleGlassMaterial(),
+        onWillDisappear: () => {
+          this.isPlaylistEditVisible = false
+          this.buildPlaylistCards()
+        }
+      })
 
       // 全局悬浮加号由 Index 统一渲染（首页/歌单共用，切页不位移，设置页隐藏），
       // 可见性由 publishPlusVisible 上报，本页不再挂按钮
 
-      // 自定义歌单弹层（P2-3）：输入弹窗 / 长按操作面板 / 删除二次确认
-      if (this.isPlaylistDialogVisible) {
-        this.playlistNameDialog()
-      }
-      if (this.playlistActionCardId.length > 0) {
-        this.playlistActionPanel()
-      }
+      // 自定义歌单弹层（P2-3）：长按冒泡菜单由卡片 bindPopup 挂载 / 删除二次确认
       if (this.playlistDeleteConfirmId.length > 0) {
         this.playlistDeleteConfirm()
-      }
-      if (this.isPlaylistCreateVisible) {
-        PlaylistCreateDialog({
-          songs: this.songs,
-          preselectedIds: [],
-          primaryColor: this.primaryColor,
-          fontSizeScale: this.fontSizeScale,
-          displaySizeScale: this.displaySizeScale,
-          onCancel: () => {
-            this.isPlaylistCreateVisible = false
-          },
-          onDone: () => {
-            this.isPlaylistCreateVisible = false
-            this.buildPlaylistCards()
-          }
-        })
       }
     }
     .width('100%')
     .height('100%')
     // 背景使用预设纯色（明暗自适应），不应用任何玻璃/模糊/透明度效果
     .backgroundColor($r('app.color.page_background_sm'))
+    // 新建歌单统一弹窗（与首页共用组件）：官方半模态配置（标题栏 + 中档高度 + 玻璃材质）
+    .bindSheet($$this.isPlaylistCreateVisible, this.playlistCreateSheetBuilder(), {
+      detents: [SheetSize.MEDIUM],
+      dragBar: false,
+      title: this.playlistCreateSheetTitle(),
+      showClose: true,
+      preferType: SheetType.CENTER,
+      systemMaterial: this.styleGlassMaterial()
+    })
   }
 
   // ═══════════ 自定义歌单 UI（P2-3）═══════════
@@ -597,7 +734,8 @@ export struct PlaylistContent {
           }
         }, (card: PlaylistCardData) =>
           card.playlist.id + '_' + card.playlist.name + '_' + card.count + '_' +
-          (this.isPlaylistCardActive(card) ? '1' : '0'))
+          (this.isPlaylistCardActive(card) ? '1' : '0') + '_' +
+          (this.isPlaylistEditMode ? (this.isPlaylistEditSelected(card.playlist.id) ? 's' : 'e') : 'n'))
         GridItem() {
           this.newPlaylistCard()
         }
@@ -614,7 +752,16 @@ export struct PlaylistContent {
 
   @Builder
   playlistCard(card: PlaylistCardData): void {
-    Column() {
+    Row() {
+      if (this.isPlaylistEditMode) {
+        Image(this.isPlaylistEditSelected(card.playlist.id) ?
+          $r('app.media.ic_public_todo_filled') : $r('app.media.ic_public_todo'))
+          .width(20)
+          .height(20)
+          .fillColor(this.isPlaylistEditSelected(card.playlist.id) ?
+            this.primaryColor : $r('app.color.text_sixty_color'))
+          .margin({ right: 10 })
+      }
       Column() {
         Row() {
           this.collageCell(card, 0)
@@ -630,39 +777,61 @@ export struct PlaylistContent {
         .width('100%')
         .layoutWeight(1)
       }
-      .width('100%')
-      .aspectRatio(1)
+      .width(this.scaledSize(56))
+      .height(this.scaledSize(56))
       .borderRadius(12)
       .clip(true)
 
-      Text(card.playlist.name)
-        .fontSize(Math.round(12 * this.fontSizeScale))
-        .fontColor($r('app.color.text_primary'))
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .margin({ top: 6 })
-      Text(card.count + ' 首')
-        .fontSize(10)
-        .fontColor($r('app.color.text_sixty_color'))
-        .margin({ top: 2 })
+      Column({ space: 2 }) {
+        Text(card.playlist.name)
+          .fontSize(Math.round(12 * this.fontSizeScale))
+          .fontColor($r('app.color.text_primary'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Text(card.count + ' 首')
+          .fontSize(10)
+          .fontColor($r('app.color.text_sixty_color'))
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+      .margin({ left: 12 })
     }
     .width('100%')
-    .padding(6)
+    .height(80)
+    .padding({ left: 16, right: 16 })
+    .alignItems(VerticalAlign.Center)
     .borderRadius(16)
-    .alignItems(HorizontalAlign.Center)
     .backgroundColor(this.isPlaylistCardActive(card) ?
       ColorHelper.hexWithAlpha(this.primaryColor, '22') : 'rgba(0,0,0,0.03)')
     .border({ width: this.isPlaylistCardActive(card) ? 2 : 1,
       color: this.isPlaylistCardActive(card) ? this.primaryColor : $r('app.color.list_divider') })
     .onClick(() => {
-      this.onPlaylistToggle(card)
+      if (this.isPlaylistEditMode) {
+        this.togglePlaylistEditSelect(card.playlist.id)
+      } else {
+        this.onPlaylistToggle(card)
+      }
     })
     .gesture(
       LongPressGesture()
         .onAction(() => {
-          this.playlistActionCardId = card.playlist.id
+          if (!this.isPlaylistEditMode) {
+            this.playlistActionCardId = card.playlist.id
+          }
         })
     )
+    // 长按冒泡菜单（倍速弹窗同款 bindPopup 气泡）：编辑 / 多选 / 删除
+    .bindPopup(!this.isPlaylistEditMode && this.playlistActionCardId === card.playlist.id, {
+      builder: this.playlistActionPopupBuilder,
+      placement: Placement.Bottom,
+      showInSubWindow: false,
+      systemMaterial: this.styleGlassMaterial(),
+      onStateChange: (e) => {
+        if (!e.isVisible) {
+          this.playlistActionCardId = ''
+        }
+      }
+    })
   }
 
   // 封面拼贴单格（P2-3）：前 4 首歌封面 2×2；不足的格子铺占位底色
@@ -685,27 +854,22 @@ export struct PlaylistContent {
 
   @Builder
   newPlaylistCard(): void {
-    Column() {
+    Row() {
       Image($r('app.media.ic_public_add_norm_filled'))
         .width(28)
         .height(28)
         .fillColor(this.primaryColor)
-        .margin({ bottom: 6 })
       Text('新建歌单')
         .fontSize(Math.round(12 * this.fontSizeScale))
         .fontColor($r('app.color.text_primary'))
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
-      // 与文件夹卡两行文案对齐占位（不可见空行）
-      Text('\u00A0')
-        .fontSize(10)
-        .fontColor($r('app.color.text_sixty_color'))
-        .margin({ top: 2 })
+        .margin({ left: 12 })
     }
     .width('100%')
     .height(80)
-    .justifyContent(FlexAlign.Center)
-    .alignItems(HorizontalAlign.Center)
+    .padding({ left: 16, right: 16 })
+    .alignItems(VerticalAlign.Center)
     .borderRadius(16)
     .backgroundColor('rgba(0,0,0,0.03)')
     .border({ width: 1, color: $r('app.color.list_divider') })
@@ -714,136 +878,49 @@ export struct PlaylistContent {
     })
   }
 
-  // 歌单名输入弹窗（新建/改名共用）
+  // 长按歌单卡冒泡菜单（bindPopup，倍速弹窗同款气泡）：编辑 / 多选 / 删除
   @Builder
-  playlistNameDialog(): void {
-    Stack({ alignContent: Alignment.Center }) {
-      Column()
+  playlistActionPopupBuilder(): void {
+    Column() {
+      Text('编辑')
+        .fontSize(Math.round(14 * this.fontSizeScale))
+        .fontColor($r('app.color.text_primary'))
         .width('100%')
-        .height('100%')
-        .backgroundColor('rgba(0,0,0,0.35)')
+        .textAlign(TextAlign.Center)
+        .padding({ top: 12, bottom: 12 })
         .onClick(() => {
-          this.isPlaylistDialogVisible = false
+          const playlistId: string = this.playlistActionCardId
+          this.playlistActionCardId = ''
+          if (playlistId.length > 0) {
+            this.openPlaylistEdit(playlistId)
+          }
         })
-
-      Column({ space: 14 }) {
-        Text('重命名歌单')
-          .fontSize(Math.round(16 * this.fontSizeScale))
-          .fontWeight(FontWeight.Bold)
-          .fontColor($r('app.color.text_primary'))
-          .width('100%')
-
-        TextInput({ text: this.playlistDialogText, placeholder: '输入歌单名称' })
-          .height(this.scaledSize(38))
-          .fontSize(Math.round(14 * this.fontSizeScale))
-          .backgroundColor('rgba(0,0,0,0.04)')
-          .borderRadius(12)
-          .onChange((value: string) => {
-            this.playlistDialogText = value
-          })
-          .enterKeyType(EnterKeyType.Done)
-          .onSubmit(() => {
-            this.confirmPlaylistDialog().catch((err: Error) => {
-              Logger.error(TAG, `confirmPlaylistDialog failed: ${JSON.stringify(err)}`)
-            })
-          })
-
-        Row({ space: 10 }) {
-          Text('取消')
-            .fontSize(Math.round(14 * this.fontSizeScale))
-            .fontColor($r('app.color.text_sixty_color'))
-            .layoutWeight(1)
-            .textAlign(TextAlign.Center)
-            .padding({ top: 8, bottom: 8 })
-            .borderRadius(16)
-            .backgroundColor('rgba(0,0,0,0.05)')
-            .onClick(() => {
-              this.isPlaylistDialogVisible = false
-            })
-          Text('保存')
-            .fontSize(Math.round(14 * this.fontSizeScale))
-            .fontColor(Color.White)
-            .layoutWeight(1)
-            .textAlign(TextAlign.Center)
-            .padding({ top: 8, bottom: 8 })
-            .borderRadius(16)
-            .backgroundColor(this.primaryColor)
-            .onClick(() => {
-              this.confirmPlaylistDialog().catch((err: Error) => {
-                Logger.error(TAG, `confirmPlaylistDialog failed: ${JSON.stringify(err)}`)
-              })
-            })
-        }
+      Divider()
+        .color($r('app.color.list_divider'))
+      Text('多选')
+        .fontSize(Math.round(14 * this.fontSizeScale))
+        .fontColor($r('app.color.text_primary'))
         .width('100%')
-      }
-      .width('76%')
-      .padding(18)
-      .borderRadius(20)
-      .backgroundColor($r('app.color.page_background_sm'))
-    }
-    .width('100%')
-    .height('100%')
-    .zIndex(30)
-  }
-
-  // 长按歌单卡操作面板：改名 / 删除 / 取消
-  @Builder
-  playlistActionPanel(): void {
-    Stack({ alignContent: Alignment.Bottom }) {
-      Column()
-        .width('100%')
-        .height('100%')
-        .backgroundColor('rgba(0,0,0,0.35)')
+        .textAlign(TextAlign.Center)
+        .padding({ top: 12, bottom: 12 })
         .onClick(() => {
           this.playlistActionCardId = ''
+          this.enterPlaylistEditMode()
         })
-
-      Column() {
-        Text('改名')
-          .fontSize(Math.round(15 * this.fontSizeScale))
-          .fontColor($r('app.color.text_primary'))
-          .width('100%')
-          .textAlign(TextAlign.Center)
-          .padding({ top: 14, bottom: 14 })
-          .onClick(() => {
-            const card: PlaylistCardData | undefined = this.findPlaylistCard(this.playlistActionCardId)
-            this.playlistActionCardId = ''
-            if (card !== undefined) {
-              this.openPlaylistRenameDialog(card)
-            }
-          })
-        Divider()
-          .color($r('app.color.list_divider'))
-        Text('删除歌单')
-          .fontSize(Math.round(15 * this.fontSizeScale))
-          .fontColor(StyleConstants.COLOR_DANGER_RED)
-          .width('100%')
-          .textAlign(TextAlign.Center)
-          .padding({ top: 14, bottom: 14 })
-          .onClick(() => {
-            this.playlistDeleteConfirmId = this.playlistActionCardId
-            this.playlistActionCardId = ''
-          })
-        Divider()
-          .color($r('app.color.list_divider'))
-        Text('取消')
-          .fontSize(Math.round(15 * this.fontSizeScale))
-          .fontColor($r('app.color.text_sixty_color'))
-          .width('100%')
-          .textAlign(TextAlign.Center)
-          .padding({ top: 14, bottom: 14 })
-          .onClick(() => {
-            this.playlistActionCardId = ''
-          })
-      }
-      .width('100%')
-      .padding({ left: 16, right: 16, bottom: this.bottomOverlayInset() })
-      .borderRadius({ topLeft: 20, topRight: 20 })
-      .backgroundColor($r('app.color.page_background_sm'))
+      Divider()
+        .color($r('app.color.list_divider'))
+      Text('删除')
+        .fontSize(Math.round(14 * this.fontSizeScale))
+        .fontColor(StyleConstants.COLOR_DANGER_RED)
+        .width('100%')
+        .textAlign(TextAlign.Center)
+        .padding({ top: 12, bottom: 12 })
+        .onClick(() => {
+          this.playlistDeleteConfirmId = this.playlistActionCardId
+          this.playlistActionCardId = ''
+        })
     }
-    .width('100%')
-    .height('100%')
-    .zIndex(30)
+    .width(112)
   }
 
   // 删除歌单二次确认：明确告知歌曲本身不会被删除
@@ -918,39 +995,41 @@ export struct PlaylistContent {
 
   @Builder
   folderCard(item: FolderInfo): void {
-    Column() {
+    Row() {
       if (this.isEditMode) {
         Image(this.isEditSelected(item.id) ? $r('app.media.ic_public_todo_filled') : $r('app.media.ic_public_todo'))
           .width(20).height(20)
           .fillColor(this.isEditSelected(item.id) ? this.primaryColor : $r('app.color.text_sixty_color'))
-          .position({ x: 6, y: 6 })
+          .margin({ right: 10 })
       }
       if (item.id === FAVORITES_FOLDER_ID) {
         Image($r('app.media.ic_public_favor_filled'))
           .width(28).height(28)
           .fillColor(this.favoritesSelected ? Color.Red : this.primaryColor)
-          .margin({ bottom: 6 })
       } else {
         Image($r('app.media.ic_public_folder'))
           .width(28)
           .height(28)
           .fillColor($r('app.color.text_sixty_color'))
-          .margin({ bottom: 6 })
       }
-      Text(item.name)
-        .fontSize(Math.round(12 * this.fontSizeScale))
-        .fontColor($r('app.color.text_primary'))
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-      Text(item.songCount + ' 首歌曲')
-        .fontSize(10)
-        .fontColor($r('app.color.text_sixty_color'))
-        .margin({ top: 2 })
+      Column({ space: 2 }) {
+        Text(item.name)
+          .fontSize(Math.round(12 * this.fontSizeScale))
+          .fontColor($r('app.color.text_primary'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Text(item.songCount + ' 首歌曲')
+          .fontSize(10)
+          .fontColor($r('app.color.text_sixty_color'))
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+      .margin({ left: 12 })
     }
     .width('100%')
     .height(80)
-    .justifyContent(FlexAlign.Center)
-    .alignItems(HorizontalAlign.Center)
+    .padding({ left: 16, right: 16 })
+    .alignItems(VerticalAlign.Center)
     .backgroundColor(this.isFolderSelected(item) ?
       ColorHelper.hexWithAlpha(this.primaryColor, '22') : 'rgba(0,0,0,0.03)')
     .borderRadius(16)

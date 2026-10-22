@@ -43,14 +43,11 @@ struct MainPage {
   @State greetingTitle: string = '加载中……'
   @State greetingOpacity: number = 0
   // 主页多选状态（由 HomeContent 写入）：进入多选时问候语整体上滑淡出，退出时回落淡入
-  @StorageLink(AppStorageKeyConstants.KEY_HOME_MULTI_SELECT) @Watch(
-    'onHomeMultiSelectChange') homeMultiSelect: boolean = false
+  @StorageLink(AppStorageKeyConstants.KEY_HOME_MULTI_SELECT) homeMultiSelect: boolean = false
   // 全局悬浮加号可见性（由各内容页上报）：滚动隐藏、多选/编辑态变化时写入，
   // 首页/歌单共用 Index 上的一颗加号，切页不重建不位移，设置页隐藏
   @StorageLink(AppStorageKeyConstants.KEY_HOME_PLUS_VISIBLE) homePlusVisible: boolean = true
   @StorageLink(AppStorageKeyConstants.KEY_PLAYLIST_PLUS_VISIBLE) playlistPlusVisible: boolean = true
-  @State greetingShiftY: number = 0
-  @State greetingVisible: number = 1
   @State poetryLine: string = ''
   @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) @Watch('onPlayStateChange') isPlaying: boolean = false
   @State rotationAngle: number = 0
@@ -129,18 +126,6 @@ struct MainPage {
   // 手机/平板的返回键与侧滑返回：仅 @Entry 组件可监听
   onBackPress(): boolean {
     return this.tryExitMultiSelect()
-  }
-
-  // 让位给随后切换到该位置的 HomeContent 多选菜单栏
-  onHomeMultiSelectChange(): void {
-    const hidden: boolean = this.homeMultiSelect
-    this.getUIContext()?.animateTo({
-      duration: hidden ? StyleConstants.ANIMATION_GREETING_HIDE_DURATION :
-        StyleConstants.ANIMATION_GREETING_SHOW_DURATION, curve: hidden ? Curve.EaseInOut : Curve.EaseOut
-    }, () => {
-      this.greetingShiftY = hidden ? -24 : 0
-      this.greetingVisible = hidden ? 0 : 1
-    })
   }
 
   updateGreeting() {
@@ -908,8 +893,6 @@ struct MainPage {
       .opacity(0.7)
   }
 
-  // 主页进入/退出多选：问候语向上位移并淡出（退出时反向回落淡入），
-
   build() {
     Stack() {
       HdsTabs({ controller: this.tabsController, index: this.currentIndex }) {
@@ -947,8 +930,12 @@ struct MainPage {
                 }
                 .alignItems(VerticalAlign.Bottom)
                 .layoutWeight(1)
-                .translate({ y: this.greetingShiftY })
-                .opacity(this.greetingVisible)
+                .translate({ y: this.homeMultiSelect ? -24 : 0 })
+                .opacity(this.homeMultiSelect ? 0 : 1)
+                .animation({
+                  duration: StyleConstants.ANIMATION_GREETING_HIDE_DURATION,
+                  curve: Curve.EaseInOut
+                })
               }
               .width('100%')
               .height('100%')

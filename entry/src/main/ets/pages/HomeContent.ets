@@ -16,7 +16,7 @@ import { AlbumCover } from '../component/AlbumCover'
 import { PlaylistCreateDialog } from '../component/PlaylistCreateDialog'
 import { AlbumCoverSize, AudioMetadataService, CoverPriority } from '../service/AudioMetadataService'
 import { curves, uiMaterial } from '@kit.ArkUI'
-import { createBarGlassMaterial, DEFAULT_GLASS_STYLE, showToastGlassMaterial, topBlurRadiusFromStrength } from '../common/utils/GlassUtil'
+import { createBarGlassMaterial, createStyleGlassMaterial, DEFAULT_GLASS_STYLE, showToastGlassMaterial, topBlurRadiusFromStrength } from '../common/utils/GlassUtil'
 import { GlassBackButton } from '../view/GlassBackButton'
 import { StyleConstants } from '../common/constants/StyleConstants'
 
@@ -357,6 +357,47 @@ export struct HomeContent {
   openPlaylistCreateDialog(): void {
     this.createPreselectedIds = this.selectedIds.slice()
     this.isPlaylistCreateVisible = true
+  }
+
+  // 组件风格（tabStyle）驱动的弹窗材质（bindSheet options 的 systemMaterial 字段）：
+  // 玻璃风格 → 液态玻璃；经典风格 → Material.empty 显式关闭；设备不支持 → undefined
+  private styleGlassMaterial(): uiMaterial.Material | undefined {
+    return createStyleGlassMaterial(this.tabStyle, DEFAULT_GLASS_STYLE)
+  }
+
+  // 新建歌单半模态弹层标题（bindSheet 官方标题栏）
+  @Builder
+  playlistCreateSheetTitle(): void {
+    Text('新建歌单')
+      .fontSize(Math.round(20 * this.fontSizeScale))
+      .fontColor($r('app.color.text_primary'))
+      .fontWeight(FontWeight.Bold)
+      .maxLines(1)
+      .width('100%')
+  }
+
+  // 新建歌单半模态弹层内容：与歌单页共用的统一组件（官方 bindSheet 配置由本页宿主挂载）；
+  // 每次打开弹层 builder 重新执行，组件 aboutToAppear 重跑预选
+  @Builder
+  playlistCreateSheetBuilder(): void {
+    PlaylistCreateDialog({
+      songs: this.songs,
+      preselectedIds: this.createPreselectedIds,
+      primaryColor: this.primaryColor,
+      fontSizeScale: this.fontSizeScale,
+      displaySizeScale: this.displaySizeScale,
+      onDone: (addedCount: number) => {
+        this.isPlaylistCreateVisible = false
+        this.isPlaylistPickerVisible = false
+        this.exitMultiSelect()
+        try {
+          showToastGlassMaterial(this.getUIContext()?.getPromptAction(),
+            addedCount > 0 ? '已创建歌单并加入所选歌曲' : '已创建歌单')
+        } catch (e) {
+          Logger.error(TAG, 'toast failed')
+        }
+      }
+    })
   }
 
   private countActiveFilterDims(): number {
@@ -1190,6 +1231,25 @@ export struct HomeContent {
     return true
   }
 
+  // 反选：翻转可见歌曲的选中态（不可见的已选项保持原状），结果按「保留项 + 可见列表顺序」重排
+  invertVisibleSelection(): void {
+    const visibleIds: string[] = this.getVisibleSongIds()
+    const selectedSet: Set<string> = new Set(this.selectedIds)
+    const visibleSet: Set<string> = new Set(visibleIds)
+    const result: string[] = []
+    for (let i = 0; i < this.selectedIds.length; i++) {
+      if (!visibleSet.has(this.selectedIds[i])) {
+        result.push(this.selectedIds[i])
+      }
+    }
+    for (let i = 0; i < visibleIds.length; i++) {
+      if (!selectedSet.has(visibleIds[i])) {
+        result.push(visibleIds[i])
+      }
+    }
+    this.selectedIds = result
+  }
+
   exitMultiSelect(): void {
     this.isMultiSelectMode = false
     this.selectedIds = []
@@ -1491,9 +1551,9 @@ export struct HomeContent {
                   .transition(TransitionEffect.OPACITY)
               }
             }
-            .width(this.isSearchActive ? '100%' : this.scaledSize(36))
+            .width(this.isSearchActive ? '100%' : this.scaledSize(32))
             .height(this.scaledSize(32))
-            .padding({ left: 10, right: 10 })
+            .padding({ left: 8, right: 8 })
             .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
             .borderRadius(16)
             .alignItems(VerticalAlign.Center)
@@ -1582,6 +1642,13 @@ export struct HomeContent {
           }
           .margin({ right: 16 })
           .onClick(() => { this.toggleSelectAll() })
+
+          // 反选 - 纯文字按钮（图标库无对应图标，置于全选后）
+          Text('反选')
+            .fontSize(Math.round(14 * this.fontSizeScale))
+            .fontColor(this.primaryColor)
+            .margin({ right: 16 })
+            .onClick(() => { this.invertVisibleSelection() })
 
           // 加入歌单（P2-3）- 带图标：弹窗选择目标歌单或新建
           Row({ space: 4 }) {
@@ -1822,31 +1889,6 @@ export struct HomeContent {
         .transition(TransitionEffect.OPACITY)
       }
 
-      // 新建歌单统一弹窗（与歌单页共用组件）：全曲库多选，预选当前多选歌曲
-      if (this.isPlaylistCreateVisible) {
-        PlaylistCreateDialog({
-          songs: this.songs,
-          preselectedIds: this.createPreselectedIds,
-          primaryColor: this.primaryColor,
-          fontSizeScale: this.fontSizeScale,
-          displaySizeScale: this.displaySizeScale,
-          onCancel: () => {
-            this.isPlaylistCreateVisible = false
-          },
-          onDone: (addedCount: number) => {
-            this.isPlaylistCreateVisible = false
-            this.isPlaylistPickerVisible = false
-            this.exitMultiSelect()
-            try {
-              showToastGlassMaterial(this.getUIContext()?.getPromptAction(),
-                addedCount > 0 ? '已创建歌单并加入所选歌曲' : '已创建歌单')
-            } catch (e) {
-              Logger.error(TAG, 'toast failed')
-            }
-          }
-        })
-      }
-
       // 全局悬浮加号由 Index 统一渲染（首页/歌单共用，切页不位移，设置页隐藏），
       // 可见性由 publishPlusVisible 上报，本页不再挂按钮
     }
@@ -1854,6 +1896,15 @@ export struct HomeContent {
     .height('100%')
     // 背景使用预设纯色（明暗自适应），不应用任何玻璃/模糊/透明度效果
     .backgroundColor($r('app.color.page_background_sm'))
+    // 新建歌单统一弹窗（与歌单页共用组件）：官方半模态配置（标题栏 + 中档高度 + 玻璃材质）
+    .bindSheet($$this.isPlaylistCreateVisible, this.playlistCreateSheetBuilder(), {
+      detents: [SheetSize.MEDIUM],
+      dragBar: false,
+      title: this.playlistCreateSheetTitle(),
+      showClose: true,
+      preferType: SheetType.CENTER,
+      systemMaterial: this.styleGlassMaterial()
+    })
   }
 
   @Builder

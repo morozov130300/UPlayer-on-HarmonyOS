@@ -983,20 +983,20 @@ struct SettingsDetailPage {
     .width('100%')
     .height('100%')
     .bindSheet($$this.showGlassScope, this.glassScopeSheetBuilder(), {
-      height: SheetSize.FIT_CONTENT,
+      detents: [SheetSize.MEDIUM],
       dragBar: false,
-      preferType: SheetType.CENTER,
+      title: this.glassScopeSheetTitle(),
       showClose: true,
-      systemMaterial: this.styleGlassMaterial(),
-      backgroundColor: $r('app.color.page_background_other')
+      preferType: SheetType.CENTER,
+      systemMaterial: this.styleGlassMaterial()
     })
     .bindSheet($$this.showShortcutSheet, this.shortcutSheetBuilder(), {
-      height: SheetSize.FIT_CONTENT,
+      detents: [SheetSize.MEDIUM],
       dragBar: false,
-      preferType: SheetType.CENTER,
+      title: this.shortcutSheetTitle(),
       showClose: true,
-      systemMaterial: this.styleGlassMaterial(),
-      backgroundColor: $r('app.color.page_background_other')
+      preferType: SheetType.CENTER,
+      systemMaterial: this.styleGlassMaterial()
     })
   }
 
@@ -1114,41 +1114,55 @@ struct SettingsDetailPage {
     return createStyleGlassMaterial(this.settings.tabStyle, DEFAULT_GLASS_STYLE)
   }
 
-  // 玻璃效果生效范围说明弹窗（bindSheet 半模态内容）
+  // 玻璃效果生效范围说明弹窗标题（bindSheet 官方标题栏）
+  @Builder
+  glassScopeSheetTitle(): void {
+    Text('玻璃效果生效范围')
+      .fontSize(this.scaledFont(20))
+      .fontColor($r('app.color.text_primary'))
+      .fontWeight(FontWeight.Bold)
+      .maxLines(1)
+      .width('100%')
+  }
+
+  // 玻璃效果生效范围说明弹窗（bindSheet 半模态内容）：标题移入官方标题栏，正文可滚、按钮固定底部
   @Builder
   glassScopeSheetBuilder(): void {
     Column({ space: this.scaledSize(10) }) {
-      Text('玻璃效果生效范围')
-        .fontSize(this.scaledFont(16))
-        .fontColor(this.settingTextColor())
-        .fontWeight(FontWeight.Bold)
-        .width('100%')
-        .textAlign(TextAlign.Start)
+      Scroll() {
+        Column({ space: this.scaledSize(10) }) {
+          Text('以下位置会使用玻璃效果：')
+            .fontSize(this.scaledFont(12))
+            .fontColor(this.settingSubTextColor())
+            .width('100%')
+            .padding({ top: this.scaledSize(2) })
+          this.scopeLine('• 底部 Tab 栏：玻璃样式下挂液态玻璃（跟手光效由「跟手光效颜色」决定，设为「无」即关闭）；经典样式为磨砂，强度随「Tab栏与播控条模糊强度」')
+          this.scopeLine('• 右下角播控条：大屏上玻璃样式生效（与底部 Tab 栏一致），小屏上为磨砂效果')
+          this.scopeLine('• 首页上端与设置详情页顶部的渐变模糊层（随「首页上端模糊强度」设置变化）')
+          this.scopeLine('• 首页长按歌曲进入多选后的顶部菜单栏：玻璃样式下液态玻璃叠加磨砂兜底，经典样式不挂背景效果')
+          this.scopeLine('• 各页面左上角圆形返回按钮（设置详情、播放器等页面；玻璃样式出真玻璃，经典样式为磨砂兜底）')
+          this.scopeLine('• 全局悬浮加号按钮（磨砂玻璃盘）')
+          this.scopeLine(
+            '• 操作时屏幕底部短暂弹出的文字提示浮层（如切换播放模式时的"随机播放"）——设备支持液态玻璃时固定使用液态玻璃材质')
+          this.scopeLine('• 半模态弹窗与气泡（播放列表、更多面板、倍速/音量气泡、本说明弹窗等）：玻璃样式下使用液态玻璃，经典样式恢复常规背景')
+          this.scopeLine('• 设置页的开关与滑块：玻璃样式下跟随液态玻璃，经典样式恢复主题色自定义样式')
 
-      Text('以下位置会使用玻璃效果：')
-        .fontSize(this.scaledFont(12))
-        .fontColor(this.settingSubTextColor())
-        .width('100%')
-        .padding({ top: this.scaledSize(2) })
-      this.scopeLine('• 底部 Tab 栏：玻璃样式下挂液态玻璃（跟手光效由「跟手光效颜色」决定，设为「无」即关闭）；经典样式为磨砂，强度随「Tab栏与播控条模糊强度」')
-      this.scopeLine('• 右下角播控条：大屏上玻璃样式生效（与底部 Tab 栏一致），小屏上为磨砂效果')
-      this.scopeLine('• 首页上端与设置详情页顶部的渐变模糊层（随「首页上端模糊强度」设置变化）')
-      this.scopeLine('• 首页长按歌曲进入多选后的顶部菜单栏：玻璃样式下液态玻璃叠加磨砂兜底，经典样式不挂背景效果')
-      this.scopeLine('• 各页面左上角圆形返回按钮（设置详情、播放器等页面；玻璃样式出真玻璃，经典样式为磨砂兜底）')
-      this.scopeLine('• 全局悬浮加号按钮（磨砂玻璃盘）')
-      this.scopeLine(
-        '• 操作时屏幕底部短暂弹出的文字提示浮层（如切换播放模式时的"随机播放"）——设备支持液态玻璃时固定使用液态玻璃材质')
-      this.scopeLine('• 半模态弹窗与气泡（播放列表、更多面板、倍速/音量气泡、本说明弹窗等）：玻璃样式下使用液态玻璃，经典样式恢复常规背景')
-      this.scopeLine('• 设置页的开关与滑块：玻璃样式下跟随液态玻璃，经典样式恢复主题色自定义样式')
+          Text('以下位置不使用玻璃效果：')
+            .fontSize(this.scaledFont(12))
+            .fontColor(this.settingSubTextColor())
+            .width('100%')
+            .padding({ top: this.scaledSize(6) })
+          this.scopeLine('• 首页 / 歌单 / 设置 / 设置详情 页面的顶层背景（均使用预设纯色背景，明暗自适应）')
+          this.scopeLine('• 音乐播放器页面背景（仅左上角返回按钮使用玻璃）')
+          this.scopeLine('• 系统 API < 26 或未声明支持沉浸式材质的设备（液态玻璃自动降级为磨砂模糊）')
 
-      Text('以下位置不使用玻璃效果：')
-        .fontSize(this.scaledFont(12))
-        .fontColor(this.settingSubTextColor())
+        }
         .width('100%')
-        .padding({ top: this.scaledSize(6) })
-      this.scopeLine('• 首页 / 歌单 / 设置 / 设置详情 页面的顶层背景（均使用预设纯色背景，明暗自适应）')
-      this.scopeLine('• 音乐播放器页面背景（仅左上角返回按钮使用玻璃）')
-      this.scopeLine('• 系统 API < 26 或未声明支持沉浸式材质的设备（液态玻璃自动降级为磨砂模糊）')
+      }
+      .layoutWeight(1)
+      .width('100%')
+      .align(Alignment.Top)
+      .edgeEffect(EdgeEffect.Spring)
 
       Row() {
         Button('知道了')
@@ -1165,6 +1179,7 @@ struct SettingsDetailPage {
       .padding({ top: this.scaledSize(8), bottom: this.scaledSize(10) })
     }
     .width('100%')
+    .height('100%')
     .padding({ left: this.scaledSize(20), right: this.scaledSize(20), top: this.scaledSize(14) })
   }
 
@@ -3221,9 +3236,9 @@ struct SettingsDetailPage {
 
   @Builder
   buildAboutSection(): void {
-    Column({ space: this.scaledSize(10) }) {
+    Column({ space: this.scaledSize(6) }) {
       // 居中的软件图标 + 软件名 + 版本号
-      Column({ space: this.scaledSize(8) }) {
+      Column({ space: this.scaledSize(6) }) {
         Image($r('app.media.foreground'))
           .width(this.scaledSize(72))
           .height(this.scaledSize(72))
@@ -3285,7 +3300,7 @@ struct SettingsDetailPage {
         .fontColor(this.settingTextColor())
         .width('100%')
         .textAlign(TextAlign.Center)
-        .margin({ top: this.scaledSize(8) })
+        .margin({ top: this.scaledSize(6) })
     }
     .width('100%')
     .constraintSize({ minWidth: 0, maxWidth: '100%' })
@@ -3393,17 +3408,21 @@ struct SettingsDetailPage {
     })
   }
 
-  // 快捷键速查二级弹窗（bindSheet 半模态内容）：单一扁平列表，不分组
+  // 快捷键速查二级弹窗标题（bindSheet 官方标题栏）
+  @Builder
+  shortcutSheetTitle(): void {
+    Text('快捷键')
+      .fontSize(this.scaledFont(20))
+      .fontColor($r('app.color.text_primary'))
+      .fontWeight(FontWeight.Bold)
+      .maxLines(1)
+      .width('100%')
+  }
+
+  // 快捷键速查二级弹窗（bindSheet 半模态内容）：标题移入官方标题栏，单一扁平列表不分组、铺满弹窗可滚
   @Builder
   shortcutSheetBuilder(): void {
     Column({ space: this.scaledSize(10) }) {
-      Text('快捷键')
-        .fontSize(this.scaledFont(16))
-        .fontColor(this.settingTextColor())
-        .fontWeight(FontWeight.Bold)
-        .width('100%')
-        .textAlign(TextAlign.Start)
-
       Scroll() {
         Column({ space: this.scaledSize(10) }) {
           ForEach(ShortcutTable.ALL, (entry: ShortcutEntry) => {
@@ -3446,11 +3465,12 @@ struct SettingsDetailPage {
         .constraintSize({ minWidth: 0, maxWidth: '100%' })
       }
       .width('100%')
-      .constraintSize({ maxHeight: this.scaledSize(420) })
+      .layoutWeight(1)
       .align(Alignment.Top)
       .edgeEffect(EdgeEffect.Spring)
     }
     .width('100%')
+    .height('100%')
     .constraintSize({ minWidth: 0, maxWidth: '100%' })
     .padding({
       left: this.scaledSize(18),
