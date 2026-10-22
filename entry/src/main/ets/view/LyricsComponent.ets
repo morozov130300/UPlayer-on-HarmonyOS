@@ -193,7 +193,9 @@ export struct LyricsComponent {
         }
         .width(StyleConstants.FULL_WIDTH)
         .padding({ left: 8, right: 8, top: 8 })
-        .hitTestBehavior(HitTestMode.Block)
+        // 不能用 HitTestMode.Block：Block 是「自身响应、子节点不响应」，会把滑块的拖拽一起吞掉。
+        // 改成空 onClick 吃掉行内点击，避免冒泡到根容器切换控制区显隐，滑块照常可拖
+        .onClick(() => {})
         // 自下而上滑入 + 淡入，收起时原路退回（不依赖 animateTo，隐式动画随 transition 走）
         .transition(TransitionEffect.asymmetric(
           TransitionEffect.OPACITY
