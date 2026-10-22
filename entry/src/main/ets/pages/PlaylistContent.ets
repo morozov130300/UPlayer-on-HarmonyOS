@@ -1130,6 +1130,17 @@ export struct PlaylistContent {
         })
     }
     .width(112)
+    .padding({ top: 4, bottom: 4 })
+    .borderRadius(this.scaledSize(14))
+    // 背景与页面同色系：经典样式给实色卡片（不再吃系统默认弹窗底色，和歌单页的白底打架）；
+    // 玻璃样式交回 systemMaterial，不叠不透明底，否则会把液态玻璃糊成一块实色
+    .backgroundColor(this.tabStyle === 'immersive' ? Color.Transparent :
+      $r('app.color.page_background_sm'))
+    // 暗色下页面与卡片同为 #000000，靠一道细描边维持卡片边界
+    .border({
+      width: this.tabStyle === 'immersive' ? 0 : 1,
+      color: $r('app.color.list_divider')
+    })
   }
 
   // 删除歌单二次确认：明确告知歌曲本身不会被删除
