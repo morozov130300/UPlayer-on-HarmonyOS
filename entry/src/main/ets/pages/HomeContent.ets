@@ -13,6 +13,7 @@ import { DisplayItem, DisplayItemDataSource } from '../viewmodel/DisplayItemData
 import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { AlbumCover } from '../component/AlbumCover'
+import { PlaylistCreateDialog } from '../component/PlaylistCreateDialog'
 import { AlbumCoverSize, AudioMetadataService, CoverPriority } from '../service/AudioMetadataService'
 import { curves, uiMaterial } from '@kit.ArkUI'
 import { createBarGlassMaterial, DEFAULT_GLASS_STYLE, showToastGlassMaterial, topBlurRadiusFromStrength } from '../common/utils/GlassUtil'
@@ -134,7 +135,8 @@ export struct HomeContent {
   playlistRevision: number = 0
   @State isPlaylistPickerVisible: boolean = false
   @State pickerRows: PickerPlaylistRow[] = []
-  @State pickerNewName: string = ''
+  @State isPlaylistCreateVisible: boolean = false
+  @State createPreselectedIds: string[] = []
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
   // 底部栏样式：经典样式下多选菜单栏不挂任何背景效果（磨砂/液态玻璃）
   @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
@@ -336,7 +338,6 @@ export struct HomeContent {
       rows.push(row)
     }
     this.pickerRows = rows
-    this.pickerNewName = ''
     this.isPlaylistPickerVisible = true
   }
 
@@ -352,16 +353,10 @@ export struct HomeContent {
     }
   }
 
-  // 新建歌单并加入当前选中歌曲（空名/超长不创建）
-  private async createPlaylistWithSelected(): Promise<void> {
-    const name: string = this.pickerNewName.trim()
-    if (name.length === 0 || name.length > 30) {
-      return
-    }
-    const created: PlaylistInfo | undefined = await this.dataService.createPlaylist(name)
-    if (created !== undefined) {
-      await this.addSelectedToPlaylist(created.id)
-    }
+  // 打开统一新建歌单弹窗：预选当前多选歌曲，可在全曲库继续加选
+  openPlaylistCreateDialog(): void {
+    this.createPreselectedIds = this.selectedIds.slice()
+    this.isPlaylistCreateVisible = true
   }
 
   private countActiveFilterDims(): number {
@@ -1652,6 +1647,12 @@ export struct HomeContent {
             .height('100%')
             .backgroundColor('rgba(0,0,0,0.35)')
             .onClick(() => { this.closeFilterPanel() })
+            .transition(TransitionEffect.asymmetric(
+              TransitionEffect.OPACITY
+                .animation({ duration: StyleConstants.ANIMATION_FILTER_PANEL_ENTER_DURATION, curve: Curve.EaseOut }),
+              TransitionEffect.OPACITY
+                .animation({ duration: StyleConstants.ANIMATION_FILTER_PANEL_EXIT_DURATION, curve: Curve.EaseIn })
+            ))
 
           Column() {
             Row() {
@@ -1697,11 +1698,24 @@ export struct HomeContent {
           .borderRadius(20)
           .backgroundColor($r('app.color.page_background_sm'))
           .margin({ top: this.listTopPadding() })
+          .transition(TransitionEffect.asymmetric(
+            TransitionEffect.OPACITY
+              .combine(TransitionEffect.translate({ y: -this.scaledSize(32) }))
+              .animation({ duration: StyleConstants.ANIMATION_FILTER_PANEL_ENTER_DURATION, curve: Curve.EaseOut }),
+            TransitionEffect.OPACITY
+              .combine(TransitionEffect.translate({ y: -this.scaledSize(32) }))
+              .animation({ duration: StyleConstants.ANIMATION_FILTER_PANEL_EXIT_DURATION, curve: Curve.EaseIn })
+          ))
         }
         .width('100%')
         .height('100%')
         .zIndex(20)
-        .transition(TransitionEffect.OPACITY)
+        .transition(TransitionEffect.asymmetric(
+          TransitionEffect.opacity(0.99)
+            .animation({ duration: StyleConstants.ANIMATION_FILTER_PANEL_ENTER_DURATION, curve: Curve.EaseOut }),
+          TransitionEffect.opacity(0.99)
+            .animation({ duration: StyleConstants.ANIMATION_FILTER_PANEL_EXIT_DURATION, curve: Curve.EaseIn })
+        ))
       }
 
       // 「加入歌单」弹窗（P2-3）：目标歌单列表 + 新建歌单并加入
@@ -1729,31 +1743,26 @@ export struct HomeContent {
             .width('100%')
             .alignItems(VerticalAlign.Center)
 
-            // 新建歌单并加入：输入名称即建即加
-            Row({ space: 10 }) {
-              TextInput({ placeholder: '新建歌单名称' })
-                .layoutWeight(1)
-                .height(this.scaledSize(36))
+            // 新建歌单：进入统一新建弹窗（预选当前多选歌曲，可在全曲库继续加选）
+            Row({ space: 8 }) {
+              Image($r('app.media.ic_public_add_norm_filled'))
+                .width(20)
+                .height(20)
+                .fillColor(this.primaryColor)
+              Text('新建歌单')
                 .fontSize(Math.round(14 * this.fontSizeScale))
-                .backgroundColor('rgba(0,0,0,0.04)')
-                .borderRadius(12)
-                .onChange((value: string) => {
-                  this.pickerNewName = value
-                })
-              Text('创建并加入')
-                .fontSize(Math.round(13 * this.fontSizeScale))
-                .fontColor(Color.White)
-                .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-                .borderRadius(14)
-                .backgroundColor(this.primaryColor)
-                .onClick(() => {
-                  this.createPlaylistWithSelected().catch((err: Error) => {
-                    Logger.error(TAG, `createPlaylistWithSelected failed: ${JSON.stringify(err)}`)
-                  })
-                })
+                .fontColor(this.primaryColor)
+                .fontWeight(FontWeight.Medium)
             }
             .width('100%')
+            .justifyContent(FlexAlign.Center)
+            .padding({ top: 10, bottom: 10 })
             .margin({ top: 12 })
+            .borderRadius(12)
+            .backgroundColor(ColorHelper.hexWithAlpha(this.primaryColor, '14'))
+            .onClick(() => {
+              this.openPlaylistCreateDialog()
+            })
 
             if (this.pickerRows.length === 0) {
               Text('还没有歌单，输入名称创建一个吧')
@@ -1811,6 +1820,31 @@ export struct HomeContent {
         .height('100%')
         .zIndex(20)
         .transition(TransitionEffect.OPACITY)
+      }
+
+      // 新建歌单统一弹窗（与歌单页共用组件）：全曲库多选，预选当前多选歌曲
+      if (this.isPlaylistCreateVisible) {
+        PlaylistCreateDialog({
+          songs: this.songs,
+          preselectedIds: this.createPreselectedIds,
+          primaryColor: this.primaryColor,
+          fontSizeScale: this.fontSizeScale,
+          displaySizeScale: this.displaySizeScale,
+          onCancel: () => {
+            this.isPlaylistCreateVisible = false
+          },
+          onDone: (addedCount: number) => {
+            this.isPlaylistCreateVisible = false
+            this.isPlaylistPickerVisible = false
+            this.exitMultiSelect()
+            try {
+              showToastGlassMaterial(this.getUIContext()?.getPromptAction(),
+                addedCount > 0 ? '已创建歌单并加入所选歌曲' : '已创建歌单')
+            } catch (e) {
+              Logger.error(TAG, 'toast failed')
+            }
+          }
+        })
       }
 
       // 全局悬浮加号由 Index 统一渲染（首页/歌单共用，切页不位移，设置页隐藏），

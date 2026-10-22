@@ -1309,6 +1309,12 @@ export struct ControlAreaComponent {
               .onChange((newValue: string) => {
                 this.customSongCountText = newValue
               })
+              .enterKeyType(EnterKeyType.Done)
+              .onSubmit(() => {
+                if (this.isCustomSongCountValid()) {
+                  this.setTimerSongs(this.customSongCountValue())
+                }
+              })
 
             Button('确定')
               .height(this.scaledSize(40))

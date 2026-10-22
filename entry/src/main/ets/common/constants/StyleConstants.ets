@@ -53,5 +53,7 @@ export class StyleConstants {
   static readonly ANIMATION_MULTI_BAR_ENTER_DURATION: number = 220;
   static readonly ANIMATION_MULTI_BAR_ENTER_DELAY: number = 80;
   static readonly ANIMATION_MULTI_BAR_EXIT_DURATION: number = 160;
+  static readonly ANIMATION_FILTER_PANEL_ENTER_DURATION: number = 260;
+  static readonly ANIMATION_FILTER_PANEL_EXIT_DURATION: number = 200;
   static readonly ANIMATION_PLAYER_BACKGROUND_DURATION: number = 800;
 }

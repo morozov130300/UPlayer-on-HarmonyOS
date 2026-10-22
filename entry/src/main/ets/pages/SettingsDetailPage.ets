@@ -119,20 +119,26 @@ class ShortcutEntry {
   description: string = ''
 }
 
-// 全局快捷键速查（关于分区展示）：与 Index.handleKeyEvent / MusicPlayer.handleKeyEvent 一一对应
+// toggleRow 唯一入参（按引用传递：@Builder 只有单参数对象字面量传参才能随状态变量刷新）
+class ToggleRowConfig {
+  label: string = ''
+  isOn: boolean = false
+  onChange: (val: boolean) => void = (_val: boolean) => {
+  }
+}
+
+// 全局快捷键速查（关于分区展示）：与 Index.handleKeyEvent / MusicPlayer.handleKeyEvent 一一对应，单列表不分组
 class ShortcutTable {
-  static readonly MAIN_PAGE: ShortcutEntry[] = [
-    { keys: ['Esc'], description: '退出首页多选模式' },
-    { keys: ['←', '→'], description: '切换标签页（首页/歌单/设置）' },
-    { keys: ['Ctrl', 'A'], description: '全选歌曲（首页多选态）' },
-    { keys: ['Ctrl', 'F'], description: '打开首页搜索并聚焦' },
-    { keys: ['Delete'], description: '删除选中歌曲（首页/歌单多选态）' }
-  ]
-  static readonly PLAYER_PAGE: ShortcutEntry[] = [
-    { keys: ['Esc'], description: '返回上一页' },
+  static readonly ALL: ShortcutEntry[] = [
     { keys: ['Space'], description: '播放 / 暂停' },
     { keys: ['←'], description: '上一首' },
-    { keys: ['→'], description: '下一首' }
+    { keys: ['→'], description: '下一首' },
+    { keys: ['←', '→'], description: '切换标签页（首页/歌单/设置）' },
+    { keys: ['Ctrl', 'F'], description: '打开首页搜索并聚焦' },
+    { keys: ['Ctrl', 'A'], description: '全选歌曲（首页多选态）' },
+    { keys: ['Delete'], description: '删除选中歌曲（首页/歌单多选态）' },
+    { keys: ['Esc'], description: '退出首页多选模式' },
+    { keys: ['Esc'], description: '返回上一页' }
   ]
 }
 
@@ -1060,36 +1066,35 @@ struct SettingsDetailPage {
     .zIndex(2)
   }
 
-  // helpIconLabel 非空时，问号图标紧跟文字
   @Builder
-  groupTitle(title: string, helpIconLabel?: string): void {
-    Row() {
-      Text(title)
-        .fontSize(this.scaledFont(11))
-        .fontColor(this.settingTextColor())
-        .fontWeight(FontWeight.Bold)
-      if (helpIconLabel !== undefined) {
-        Stack({ alignContent: Alignment.Center }) {
-          Circle()
-            .width(this.scaledSize(18))
-            .height(this.scaledSize(18))
-            .fill(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-          Image($r('app.media.ic_public_help'))
-            .width(this.scaledSize(13))
-            .height(this.scaledSize(13))
-            .fillColor(this.primaryColor)
-        }
+  groupTitle(title: string): void {
+    Text(title)
+      .fontSize(this.scaledFont(11))
+      .fontColor(this.settingTextColor())
+      .fontWeight(FontWeight.Bold)
+      .width('100%')
+      .padding({ left: this.scaledSize(8), top: this.scaledSize(1), bottom: this.scaledSize(4) })
+  }
+
+  // 玻璃效果范围说明问号按钮：点击弹出半模态说明
+  @Builder
+  glassHelpIcon(): void {
+    Stack({ alignContent: Alignment.Center }) {
+      Circle()
         .width(this.scaledSize(18))
         .height(this.scaledSize(18))
-        .margin({ left: this.scaledSize(4) })
-        .onClick(() => {
-          this.showGlassScope = true
-        })
-      }
+        .fill(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+      Image($r('app.media.ic_public_help'))
+        .width(this.scaledSize(13))
+        .height(this.scaledSize(13))
+        .fillColor(this.primaryColor)
     }
-    .width('100%')
-    .padding({ left: this.scaledSize(8), top: this.scaledSize(1), bottom: this.scaledSize(4) })
-    .alignItems(VerticalAlign.Center)
+    .width(this.scaledSize(18))
+    .height(this.scaledSize(18))
+    .margin({ left: this.scaledSize(4) })
+    .onClick(() => {
+      this.showGlassScope = true
+    })
   }
 
   // 行内二级标题（用于 Row 内，不带 width 约束，避免溢出）
@@ -1126,7 +1131,7 @@ struct SettingsDetailPage {
         .width('100%')
         .padding({ top: this.scaledSize(2) })
       this.scopeLine('• 底部 Tab 栏：玻璃样式下挂液态玻璃（跟手光效由「跟手光效颜色」决定，设为「无」即关闭）；经典样式为磨砂，强度随「Tab栏与播控条模糊强度」')
-      this.scopeLine('• 右下角播控条：不在系统液态玻璃生效区，统一使用磨砂底板（大屏迷你栏底板跟随页签栏）')
+      this.scopeLine('• 右下角播控条：大屏上玻璃样式生效（与底部 Tab 栏一致），小屏上为磨砂效果')
       this.scopeLine('• 首页上端与设置详情页顶部的渐变模糊层（随「首页上端模糊强度」设置变化）')
       this.scopeLine('• 首页长按歌曲进入多选后的顶部菜单栏：玻璃样式下液态玻璃叠加磨砂兜底，经典样式不挂背景效果')
       this.scopeLine('• 各页面左上角圆形返回按钮（设置详情、播放器等页面；玻璃样式出真玻璃，经典样式为磨砂兜底）')
@@ -1180,9 +1185,13 @@ struct SettingsDetailPage {
       }
 
       Column() {
-        this.toggleRow('向下滑动时隐藏加号按钮', this.settings.plusButtonScrollHide, (val: boolean) => {
-          this.settings.plusButtonScrollHide = val
-          this.updateSetting()
+        this.toggleRow({
+          label: '向下滑动时隐藏加号按钮',
+          isOn: this.settings.plusButtonScrollHide,
+          onChange: (val: boolean) => {
+            this.settings.plusButtonScrollHide = val
+            this.updateSetting()
+          }
         })
       }
       .width('100%')
@@ -1210,6 +1219,7 @@ struct SettingsDetailPage {
             .selectedColor(this.primaryColor)
             .systemMaterial(this.styleGlassMaterial())
             .alignSelf(ItemAlign.Center)
+            .margin({ left: this.scaledSize(10) })
             .onChange((isOn: boolean) => {
               this.settings.holdingHandEnabled = isOn
               // 写穿到 AppStorage 后由共享服务按新开关重新订阅/退订
@@ -1657,10 +1667,9 @@ struct SettingsDetailPage {
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(this.scaledSize(10))
 
-      // ─── 一级标题「高级样式」 + 右上角叹号角标 ───
-      // 点击叹号弹窗说明玻璃效果所影响的所有位置
+      // ─── 一级标题「高级样式」 ───
       Column({ space: this.scaledSize(10) }) {
-        this.groupTitle('高级样式', 'glass')
+        this.groupTitle('高级样式')
         // Tab 栏实时预览卡片：只负责预览效果，禁止携带任何设置项，
         // 各独立设置项卡片调节时实时反映透视与磨砂效果
         Column() {
@@ -1682,6 +1691,7 @@ struct SettingsDetailPage {
               .fontSize(this.scaledFont(14))
               .fontColor(this.settingTextColor())
               .fontWeight(FontWeight.Medium)
+            this.glassHelpIcon()
             Blank()
             ForEach(this.tabStyleOptions, (opt: TabStyleOption) => {
               Column() {
@@ -2078,10 +2088,10 @@ struct SettingsDetailPage {
 
   @Builder
   buildPlaybackSection(): void {
-    Column({ space: 10 }) {
+    Column({ space: this.scaledSize(10) }) {
       Column() {
         Row() {
-          Column({ space: this.scaledSize(4) }) {
+          Column({ space: this.scaledSize(6) }) {
             Text('淡入淡出')
               .fontSize(this.scaledFont(14))
               .fontColor(this.settingTextColor())
@@ -2097,6 +2107,8 @@ struct SettingsDetailPage {
           Toggle({ type: ToggleType.Switch, isOn: this.settings.fadeInOut })
             .selectedColor(this.primaryColor)
             .systemMaterial(this.styleGlassMaterial())
+            .alignSelf(ItemAlign.Center)
+            .margin({ left: this.scaledSize(10) })
             .onChange((val: boolean) => {
               this.settings.fadeInOut = val
               this.updateSetting()
@@ -2114,7 +2126,7 @@ struct SettingsDetailPage {
 
       Column() {
         Row() {
-          Column({ space: this.scaledSize(2) }) {
+          Column({ space: this.scaledSize(6) }) {
             Text('定时停止淡出时长')
               .fontSize(this.scaledFont(14))
               .fontColor(this.settingTextColor())
@@ -2445,6 +2457,10 @@ struct SettingsDetailPage {
             .onChange((value: string) => {
               this.artistSepInput = value
             })
+            .enterKeyType(EnterKeyType.Done)
+            .onSubmit(() => {
+              this.addCustomArtistSeparators()
+            })
           Text('添加')
             .fontSize(this.scaledFont(13))
             .fontColor(Color.White)
@@ -2479,15 +2495,19 @@ struct SettingsDetailPage {
 
   @Builder
   buildAudioSection(): void {
-    Column({ space: 10 }) {
+    Column({ space: this.scaledSize(10) }) {
       Column() {
-        this.toggleRow('均衡器', this.settings.eqEnabled, (val: boolean) => {
-          // 面板显隐翻转必须包进统一触发动画，过渡才会播放
-          this.animateSettingChange(() => {
-            this.settings.eqEnabled = val
-          })
-          this.updateSetting()
-          this.avPlayerService.applyEqualizer(val, this.settings.eqBands)
+        this.toggleRow({
+          label: '均衡器',
+          isOn: this.settings.eqEnabled,
+          onChange: (val: boolean) => {
+            // 面板显隐翻转必须包进统一触发动画，过渡才会播放
+            this.animateSettingChange(() => {
+              this.settings.eqEnabled = val
+            })
+            this.updateSetting()
+            this.avPlayerService.applyEqualizer(val, this.settings.eqBands)
+          }
         })
       }
       .width('100%')
@@ -2530,7 +2550,7 @@ struct SettingsDetailPage {
                   Text((this.settings.eqBands[band.index] >= 0 ? '+' : '') + this.settings.eqBands[band.index] + 'dB')
                     .fontSize(this.scaledFont(9))
                     .fontColor(ColorHelper.hexWithAlpha(this.primaryColor, '88'))
-                    .margin({ bottom: 4 })
+                    .margin({ bottom: this.scaledSize(4) })
                 }
                 .width(this.scaledSize(44))
                 .alignItems(HorizontalAlign.Center)
@@ -2595,7 +2615,7 @@ struct SettingsDetailPage {
                     .fontSize(this.scaledFont(10))
                     .fontColor(this.settingSubTextColor())
                     .fontWeight(FontWeight.Medium)
-                    .margin({ top: 6 })
+                    .margin({ top: this.scaledSize(6) })
                 }
                 .width(this.scaledSize(44))
                 .alignItems(HorizontalAlign.Center)
@@ -2605,10 +2625,10 @@ struct SettingsDetailPage {
             .justifyContent(FlexAlign.Center)
           }
           .padding({
-            left: 8,
-            right: 8,
-            top: 12,
-            bottom: 12
+            left: this.scaledSize(8),
+            right: this.scaledSize(8),
+            top: this.scaledSize(12),
+            bottom: this.scaledSize(12)
           })
         }
         .width('100%')
@@ -2621,12 +2641,12 @@ struct SettingsDetailPage {
       // ═══ 自动音量均衡（P2-1 ReplayGain）═══
       Column() {
         Text('自动音量均衡')
-          .fontSize(this.scaledFont(13))
+          .fontSize(this.scaledFont(14))
           .fontWeight(FontWeight.Medium)
           .fontColor(this.settingTextColor())
           .width('100%')
         Text('按歌曲内嵌 ReplayGain 标签统一响度（MP3/FLAC），无标签歌曲不调整')
-          .fontSize(this.scaledFont(11))
+          .fontSize(this.scaledFont(12))
           .fontColor(this.settingSubTextColor())
           .width('100%')
           .margin({ top: this.scaledSize(2) })
@@ -2659,7 +2679,7 @@ struct SettingsDetailPage {
               this.onReplayGainPreGainChange(value, mode)
             })
           Text('在标签增益上整体叠加的固定量，正数更响、负数更轻')
-            .fontSize(this.scaledFont(11))
+            .fontSize(this.scaledFont(12))
             .fontColor(this.settingSubTextColor())
             .width('100%')
             .margin({ top: this.scaledSize(4) })
@@ -2678,12 +2698,16 @@ struct SettingsDetailPage {
 
       // ═══ 声场 ═══
       Column() {
-        this.toggleRow('声场', this.settings.soundFieldEnabled, (val: boolean) => {
-          this.animateSettingChange(() => {
-            this.settings.soundFieldEnabled = val
-          })
-          this.updateSetting()
-          this.avPlayerService.applySoundField(val, this.settings.soundFieldType)
+        this.toggleRow({
+          label: '声场',
+          isOn: this.settings.soundFieldEnabled,
+          onChange: (val: boolean) => {
+            this.animateSettingChange(() => {
+              this.settings.soundFieldEnabled = val
+            })
+            this.updateSetting()
+            this.avPlayerService.applySoundField(val, this.settings.soundFieldType)
+          }
         })
         if (!this.soundFieldSupported) {
           Text('当前设备不支持声场效果')
@@ -2718,12 +2742,16 @@ struct SettingsDetailPage {
 
       // ═══ 环境效果 ═══
       Column() {
-        this.toggleRow('环境效果', this.settings.environmentEnabled, (val: boolean) => {
-          this.animateSettingChange(() => {
-            this.settings.environmentEnabled = val
-          })
-          this.updateSetting()
-          this.avPlayerService.applyEnvironment(val, this.settings.environmentType)
+        this.toggleRow({
+          label: '环境效果',
+          isOn: this.settings.environmentEnabled,
+          onChange: (val: boolean) => {
+            this.animateSettingChange(() => {
+              this.settings.environmentEnabled = val
+            })
+            this.updateSetting()
+            this.avPlayerService.applyEnvironment(val, this.settings.environmentType)
+          }
         })
         if (!this.environmentSupported) {
           Text('当前设备不支持环境效果')
@@ -2758,12 +2786,16 @@ struct SettingsDetailPage {
 
       // ═══ 声音美化 ═══
       Column() {
-        this.toggleRow('声音美化', this.settings.beautifierEnabled, (val: boolean) => {
-          this.animateSettingChange(() => {
-            this.settings.beautifierEnabled = val
-          })
-          this.updateSetting()
-          this.avPlayerService.applyVoiceBeautifier(val, this.settings.beautifierType)
+        this.toggleRow({
+          label: '声音美化',
+          isOn: this.settings.beautifierEnabled,
+          onChange: (val: boolean) => {
+            this.animateSettingChange(() => {
+              this.settings.beautifierEnabled = val
+            })
+            this.updateSetting()
+            this.avPlayerService.applyVoiceBeautifier(val, this.settings.beautifierType)
+          }
         })
         if (!this.beautifierSupported) {
           Text('当前设备不支持声音美化')
@@ -2798,12 +2830,16 @@ struct SettingsDetailPage {
 
       // ═══ 空间渲染 ═══
       Column() {
-        this.toggleRow('空间渲染', this.settings.spaceRenderEnabled, (val: boolean) => {
-          this.animateSettingChange(() => {
-            this.settings.spaceRenderEnabled = val
-          })
-          this.updateSetting()
-          this.avPlayerService.applySpaceRender(val, this.settings.spaceRenderMode, this.settings.spaceRenderValues)
+        this.toggleRow({
+          label: '空间渲染',
+          isOn: this.settings.spaceRenderEnabled,
+          onChange: (val: boolean) => {
+            this.animateSettingChange(() => {
+              this.settings.spaceRenderEnabled = val
+            })
+            this.updateSetting()
+            this.avPlayerService.applySpaceRender(val, this.settings.spaceRenderMode, this.settings.spaceRenderValues)
+          }
         })
         if (!this.spaceRenderSupported) {
           Text('当前设备不支持空间渲染')
@@ -2858,12 +2894,16 @@ struct SettingsDetailPage {
 
       // ═══ 通用变声（主链内，10 种风格化变声）═══
       Column() {
-        this.toggleRow('通用变声', this.settings.generalVoiceChangeEnabled, (val: boolean) => {
-          this.animateSettingChange(() => {
-            this.settings.generalVoiceChangeEnabled = val
-          })
-          this.updateSetting()
-          this.avPlayerService.applyGeneralVoiceChange(val, this.settings.generalVoiceChangeType)
+        this.toggleRow({
+          label: '通用变声',
+          isOn: this.settings.generalVoiceChangeEnabled,
+          onChange: (val: boolean) => {
+            this.animateSettingChange(() => {
+              this.settings.generalVoiceChangeEnabled = val
+            })
+            this.updateSetting()
+            this.avPlayerService.applyGeneralVoiceChange(val, this.settings.generalVoiceChangeType)
+          }
         })
         if (!this.generalVoiceChangeSupported) {
           Text('当前设备不支持通用变声')
@@ -2898,12 +2938,16 @@ struct SettingsDetailPage {
 
       // ═══ 降噪（无参数，仅开关）═══
       Column() {
-        this.toggleRow('降噪', this.settings.noiseReductionEnabled, (val: boolean) => {
-          this.animateSettingChange(() => {
-            this.settings.noiseReductionEnabled = val
-          })
-          this.updateSetting()
-          this.avPlayerService.applyNoiseReduction(val)
+        this.toggleRow({
+          label: '降噪',
+          isOn: this.settings.noiseReductionEnabled,
+          onChange: (val: boolean) => {
+            this.animateSettingChange(() => {
+              this.settings.noiseReductionEnabled = val
+            })
+            this.updateSetting()
+            this.avPlayerService.applyNoiseReduction(val)
+          }
         })
         Text(this.noiseReductionSupported ? '降低背景噪声，输出为 16kHz 单声道（语音向处理）'
           : '当前设备不支持降噪')
@@ -2920,13 +2964,17 @@ struct SettingsDetailPage {
 
       // ═══ 传统变声（性别 + 7 类型 + 音调）═══
       Column() {
-        this.toggleRow('传统变声', this.settings.pureVoiceChangeEnabled, (val: boolean) => {
-          this.animateSettingChange(() => {
-            this.settings.pureVoiceChangeEnabled = val
-          })
-          this.updateSetting()
-          this.avPlayerService.applyPureVoiceChange(val, this.settings.pureVoiceChangeGender,
-            this.settings.pureVoiceChangeType, this.settings.pureVoiceChangePitch)
+        this.toggleRow({
+          label: '传统变声',
+          isOn: this.settings.pureVoiceChangeEnabled,
+          onChange: (val: boolean) => {
+            this.animateSettingChange(() => {
+              this.settings.pureVoiceChangeEnabled = val
+            })
+            this.updateSetting()
+            this.avPlayerService.applyPureVoiceChange(val, this.settings.pureVoiceChangeGender,
+              this.settings.pureVoiceChangeType, this.settings.pureVoiceChangePitch)
+          }
         })
         if (!this.pureVoiceChangeSupported) {
           Text('当前设备不支持传统变声')
@@ -2994,7 +3042,7 @@ struct SettingsDetailPage {
           .width('100%')
           .alignItems(VerticalAlign.Center)
           Text('提示：传统变声输出为 16kHz 单声道（语音向处理）')
-            .fontSize(this.scaledFont(11))
+            .fontSize(this.scaledFont(12))
             .fontColor(this.settingSubTextColor())
             .width('100%')
         }
@@ -3007,12 +3055,16 @@ struct SettingsDetailPage {
 
       // ═══ 变速变调（速度 + 音调，与播放倍速相互独立）═══
       Column() {
-        this.toggleRow('变速变调', this.settings.tempoPitchEnabled, (val: boolean) => {
-          this.animateSettingChange(() => {
-            this.settings.tempoPitchEnabled = val
-          })
-          this.updateSetting()
-          this.avPlayerService.applyTempoPitch(val, this.settings.tempoSpeed, this.settings.tempoPitch)
+        this.toggleRow({
+          label: '变速变调',
+          isOn: this.settings.tempoPitchEnabled,
+          onChange: (val: boolean) => {
+            this.animateSettingChange(() => {
+              this.settings.tempoPitchEnabled = val
+            })
+            this.updateSetting()
+            this.avPlayerService.applyTempoPitch(val, this.settings.tempoSpeed, this.settings.tempoPitch)
+          }
         })
         if (!this.tempoPitchSupported) {
           Text('当前设备不支持变速变调')
@@ -3039,7 +3091,7 @@ struct SettingsDetailPage {
               this.onTempoPitchChange(value, mode)
             })
           Text('提示：变速变调输出为 48kHz 单声道')
-            .fontSize(this.scaledFont(11))
+            .fontSize(this.scaledFont(12))
             .fontColor(this.settingSubTextColor())
             .width('100%')
         }
@@ -3052,12 +3104,16 @@ struct SettingsDetailPage {
 
       // ═══ 音源分离（独立管线，多输出人声/伴奏）═══
       Column() {
-        this.toggleRow('音源分离', this.settings.separationEnabled, (val: boolean) => {
-          this.animateSettingChange(() => {
-            this.settings.separationEnabled = val
-          })
-          this.updateSetting()
-          this.avPlayerService.applySeparation(val, this.settings.separationOutput)
+        this.toggleRow({
+          label: '音源分离',
+          isOn: this.settings.separationEnabled,
+          onChange: (val: boolean) => {
+            this.animateSettingChange(() => {
+              this.settings.separationEnabled = val
+            })
+            this.updateSetting()
+            this.avPlayerService.applySeparation(val, this.settings.separationOutput)
+          }
         })
         if (!this.separationSupported) {
           Text('当前设备不支持音源分离（依赖 NPU）')
@@ -3083,7 +3139,7 @@ struct SettingsDetailPage {
             }
           })
           Text('分离使用独立管线，开启期间其他音效暂停生效，关闭后自动恢复')
-            .fontSize(this.scaledFont(11))
+            .fontSize(this.scaledFont(12))
             .fontColor(this.settingSubTextColor())
             .width('100%')
         }
@@ -3096,7 +3152,7 @@ struct SettingsDetailPage {
 
       // ═══ 系统空间音频（只读状态展示：API 无 setter，开关由系统设置控制）═══
       Row() {
-        Column({ space: this.scaledSize(4) }) {
+        Column({ space: this.scaledSize(6) }) {
           Text('系统空间音频')
             .fontSize(this.scaledFont(14))
             .fontColor(this.settingTextColor())
@@ -3106,10 +3162,11 @@ struct SettingsDetailPage {
             .fontColor(this.settingSubTextColor())
         }
         .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
         .alignItems(HorizontalAlign.Start)
 
         Text(this.spatialStatusText())
-          .fontSize(this.scaledFont(13))
+          .fontSize(this.scaledFont(12))
           .fontColor(this.spatializationSupported && this.spatializationEnabled ?
             this.primaryColor : this.settingSubTextColor())
           .fontWeight(FontWeight.Medium)
@@ -3184,17 +3241,6 @@ struct SettingsDetailPage {
       .padding({ top: this.scaledSize(24), bottom: this.scaledSize(8) })
 
       Column({ space: this.scaledSize(6) }) {
-        Text('仓库地址')
-          .fontSize(this.scaledFont(13))
-          .fontColor(this.settingTextColor())
-          .fontWeight(FontWeight.Bold)
-          .width('100%')
-          .padding({ left: this.scaledSize(4) })
-        this.aboutInfoRow('仓库', this.aboutRepoUrl)
-      }
-      .width('100%')
-
-      Column({ space: this.scaledSize(6) }) {
         Text('联系方式')
           .fontSize(this.scaledFont(13))
           .fontColor(this.settingTextColor())
@@ -3203,19 +3249,11 @@ struct SettingsDetailPage {
           .padding({ left: this.scaledSize(4) })
         this.aboutInfoRow('邮箱', this.aboutEmail)
         this.aboutInfoRow('QQ', this.aboutQq)
+        this.aboutInfoRow('仓库地址', this.aboutRepoUrl)
       }
       .width('100%')
 
-      Column({ space: this.scaledSize(6) }) {
-        Text('更新')
-          .fontSize(this.scaledFont(13))
-          .fontColor(this.settingTextColor())
-          .fontWeight(FontWeight.Bold)
-          .width('100%')
-          .padding({ left: this.scaledSize(4) })
-        this.checkUpdateRow()
-      }
-      .width('100%')
+      this.checkUpdateRow()
 
       // 全局快捷键速查：数据来源 Index.handleKeyEvent / MusicPlayer.handleKeyEvent
       // 内容移入二级弹窗（bindSheet 半模态），正文只保留入口行
@@ -3331,19 +3369,17 @@ struct SettingsDetailPage {
   @Builder
   shortcutEntryRow(): void {
     Row() {
-      Text('查看快捷键速查')
+      Text('快捷键')
         .fontSize(this.scaledFont(14))
         .fontColor(this.settingTextColor())
         .fontWeight(FontWeight.Medium)
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .layoutWeight(1)
-      Text('主页 / 播放器页')
-        .fontSize(this.scaledFont(12))
-        .fontColor(this.primaryColor)
-        .maxLines(1)
-        .flexShrink(0)
-        .margin({ left: this.scaledSize(8) })
+      Image($r('app.media.ic_public_arrow_right'))
+        .width(this.scaledSize(18))
+        .height(this.scaledSize(18))
+        .fillColor(this.settingSubTextColor())
     }
     .width('100%')
     .constraintSize({ minWidth: 0, maxWidth: '100%' })
@@ -3357,11 +3393,11 @@ struct SettingsDetailPage {
     })
   }
 
-  // 快捷键速查二级弹窗（bindSheet 半模态内容）：主页 + 播放器页两组
+  // 快捷键速查二级弹窗（bindSheet 半模态内容）：单一扁平列表，不分组
   @Builder
   shortcutSheetBuilder(): void {
     Column({ space: this.scaledSize(10) }) {
-      Text('快捷键速查')
+      Text('快捷键')
         .fontSize(this.scaledFont(16))
         .fontColor(this.settingTextColor())
         .fontWeight(FontWeight.Bold)
@@ -3370,14 +3406,47 @@ struct SettingsDetailPage {
 
       Scroll() {
         Column({ space: this.scaledSize(10) }) {
-          this.shortcutGroup('主页', ShortcutTable.MAIN_PAGE)
-          this.shortcutGroup('播放器页', ShortcutTable.PLAYER_PAGE)
+          ForEach(ShortcutTable.ALL, (entry: ShortcutEntry) => {
+            Row() {
+              Text(entry.description)
+                .fontSize(this.scaledFont(14))
+                .fontColor(this.settingTextColor())
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .layoutWeight(1)
+              Row({ space: this.scaledSize(4) }) {
+                ForEach(entry.keys, (key: string) => {
+                  Text(key)
+                    .fontSize(this.scaledFont(11))
+                    .fontColor(this.settingTextColor())
+                    .padding({
+                      left: this.scaledSize(7),
+                      right: this.scaledSize(7),
+                      top: this.scaledSize(3),
+                      bottom: this.scaledSize(3)
+                    })
+                    .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.08))
+                    .borderRadius(this.scaledSize(6))
+                    .constraintSize({ minWidth: this.scaledSize(22) })
+                    .textAlign(TextAlign.Center)
+                }, (key: string) => key)
+              }
+              .flexShrink(0)
+              .margin({ left: this.scaledSize(8) })
+            }
+            .width('100%')
+            .height(this.scaledSize(44))
+            .alignItems(VerticalAlign.Center)
+            .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+            .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+            .borderRadius(this.scaledSize(10))
+          }, (entry: ShortcutEntry) => entry.description)
         }
         .width('100%')
         .constraintSize({ minWidth: 0, maxWidth: '100%' })
       }
       .width('100%')
-      .constraintSize({ maxHeight: '70%' })
+      .constraintSize({ maxHeight: this.scaledSize(420) })
       .align(Alignment.Top)
       .edgeEffect(EdgeEffect.Spring)
     }
@@ -3389,57 +3458,6 @@ struct SettingsDetailPage {
       top: this.scaledSize(16),
       bottom: this.scaledSize(12)
     })
-  }
-
-  // 快捷键分组（关于分区「快捷键」）：组名 + 快捷键行（说明居左、按键徽标居右）
-  @Builder
-  shortcutGroup(groupName: string, entries: ShortcutEntry[]): void {
-    Column({ space: this.scaledSize(4) }) {
-      Text(groupName)
-        .fontSize(this.scaledFont(12))
-        .fontColor(this.settingTextColor())
-        .fontWeight(FontWeight.Medium)
-        .opacity(0.75)
-        .width('100%')
-        .padding({ left: this.scaledSize(4) })
-      ForEach(entries, (entry: ShortcutEntry) => {
-        Row() {
-          Text(entry.description)
-            .fontSize(this.scaledFont(13))
-            .fontColor(this.settingTextColor())
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .layoutWeight(1)
-          Row({ space: this.scaledSize(4) }) {
-            ForEach(entry.keys, (key: string) => {
-              Text(key)
-                .fontSize(this.scaledFont(11))
-                .fontColor(this.settingTextColor())
-                .padding({
-                  left: this.scaledSize(7),
-                  right: this.scaledSize(7),
-                  top: this.scaledSize(3),
-                  bottom: this.scaledSize(3)
-                })
-                .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.08))
-                .borderRadius(this.scaledSize(6))
-                .constraintSize({ minWidth: this.scaledSize(22) })
-                .textAlign(TextAlign.Center)
-            }, (key: string) => key)
-          }
-          .flexShrink(0)
-          .margin({ left: this.scaledSize(8) })
-        }
-        .width('100%')
-        .constraintSize({ minWidth: 0, maxWidth: '100%' })
-        .height(this.scaledSize(38))
-        .alignItems(VerticalAlign.Center)
-        .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-        .borderRadius(this.scaledSize(10))
-      }, (entry: ShortcutEntry) => entry.description)
-    }
-    .width('100%')
   }
 
   // 检查更新行：点击调用应用市场更新服务（checkAppUpdate + showUpdateDialog）
@@ -3648,20 +3666,21 @@ struct SettingsDetailPage {
     .alignItems(VerticalAlign.Center)
   }
 
+  // 单参数对象字面量按引用传递：this.settings.* 变化会触发 Toggle 的 isOn 刷新
   @Builder
-  toggleRow(toggleLabel: string, isChecked: boolean, onToggleChange: (val: boolean) => void): void {
+  toggleRow(cfg: ToggleRowConfig): void {
     Row() {
-      Text(toggleLabel)
+      Text(cfg.label)
         .fontSize(this.scaledFont(14))
         .fontColor(this.settingTextColor())
         .fontWeight(FontWeight.Medium)
         .maxLines(1)
       Blank()
-      Toggle({ type: ToggleType.Switch, isOn: isChecked })
+      Toggle({ type: ToggleType.Switch, isOn: cfg.isOn })
         .selectedColor(this.primaryColor)
         .systemMaterial(this.styleGlassMaterial())
         .onChange((isOn: boolean) => {
-          onToggleChange(isOn)
+          cfg.onChange(isOn)
         })
     }
     .width('100%')

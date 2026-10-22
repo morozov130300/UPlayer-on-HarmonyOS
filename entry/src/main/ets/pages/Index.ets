@@ -485,7 +485,9 @@ struct MainPage {
         this.openPlayer()
       })
 
-      if (this.isPC && this.currentSongTitle.length > 0 &&
+      // 按窗口断点而非设备类型判定：任何设备（PC/平板/折叠屏/手机）窗口宽度达到 xl 及以上
+      // 都显示迷你歌词，PC 小窗口同样不显示，与「窗口大小决定布局」的断点体系保持一致
+      if ((this.breakpoint === 'xl' || this.breakpoint === 'xxl') && this.currentSongTitle.length > 0 &&
         (this.currentLyricLine.length > 0 || this.nextLyricLine.length > 0)) {
         Column() {
           Text(this.currentLyricLine)
@@ -1163,7 +1165,7 @@ struct MainPage {
   }
 
   private songInfoWeight(): number {
-    return this.isPC && this.isSongInfoShort() ? 2 : 3
+    return (this.breakpoint === 'xl' || this.breakpoint === 'xxl') && this.isSongInfoShort() ? 2 : 3
   }
 
   private lyricInfoWeight(): number {

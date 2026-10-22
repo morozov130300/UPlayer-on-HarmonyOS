@@ -15,6 +15,7 @@ import { StyleConstants } from '../common/constants/StyleConstants'
 import { display } from '@kit.ArkUI'
 import { deviceInfo } from '@kit.BasicServicesKit'
 import { AlbumCover } from '../component/AlbumCover'
+import { PlaylistCreateDialog } from '../component/PlaylistCreateDialog'
 import { AlbumCoverSize } from '../service/AudioMetadataService'
 
 const TAG = 'PlaylistContent'
@@ -66,7 +67,7 @@ export struct PlaylistContent {
   playlistRevision: number = 0
   @State playlistCards: PlaylistCardData[] = []
   @State isPlaylistDialogVisible: boolean = false
-  @State playlistDialogMode: string = 'create'
+  @State isPlaylistCreateVisible: boolean = false
   @State playlistDialogText: string = ''
   private renamingPlaylistId: string = ''
   @State playlistActionCardId: string = ''
@@ -402,29 +403,22 @@ export struct PlaylistContent {
   }
 
   openPlaylistCreateDialog(): void {
-    this.playlistDialogMode = 'create'
-    this.playlistDialogText = ''
-    this.isPlaylistDialogVisible = true
+    this.isPlaylistCreateVisible = true
   }
 
   openPlaylistRenameDialog(card: PlaylistCardData): void {
     this.renamingPlaylistId = card.playlist.id
-    this.playlistDialogMode = 'rename'
     this.playlistDialogText = card.playlist.name
     this.isPlaylistDialogVisible = true
   }
 
-  // 新建/改名确认：空名与超长（>30 字符）不落库
+  // 重命名确认：空名与超长（>30 字符）不落库
   async confirmPlaylistDialog(): Promise<void> {
     const name: string = this.playlistDialogText.trim()
     if (name.length === 0 || name.length > 30) {
       return
     }
-    if (this.playlistDialogMode === 'rename') {
-      await this.dataService.renamePlaylist(this.renamingPlaylistId, name)
-    } else {
-      await this.dataService.createPlaylist(name)
-    }
+    await this.dataService.renamePlaylist(this.renamingPlaylistId, name)
     this.isPlaylistDialogVisible = false
     this.buildPlaylistCards()
   }
@@ -562,6 +556,22 @@ export struct PlaylistContent {
       if (this.playlistDeleteConfirmId.length > 0) {
         this.playlistDeleteConfirm()
       }
+      if (this.isPlaylistCreateVisible) {
+        PlaylistCreateDialog({
+          songs: this.songs,
+          preselectedIds: [],
+          primaryColor: this.primaryColor,
+          fontSizeScale: this.fontSizeScale,
+          displaySizeScale: this.displaySizeScale,
+          onCancel: () => {
+            this.isPlaylistCreateVisible = false
+          },
+          onDone: () => {
+            this.isPlaylistCreateVisible = false
+            this.buildPlaylistCards()
+          }
+        })
+      }
     }
     .width('100%')
     .height('100%')
@@ -676,31 +686,27 @@ export struct PlaylistContent {
   @Builder
   newPlaylistCard(): void {
     Column() {
-      Stack() {
-        Image($r('app.media.ic_public_add_norm_filled'))
-          .width(24)
-          .height(24)
-          .fillColor(this.primaryColor)
-      }
-      .width('100%')
-      .aspectRatio(1)
-      .borderRadius(12)
-      .backgroundColor(ColorHelper.hexWithAlpha(this.primaryColor, '14'))
-
+      Image($r('app.media.ic_public_add_norm_filled'))
+        .width(28)
+        .height(28)
+        .fillColor(this.primaryColor)
+        .margin({ bottom: 6 })
       Text('新建歌单')
         .fontSize(Math.round(12 * this.fontSizeScale))
-        .fontColor($r('app.color.text_sixty_color'))
+        .fontColor($r('app.color.text_primary'))
         .maxLines(1)
-        .margin({ top: 6 })
-      // 与歌单卡两行文案对齐占位（不可见空行）
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+      // 与文件夹卡两行文案对齐占位（不可见空行）
       Text('\u00A0')
         .fontSize(10)
+        .fontColor($r('app.color.text_sixty_color'))
         .margin({ top: 2 })
     }
     .width('100%')
-    .padding(6)
-    .borderRadius(16)
+    .height(80)
+    .justifyContent(FlexAlign.Center)
     .alignItems(HorizontalAlign.Center)
+    .borderRadius(16)
     .backgroundColor('rgba(0,0,0,0.03)')
     .border({ width: 1, color: $r('app.color.list_divider') })
     .onClick(() => {
@@ -721,7 +727,7 @@ export struct PlaylistContent {
         })
 
       Column({ space: 14 }) {
-        Text(this.playlistDialogMode === 'rename' ? '重命名歌单' : '新建歌单')
+        Text('重命名歌单')
           .fontSize(Math.round(16 * this.fontSizeScale))
           .fontWeight(FontWeight.Bold)
           .fontColor($r('app.color.text_primary'))
@@ -734,6 +740,12 @@ export struct PlaylistContent {
           .borderRadius(12)
           .onChange((value: string) => {
             this.playlistDialogText = value
+          })
+          .enterKeyType(EnterKeyType.Done)
+          .onSubmit(() => {
+            this.confirmPlaylistDialog().catch((err: Error) => {
+              Logger.error(TAG, `confirmPlaylistDialog failed: ${JSON.stringify(err)}`)
+            })
           })
 
         Row({ space: 10 }) {
@@ -748,7 +760,7 @@ export struct PlaylistContent {
             .onClick(() => {
               this.isPlaylistDialogVisible = false
             })
-          Text(this.playlistDialogMode === 'rename' ? '保存' : '创建')
+          Text('保存')
             .fontSize(Math.round(14 * this.fontSizeScale))
             .fontColor(Color.White)
             .layoutWeight(1)
