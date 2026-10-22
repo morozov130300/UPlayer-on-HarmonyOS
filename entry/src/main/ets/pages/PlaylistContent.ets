@@ -1028,10 +1028,17 @@ export struct PlaylistContent {
         })
     )
     // 长按冒泡菜单（倍速弹窗同款 bindPopup 气泡）：编辑 / 多选 / 删除
+    // 气泡底色必须在 PopupOptions 上设：系统弹窗容器自带一层不透明底板，
+    // 只改 builder 内容区的 backgroundColor 是盖不掉那层灰底的（暗色下尤其明显）
     .bindPopup(!this.isAnySelectMode() && this.playlistActionCardId === card.playlist.id, {
       builder: this.playlistActionPopupBuilder,
       placement: Placement.Bottom,
       showInSubWindow: false,
+      // 玻璃样式：容器透明 + 磨砂，让气泡自己出真玻璃（不再依赖系统默认底板）
+      // 经典样式：页面同色实底卡片
+      backgroundColor: this.tabStyle === 'immersive' ? Color.Transparent : $r('app.color.page_background_sm'),
+      backgroundBlurStyle: this.tabStyle === 'immersive' ? BlurStyle.COMPONENT_THICK : BlurStyle.NONE,
+      radius: this.scaledSize(14),
       systemMaterial: this.styleGlassMaterial(),
       onStateChange: (e) => {
         if (!e.isVisible) {
@@ -1131,16 +1138,15 @@ export struct PlaylistContent {
     }
     .width(112)
     .padding({ top: 4, bottom: 4 })
-    .borderRadius(this.scaledSize(14))
-    // 背景与页面同色系：经典样式给实色卡片（不再吃系统默认弹窗底色，和歌单页的白底打架）；
-    // 玻璃样式交回 systemMaterial，不叠不透明底，否则会把液态玻璃糊成一块实色
-    .backgroundColor(this.tabStyle === 'immersive' ? Color.Transparent :
-      $r('app.color.page_background_sm'))
-    // 暗色下页面与卡片同为 #000000，靠一道细描边维持卡片边界
+    // 内容区保持透明：底色/圆角由 bindPopup 的 PopupOptions 统一给（容器级），
+    // 否则会在系统底板上再叠一层，玻璃样式下直接变实色块
+    .backgroundColor(Color.Transparent)
+    // 暗色下页面与卡片同为深色，靠一道细描边维持卡片边界（玻璃样式不需要）
     .border({
       width: this.tabStyle === 'immersive' ? 0 : 1,
       color: $r('app.color.list_divider')
     })
+    .borderRadius(this.scaledSize(14))
   }
 
   // 删除歌单二次确认：明确告知歌曲本身不会被删除
