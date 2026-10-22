@@ -171,6 +171,8 @@ struct SettingsDetailPage {
   @State showColorPicker: boolean = false
   @State showGlassScope: boolean = false
   @State showShortcutSheet: boolean = false
+  // 自动音量均衡说明弹窗
+  @State showReplayGainHelp: boolean = false
   @State pickerHue: number = 210
   @State pickerSaturation: number = 1
   @State pickerValue: number = 1
@@ -1190,6 +1192,47 @@ struct SettingsDetailPage {
       .fontColor(this.settingSubTextColor())
       .width('100%')
       .padding({ top: this.scaledSize(2) })
+  }
+
+  // 自动音量均衡说明弹窗（bindSheet 半模态内容）
+  @Builder
+  replayGainHelpSheetBuilder(): void {
+    Column({ space: this.scaledSize(10) }) {
+      Text('自动音量均衡')
+        .fontSize(this.scaledFont(16))
+        .fontColor(this.settingTextColor())
+        .fontWeight(FontWeight.Bold)
+        .width('100%')
+        .textAlign(TextAlign.Start)
+
+      Text('按歌曲内嵌 ReplayGain 标签在播放时统一响度，不修改文件本身。')
+        .fontSize(this.scaledFont(12))
+        .fontColor(this.settingSubTextColor())
+        .width('100%')
+        .padding({ top: this.scaledSize(2) })
+      this.scopeLine('• 均衡关：不处理，保持原始音量')
+      this.scopeLine('• 按曲目：每首歌用自己的增益，逐首拉平')
+      this.scopeLine('• 按专辑：同专辑共用一个增益，保留专辑内强弱起伏；缺专辑标签时按曲目处理')
+      this.scopeLine('• 预增益：在标签增益上整体叠加，正数更响、负数更轻')
+      this.scopeLine('• 增益切换与换曲逐采样平滑，无爆音；增益过大时软限幅防削波')
+      this.scopeLine('• 仅 MP3（ID3v2）/ FLAC 标签有效，其他格式与无标签歌曲不调整；设了非 0 预增益时仍会整体加减')
+
+      Row() {
+        Button('知道了')
+          .layoutWeight(1)
+          .height(this.scaledSize(30))
+          .fontColor('#FFFFFF')
+          .backgroundColor(this.primaryColor)
+          .borderRadius(this.scaledSize(15))
+          .onClick(() => {
+            this.showReplayGainHelp = false
+          })
+      }
+      .width('100%')
+      .padding({ top: this.scaledSize(8), bottom: this.scaledSize(10) })
+    }
+    .width('100%')
+    .padding({ left: this.scaledSize(20), right: this.scaledSize(20), top: this.scaledSize(14) })
   }
 
   @Builder
@@ -2655,13 +2698,42 @@ struct SettingsDetailPage {
 
       // ═══ 自动音量均衡（P2-1 ReplayGain）═══
       Column() {
-        Text('自动音量均衡')
-          .fontSize(this.scaledFont(14))
-          .fontWeight(FontWeight.Medium)
-          .fontColor(this.settingTextColor())
-          .width('100%')
-        Text('按歌曲内嵌 ReplayGain 标签统一响度（MP3/FLAC），无标签歌曲不调整')
-          .fontSize(this.scaledFont(12))
+        Row() {
+          Text('自动音量均衡')
+            .fontSize(this.scaledFont(13))
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.settingTextColor())
+          // 说明弹窗入口：与分组标题问号同款样式
+          Stack({ alignContent: Alignment.Center }) {
+            Circle()
+              .width(this.scaledSize(18))
+              .height(this.scaledSize(18))
+              .fill(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+            Image($r('app.media.ic_public_help'))
+              .width(this.scaledSize(13))
+              .height(this.scaledSize(13))
+              .fillColor(this.primaryColor)
+          }
+          .width(this.scaledSize(18))
+          .height(this.scaledSize(18))
+          .margin({ left: this.scaledSize(6) })
+          .onClick(() => {
+            this.showReplayGainHelp = true
+          })
+          .bindSheet($$this.showReplayGainHelp, this.replayGainHelpSheetBuilder(), {
+            height: SheetSize.FIT_CONTENT,
+            dragBar: false,
+            preferType: SheetType.CENTER,
+            showClose: true,
+            systemMaterial: this.styleGlassMaterial(),
+            backgroundColor: $r('app.color.page_background_other')
+          })
+          Blank()
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+        Text('按内嵌 ReplayGain 标签统一响度')
+          .fontSize(this.scaledFont(11))
           .fontColor(this.settingSubTextColor())
           .width('100%')
           .margin({ top: this.scaledSize(2) })
