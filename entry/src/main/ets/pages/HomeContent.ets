@@ -603,14 +603,18 @@ export struct HomeContent {
   }
 
   openSearch(): void {
-    this.isSearchActive = true
+    this.getUIContext()?.animateTo({ curve: curves.springMotion(0.3, 0.9) }, () => {
+      this.isSearchActive = true
+    })
     setTimeout(() => {
       this.getUIContext()?.getFocusController().requestFocus('home_search_input')
     }, 100)
   }
 
   closeSearch(): void {
-    this.isSearchActive = false
+    this.getUIContext()?.animateTo({ curve: curves.springMotion(0.3, 0.9) }, () => {
+      this.isSearchActive = false
+    })
     if (this.searchDebounceId >= 0) {
       clearTimeout(this.searchDebounceId)
       this.searchDebounceId = -1
@@ -1414,76 +1418,120 @@ export struct HomeContent {
 
         Column() {
           Row() {
-            Text(this.filterLabel)
-              .fontSize(Math.round(14 * this.fontSizeScale))
-              .fontColor($r('app.color.text_primary'))
-              .fontWeight(FontWeight.Bold)
-              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-              .backgroundColor(this.filterLabel === '全部歌曲' ? 'rgba(0,0,0,0.05)' : ColorHelper.hexToRgba(this.primaryColor, 0.12))
-              .borderRadius(16)
-              .onClick(() => { this.clearFilters() })
+            if (!this.isSearchActive) {
+              Row() {
+                Text(this.filterLabel)
+                  .fontSize(Math.round(14 * this.fontSizeScale))
+                  .fontColor($r('app.color.text_primary'))
+                  .fontWeight(FontWeight.Bold)
+                  .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                  .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+                  .borderRadius(16)
+                  .onClick(() => { this.clearFilters() })
 
-            // 组合筛选入口（S1）：维度激活时高亮提示
-            Text('筛选')
-              .fontSize(Math.round(12 * this.fontSizeScale))
-              .fontColor($r('app.color.text_primary'))
-              .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-              .margin({ left: 8 })
-              .backgroundColor(this.countActiveFilterDims() > 0 ?
-                ColorHelper.hexToRgba(this.primaryColor, 0.28) : 'rgba(0,0,0,0.05)')
-              .borderRadius(16)
-              .onClick(() => { this.openFilterPanel() })
+                // 组合筛选入口（S1）：维度激活时高亮提示
+                Text('筛选')
+                  .fontSize(Math.round(12 * this.fontSizeScale))
+                  .fontColor($r('app.color.text_primary'))
+                  .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+                  .margin({ left: 8 })
+                  .backgroundColor(this.countActiveFilterDims() > 0 ?
+                    ColorHelper.hexToRgba(this.primaryColor, 0.28) : ColorHelper.hexToRgba(this.primaryColor, 0.12))
+                  .borderRadius(16)
+                  .onClick(() => { this.openFilterPanel() })
+              }
+              .alignItems(VerticalAlign.Center)
+              .transition(TransitionEffect.OPACITY.combine(TransitionEffect.translate({ x: -this.scaledSize(48) })))
 
-            Blank()
+              Blank()
+            }
 
-            // 模糊搜索入口（S2）：展开/收起搜索行，Ctrl+F 亦可触发
-            Row() {
+            // 模糊搜索（S2）：平时为图标胶囊，激活后原位横向撑满整行、两侧胶囊被挤出屏幕，Ctrl+F 亦可触发
+            Row({ space: 8 }) {
               Image($r('app.media.ic_public_search'))
                 .width(16).height(16)
                 .fillColor($r('app.color.text_primary'))
+
+              if (this.isSearchActive) {
+                TextInput({ text: this.searchText, placeholder: '搜索歌曲 / 歌手 / 专辑 / 拼音' })
+                  .id('home_search_input')
+                  .layoutWeight(1)
+                  .height('100%')
+                  .fontSize(Math.round(14 * this.fontSizeScale))
+                  .placeholderFont({ size: Math.round(14 * this.fontSizeScale) })
+                  .placeholderColor($r('app.color.text_twenty_color'))
+                  .fontColor($r('app.color.text_primary'))
+                  .caretColor(this.primaryColor)
+                  .backgroundColor(Color.Transparent)
+                  .padding({ left: 0, right: 0 })
+                  .onChange((value: string) => {
+                    this.onSearchTextChanged(value)
+                  })
+                  .transition(TransitionEffect.OPACITY)
+
+                if (this.searchText.length > 0) {
+                  Image($r('app.media.ic_public_close'))
+                    .width(16).height(16)
+                    .fillColor($r('app.color.text_sixty_color'))
+                    .onClick(() => {
+                      this.searchText = ''
+                      this.applyFilters()
+                    })
+                    .transition(TransitionEffect.OPACITY)
+                }
+
+                Text('取消')
+                  .fontSize(Math.round(14 * this.fontSizeScale))
+                  .fontColor($r('app.color.text_sixty_color'))
+                  .onClick(() => { this.closeSearch() })
+                  .transition(TransitionEffect.OPACITY)
+              }
             }
-            .padding({ left: 10, right: 10, top: 8, bottom: 8 })
+            .width(this.isSearchActive ? '100%' : this.scaledSize(36))
+            .height(this.scaledSize(32))
+            .padding({ left: 10, right: 10 })
             .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
             .borderRadius(16)
+            .alignItems(VerticalAlign.Center)
             .onClick(() => {
-              if (this.isSearchActive) {
-                this.closeSearch()
-              } else {
+              if (!this.isSearchActive) {
                 this.openSearch()
               }
             })
 
-            Row() {
-              Image($r('app.media.ic_sort_list'))
-                .width(16).height(16)
-                .fillColor($r('app.color.text_primary'))
-              Text(this.getSortLabel())
-                .fontSize(Math.round(12 * this.fontSizeScale))
-                .fontColor($r('app.color.text_primary'))
-                .margin({ left: 4 })
-            }
-            .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-            .margin({ left: 8 })
-            .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-            .borderRadius(16)
-            .onClick(() => { this.switchSortMode() })
+            if (!this.isSearchActive) {
+              Row() {
+                Row() {
+                  Image($r('app.media.ic_sort_list'))
+                    .width(16).height(16)
+                    .fillColor($r('app.color.text_primary'))
+                  Text(this.getSortLabel())
+                    .fontSize(Math.round(12 * this.fontSizeScale))
+                    .fontColor($r('app.color.text_primary'))
+                    .margin({ left: 4 })
+                }
+                .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+                .margin({ left: 8 })
+                .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+                .borderRadius(16)
+                .onClick(() => { this.switchSortMode() })
 
-            Row() {
-              Text(this.viewModeLabel())
-                .fontSize(Math.round(12 * this.fontSizeScale))
-                .fontColor($r('app.color.text_primary'))
+                Row() {
+                  Text(this.viewModeLabel())
+                    .fontSize(Math.round(12 * this.fontSizeScale))
+                    .fontColor($r('app.color.text_primary'))
+                }
+                .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+                .margin({ left: 8 })
+                .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+                .borderRadius(16)
+                .onClick(() => { this.toggleViewMode() })
+              }
+              .alignItems(VerticalAlign.Center)
+              .transition(TransitionEffect.OPACITY.combine(TransitionEffect.translate({ x: this.scaledSize(48) })))
             }
-            .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-            .margin({ left: 8 })
-            .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-            .borderRadius(16)
-            .onClick(() => { this.toggleViewMode() })
           }
           .width('100%')
-
-          if (this.isSearchActive) {
-            this.searchInputRow()
-          }
         }
         .width('100%')
         .padding({ left: 16, right: 16, top: 6 })
@@ -1819,52 +1867,6 @@ export struct HomeContent {
     })
   }
 
-  // 模糊搜索输入行（S2）：随搜索激活显示在胶囊行下方，高度并入 headerRowHeight 自动下推列表
-  @Builder
-  searchInputRow(): void {
-    Row({ space: 8 }) {
-      Image($r('app.media.ic_public_search'))
-        .width(16).height(16)
-        .fillColor($r('app.color.text_sixty_color'))
-
-      TextInput({ text: this.searchText, placeholder: '搜索歌曲 / 歌手 / 专辑 / 拼音' })
-        .id('home_search_input')
-        .layoutWeight(1)
-        .height(this.scaledSize(32))
-        .fontSize(Math.round(14 * this.fontSizeScale))
-        .placeholderFont({ size: Math.round(14 * this.fontSizeScale) })
-        .placeholderColor($r('app.color.text_twenty_color'))
-        .fontColor($r('app.color.text_primary'))
-        .caretColor(this.primaryColor)
-        .backgroundColor(Color.Transparent)
-        .padding({ left: 0, right: 0 })
-        .onChange((value: string) => {
-          this.onSearchTextChanged(value)
-        })
-
-      if (this.searchText.length > 0) {
-        Image($r('app.media.ic_public_close'))
-          .width(16).height(16)
-          .fillColor($r('app.color.text_sixty_color'))
-          .onClick(() => {
-            this.searchText = ''
-            this.applyFilters()
-          })
-      }
-
-      Text('取消')
-        .fontSize(Math.round(14 * this.fontSizeScale))
-        .fontColor($r('app.color.text_sixty_color'))
-        .onClick(() => { this.closeSearch() })
-    }
-    .width('100%')
-    .margin({ top: 8 })
-    .padding({ left: 12, right: 12, top: 4, bottom: 4 })
-    .borderRadius(18)
-    .backgroundColor('rgba(0,0,0,0.05)')
-    .alignItems(VerticalAlign.Center)
-  }
-
   // 筛选面板单维度分区（S1）：标题 + 芯片流式换行，多选高亮
   @Builder
   filterChipSection(sectionTitle: string, options: FilterChipOption[], selected: string[], dim: string): void {
@@ -1964,8 +1966,8 @@ export struct HomeContent {
           Text(item.artist.length > 0 ? item.artist : '未知歌手')
             .fontSize(Math.round(12 * this.fontSizeScale))
             .fontColor($r('app.color.text_sixty_color'))
-          if (item.folderName.length > 0 && item.isAvailable) {
-            Text(' · ' + item.folderName)
+          if (item.album.length > 0 && item.isAvailable) {
+            Text(' · ' + item.album)
               .fontSize(Math.round(12 * this.fontSizeScale))
               .fontColor($r('app.color.text_twenty_color'))
           }

@@ -1,11 +1,12 @@
-import { uiMaterial } from '@kit.ArkUI'
+import { curves, uiMaterial } from '@kit.ArkUI'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import { createTabGlassMaterial, DEFAULT_GLASS_STYLE, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
-import { isDarkThemeEffective } from '../common/utils/ThemeUtil'
 
 // 返回按钮统一组件：可点击区域维持原尺寸，内部套一层「可点击区域 × 0.6」的内切圆形，
 // 圆形的液态玻璃/磨砂/描边/阴影完全与底部 Tab 栏同源同参（同一批 AppStorage 配置驱动），
 // 保证风格切换时返回按钮与 Tab 栏同步变化。
+// 交互：不做跟手光效（材质固定不传 lightColor），改为与播放器 ScaleButton 完全一致的
+// 按压手感——按下缩小、松手/取消弹簧回弹、悬停放大。
 @Component
 export struct GlassBackButton {
   // 可点击区域直径（由调用方按各页原有缩放规则算好）：
@@ -19,9 +20,14 @@ export struct GlassBackButton {
 
   @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
   @StorageLink('uplayer_glass_blur_strength') glassBlurStrength: number = 25
-  @StorageLink('uplayer_tab_touch_indicator') tabTouchIndicator: string = 'light'
-  @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
-  @StorageLink('uplayer_theme_mode') themeMode: string = 'system'
+
+  // 按压动画状态（与 ScaleButton 同款手感）：参与渲染的缩放值用 @State，
+  // 按压/悬停标志只做逻辑判断，用普通 private 成员
+  @State btnScale: number = 1.0
+  private isPressed: boolean = false
+  private isHovered: boolean = false
+  private pressScale: number = 0.8
+  private hoverScale: number = 1.1
 
   // 圆形相对可点击区的直径比例：可点击区不变，视觉圆更小
   private static readonly CIRCLE_RATIO: number = 0.6
@@ -36,24 +42,27 @@ export struct GlassBackButton {
     return Math.round(this.iconSize * GlassBackButton.CIRCLE_RATIO)
   }
 
-  // 与底部 Tab 栏同源的材质选择（返回按钮固定不跟手形变，观感考量）：
-  // 玻璃风格(immersive) → createTabGlassMaterial 全参工厂（含 lightEffect/colorInvert/applyShadow）；
+  // 与底部 Tab 栏同源的材质选择（返回按钮固定不跟手：不传 lightColor，无 lightEffect 光效，
+  // 观感上的按压反馈由外层的 scale 动画提供）：
+  // 玻璃风格(immersive) → createTabGlassMaterial 工厂（含 colorInvert/applyShadow）；
   // 经典风格(classic) → 不挂任何材质（systemMaterial=undefined），仅由 backgroundEffect（高斯模糊）提供背景。
-  // 玻璃厚度/交互形变/自动反色/材质阴影等档位设置已删除：消费点固定默认开启
   private backMaterial(): uiMaterial.Material | undefined {
     if (this.tabStyle === 'immersive') {
       if (!isLiquidGlassAvailable()) {
         return undefined
       }
-      const useLight: boolean = this.tabTouchIndicator === 'light'
-      // 跟手光效颜色设置已删除：暗黑固定白光、明亮固定主题色
-      const lightColor: string | undefined = useLight
-        ? (isDarkThemeEffective(this.themeMode) ? '#FFFFFF' : this.primaryColor)
-        : undefined
-      return createTabGlassMaterial(DEFAULT_GLASS_STYLE, false, lightColor, true, true)
+      return createTabGlassMaterial(DEFAULT_GLASS_STYLE, false, undefined, true, true)
     }
     // 经典样式：不挂任何玻璃材质，仅靠磨砂层（backgroundEffect）
     return undefined
+  }
+
+  // 按压优先于悬停：按压中返回 pressScale，否则悬停返回 hoverScale，都不满足回 1.0
+  private targetScale(): number {
+    if (this.isPressed) {
+      return this.pressScale
+    }
+    return this.isHovered ? this.hoverScale : 1.0
   }
 
   build() {
@@ -90,7 +99,31 @@ export struct GlassBackButton {
     .justifyContent(FlexAlign.Center)
     .alignItems(VerticalAlign.Center)
     .borderRadius(this.clickSize / 2)
-    .hoverEffect(HoverEffect.Scale)
+    .scale({ x: this.btnScale, y: this.btnScale })
+    .onTouch((event: TouchEvent) => {
+      if (event.type === TouchType.Down) {
+        this.isPressed = true;
+        this.getUIContext()?.animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
+          this.btnScale = this.pressScale;
+        });
+      } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+        this.isPressed = false;
+        this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
+          this.btnScale = this.targetScale();
+        });
+      }
+    })
+    .onHover((isHover: boolean) => {
+      if (this.isHovered === isHover) {
+        return;
+      }
+      this.isHovered = isHover;
+      if (!this.isPressed) {
+        this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
+          this.btnScale = this.targetScale();
+        });
+      }
+    })
     .onClick(() => { this.onBack() })
   }
 }
