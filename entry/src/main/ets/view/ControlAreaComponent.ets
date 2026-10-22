@@ -462,21 +462,10 @@ export struct ControlAreaComponent {
     this.lyricOffsetMs = this.currentSong().lyricOffsetMs;
   }
 
-  // 偏移值格式化：+0.5s / -1.2s / 0.0s
+  // 偏移值格式化：+0.5s / -1.2s / 0.0s（本面板只显示当前值，调节在歌词区的滑轨里做）
   private formatLyricOffset(offsetMs: number): string {
     const seconds: number = offsetMs / 1000;
     return (seconds > 0 ? '+' : '') + seconds.toFixed(1) + 's';
-  }
-
-  // 拖动：内存即时生效（歌词高亮实时跟随）；松手/点击才单曲落库，避免拖动刷大量 DB 写
-  private onLyricOffsetChange(value: number, mode: SliderChangeMode): void {
-    const clamped: number = Math.round(value / 100) * 100;
-    this.lyricOffsetMs = clamped;
-    if (this.currentSongId.length === 0) {
-      return;
-    }
-    DataService.getInstance().setLyricOffset(this.currentSongId, clamped,
-      mode === SliderChangeMode.End || mode === SliderChangeMode.Click);
   }
 
   // 文件大小格式化：B/KB/MB
@@ -1106,51 +1095,37 @@ export struct ControlAreaComponent {
         this.initBluetoothAudio(true);
       })
 
-      // 歌词偏移（原播放页歌词区滑条移入此处）：卡片与上方入口行同一套外观
-      Column({ space: this.scaledSize(4) }) {
-        Row() {
+      // 歌词偏移入口行：只是触发器——点完关掉本半模态，滑轨在歌词区原位置滑出
+      Row() {
+        Column({ space: 2 }) {
           Text('歌词偏移')
             .fontSize(this.scaledFont(14))
             .fontWeight(FontWeight.Medium)
             .fontColor(this.settingTextColor())
-          Blank()
           Text(this.formatLyricOffset(this.lyricOffsetMs))
-            .fontSize(this.scaledFont(13))
-            .fontColor(this.primaryColor)
+            .fontSize(this.scaledFont(12))
+            .fontColor($r('app.color.text_sixty_color'))
         }
-        .width('100%')
-
-        Slider({ value: this.lyricOffsetMs, min: -5000, max: 5000, step: 100 })
-          .width('100%')
-          .selectedColor(this.primaryColor)
-          .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-          .blockColor('#FFFFFF')
-          .blockBorderColor(this.primaryColor)
-          .blockBorderWidth(2)
-          .onChange((value: number, mode: SliderChangeMode) => {
-            this.onLyricOffsetChange(value, mode);
-          })
-
-        // 方向说明：正值=歌词提前，负值=歌词延后
-        Row() {
-          Text('延后 5s')
-            .fontSize(this.scaledFont(10))
-            .fontColor($r('app.color.text_twenty_color'))
-          Blank()
-          Text('0')
-            .fontSize(this.scaledFont(10))
-            .fontColor($r('app.color.text_twenty_color'))
-          Blank()
-          Text('提前 5s')
-            .fontSize(this.scaledFont(10))
-            .fontColor($r('app.color.text_twenty_color'))
-        }
-        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+        Blank()
+        Image($r('app.media.ic_public_arrow_right'))
+          .width(this.scaledSize(18))
+          .height(this.scaledSize(18))
+          .fillColor($r('app.color.text_twenty_color'))
       }
       .width('100%')
-      .padding({ left: 16, right: 16, top: 10, bottom: 10 })
+      .height(52)
+      .padding({ left: 16, right: 16 })
       .backgroundColor('rgba(206,206,210,0.22)')
       .borderRadius(this.scaledSize(10))
+      .onClick(() => {
+        // 先收半模态，等它退场再点亮滑轨，这样滑出动画能被看见（不然被面板盖住）
+        this.isShowMorePanel = false;
+        setTimeout(() => {
+          AppStorage.setOrCreate(AppStorageKeyConstants.KEY_LYRIC_OFFSET_PANEL, true);
+        }, 200);
+      })
     }
     .width(StyleConstants.FULL_WIDTH)
     .padding({ left: 16, right: 16 })

@@ -37,10 +37,57 @@ export struct LyricsComponent {
   // P0-3 每歌歌词偏移：滑条已移入播放器「更多」半模态（ControlAreaComponent），
   // 这里只消费同一个 AppStorage 键驱动高亮/点击跳转换算
   @StorageLink(AppStorageKeyConstants.KEY_LYRIC_OFFSET_MS) lyricOffsetMs: number = 0;
+  // 偏移滑轨显隐：由「更多」面板里的条目触发（条目点了只关面板，不在这里调值）
+  @StorageLink(AppStorageKeyConstants.KEY_LYRIC_OFFSET_PANEL) @Watch('onOffsetPanelVisibleChange')
+  offsetPanelVisible: boolean = false;
+  // 无操作自动收起计时器
+  private offsetPanelTimerId: number = -1;
   private lyricLoadRequestId: number = 0;
 
   aboutToAppear() {
     this.getLrcEntryList();
+  }
+
+  aboutToDisappear() {
+    if (this.offsetPanelTimerId >= 0) {
+      clearTimeout(this.offsetPanelTimerId);
+      this.offsetPanelTimerId = -1;
+    }
+    // 离开播放页时把滑轨状态收回，下次进来不残留
+    this.offsetPanelVisible = false;
+  }
+
+  // 显隐变化即重置「无操作 5 秒」计时；每次拖动也会重置（见 onLyricOffsetChange）
+  onOffsetPanelVisibleChange(): void {
+    if (this.offsetPanelTimerId >= 0) {
+      clearTimeout(this.offsetPanelTimerId);
+      this.offsetPanelTimerId = -1;
+    }
+    if (!this.offsetPanelVisible) {
+      return;
+    }
+    this.offsetPanelTimerId = setTimeout(() => {
+      this.offsetPanelTimerId = -1;
+      this.offsetPanelVisible = false;
+    }, 5000);
+  }
+
+  // 偏移值格式化：+0.5s / -1.2s / 0.0s
+  private formatLyricOffset(offsetMs: number): string {
+    const seconds: number = offsetMs / 1000;
+    return (seconds > 0 ? '+' : '') + seconds.toFixed(1) + 's';
+  }
+
+  // 拖动：内存即时生效（歌词高亮实时跟随）；松手/点击才单曲落库，避免拖动刷大量 DB 写
+  private onLyricOffsetChange(value: number, mode: SliderChangeMode): void {
+    const clamped: number = Math.round(value / 100) * 100;
+    this.lyricOffsetMs = clamped;
+    if (this.currentSongId.length > 0) {
+      DataService.getInstance().setLyricOffset(this.currentSongId, clamped,
+        mode === SliderChangeMode.End || mode === SliderChangeMode.Click);
+    }
+    // 有操作即续命 5 秒
+    this.onOffsetPanelVisibleChange();
   }
 
   private currentSong(): SongInfo {
@@ -123,7 +170,40 @@ export struct LyricsComponent {
         isLyricLoading: this.isLyricLoading, lyricOffsetMs: this.lyricOffsetMs })
         .layoutWeight(1)
 
-      // P0-3 歌词偏移滑条已移入播放器「更多」半模态（位置见 ControlAreaComponent.morePanelMainBuilder）
+      // 歌词偏移滑轨：由「更多」面板条目触发，在原位置滑出；无操作 5 秒自动收起。
+      // Block 阻断触摸冒泡，避免拖滑条触发根容器的 onClick（窄屏下会切换控制区显隐）
+      if (this.offsetPanelVisible && !this.isLyricLoading && this.mLrcEntryList.length > 0) {
+        Row({ space: 10 }) {
+          Text('歌词偏移')
+            .fontSize(Math.round(12 * this.fontSizeScale))
+            .fontColor('#B3ffffff')
+          Slider({ value: this.lyricOffsetMs, min: -5000, max: 5000, step: 100 })
+            .layoutWeight(1)
+            .selectedColor('#FFFFFF')
+            .trackColor('#33FFFFFF')
+            .blockColor('#FFFFFF')
+            .onChange((value: number, mode: SliderChangeMode) => {
+              this.onLyricOffsetChange(value, mode)
+            })
+          Text(this.formatLyricOffset(this.lyricOffsetMs))
+            .fontSize(Math.round(12 * this.fontSizeScale))
+            .fontColor('#FFFFFF')
+            .width(48)
+            .textAlign(TextAlign.End)
+        }
+        .width(StyleConstants.FULL_WIDTH)
+        .padding({ left: 8, right: 8, top: 8 })
+        .hitTestBehavior(HitTestMode.Block)
+        // 自下而上滑入 + 淡入，收起时原路退回（不依赖 animateTo，隐式动画随 transition 走）
+        .transition(TransitionEffect.asymmetric(
+          TransitionEffect.OPACITY
+            .combine(TransitionEffect.translate({ y: 16 }))
+            .animation({ duration: 220, curve: Curve.EaseOut }),
+          TransitionEffect.OPACITY
+            .combine(TransitionEffect.translate({ y: 16 }))
+            .animation({ duration: 160, curve: Curve.EaseIn })
+        ))
+      }
 
       if (this.isNarrowLayout() && this.isShowControl) {
         ControlAreaComponent()

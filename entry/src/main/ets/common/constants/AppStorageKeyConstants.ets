@@ -76,6 +76,9 @@ export class AppStorageKeyConstants {
   // 当前歌曲的歌词偏移（毫秒）：歌词高亮与「更多」面板滑条共用的唯一真源。
   // 放在 AppStorage 是为了让播放页歌词区与半模态面板实时联动（拖动即时生效）
   public static readonly KEY_LYRIC_OFFSET_MS: string = BaseConstants.KEY_PREFIX + 'LyricOffsetMs'
+  // 歌词偏移滑轨的显隐：「更多」面板里的条目只是触发器，点击后关面板并把它置 true，
+  // 歌词区在原位置滑出滑轨，无操作 5 秒自动收起
+  public static readonly KEY_LYRIC_OFFSET_PANEL: string = BaseConstants.KEY_PREFIX + 'LyricOffsetPanel'
   // 全局悬浮加号可见性（由各内容页上报）：滚动隐藏/多选/编辑态变化时写入，
   // Index 按当前激活页读取——首页↔歌单切换时加号不重建、不位移，设置页隐藏
   public static readonly KEY_HOME_PLUS_VISIBLE: string = BaseConstants.KEY_PREFIX + 'HomePlusVisible'
