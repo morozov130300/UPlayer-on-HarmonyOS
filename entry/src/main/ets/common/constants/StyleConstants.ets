@@ -46,7 +46,6 @@ export class StyleConstants {
   static readonly ANIMATION_SETTINGS_ENTER_DURATION: number = 300;
   static readonly ANIMATION_SETTINGS_EXIT_DURATION: number = 250;
   static readonly ANIMATION_COVER_CROSS_FADE_DURATION: number = 500;
-  static readonly ANIMATION_AMBIENT_GLOW_DURATION: number = 3000;
   static readonly ANIMATION_PLAYER_LIGHT_DURATION: number = 1500;
   static readonly ANIMATION_GREETING_DURATION: number = 800;
   static readonly ANIMATION_GREETING_HIDE_DURATION: number = 200;

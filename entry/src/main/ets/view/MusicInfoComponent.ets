@@ -30,21 +30,12 @@ export struct MusicInfoComponent {
   // 避免队列被全量列表覆盖/过滤后下标指向另一首歌导致与播控条不一致
   @StorageProp('uplayer_current_song_id') @Watch('onSongChange') currentSongId: string = '';
   @State isFavorite: boolean = false;
-  @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) isPlay: boolean = false;
   @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0;
-  @State glowRotation: number = 0;
   private dataService: DataService = DataService.getInstance()
 
   aboutToAppear() {
     this.updateFavoriteState()
     this.backfillTrackMetadataIfNeeded()
-    if (this.isPlay) {
-      this.startGlowAnimation()
-    }
-  }
-
-  aboutToDisappear() {
-    this.stopGlowAnimation()
   }
 
   onSongChange(): void {
@@ -127,26 +118,6 @@ export struct MusicInfoComponent {
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_IS_FAVORITE, this.isFavorite)
   }
 
-  startGlowAnimation() {
-    this.stopGlowAnimation()
-    // 官方无限循环动画：360°/ANIMATION_AMBIENT_GLOW_DURATION 匀速旋转，
-    // 窗口隐藏时 vsync 停止即自动冻结，回前台无缝续转
-    this.getUIContext()?.animateTo({
-      duration: StyleConstants.ANIMATION_AMBIENT_GLOW_DURATION,
-      curve: Curve.Linear,
-      iterations: -1
-    }, () => {
-      this.glowRotation = this.glowRotation + 360;
-    })
-  }
-
-  stopGlowAnimation() {
-    // 用 0 时长动画取消无限动画；渐变光晕 360° 循环对称，回到基值视觉无缝
-    this.getUIContext()?.animateTo({ duration: 0 }, () => {
-      this.glowRotation = this.glowRotation % 360;
-    })
-  }
-
   build() {
     Column() {
       this.CoverInfo()
@@ -162,21 +133,6 @@ export struct MusicInfoComponent {
   CoverInfo() {
     Row() {
       Stack() {
-        Column()
-          .width('103%')
-          .aspectRatio(1)
-          .borderRadius(12)
-          .radialGradient({
-            center: ['50%', '50%'], radius: '100%',
-            colors: [
-              ['rgba(0,125,255,0)', 0.6],
-              ['rgba(0,125,255,0.15)', 0.85],
-              ['rgba(0,125,255,0.3)', 1.0],
-            ]
-          })
-          .rotate({ angle: this.glowRotation })
-          .opacity(this.isPlay && !this.isCoverFloating ? 0.8 : 0)
-          .animation({ duration: StyleConstants.ANIMATION_COVER_CROSS_FADE_DURATION, curve: Curve.EaseInOut })
         // 封面尺寸与定位容器：左下角音质标签通过与封面同盒的 BottomStart 对齐，只关联封面本身
         Stack({ alignContent: Alignment.BottomStart }) {
           AlbumCover({ song: this.currentSong(), coverWidth: '100%', coverHeight: '100%', coverRadius: 8,
