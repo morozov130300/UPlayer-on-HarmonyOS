@@ -632,6 +632,14 @@ export struct PlaylistContent {
             top: this.topContentPadding
           })
           .alignItems(VerticalAlign.Center)
+          // 标题带上滑淡出（与首页问候语退出同一手感），让菜单栏接手同一位置
+          .transition(TransitionEffect.asymmetric(
+            TransitionEffect.OPACITY
+              .animation({ duration: StyleConstants.ANIMATION_MULTI_BAR_ENTER_DURATION, curve: Curve.EaseOut }),
+            TransitionEffect.OPACITY
+              .combine(TransitionEffect.translate({ y: -this.scaledSize(24) }))
+              .animation({ duration: StyleConstants.ANIMATION_MULTI_BAR_EXIT_DURATION, curve: Curve.EaseIn })
+          ))
         }
 
         Scroll(this.scroller) {
@@ -897,6 +905,22 @@ export struct PlaylistContent {
       brightness: 1.0
     } : undefined)
     .systemMaterial(this.playlistBarMaterial())
+    // 与首页多选菜单栏完全同款：入场上浮淡入（带延迟，等标题先退），退场下沉淡出
+    .transition(TransitionEffect.asymmetric(
+      TransitionEffect.OPACITY
+        .combine(TransitionEffect.translate({ y: this.scaledSize(28) }))
+        .animation({
+          duration: StyleConstants.ANIMATION_MULTI_BAR_ENTER_DURATION,
+          curve: Curve.EaseOut,
+          delay: StyleConstants.ANIMATION_MULTI_BAR_ENTER_DELAY
+        }),
+      TransitionEffect.OPACITY
+        .combine(TransitionEffect.translate({ y: this.scaledSize(28) }))
+        .animation({
+          duration: StyleConstants.ANIMATION_MULTI_BAR_EXIT_DURATION,
+          curve: Curve.EaseIn
+        })
+    ))
   }
 
   // ═══════════ 自定义歌单 UI（P2-3）═══════════
