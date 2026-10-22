@@ -46,6 +46,15 @@ class FilterChipOption {
   count: number = 0
 }
 
+// 筛选面板分区参数：@Builder 按引用传递（$$ 单对象字面量），
+// 多参数按值传递时状态变化不会触发 @Builder 内 UI 刷新（点击芯片无高亮变化）
+interface FilterChipSectionParams {
+  sectionTitle: string
+  options: FilterChipOption[]
+  selected: string[]
+  dim: string
+}
+
 // 「加入歌单」弹窗行（P2-3）：id/name/count 为歌单快照，打开弹窗时重建
 class PickerPlaylistRow {
   id: string = ''
@@ -1669,10 +1678,10 @@ export struct HomeContent {
 
             Scroll() {
               Column() {
-                this.filterChipSection('艺术家', this.panelArtistOptions, this.panelArtists, 'artist')
-                this.filterChipSection('专辑', this.panelAlbumOptions, this.panelAlbums, 'album')
-                this.filterChipSection('流派', this.panelGenreOptions, this.panelGenres, 'genre')
-                this.filterChipSection('年份', this.panelYearOptions, this.panelYears, 'year')
+                this.filterChipSection({ sectionTitle: '艺术家', options: this.panelArtistOptions, selected: this.panelArtists, dim: 'artist' })
+                this.filterChipSection({ sectionTitle: '专辑', options: this.panelAlbumOptions, selected: this.panelAlbums, dim: 'album' })
+                this.filterChipSection({ sectionTitle: '流派', options: this.panelGenreOptions, selected: this.panelGenres, dim: 'genre' })
+                this.filterChipSection({ sectionTitle: '年份', options: this.panelYearOptions, selected: this.panelYears, dim: 'year' })
               }
               .width('100%')
               .alignItems(HorizontalAlign.Start)
@@ -1867,30 +1876,31 @@ export struct HomeContent {
     })
   }
 
-  // 筛选面板单维度分区（S1）：标题 + 芯片流式换行，多选高亮
+  // 筛选面板单维度分区（S1）：标题 + 芯片流式换行，多选高亮；
+  // $$ 按引用接收单对象字面量，selected 数组变化时芯片高亮实时刷新
   @Builder
-  filterChipSection(sectionTitle: string, options: FilterChipOption[], selected: string[], dim: string): void {
-    if (options.length > 0) {
+  filterChipSection($$: FilterChipSectionParams): void {
+    if ($$.options.length > 0) {
       Column() {
-        Text(sectionTitle)
+        Text($$.sectionTitle)
           .fontSize(Math.round(13 * this.fontSizeScale))
           .fontColor($r('app.color.text_sixty_color'))
           .margin({ bottom: 8 })
         Flex({ wrap: FlexWrap.Wrap }) {
-          ForEach(options, (option: FilterChipOption) => {
+          ForEach($$.options, (option: FilterChipOption) => {
             Text(option.label + ' ' + option.count)
               .fontSize(Math.round(12 * this.fontSizeScale))
-              .fontColor(this.isChipSelected(selected, option.value) ?
+              .fontColor(this.isChipSelected($$.selected, option.value) ?
                 this.primaryColor : $r('app.color.text_primary'))
               .padding({ left: 10, right: 10, top: 5, bottom: 5 })
               .margin({ right: 8, bottom: 8 })
               .borderRadius(14)
-              .backgroundColor(this.isChipSelected(selected, option.value) ?
+              .backgroundColor(this.isChipSelected($$.selected, option.value) ?
                 ColorHelper.hexToRgba(this.primaryColor, 0.18) : 'rgba(0,0,0,0.05)')
               .onClick(() => {
-                this.onChipToggle(dim, option.value)
+                this.onChipToggle($$.dim, option.value)
               })
-          }, (option: FilterChipOption) => dim + '_' + option.value)
+          }, (option: FilterChipOption) => $$.dim + '_' + option.value)
         }
         .width('100%')
       }
