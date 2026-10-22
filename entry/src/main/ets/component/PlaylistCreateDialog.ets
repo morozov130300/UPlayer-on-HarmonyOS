@@ -291,20 +291,10 @@ export struct PlaylistCreateDialog {
         .scrollBar(BarState.Auto)
         .divider({ strokeWidth: 1, color: $r('app.color.list_divider'), startMargin: 56, endMargin: 0 })
 
-        // 底部操作行：全选 + 反选 + 创建
+        // 底部操作行：仅保留主操作按钮（全选/反选/已选计数已由顶部操作行承担，不重复放）
         Row() {
-          this.selectAllButton()
-          Text('反选')
-            .fontSize(Math.round(14 * this.fontSizeScale))
-            .fontColor(this.primaryColor)
-            .margin({ left: 16 })
-            .onClick(() => {
-              this.invertFilteredSelection()
-            })
           Blank()
-          Text(this.editingPlaylistId.length > 0 ?
-            (this.selectedIds.length > 0 ? `保存（已选 ${this.selectedIds.length} 首）` : '保存') :
-            (this.selectedIds.length > 0 ? `创建（已选 ${this.selectedIds.length} 首）` : '创建'))
+          Text(this.editingPlaylistId.length > 0 ? '保存' : '创建')
             .fontSize(Math.round(14 * this.fontSizeScale))
             .fontColor(Color.White)
             .textAlign(TextAlign.Center)
