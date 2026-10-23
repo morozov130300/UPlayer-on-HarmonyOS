@@ -1057,9 +1057,9 @@ export struct PlaylistContent {
         .width('100%')
         .layoutWeight(1)
       }
-      .width(this.scaledSize(56))
-      .height(this.scaledSize(56))
-      .borderRadius(12)
+      .width(this.scaledSize(44))
+      .height(this.scaledSize(44))
+      .borderRadius(10)
       .clip(true)
 
       Column({ space: 2 }) {
