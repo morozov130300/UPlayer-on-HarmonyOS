@@ -5,6 +5,7 @@ import { DataService } from '../service/DataService'
 import Logger from '../common/utils/Logger'
 import { AlbumCover } from './AlbumCover'
 import { AlbumCoverSize } from '../service/AudioMetadataService'
+import { ScaleButton } from './ScaleButton'
 
 const TAG = 'PlaylistCreateDialog'
 
@@ -188,19 +189,24 @@ export struct PlaylistCreateDialog {
   // 全选按钮（列表上下操作行共用）：图标 + 文字
   @Builder
   selectAllButton(): void {
-    Row({ space: 4 }) {
-      Image(this.isAllFilteredSelected() ?
-        $r('app.media.ic_public_deselect_all') : $r('app.media.ic_public_select_all'))
-        .width(16)
-        .height(16)
-        .fillColor(this.primaryColor)
-      Text(this.isAllFilteredSelected() ? '取消全选' : '全选')
-        .fontSize(Math.round(14 * this.fontSizeScale))
-        .fontColor(this.primaryColor)
+    ScaleButton({
+      pressScale: 0.8,
+      hoverScale: 1.1,
+      onButtonTap: () => {
+        this.toggleSelectAllFiltered()
+      }
+    }) {
+      Row({ space: 4 }) {
+        Image(this.isAllFilteredSelected() ?
+          $r('app.media.ic_public_deselect_all') : $r('app.media.ic_public_select_all'))
+          .width(16)
+          .height(16)
+          .fillColor(this.primaryColor)
+        Text(this.isAllFilteredSelected() ? '取消全选' : '全选')
+          .fontSize(Math.round(14 * this.fontSizeScale))
+          .fontColor(this.primaryColor)
+      }
     }
-    .onClick(() => {
-      this.toggleSelectAllFiltered()
-    })
   }
 
   build() {
@@ -239,51 +245,62 @@ export struct PlaylistCreateDialog {
             .fontColor($r('app.color.text_sixty_color'))
           Blank()
           this.selectAllButton()
-          Text('反选')
-            .fontSize(Math.round(14 * this.fontSizeScale))
-            .fontColor(this.primaryColor)
-            .margin({ left: 16 })
-            .onClick(() => {
+          ScaleButton({
+            pressScale: 0.8,
+            hoverScale: 1.1,
+            onButtonTap: () => {
               this.invertFilteredSelection()
-            })
+            }
+          }) {
+            Text('反选')
+              .fontSize(Math.round(14 * this.fontSizeScale))
+              .fontColor(this.primaryColor)
+              .margin({ left: 16 })
+          }
         }
         .width('100%')
 
         List() {
           ForEach(this.filteredSongs(), (song: SongInfo) => {
             ListItem() {
-              Row({ space: 10 }) {
-                AlbumCover({
-                  song: song, coverWidth: this.scaledSize(36), coverHeight: this.scaledSize(36),
-                  coverRadius: 8, decodeSize: AlbumCoverSize.SMALL
-                })
-                Column({ space: 2 }) {
-                  Text(song.title)
-                    .fontSize(Math.round(14 * this.fontSizeScale))
-                    .fontColor($r('app.color.text_primary'))
-                    .maxLines(1)
-                    .textOverflow({ overflow: TextOverflow.Ellipsis })
-                  Text(song.artist)
-                    .fontSize(Math.round(12 * this.fontSizeScale))
-                    .fontColor($r('app.color.text_sixty_color'))
-                    .maxLines(1)
-                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+              ScaleButton({
+                pressScale: 0.9,
+                hoverScale: 1.02,
+                expandWidth: true,
+                onButtonTap: () => {
+                  this.toggleSong(song.id)
                 }
-                .layoutWeight(1)
-                .alignItems(HorizontalAlign.Start)
+              }) {
+                Row({ space: 10 }) {
+                  AlbumCover({
+                    song: song, coverWidth: this.scaledSize(36), coverHeight: this.scaledSize(36),
+                    coverRadius: 8, decodeSize: AlbumCoverSize.SMALL
+                  })
+                  Column({ space: 2 }) {
+                    Text(song.title)
+                      .fontSize(Math.round(14 * this.fontSizeScale))
+                      .fontColor($r('app.color.text_primary'))
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    Text(song.artist)
+                      .fontSize(Math.round(12 * this.fontSizeScale))
+                      .fontColor($r('app.color.text_sixty_color'))
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  }
+                  .layoutWeight(1)
+                  .alignItems(HorizontalAlign.Start)
 
-                Image(this.isSelected(song.id) ?
-                  $r('app.media.ic_public_todo_filled') : $r('app.media.ic_public_todo'))
-                  .width(22)
-                  .height(22)
-                  .fillColor(this.isSelected(song.id) ? this.primaryColor : $r('app.color.text_sixty_color'))
+                  Image(this.isSelected(song.id) ?
+                    $r('app.media.ic_public_todo_filled') : $r('app.media.ic_public_todo'))
+                    .width(22)
+                    .height(22)
+                    .fillColor(this.isSelected(song.id) ? this.primaryColor : $r('app.color.text_sixty_color'))
+                }
+                .width('100%')
+                // 右侧留出滚动条宽度：否则列表滚动条会压在行尾的选中图标上
+                .padding({ top: 7, bottom: 7, right: this.scaledSize(10) })
               }
-              .width('100%')
-              // 右侧留出滚动条宽度：否则列表滚动条会压在行尾的选中图标上
-              .padding({ top: 7, bottom: 7, right: this.scaledSize(10) })
-              .onClick(() => {
-                this.toggleSong(song.id)
-              })
             }
           }, (song: SongInfo) => song.id + (this.isSelected(song.id) ? '_1' : '_0'))
         }
@@ -295,19 +312,24 @@ export struct PlaylistCreateDialog {
         // 底部操作行：仅保留主操作按钮（全选/反选/已选计数已由顶部操作行承担，不重复放）
         Row() {
           Blank()
-          Text(this.editingPlaylistId.length > 0 ? '保存' : '创建')
-            .fontSize(Math.round(14 * this.fontSizeScale))
-            .fontColor(Color.White)
-            .textAlign(TextAlign.Center)
-            .padding({ top: 8, bottom: 8, left: 16, right: 16 })
-            .borderRadius(16)
-            .backgroundColor(this.primaryColor)
-            .maxLines(1)
-            .onClick(() => {
+          ScaleButton({
+            pressScale: 0.8,
+            hoverScale: 1.1,
+            onButtonTap: () => {
               this.confirmCommit().catch((err: Error) => {
                 Logger.error(TAG, `confirmCommit failed: ${JSON.stringify(err)}`)
               })
-            })
+            }
+          }) {
+            Text(this.editingPlaylistId.length > 0 ? '保存' : '创建')
+              .fontSize(Math.round(14 * this.fontSizeScale))
+              .fontColor(Color.White)
+              .textAlign(TextAlign.Center)
+              .padding({ top: 8, bottom: 8, left: 16, right: 16 })
+              .borderRadius(16)
+              .backgroundColor(this.primaryColor)
+              .maxLines(1)
+          }
         }
         .width('100%')
       }

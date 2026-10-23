@@ -23,6 +23,7 @@ import { createStyleGlassMaterial, DEFAULT_GLASS_STYLE, isLiquidGlassAvailable,
 import { StyleConstants } from '../common/constants/StyleConstants'
 import { GlassBackButton } from '../view/GlassBackButton'
 import { isDarkThemeEffective } from '../common/utils/ThemeUtil'
+import { ScaleButton } from '../component/ScaleButton'
 
 const TAG = 'SettingsDetailPage'
 const KEY_PRIMARY_COLOR = 'uplayer_primary_color'
@@ -1082,22 +1083,27 @@ struct SettingsDetailPage {
   // 玻璃效果范围说明问号按钮：点击弹出半模态说明
   @Builder
   glassHelpIcon(): void {
-    Stack({ alignContent: Alignment.Center }) {
-      Circle()
-        .width(this.scaledSize(18))
-        .height(this.scaledSize(18))
-        .fill(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-      Image($r('app.media.ic_public_help'))
-        .width(this.scaledSize(13))
-        .height(this.scaledSize(13))
-        .fillColor(this.primaryColor)
+    ScaleButton({
+      pressScale: 0.8,
+      hoverScale: 1.1,
+      onButtonTap: () => {
+        this.showGlassScope = true
+      }
+    }) {
+      Stack({ alignContent: Alignment.Center }) {
+        Circle()
+          .width(this.scaledSize(18))
+          .height(this.scaledSize(18))
+          .fill(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+        Image($r('app.media.ic_public_help'))
+          .width(this.scaledSize(13))
+          .height(this.scaledSize(13))
+          .fillColor(this.primaryColor)
+      }
+      .width(this.scaledSize(18))
+      .height(this.scaledSize(18))
+      .margin({ left: this.scaledSize(4) })
     }
-    .width(this.scaledSize(18))
-    .height(this.scaledSize(18))
-    .margin({ left: this.scaledSize(4) })
-    .onClick(() => {
-      this.showGlassScope = true
-    })
   }
 
   // 行内二级标题（用于 Row 内，不带 width 约束，避免溢出）
@@ -1168,15 +1174,21 @@ struct SettingsDetailPage {
       .edgeEffect(EdgeEffect.Spring)
 
       Row() {
-        Button('知道了')
-          .layoutWeight(1)
-          .height(this.scaledSize(30))
-          .fontColor('#FFFFFF')
-          .backgroundColor(this.primaryColor)
-          .borderRadius(this.scaledSize(15))
-          .onClick(() => {
+        ScaleButton({
+          pressScale: 0.8,
+          hoverScale: 1.1,
+          expandWidth: true,
+          onButtonTap: () => {
             this.showGlassScope = false
-          })
+          }
+        }) {
+          Button('知道了')
+            .height(this.scaledSize(30))
+            .fontColor('#FFFFFF')
+            .backgroundColor(this.primaryColor)
+            .borderRadius(this.scaledSize(15))
+            .width('100%')
+        }
       }
       .width('100%')
       .padding({ top: this.scaledSize(8), bottom: this.scaledSize(10) })
@@ -1219,15 +1231,21 @@ struct SettingsDetailPage {
       this.scopeLine('• 仅 MP3（ID3v2）/ FLAC 标签有效，其他格式与无标签歌曲不调整；设了非 0 预增益时仍会整体加减')
 
       Row() {
-        Button('知道了')
-          .layoutWeight(1)
-          .height(this.scaledSize(30))
-          .fontColor('#FFFFFF')
-          .backgroundColor(this.primaryColor)
-          .borderRadius(this.scaledSize(15))
-          .onClick(() => {
+        ScaleButton({
+          pressScale: 0.8,
+          hoverScale: 1.1,
+          expandWidth: true,
+          onButtonTap: () => {
             this.showReplayGainHelp = false
-          })
+          }
+        }) {
+          Button('知道了')
+            .height(this.scaledSize(30))
+            .fontColor('#FFFFFF')
+            .backgroundColor(this.primaryColor)
+            .borderRadius(this.scaledSize(15))
+            .width('100%')
+        }
       }
       .width('100%')
       .padding({ top: this.scaledSize(8), bottom: this.scaledSize(10) })
@@ -1252,6 +1270,30 @@ struct SettingsDetailPage {
             this.updateSetting()
           }
         })
+      }
+      .width('100%')
+      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
+
+      Row() {
+        this.groupTitle('交互反馈')
+      }
+
+      Column() {
+        this.toggleRow({
+          label: '按压动效',
+          isOn: this.settings.pressAnimation,
+          onChange: (val: boolean) => {
+            this.settings.pressAnimation = val
+            this.updateSetting()
+          }
+        })
+        Text('按钮按下时缩小、松手弹簧回弹，鼠标悬停时放大。关闭后全局不再缩放。')
+          .fontSize(this.scaledFont(12))
+          .fontColor(this.settingSubTextColor())
+          .width('100%')
+          .padding({ bottom: this.scaledSize(10) })
       }
       .width('100%')
       .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
@@ -1428,24 +1470,29 @@ struct SettingsDetailPage {
             .fontWeight(FontWeight.Medium)
           Blank()
           ForEach(this.themeOptions, (opt: ThemeOption) => {
-            Column() {
-              Text(opt.label)
-                .fontSize(this.scaledFont(11))
-                .fontColor(this.settings.themeMode === opt.value ? '#FFFFFF' : this.settingInactiveTextColor())
+            ScaleButton({
+              pressScale: 0.8,
+              hoverScale: 1.1,
+              onButtonTap: () => {
+                this.setThemeMode(opt.value)
+              }
+            }) {
+              Column() {
+                Text(opt.label)
+                  .fontSize(this.scaledFont(11))
+                  .fontColor(this.settings.themeMode === opt.value ? '#FFFFFF' : this.settingInactiveTextColor())
+              }
+              .padding({
+                left: this.scaledSize(10),
+                right: this.scaledSize(10),
+                top: this.scaledSize(5),
+                bottom: this.scaledSize(5)
+              })
+              .backgroundColor(this.settings.themeMode === opt.value ? this.primaryColor :
+                ColorHelper.hexToRgba(this.primaryColor, 0.08))
+              .borderRadius(this.scaledSize(14))
+              .animation({ duration: 200, curve: Curve.EaseInOut })
             }
-            .padding({
-              left: this.scaledSize(10),
-              right: this.scaledSize(10),
-              top: this.scaledSize(5),
-              bottom: this.scaledSize(5)
-            })
-            .backgroundColor(this.settings.themeMode === opt.value ? this.primaryColor :
-              ColorHelper.hexToRgba(this.primaryColor, 0.08))
-            .borderRadius(this.scaledSize(14))
-            .animation({ duration: 200, curve: Curve.EaseInOut })
-            .onClick(() => {
-              this.setThemeMode(opt.value)
-            })
           }, (opt: ThemeOption) => opt.value)
         }
         .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
@@ -1540,35 +1587,41 @@ struct SettingsDetailPage {
         Grid() {
           ForEach(this.colorOptions, (option: ThemeColorOption) => {
             GridItem() {
-              Row({ space: this.scaledSize(8) }) {
-                Column()
-                  .width(this.scaledSize(24))
-                  .height(this.scaledSize(24))
-                  .borderRadius(this.scaledSize(12))
-                  .backgroundColor(option.value)
-                  .border({
-                    width: this.settings.primaryColor === option.value ? 3 : 0,
-                    color: '#FFFFFF'
-                  })
-                Text(option.name)
-                  .fontSize(this.scaledFont(11))
-                  .fontColor(this.settingTextColor())
-                  .maxLines(1)
+              ScaleButton({
+                pressScale: 0.9,
+                hoverScale: 1.02,
+                expandWidth: true,
+                onButtonTap: () => {
+                  this.setPrimaryColor(option.value)
+                }
+              }) {
+                Row({ space: this.scaledSize(8) }) {
+                  Column()
+                    .width(this.scaledSize(24))
+                    .height(this.scaledSize(24))
+                    .borderRadius(this.scaledSize(12))
+                    .backgroundColor(option.value)
+                    .border({
+                      width: this.settings.primaryColor === option.value ? 3 : 0,
+                      color: '#FFFFFF'
+                    })
+                  Text(option.name)
+                    .fontSize(this.scaledFont(11))
+                    .fontColor(this.settingTextColor())
+                    .maxLines(1)
+                }
+                .width('100%')
+                .height(this.scaledSize(42))
+                .padding({
+                  left: this.scaledSize(8),
+                  right: this.scaledSize(8),
+                  top: this.scaledSize(4),
+                  bottom: this.scaledSize(4)
+                })
+                .margin({ bottom: this.scaledSize(4) })
+                .borderRadius(this.scaledSize(10))
+                .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
               }
-              .width('100%')
-              .height(this.scaledSize(42))
-              .padding({
-                left: this.scaledSize(8),
-                right: this.scaledSize(8),
-                top: this.scaledSize(4),
-                bottom: this.scaledSize(4)
-              })
-              .margin({ bottom: this.scaledSize(4) })
-              .borderRadius(this.scaledSize(10))
-              .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-              .onClick(() => {
-                this.setPrimaryColor(option.value)
-              })
             }
           }, (option: ThemeColorOption) => option.value)
         }
@@ -1577,36 +1630,42 @@ struct SettingsDetailPage {
         .rowsGap(this.scaledSize(8))
         .width('100%')
 
-        Row({ space: this.scaledSize(8) }) {
-          Column()
-            .width(this.scaledSize(24))
-            .height(this.scaledSize(24))
-            .borderRadius(this.scaledSize(12))
-            .backgroundColor(this.settings.primaryColor)
-            .border({
-              width: !this.colorOptions.some((opt: ThemeColorOption) => opt.value === this.settings.primaryColor) ? 3 :
-                0,
-              color: '#FFFFFF'
-            })
-          Text('自定义颜色')
-            .fontSize(this.scaledFont(11))
-            .fontColor(this.settingTextColor())
-            .maxLines(1)
-          Blank()
-          Image($r('app.media.ic_public_themes'))
-            .width(this.scaledSize(16))
-            .height(this.scaledSize(16))
-            .fillColor(this.settings.primaryColor)
+        ScaleButton({
+          pressScale: 0.9,
+          hoverScale: 1.02,
+          expandWidth: true,
+          onButtonTap: () => {
+            this.openColorPicker()
+          }
+        }) {
+          Row({ space: this.scaledSize(8) }) {
+            Column()
+              .width(this.scaledSize(24))
+              .height(this.scaledSize(24))
+              .borderRadius(this.scaledSize(12))
+              .backgroundColor(this.settings.primaryColor)
+              .border({
+                width: !this.colorOptions.some((opt: ThemeColorOption) => opt.value === this.settings.primaryColor) ? 3 :
+                  0,
+                color: '#FFFFFF'
+              })
+            Text('自定义颜色')
+              .fontSize(this.scaledFont(11))
+              .fontColor(this.settingTextColor())
+              .maxLines(1)
+            Blank()
+            Image($r('app.media.ic_public_themes'))
+              .width(this.scaledSize(16))
+              .height(this.scaledSize(16))
+              .fillColor(this.settings.primaryColor)
+          }
+          .width('100%')
+          .height(this.scaledSize(42))
+          .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+          .borderRadius(this.scaledSize(10))
+          .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+          .alignItems(VerticalAlign.Center)
         }
-        .width('100%')
-        .height(this.scaledSize(42))
-        .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-        .borderRadius(this.scaledSize(10))
-        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-        .alignItems(VerticalAlign.Center)
-        .onClick(() => {
-          this.openColorPicker()
-        })
       }
       .width('100%')
       .padding({
@@ -1753,24 +1812,29 @@ struct SettingsDetailPage {
             this.glassHelpIcon()
             Blank()
             ForEach(this.tabStyleOptions, (opt: TabStyleOption) => {
-              Column() {
-                Text(opt.label)
-                  .fontSize(this.scaledFont(11))
-                  .fontColor(this.settings.tabStyle === opt.value ? '#FFFFFF' : this.settingInactiveTextColor())
+              ScaleButton({
+                pressScale: 0.8,
+                hoverScale: 1.1,
+                onButtonTap: () => {
+                  this.setTabStyle(opt.value)
+                }
+              }) {
+                Column() {
+                  Text(opt.label)
+                    .fontSize(this.scaledFont(11))
+                    .fontColor(this.settings.tabStyle === opt.value ? '#FFFFFF' : this.settingInactiveTextColor())
+                }
+                .padding({
+                  left: this.scaledSize(10),
+                  right: this.scaledSize(10),
+                  top: this.scaledSize(5),
+                  bottom: this.scaledSize(5)
+                })
+                .backgroundColor(this.settings.tabStyle === opt.value ? this.primaryColor :
+                  ColorHelper.hexToRgba(this.primaryColor, 0.08))
+                .borderRadius(this.scaledSize(14))
+                .animation({ duration: 200, curve: Curve.EaseInOut })
               }
-              .padding({
-                left: this.scaledSize(10),
-                right: this.scaledSize(10),
-                top: this.scaledSize(5),
-                bottom: this.scaledSize(5)
-              })
-              .backgroundColor(this.settings.tabStyle === opt.value ? this.primaryColor :
-                ColorHelper.hexToRgba(this.primaryColor, 0.08))
-              .borderRadius(this.scaledSize(14))
-              .animation({ duration: 200, curve: Curve.EaseInOut })
-              .onClick(() => {
-                this.setTabStyle(opt.value)
-              })
             }, (opt: TabStyleOption) => opt.value)
           }
           .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
@@ -1791,31 +1855,36 @@ struct SettingsDetailPage {
               this.subTitleRow('跟手光效颜色')
               Blank()
               ForEach(this.lightColorOptions, (opt: TouchIndicatorOption) => {
-                Column() {
-                  Text(opt.label)
-                    .fontSize(this.scaledFont(11))
-                    .fontColor(this.settings.tabLightColor === opt.value
-                      ? '#FFFFFF' : this.settingInactiveTextColor())
-                }
-                .padding({
-                  left: this.scaledSize(10),
-                  right: this.scaledSize(10),
-                  top: this.scaledSize(5),
-                  bottom: this.scaledSize(5)
-                })
-                .backgroundColor(this.settings.tabLightColor === opt.value
-                  ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
-                .borderRadius(this.scaledSize(14))
-                .animation({ duration: 200, curve: Curve.EaseInOut })
-                .onClick(() => {
-                  this.animateSettingChange(() => {
-                    this.settings.tabLightColor = opt.value
-                    this.settings.tabTouchIndicator = opt.value === 'none' ? 'off' : 'light'
+                ScaleButton({
+                  pressScale: 0.8,
+                  hoverScale: 1.1,
+                  onButtonTap: () => {
+                    this.animateSettingChange(() => {
+                      this.settings.tabLightColor = opt.value
+                      this.settings.tabTouchIndicator = opt.value === 'none' ? 'off' : 'light'
+                    })
+                    this.updateSetting()
+                    AppStorage.setOrCreate('uplayer_tab_light_color', opt.value)
+                    AppStorage.setOrCreate('uplayer_tab_touch_indicator', this.settings.tabTouchIndicator)
+                  }
+                }) {
+                  Column() {
+                    Text(opt.label)
+                      .fontSize(this.scaledFont(11))
+                      .fontColor(this.settings.tabLightColor === opt.value
+                        ? '#FFFFFF' : this.settingInactiveTextColor())
+                  }
+                  .padding({
+                    left: this.scaledSize(10),
+                    right: this.scaledSize(10),
+                    top: this.scaledSize(5),
+                    bottom: this.scaledSize(5)
                   })
-                  this.updateSetting()
-                  AppStorage.setOrCreate('uplayer_tab_light_color', opt.value)
-                  AppStorage.setOrCreate('uplayer_tab_touch_indicator', this.settings.tabTouchIndicator)
-                })
+                  .backgroundColor(this.settings.tabLightColor === opt.value
+                    ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+                  .borderRadius(this.scaledSize(14))
+                  .animation({ duration: 200, curve: Curve.EaseInOut })
+                }
               }, (opt: TouchIndicatorOption) => opt.value)
             }
             .width('100%')
@@ -1842,26 +1911,31 @@ struct SettingsDetailPage {
               this.subTitleRow('材质等级')
               Blank()
               ForEach(this.materialLevelOptions, (opt: TouchIndicatorOption) => {
-                Column() {
-                  Text(opt.label)
-                    .fontSize(this.scaledFont(11))
-                    .fontColor(this.settings.tabMaterialLevel === opt.value
-                      ? '#FFFFFF' : this.settingInactiveTextColor())
+                ScaleButton({
+                  pressScale: 0.8,
+                  hoverScale: 1.1,
+                  onButtonTap: () => {
+                    this.settings.tabMaterialLevel = opt.value
+                    this.updateSetting()
+                  }
+                }) {
+                  Column() {
+                    Text(opt.label)
+                      .fontSize(this.scaledFont(11))
+                      .fontColor(this.settings.tabMaterialLevel === opt.value
+                        ? '#FFFFFF' : this.settingInactiveTextColor())
+                  }
+                  .padding({
+                    left: this.scaledSize(10),
+                    right: this.scaledSize(10),
+                    top: this.scaledSize(5),
+                    bottom: this.scaledSize(5)
+                  })
+                  .backgroundColor(this.settings.tabMaterialLevel === opt.value
+                    ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+                  .borderRadius(this.scaledSize(14))
+                  .animation({ duration: 200, curve: Curve.EaseInOut })
                 }
-                .padding({
-                  left: this.scaledSize(10),
-                  right: this.scaledSize(10),
-                  top: this.scaledSize(5),
-                  bottom: this.scaledSize(5)
-                })
-                .backgroundColor(this.settings.tabMaterialLevel === opt.value
-                  ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
-                .borderRadius(this.scaledSize(14))
-                .animation({ duration: 200, curve: Curve.EaseInOut })
-                .onClick(() => {
-                  this.settings.tabMaterialLevel = opt.value
-                  this.updateSetting()
-                })
               }, (opt: TouchIndicatorOption) => opt.value)
             }
             .width('100%')
@@ -2114,22 +2188,41 @@ struct SettingsDetailPage {
         .width('100%')
 
         Row({ space: this.scaledSize(10) }) {
-          Button('取消')
-            .layoutWeight(1)
-            .height(this.scaledSize(38))
-            .fontColor(this.settingTextColor())
-            .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.08))
-            .onClick(() => {
-              this.cancelColorPicker()
-            })
-          Button('确定')
-            .layoutWeight(1)
-            .height(this.scaledSize(38))
-            .fontColor('#FFFFFF')
-            .backgroundColor(this.currentPickerColor())
-            .onClick(() => {
-              this.confirmColorPicker()
-            })
+          Row() {
+            ScaleButton({
+              pressScale: 0.8,
+              hoverScale: 1.1,
+              expandWidth: true,
+              onButtonTap: () => {
+                this.cancelColorPicker()
+              }
+            }) {
+              Button('取消')
+                .height(this.scaledSize(38))
+                .fontColor(this.settingTextColor())
+                .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.08))
+                .width('100%')
+            }
+          }
+          .layoutWeight(1)
+
+          Row() {
+            ScaleButton({
+              pressScale: 0.8,
+              hoverScale: 1.1,
+              expandWidth: true,
+              onButtonTap: () => {
+                this.confirmColorPicker()
+              }
+            }) {
+              Button('确定')
+                .height(this.scaledSize(38))
+                .fontColor('#FFFFFF')
+                .backgroundColor(this.currentPickerColor())
+                .width('100%')
+            }
+          }
+          .layoutWeight(1)
         }
         .width('100%')
       }
@@ -2466,41 +2559,51 @@ struct SettingsDetailPage {
 
         Flex({ wrap: FlexWrap.Wrap }) {
           ForEach(this.artistSeparatorOptions, (sep: string) => {
-            Text(this.artistSeparatorLabel(sep))
-              .fontSize(this.scaledFont(12))
-              .fontColor(this.settings.artistSeparators.indexOf(sep) >= 0 ?
-                '#FFFFFF' : this.settingTextColor())
-              .padding({
-                left: this.scaledSize(10),
-                right: this.scaledSize(10),
-                top: this.scaledSize(5),
-                bottom: this.scaledSize(5)
-              })
-              .margin({ right: this.scaledSize(6), bottom: this.scaledSize(6) })
-              .backgroundColor(this.settings.artistSeparators.indexOf(sep) >= 0 ?
-                this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
-              .borderRadius(this.scaledSize(15))
-              .onClick(() => {
+            ScaleButton({
+              pressScale: 0.8,
+              hoverScale: 1.1,
+              onButtonTap: () => {
                 this.toggleArtistSeparator(sep)
-              })
+              }
+            }) {
+              Text(this.artistSeparatorLabel(sep))
+                .fontSize(this.scaledFont(12))
+                .fontColor(this.settings.artistSeparators.indexOf(sep) >= 0 ?
+                  '#FFFFFF' : this.settingTextColor())
+                .padding({
+                  left: this.scaledSize(10),
+                  right: this.scaledSize(10),
+                  top: this.scaledSize(5),
+                  bottom: this.scaledSize(5)
+                })
+                .margin({ right: this.scaledSize(6), bottom: this.scaledSize(6) })
+                .backgroundColor(this.settings.artistSeparators.indexOf(sep) >= 0 ?
+                  this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+                .borderRadius(this.scaledSize(15))
+            }
           }, (sep: string) => sep + (this.settings.artistSeparators.indexOf(sep) >= 0 ? '_on' : '_off'))
           // 自定义分隔符紧随预置候选同一行/同一样式（启用态主色 + ×，点击移除）
           ForEach(this.customArtistSeparators(), (sep: string) => {
-            Text(sep + ' ×')
-              .fontSize(this.scaledFont(12))
-              .fontColor('#FFFFFF')
-              .padding({
-                left: this.scaledSize(10),
-                right: this.scaledSize(10),
-                top: this.scaledSize(5),
-                bottom: this.scaledSize(5)
-              })
-              .margin({ right: this.scaledSize(6), bottom: this.scaledSize(6) })
-              .backgroundColor(this.primaryColor)
-              .borderRadius(this.scaledSize(15))
-              .onClick(() => {
+            ScaleButton({
+              pressScale: 0.8,
+              hoverScale: 1.1,
+              onButtonTap: () => {
                 this.removeArtistSeparator(sep)
-              })
+              }
+            }) {
+              Text(sep + ' ×')
+                .fontSize(this.scaledFont(12))
+                .fontColor('#FFFFFF')
+                .padding({
+                  left: this.scaledSize(10),
+                  right: this.scaledSize(10),
+                  top: this.scaledSize(5),
+                  bottom: this.scaledSize(5)
+                })
+                .margin({ right: this.scaledSize(6), bottom: this.scaledSize(6) })
+                .backgroundColor(this.primaryColor)
+                .borderRadius(this.scaledSize(15))
+            }
           }, (sep: string) => 'custom_' + sep)
         }
         .width('100%')
@@ -2520,20 +2623,25 @@ struct SettingsDetailPage {
             .onSubmit(() => {
               this.addCustomArtistSeparators()
             })
-          Text('添加')
-            .fontSize(this.scaledFont(13))
-            .fontColor(Color.White)
-            .padding({
-              left: this.scaledSize(14),
-              right: this.scaledSize(14),
-              top: this.scaledSize(8),
-              bottom: this.scaledSize(8)
-            })
-            .borderRadius(this.scaledSize(14))
-            .backgroundColor(this.primaryColor)
-            .onClick(() => {
+          ScaleButton({
+            pressScale: 0.8,
+            hoverScale: 1.1,
+            onButtonTap: () => {
               this.addCustomArtistSeparators()
-            })
+            }
+          }) {
+            Text('添加')
+              .fontSize(this.scaledFont(13))
+              .fontColor(Color.White)
+              .padding({
+                left: this.scaledSize(14),
+                right: this.scaledSize(14),
+                top: this.scaledSize(8),
+                bottom: this.scaledSize(8)
+              })
+              .borderRadius(this.scaledSize(14))
+              .backgroundColor(this.primaryColor)
+          }
         }
         .width('100%')
         .margin({ top: this.scaledSize(2) })
@@ -2581,15 +2689,20 @@ struct SettingsDetailPage {
             Scroll() {
               Row({ space: this.scaledSize(6) }) {
                 ForEach(EqPresetTable.NAMES, (name: string, i: number) => {
-                  Text(name)
-                    .fontSize(this.scaledFont(11))
-                    .fontColor(this.eqPresetActive(i) ? '#FFFFFF' : this.settingTextColor())
-                    .padding({ left: this.scaledSize(10), right: this.scaledSize(10), top: this.scaledSize(4), bottom: this.scaledSize(4) })
-                    .backgroundColor(this.eqPresetActive(i) ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
-                    .borderRadius(this.scaledSize(14))
-                    .onClick(() => {
+                  ScaleButton({
+                    pressScale: 0.8,
+                    hoverScale: 1.1,
+                    onButtonTap: () => {
                       this.applyEqPreset(i)
-                    })
+                    }
+                  }) {
+                    Text(name)
+                      .fontSize(this.scaledFont(11))
+                      .fontColor(this.eqPresetActive(i) ? '#FFFFFF' : this.settingTextColor())
+                      .padding({ left: this.scaledSize(10), right: this.scaledSize(10), top: this.scaledSize(4), bottom: this.scaledSize(4) })
+                      .backgroundColor(this.eqPresetActive(i) ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+                      .borderRadius(this.scaledSize(14))
+                  }
                 }, (name: string, i: number) => name + (this.eqPresetActive(i) ? '_on' : '_off'))
               }
               .height(this.scaledSize(30))
@@ -2705,34 +2818,39 @@ struct SettingsDetailPage {
             .fontWeight(FontWeight.Medium)
             .fontColor(this.settingTextColor())
           // 说明弹窗入口：与分组标题问号同款样式
-          Stack({ alignContent: Alignment.Center }) {
-            Circle()
-              .width(this.scaledSize(18))
-              .height(this.scaledSize(18))
-              .fill(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-            Image($r('app.media.ic_public_help'))
-              .width(this.scaledSize(13))
-              .height(this.scaledSize(13))
-              .fillColor(this.primaryColor)
+          ScaleButton({
+            pressScale: 0.8,
+            hoverScale: 1.1,
+            onButtonTap: () => {
+              this.showReplayGainHelp = true
+            }
+          }) {
+            Stack({ alignContent: Alignment.Center }) {
+              Circle()
+                .width(this.scaledSize(18))
+                .height(this.scaledSize(18))
+                .fill(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+              Image($r('app.media.ic_public_help'))
+                .width(this.scaledSize(13))
+                .height(this.scaledSize(13))
+                .fillColor(this.primaryColor)
+            }
+            .width(this.scaledSize(18))
+            .height(this.scaledSize(18))
+            .margin({ left: this.scaledSize(6) })
           }
-          .width(this.scaledSize(18))
-          .height(this.scaledSize(18))
-          .margin({ left: this.scaledSize(6) })
-          .onClick(() => {
-            this.showReplayGainHelp = true
-          })
-          .bindSheet($$this.showReplayGainHelp, this.replayGainHelpSheetBuilder(), {
-            height: SheetSize.FIT_CONTENT,
-            dragBar: false,
-            preferType: SheetType.CENTER,
-            showClose: true,
-            systemMaterial: this.styleGlassMaterial(),
-            backgroundColor: $r('app.color.page_background_other')
-          })
           Blank()
         }
         .width('100%')
         .alignItems(VerticalAlign.Center)
+        .bindSheet($$this.showReplayGainHelp, this.replayGainHelpSheetBuilder(), {
+          height: SheetSize.FIT_CONTENT,
+          dragBar: false,
+          preferType: SheetType.CENTER,
+          showClose: true,
+          systemMaterial: this.styleGlassMaterial(),
+          backgroundColor: $r('app.color.page_background_other')
+        })
         Text('按内嵌 ReplayGain 标签统一响度')
           .fontSize(this.scaledFont(11))
           .fontColor(this.settingSubTextColor())
@@ -3279,32 +3397,38 @@ struct SettingsDetailPage {
 
   @Builder
   aboutInfoRow(label: string, value: string): void {
-    Row() {
-      Text(label)
-        .fontSize(this.scaledFont(14))
-        .fontColor(this.settingTextColor())
-        .fontWeight(FontWeight.Medium)
-        .maxLines(1)
-        .flexShrink(0)
-      Blank()
-      Text(value)
-        .fontSize(this.scaledFont(14))
-        .fontColor(this.settingTextColor())
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .flexShrink(1)
-        .textAlign(TextAlign.End)
+    ScaleButton({
+      pressScale: 0.9,
+      hoverScale: 1.02,
+      expandWidth: true,
+      onButtonTap: () => {
+        this.copyToClipboard(label, value)
+      }
+    }) {
+      Row() {
+        Text(label)
+          .fontSize(this.scaledFont(14))
+          .fontColor(this.settingTextColor())
+          .fontWeight(FontWeight.Medium)
+          .maxLines(1)
+          .flexShrink(0)
+        Blank()
+        Text(value)
+          .fontSize(this.scaledFont(14))
+          .fontColor(this.settingTextColor())
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .flexShrink(1)
+          .textAlign(TextAlign.End)
+      }
+      .width('100%')
+      .constraintSize({ minWidth: 0, maxWidth: '100%' })
+      .height(this.scaledSize(44))
+      .alignItems(VerticalAlign.Center)
+      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
     }
-    .width('100%')
-    .constraintSize({ minWidth: 0, maxWidth: '100%' })
-    .height(this.scaledSize(44))
-    .alignItems(VerticalAlign.Center)
-    .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-    .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-    .borderRadius(this.scaledSize(10))
-    .onClick(() => {
-      this.copyToClipboard(label, value)
-    })
   }
 
   @Builder
@@ -3456,29 +3580,35 @@ struct SettingsDetailPage {
   // 快捷键入口行（关于分区）：点击打开二级弹窗查看完整快捷键速查
   @Builder
   shortcutEntryRow(): void {
-    Row() {
-      Text('快捷键')
-        .fontSize(this.scaledFont(14))
-        .fontColor(this.settingTextColor())
-        .fontWeight(FontWeight.Medium)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .layoutWeight(1)
-      Image($r('app.media.ic_public_arrow_right'))
-        .width(this.scaledSize(18))
-        .height(this.scaledSize(18))
-        .fillColor(this.settingSubTextColor())
+    ScaleButton({
+      pressScale: 0.9,
+      hoverScale: 1.02,
+      expandWidth: true,
+      onButtonTap: () => {
+        this.showShortcutSheet = true
+      }
+    }) {
+      Row() {
+        Text('快捷键')
+          .fontSize(this.scaledFont(14))
+          .fontColor(this.settingTextColor())
+          .fontWeight(FontWeight.Medium)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
+        Image($r('app.media.ic_public_arrow_right'))
+          .width(this.scaledSize(18))
+          .height(this.scaledSize(18))
+          .fillColor(this.settingSubTextColor())
+      }
+      .width('100%')
+      .constraintSize({ minWidth: 0, maxWidth: '100%' })
+      .height(this.scaledSize(44))
+      .alignItems(VerticalAlign.Center)
+      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
     }
-    .width('100%')
-    .constraintSize({ minWidth: 0, maxWidth: '100%' })
-    .height(this.scaledSize(44))
-    .alignItems(VerticalAlign.Center)
-    .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-    .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-    .borderRadius(this.scaledSize(10))
-    .onClick(() => {
-      this.showShortcutSheet = true
-    })
   }
 
   // 快捷键速查二级弹窗标题（bindSheet 官方标题栏）
@@ -3556,32 +3686,38 @@ struct SettingsDetailPage {
   // 检查更新行：点击调用应用市场更新服务（checkAppUpdate + showUpdateDialog）
   @Builder
   checkUpdateRow(): void {
-    Row() {
-      Text('检查更新')
-        .fontSize(this.scaledFont(14))
-        .fontColor(this.settingTextColor())
-        .fontWeight(FontWeight.Medium)
-        .maxLines(1)
-        .flexShrink(0)
-      Blank()
-      Text(this.checkingUpdate ? '正在检查…' : '检查新版本')
-        .fontSize(this.scaledFont(14))
-        .fontColor(this.checkingUpdate ? this.settingInactiveTextColor() : this.primaryColor)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .flexShrink(1)
-        .textAlign(TextAlign.End)
+    ScaleButton({
+      pressScale: 0.9,
+      hoverScale: 1.02,
+      expandWidth: true,
+      onButtonTap: () => {
+        this.checkForUpdate()
+      }
+    }) {
+      Row() {
+        Text('检查更新')
+          .fontSize(this.scaledFont(14))
+          .fontColor(this.settingTextColor())
+          .fontWeight(FontWeight.Medium)
+          .maxLines(1)
+          .flexShrink(0)
+        Blank()
+        Text(this.checkingUpdate ? '正在检查…' : '检查新版本')
+          .fontSize(this.scaledFont(14))
+          .fontColor(this.checkingUpdate ? this.settingInactiveTextColor() : this.primaryColor)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .flexShrink(1)
+          .textAlign(TextAlign.End)
+      }
+      .width('100%')
+      .constraintSize({ minWidth: 0, maxWidth: '100%' })
+      .height(this.scaledSize(44))
+      .alignItems(VerticalAlign.Center)
+      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
     }
-    .width('100%')
-    .constraintSize({ minWidth: 0, maxWidth: '100%' })
-    .height(this.scaledSize(44))
-    .alignItems(VerticalAlign.Center)
-    .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-    .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-    .borderRadius(this.scaledSize(10))
-    .onClick(() => {
-      this.checkForUpdate()
-    })
   }
 
   // 调用应用市场更新服务：有新版本弹系统升级框，无新版本 toast 提示
@@ -3626,22 +3762,27 @@ struct SettingsDetailPage {
   chipRow($$: ChipRowOptions): void {
     Row({ space: this.scaledSize(6) }) {
       ForEach($$.labels, (label: string, i: number) => {
-        Text(label)
-          .fontSize(this.scaledFont(12))
-          .fontColor($$.current === i ? '#FFFFFF' : this.settingTextColor())
-          .padding({
-            left: this.scaledSize(10),
-            right: this.scaledSize(10),
-            top: this.scaledSize(5),
-            bottom: this.scaledSize(5)
-          })
-          .backgroundColor($$.current === i ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
-          .borderRadius(this.scaledSize(15))
-          .onClick(() => {
+        ScaleButton({
+          pressScale: 0.8,
+          hoverScale: 1.1,
+          onButtonTap: () => {
             if ($$.current !== i) {
               $$.onPick(i)
             }
-          })
+          }
+        }) {
+          Text(label)
+            .fontSize(this.scaledFont(12))
+            .fontColor($$.current === i ? '#FFFFFF' : this.settingTextColor())
+            .padding({
+              left: this.scaledSize(10),
+              right: this.scaledSize(10),
+              top: this.scaledSize(5),
+              bottom: this.scaledSize(5)
+            })
+            .backgroundColor($$.current === i ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+            .borderRadius(this.scaledSize(15))
+        }
       }, (label: string) => label)
     }
     .width('100%')
@@ -3654,22 +3795,27 @@ struct SettingsDetailPage {
     Scroll() {
       Row({ space: this.scaledSize(6) }) {
         ForEach($$.labels, (label: string, i: number) => {
-          Text(label)
-            .fontSize(this.scaledFont(12))
-            .fontColor($$.current === i ? '#FFFFFF' : this.settingTextColor())
-            .padding({
-              left: this.scaledSize(10),
-              right: this.scaledSize(10),
-              top: this.scaledSize(5),
-              bottom: this.scaledSize(5)
-            })
-            .backgroundColor($$.current === i ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
-            .borderRadius(this.scaledSize(15))
-            .onClick(() => {
+          ScaleButton({
+            pressScale: 0.8,
+            hoverScale: 1.1,
+            onButtonTap: () => {
               if ($$.current !== i) {
                 $$.onPick(i)
               }
-            })
+            }
+          }) {
+            Text(label)
+              .fontSize(this.scaledFont(12))
+              .fontColor($$.current === i ? '#FFFFFF' : this.settingTextColor())
+              .padding({
+                left: this.scaledSize(10),
+                right: this.scaledSize(10),
+                top: this.scaledSize(5),
+                bottom: this.scaledSize(5)
+              })
+              .backgroundColor($$.current === i ? this.primaryColor : ColorHelper.hexToRgba(this.primaryColor, 0.08))
+              .borderRadius(this.scaledSize(15))
+          }
         }, (label: string) => label)
       }
       .padding({ left: this.scaledSize(2), right: this.scaledSize(2) })

@@ -28,6 +28,7 @@ import { ColorConversion } from '../common/utils/ColorConversion'
 import { isDarkThemeEffective } from '../common/utils/ThemeUtil'
 import { StyleConstants } from '../common/constants/StyleConstants'
 import { ImportProgressOverlay } from '../view/ImportProgressOverlay'
+import { ScaleButton } from '../component/ScaleButton'
 import { GlassPlusButton } from '../view/GlassPlusButton'
 
 const TAG = 'Index'
@@ -57,11 +58,11 @@ struct MainPage {
   @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) @Watch('onPlayStateChange') isPlaying: boolean = false
   @State rotationAngle: number = 0
   @State isGlowing: boolean = false
-  // 首页播控条按钮按压弹簧缩放（上一首/播放/下一首，miniBar 与 playerControl 共用：
-  // 两布局互斥渲染，同一时刻只有一组按钮在屏）
-  @State barPrevScale: number = 1.0
-  @State barPlayScale: number = 1.0
-  @State barNextScale: number = 1.0
+  // Tab 栏按压动效：当前按下的页签下标（-1 无），受「按压动效」开关控制
+  @State pressedTabIndex: number = -1
+  // 播控条「打开播放页」区域按压动效（封面/歌名/歌词块共用，同一时刻只有一处被按）
+  @State pressedBarItem: boolean = false
+  @StorageLink('uplayer_press_animation') pressAnimOn: boolean = false
   // ── spike: hdsEffect.pointLight 点光源跟手光效真机验证，失败整段回滚 ──
   // 光源位置（vp，相对播控条触控宿主 Stack），初始 -100 藏到条外
   @State spikeBarLightX: number = -100
@@ -335,6 +336,49 @@ struct MainPage {
     return BlurStyle.Thick
   }
 
+  // 播控条打开播放页区域的按压弹簧动画（大块档 0.9）
+  private barItemScale(): number {
+    return this.pressAnimOn && this.pressedBarItem ? 0.9 : 1.0
+  }
+
+  private onBarItemTouch(event: TouchEvent): void {
+    if (!this.pressAnimOn) {
+      if (this.pressedBarItem) {
+        this.pressedBarItem = false
+      }
+      return
+    }
+    if (event.type === TouchType.Down) {
+      this.getUIContext()?.animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
+        this.pressedBarItem = true
+      })
+    } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+      this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
+        this.pressedBarItem = false
+      })
+    }
+  }
+
+  // Tab 项按压缩放：按下 0.9、松手弹簧回弹（与列表行同一档），开关关闭恒 1.0
+  private tabPressScale(index: number): number {
+    return this.pressAnimOn && this.pressedTabIndex === index ? 0.9 : 1.0
+  }
+
+  private onTabPressTouch(index: number, event: TouchEvent): void {
+    if (!this.pressAnimOn) {
+      return
+    }
+    if (event.type === TouchType.Down) {
+      this.getUIContext()?.animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
+        this.pressedTabIndex = index
+      })
+    } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+      this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
+        this.pressedTabIndex = -1
+      })
+    }
+  }
+
   @Builder
   private tabLabelBuilder(index: number, name: string, icon: Resource) {
     Stack() {
@@ -377,6 +421,10 @@ struct MainPage {
           .margin({ top: this.scaledSize(3) })
       }.width(this.scaledSize(this.tabWidth)).height(this.scaledSize(36)).justifyContent(FlexAlign.Center)
         .offset({ y: 2 })
+        .scale({ x: this.tabPressScale(index), y: this.tabPressScale(index) })
+        .onTouch((event: TouchEvent) => {
+          this.onTabPressTouch(index, event)
+        })
     }
     .width(this.scaledSize(this.tabWidth))
     .height(this.scaledSize(36))
@@ -409,7 +457,10 @@ struct MainPage {
           coverWidth: this.scaledSize(32),
           coverHeight: this.scaledSize(32),
           coverRadius: this.scaledSize(16)
-        }).width(this.scaledSize(32)).height(this.scaledSize(32)).rotate({ angle: this.rotationAngle }).onClick(() => {
+        }).width(this.scaledSize(32)).height(this.scaledSize(32)).rotate({ angle: this.rotationAngle })
+          .scale({ x: this.barItemScale(), y: this.barItemScale() })
+          .onTouch((event: TouchEvent) => { this.onBarItemTouch(event) })
+          .onClick(() => {
           this.openPlayer()
         })
       } else {
@@ -423,6 +474,8 @@ struct MainPage {
         .height(this.scaledSize(32))
         .borderRadius(this.scaledSize(16))
         .rotate({ angle: this.rotationAngle })
+        .scale({ x: this.barItemScale(), y: this.barItemScale() })
+        .onTouch((event: TouchEvent) => { this.onBarItemTouch(event) })
         .onClick(() => {
           this.openPlayer()
         })
@@ -471,6 +524,8 @@ struct MainPage {
       }
       .layoutWeight(this.songInfoWeight())
       .margin({ left: this.scaledSize(8), right: this.scaledSize(8) })
+      .scale({ x: this.barItemScale(), y: this.barItemScale() })
+      .onTouch((event: TouchEvent) => { this.onBarItemTouch(event) })
       .onClick(() => {
         this.openPlayer()
       })
@@ -491,49 +546,31 @@ struct MainPage {
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .margin({ top: this.scaledSize(8) })
-        }.layoutWeight(this.lyricInfoWeight()).alignItems(HorizontalAlign.Start).onClick(() => {
+        }.layoutWeight(this.lyricInfoWeight()).alignItems(HorizontalAlign.Start)
+        .scale({ x: this.barItemScale(), y: this.barItemScale() })
+        .onTouch((event: TouchEvent) => { this.onBarItemTouch(event) })
+        .onClick(() => {
           this.openPlayer()
         })
       }
-      Image($r('app.media.ic_public_play_last'))
-        .height(this.scaledSize(18))
-        .scale({ x: this.barPrevScale, y: this.barPrevScale })
-        .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
-          $r('app.color.player_icon_inactive_color'))
-        .onTouch((event: TouchEvent) => {
-          this.onBarButtonTouch((pressed: boolean): void => {
-            this.barPrevScale = pressed ? 0.8 : 1.0
-          }, event)
-        })
-        .onClick(() => {
-          this.playPrevious()
-        })
-      Image(this.isPlaying ? $r('app.media.ic_public_play') : $r('app.media.ic_public_pause'))
-        .height(this.scaledSize(22))
-        .scale({ x: this.barPlayScale, y: this.barPlayScale })
-        .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
-          $r('app.color.player_icon_inactive_color'))
-        .onTouch((event: TouchEvent) => {
-          this.onBarButtonTouch((pressed: boolean): void => {
-            this.barPlayScale = pressed ? 0.8 : 1.0
-          }, event)
-        })
-        .onClick(() => {
-          this.togglePlay()
-        })
-      Image($r('app.media.ic_public_play_next'))
-        .height(this.scaledSize(18))
-        .scale({ x: this.barNextScale, y: this.barNextScale })
-        .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
-          $r('app.color.player_icon_inactive_color'))
-        .onTouch((event: TouchEvent) => {
-          this.onBarButtonTouch((pressed: boolean): void => {
-            this.barNextScale = pressed ? 0.8 : 1.0
-          }, event)
-        })
-        .onClick(() => {
-          this.playNext()
-        })
+      ScaleButton({ pressScale: 0.8, hoverScale: 1.1, onButtonTap: () => { this.playPrevious() } }) {
+        Image($r('app.media.ic_public_play_last'))
+          .height(this.scaledSize(18))
+          .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
+            $r('app.color.player_icon_inactive_color'))
+      }
+      ScaleButton({ pressScale: 0.8, hoverScale: 1.1, onButtonTap: () => { this.togglePlay() } }) {
+        Image(this.isPlaying ? $r('app.media.ic_public_play') : $r('app.media.ic_public_pause'))
+          .height(this.scaledSize(22))
+          .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
+            $r('app.color.player_icon_inactive_color'))
+      }
+      ScaleButton({ pressScale: 0.8, hoverScale: 1.1, onButtonTap: () => { this.playNext() } }) {
+        Image($r('app.media.ic_public_play_next'))
+          .height(this.scaledSize(18))
+          .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
+            $r('app.color.player_icon_inactive_color'))
+      }
     }
     .constraintSize({ maxWidth: this.breakpoint === 'sm' || this.breakpoint === 'md' ? '85%' : '42%' })
     .height(this.scaledSize(44))
@@ -607,7 +644,10 @@ struct MainPage {
           coverWidth: this.scaledSize(36),
           coverHeight: this.scaledSize(36),
           coverRadius: this.scaledSize(18)
-        }).width(this.scaledSize(36)).height(this.scaledSize(36)).rotate({ angle: this.rotationAngle }).onClick(() => {
+        }).width(this.scaledSize(36)).height(this.scaledSize(36)).rotate({ angle: this.rotationAngle })
+          .scale({ x: this.barItemScale(), y: this.barItemScale() })
+          .onTouch((event: TouchEvent) => { this.onBarItemTouch(event) })
+          .onClick(() => {
           this.openPlayer()
         })
       } else {
@@ -621,6 +661,8 @@ struct MainPage {
         .height(this.scaledSize(36))
         .borderRadius(this.scaledSize(18))
         .rotate({ angle: this.rotationAngle })
+        .scale({ x: this.barItemScale(), y: this.barItemScale() })
+        .onTouch((event: TouchEvent) => { this.onBarItemTouch(event) })
         .onClick(() => {
           this.openPlayer()
         })
@@ -669,49 +711,30 @@ struct MainPage {
       }
       .layoutWeight(this.songInfoWeight())
       .margin({ left: this.scaledSize(4), right: this.scaledSize(4) })
+      .scale({ x: this.barItemScale(), y: this.barItemScale() })
+      .onTouch((event: TouchEvent) => { this.onBarItemTouch(event) })
       .onClick(() => {
         this.openPlayer()
       })
 
-      Image($r('app.media.ic_public_play_last'))
-        .height(this.scaledSize(24))
-        .scale({ x: this.barPrevScale, y: this.barPrevScale })
-        .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
-          $r('app.color.player_icon_inactive_color'))
-        .onTouch((event: TouchEvent) => {
-          this.onBarButtonTouch((pressed: boolean): void => {
-            this.barPrevScale = pressed ? 0.8 : 1.0
-          }, event)
-        })
-        .onClick(() => {
-          this.playPrevious()
-        })
-      Image(this.isPlaying ? $r('app.media.ic_public_play') : $r('app.media.ic_public_pause'))
-        .height(this.scaledSize(28))
-        .scale({ x: this.barPlayScale, y: this.barPlayScale })
-        .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
-          $r('app.color.player_icon_inactive_color'))
-        .onTouch((event: TouchEvent) => {
-          this.onBarButtonTouch((pressed: boolean): void => {
-            this.barPlayScale = pressed ? 0.8 : 1.0
-          }, event)
-        })
-        .onClick(() => {
-          this.togglePlay()
-        })
-      Image($r('app.media.ic_public_play_next'))
-        .height(this.scaledSize(24))
-        .scale({ x: this.barNextScale, y: this.barNextScale })
-        .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
-          $r('app.color.player_icon_inactive_color'))
-        .onTouch((event: TouchEvent) => {
-          this.onBarButtonTouch((pressed: boolean): void => {
-            this.barNextScale = pressed ? 0.8 : 1.0
-          }, event)
-        })
-        .onClick(() => {
-          this.playNext()
-        })
+      ScaleButton({ pressScale: 0.8, hoverScale: 1.1, onButtonTap: () => { this.playPrevious() } }) {
+        Image($r('app.media.ic_public_play_last'))
+          .height(this.scaledSize(24))
+          .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
+            $r('app.color.player_icon_inactive_color'))
+      }
+      ScaleButton({ pressScale: 0.8, hoverScale: 1.1, onButtonTap: () => { this.togglePlay() } }) {
+        Image(this.isPlaying ? $r('app.media.ic_public_play') : $r('app.media.ic_public_pause'))
+          .height(this.scaledSize(28))
+          .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
+            $r('app.color.player_icon_inactive_color'))
+      }
+      ScaleButton({ pressScale: 0.8, hoverScale: 1.1, onButtonTap: () => { this.playNext() } }) {
+        Image($r('app.media.ic_public_play_next'))
+          .height(this.scaledSize(24))
+          .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
+            $r('app.color.player_icon_inactive_color'))
+      }
     }
     .height(this.scaledSize(44))
     .borderRadius(this.scaledSize(22))
@@ -828,20 +851,6 @@ struct MainPage {
       this.avPlayerService.pause()
     } else {
       this.avPlayerService.resume()
-    }
-  }
-
-  // 播控条按钮按压弹簧动画：按下立即缩小、松开/取消立即弹簧回弹（跟随按压时长，无固定延时），
-  // 与 ScaleButton / 播放器大页面 ControlAreaComponent 的按压手感一致
-  private onBarButtonTouch(scaleSetter: (pressed: boolean) => void, event: TouchEvent): void {
-    if (event.type === TouchType.Down) {
-      this.getUIContext()?.animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
-        scaleSetter(true)
-      })
-    } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
-      this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
-        scaleSetter(false)
-      })
     }
   }
 

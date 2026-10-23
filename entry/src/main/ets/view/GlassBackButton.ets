@@ -1,6 +1,7 @@
-import { curves, uiMaterial } from '@kit.ArkUI'
+import { uiMaterial } from '@kit.ArkUI'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import { createTabGlassMaterial, DEFAULT_GLASS_STYLE, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
+import { ScaleButton } from '../component/ScaleButton'
 
 // 返回按钮统一组件：可点击区域维持原尺寸，内部套一层「可点击区域 × 0.6」的内切圆形，
 // 圆形的液态玻璃/磨砂/描边/阴影完全与底部 Tab 栏同源同参（同一批 AppStorage 配置驱动），
@@ -20,14 +21,6 @@ export struct GlassBackButton {
 
   @StorageLink('uplayer_tab_style') tabStyle: string = 'classic'
   @StorageLink('uplayer_glass_blur_strength') glassBlurStrength: number = 25
-
-  // 按压动画状态（与 ScaleButton 同款手感）：参与渲染的缩放值用 @State，
-  // 按压/悬停标志只做逻辑判断，用普通 private 成员
-  @State btnScale: number = 1.0
-  private isPressed: boolean = false
-  private isHovered: boolean = false
-  private pressScale: number = 0.8
-  private hoverScale: number = 1.1
 
   // 圆形相对可点击区的直径比例：可点击区不变，视觉圆更小
   private static readonly CIRCLE_RATIO: number = 0.6
@@ -57,73 +50,48 @@ export struct GlassBackButton {
     return undefined
   }
 
-  // 按压优先于悬停：按压中返回 pressScale，否则悬停返回 hoverScale，都不满足回 1.0
-  private targetScale(): number {
-    if (this.isPressed) {
-      return this.pressScale
-    }
-    return this.isHovered ? this.hoverScale : 1.0
-  }
-
+  // 按压缩放/悬停放大统一交给 ScaleButton（受「按压动效」开关控制）
   build() {
-    Row() {
-      Row() {
-        // 图标源为 12×24（1:2 竖长 chevron）：渲染框必须保持 1:2，
-        // 否则默认 Cover 会把 chevron 上下臂的尖端裁掉
-        Image($r('app.media.ic_public_arrow_left_filled'))
-          .width(this.visualIconSize())
-          .height(this.visualIconSize() * 2)
-          .fillColor(this.iconColor)
-          .opacity(this.iconOpacity)
+    ScaleButton({
+      pressScale: 0.8,
+      hoverScale: 1.1,
+      onButtonTap: () => {
+        this.onBack()
       }
-      .width(this.circleSize())
-      .height(this.circleSize())
-      .borderRadius(this.circleSize() / 2)
+    }) {
+      Row() {
+        Row() {
+          // 图标源为 12×24（1:2 竖长 chevron）：渲染框必须保持 1:2，
+          // 否则默认 Cover 会把 chevron 上下臂的尖端裁掉
+          Image($r('app.media.ic_public_arrow_left_filled'))
+            .width(this.visualIconSize())
+            .height(this.visualIconSize() * 2)
+            .fillColor(this.iconColor)
+            .opacity(this.iconOpacity)
+        }
+        .width(this.circleSize())
+        .height(this.circleSize())
+        .borderRadius(this.circleSize() / 2)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .backgroundColor(Color.Transparent)
+        // 磨砂层只由「模糊强度」控制（0 关闭），明暗模式均挂载，与 Tab 栏策略一致
+        .backgroundEffect(this.glassBlurStrength <= 0
+          ? undefined : { radius: this.glassBlurStrength * 0.5 })
+        .systemMaterial(this.backMaterial())
+        .border({ width: 1, color: 'rgba(255,255,255,0.22)' })
+        // 阴影照搬 Tab 栏观感，按圆形直径等比缩小；颜色固定白色（不用主题色）
+        .shadow({
+          radius: Math.round(this.circleSize() * 0.35),
+          color: ColorHelper.hexWithAlpha('#FFFFFF', '44'),
+          offsetY: Math.round(this.circleSize() * 0.1)
+        })
+      }
+      .width(this.clickSize)
+      .height(this.clickSize)
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
-      .backgroundColor(Color.Transparent)
-      // 磨砂层只由「模糊强度」控制（0 关闭），明暗模式均挂载，与 Tab 栏策略一致
-      .backgroundEffect(this.glassBlurStrength <= 0
-        ? undefined : { radius: this.glassBlurStrength * 0.5 })
-      .systemMaterial(this.backMaterial())
-      .border({ width: 1, color: 'rgba(255,255,255,0.22)' })
-      // 阴影照搬 Tab 栏观感，按圆形直径等比缩小；颜色固定白色（不用主题色）
-      .shadow({
-        radius: Math.round(this.circleSize() * 0.35),
-        color: ColorHelper.hexWithAlpha('#FFFFFF', '44'),
-        offsetY: Math.round(this.circleSize() * 0.1)
-      })
+      .borderRadius(this.clickSize / 2)
     }
-    .width(this.clickSize)
-    .height(this.clickSize)
-    .justifyContent(FlexAlign.Center)
-    .alignItems(VerticalAlign.Center)
-    .borderRadius(this.clickSize / 2)
-    .scale({ x: this.btnScale, y: this.btnScale })
-    .onTouch((event: TouchEvent) => {
-      if (event.type === TouchType.Down) {
-        this.isPressed = true;
-        this.getUIContext()?.animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
-          this.btnScale = this.pressScale;
-        });
-      } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
-        this.isPressed = false;
-        this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
-          this.btnScale = this.targetScale();
-        });
-      }
-    })
-    .onHover((isHover: boolean) => {
-      if (this.isHovered === isHover) {
-        return;
-      }
-      this.isHovered = isHover;
-      if (!this.isPressed) {
-        this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
-          this.btnScale = this.targetScale();
-        });
-      }
-    })
-    .onClick(() => { this.onBack() })
   }
 }

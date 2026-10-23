@@ -26,6 +26,9 @@ export struct GlassPlusButton {
   private readonly PLUS_SIDE_SPRING_DAMPING: number = 0.8
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
   @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
+  // 全局「按压动效」开关：本组件因需保留 position/transition 布局属性，未改用 ScaleButton，
+  // 在此直读同一个开关做短路
+  @StorageLink('uplayer_press_animation') @Watch('onPressAnimSwitchChange') pressAnimOn: boolean = false
 
   private scaledSize(size: number): number {
     return Math.round(size * this.displaySizeScale)
@@ -55,6 +58,16 @@ export struct GlassPlusButton {
       curve: curves.springMotion(this.PLUS_SIDE_SPRING_RESPONSE, this.PLUS_SIDE_SPRING_DAMPING)
     }, () => {
       this.plusOnLeft = isLeft
+    })
+  }
+
+  // 运行中关闭开关：弹簧复位，避免卡在 0.85
+  onPressAnimSwitchChange(): void {
+    if (this.pressAnimOn || this.plusBtnScale === 1.0) {
+      return
+    }
+    this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
+      this.plusBtnScale = 1.0
     })
   }
 
@@ -97,6 +110,9 @@ export struct GlassPlusButton {
     .transition({ type: TransitionType.Insert, opacity: 0, scale: { x: 0.5, y: 0.5 } })
     .transition({ type: TransitionType.Delete, opacity: 0, scale: { x: 0.5, y: 0.5 } })
     .onTouch((event: TouchEvent) => {
+      if (!this.pressAnimOn) {
+        return
+      }
       if (event.type === TouchType.Down) {
         this.getUIContext()?.animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
           this.plusBtnScale = 0.85

@@ -17,6 +17,7 @@
 import { LrcEntry } from "../viewmodel/LrcEntry";
 import { LengthMetrics } from "@kit.ArkUI";
 import { AVPlayerService } from '../service/AVPlayerService';
+import { ScaleButton } from '../component/ScaleButton';
 
 const NONE_LINE: number = -1;
 
@@ -150,19 +151,26 @@ export default struct LrcListView {
         List({ space: 20, initialIndex: 0, scroller: this.scrollerForList }) {
           ForEach(this.mLrcEntryList, (item: LrcEntry, index: number) => {
             ListItem() {
-              Row() {
-                Text(item.lineWords)
-                  .fontFamily('HarmonyHeiTi')
-                  .fontColor(this.mCurrentLine === index ? "#FFFFFF" : "#B3ffffff")
-                  .fontSize(this.mCurrentLine === index ? 24 : 20)
-                  .fontWeight(FontWeight.Bold)
-                  .opacity(this.mCurrentLine === index ? 1.0 : 0.7)
-                  .constraintSize({ maxWidth: '85%' })
-                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+              ScaleButton({
+                pressScale: 0.9,
+                hoverScale: 1.02,
+                onButtonTap: () => {
+                  this.onLyricLineClick(item);
+                }
+              }) {
+                Row() {
+                  Text(item.lineWords)
+                    .fontFamily('HarmonyHeiTi')
+                    .fontColor(this.mCurrentLine === index ? "#FFFFFF" : "#B3ffffff")
+                    .fontSize(this.mCurrentLine === index ? 24 : 20)
+                    .fontWeight(FontWeight.Bold)
+                    .opacity(this.mCurrentLine === index ? 1.0 : 0.7)
+                    .constraintSize({ maxWidth: '85%' })
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                }
+                .alignItems(VerticalAlign.Center)
               }
-              .alignItems(VerticalAlign.Center)
             }
-            .onClick(() => { this.onLyricLineClick(item); })
           })
         }
         .scrollBar(BarState.Off)

@@ -2,6 +2,7 @@ import { deviceInfo } from '@kit.BasicServicesKit'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import { isDarkThemeEffective } from '../common/utils/ThemeUtil'
+import { ScaleButton } from '../component/ScaleButton'
 
 const KEY_PRIMARY_COLOR = 'uplayer_primary_color'
 
@@ -80,28 +81,36 @@ export struct SettingsContent {
 
       Column({ space: this.scaledSize(6) }) {
         ForEach(this.categories, (cat: SettingCategory) => {
-          Column() {
-            Text(cat.title)
-              .fontSize(Math.round(16 * this.fontSizeScale))
-              .fontColor(this.settingTextColor())
-              .fontWeight(FontWeight.Medium)
-              .width('100%')
-            Text(cat.description)
-              .fontSize(Math.round(12 * this.fontSizeScale))
-              .fontColor(this.settingSubTextColor())
-              .width('100%')
-              .margin({ top: this.scaledSize(3) })
+          ScaleButton({
+            pressScale: 0.9,
+            hoverScale: 1.02,
+            expandWidth: true,
+            onButtonTap: () => {
+              this.onCategoryClick(cat)
+            }
+          }) {
+            Column() {
+              Text(cat.title)
+                .fontSize(Math.round(16 * this.fontSizeScale))
+                .fontColor(this.settingTextColor())
+                .fontWeight(FontWeight.Medium)
+                .width('100%')
+              Text(cat.description)
+                .fontSize(Math.round(12 * this.fontSizeScale))
+                .fontColor(this.settingSubTextColor())
+                .width('100%')
+                .margin({ top: this.scaledSize(3) })
+            }
+            .width('100%')
+            .padding({
+              left: this.scaledSize(16), right: this.scaledSize(16),
+              top: this.scaledSize(10), bottom: this.scaledSize(10)
+            })
+            .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+            .borderRadius(this.scaledSize(10))
+            .constraintSize({ minHeight: this.scaledSize(52), maxHeight: this.scaledSize(120) })
+            .alignItems(HorizontalAlign.Start)
           }
-          .width('100%')
-          .padding({
-            left: this.scaledSize(16), right: this.scaledSize(16),
-            top: this.scaledSize(10), bottom: this.scaledSize(10)
-          })
-          .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-          .borderRadius(this.scaledSize(10))
-          .constraintSize({ minHeight: this.scaledSize(52), maxHeight: this.scaledSize(120) })
-          .alignItems(HorizontalAlign.Start)
-          .onClick(() => { this.onCategoryClick(cat) })
         }, (cat: SettingCategory) => cat.route)
       }
       .width('100%')

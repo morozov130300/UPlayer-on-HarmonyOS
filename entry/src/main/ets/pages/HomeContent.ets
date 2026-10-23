@@ -18,6 +18,7 @@ import { AlbumCoverSize, AudioMetadataService, CoverPriority } from '../service/
 import { curves, uiMaterial } from '@kit.ArkUI'
 import { createBarGlassMaterial, createStyleGlassMaterial, DEFAULT_GLASS_STYLE, showToastGlassMaterial, topBlurRadiusFromStrength } from '../common/utils/GlassUtil'
 import { GlassBackButton } from '../view/GlassBackButton'
+import { ScaleButton } from '../component/ScaleButton'
 import { StyleConstants } from '../common/constants/StyleConstants'
 
 const TAG = 'HomeContent'
@@ -1432,15 +1433,20 @@ export struct HomeContent {
           })
 
           if (this.displayItems.length === 0) {
-            Text(this.searchText.trim().length > 0 ? '未找到匹配的歌曲' : '暂无歌曲，点击添加')
-              .fontSize(Math.round(14 * this.fontSizeScale))
-              .fontColor($r('app.color.text_twenty_color'))
-              .textAlign(TextAlign.Center)
-              .onClick(() => {
+            ScaleButton({
+              pressScale: 0.9,
+              hoverScale: 1.02,
+              onButtonTap: () => {
                 if (this.searchText.trim().length === 0) {
                   this.onPlusClick()
                 }
-              })
+              }
+            }) {
+              Text(this.searchText.trim().length > 0 ? '未找到匹配的歌曲' : '暂无歌曲，点击添加')
+                .fontSize(Math.round(14 * this.fontSizeScale))
+                .fontColor($r('app.color.text_twenty_color'))
+                .textAlign(TextAlign.Center)
+            }
           }
 
           ScrollBar({
@@ -1484,25 +1490,39 @@ export struct HomeContent {
           Row() {
             if (!this.isSearchActive) {
               Row() {
-                Text(this.filterLabel)
-                  .fontSize(Math.round(14 * this.fontSizeScale))
-                  .fontColor($r('app.color.text_primary'))
-                  .fontWeight(FontWeight.Bold)
-                  .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-                  .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-                  .borderRadius(16)
-                  .onClick(() => { this.clearFilters() })
+                ScaleButton({
+                  pressScale: 0.8,
+                  hoverScale: 1.1,
+                  onButtonTap: () => {
+                    this.clearFilters()
+                  }
+                }) {
+                  Text(this.filterLabel)
+                    .fontSize(Math.round(14 * this.fontSizeScale))
+                    .fontColor($r('app.color.text_primary'))
+                    .fontWeight(FontWeight.Bold)
+                    .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                    .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+                    .borderRadius(16)
+                }
 
                 // 组合筛选入口（S1）：维度激活时高亮提示
-                Text('筛选')
-                  .fontSize(Math.round(12 * this.fontSizeScale))
-                  .fontColor($r('app.color.text_primary'))
-                  .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-                  .margin({ left: 8 })
-                  .backgroundColor(this.countActiveFilterDims() > 0 ?
-                    ColorHelper.hexToRgba(this.primaryColor, 0.28) : ColorHelper.hexToRgba(this.primaryColor, 0.12))
-                  .borderRadius(16)
-                  .onClick(() => { this.openFilterPanel() })
+                ScaleButton({
+                  pressScale: 0.8,
+                  hoverScale: 1.1,
+                  onButtonTap: () => {
+                    this.openFilterPanel()
+                  }
+                }) {
+                  Text('筛选')
+                    .fontSize(Math.round(12 * this.fontSizeScale))
+                    .fontColor($r('app.color.text_primary'))
+                    .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+                    .margin({ left: 8 })
+                    .backgroundColor(this.countActiveFilterDims() > 0 ?
+                      ColorHelper.hexToRgba(this.primaryColor, 0.28) : ColorHelper.hexToRgba(this.primaryColor, 0.12))
+                    .borderRadius(16)
+                }
               }
               .alignItems(VerticalAlign.Center)
               .transition(TransitionEffect.OPACITY.combine(TransitionEffect.translate({ x: -this.scaledSize(48) })))
@@ -1534,21 +1554,33 @@ export struct HomeContent {
                   .transition(TransitionEffect.OPACITY)
 
                 if (this.searchText.length > 0) {
-                  Image($r('app.media.ic_public_close'))
-                    .width(16).height(16)
-                    .fillColor($r('app.color.text_sixty_color'))
-                    .onClick(() => {
+                  ScaleButton({
+                    pressScale: 0.8,
+                    hoverScale: 1.1,
+                    onButtonTap: () => {
                       this.searchText = ''
                       this.applyFilters()
-                    })
-                    .transition(TransitionEffect.OPACITY)
+                    }
+                  }) {
+                    Image($r('app.media.ic_public_close'))
+                      .width(16).height(16)
+                      .fillColor($r('app.color.text_sixty_color'))
+                      .transition(TransitionEffect.OPACITY)
+                  }
                 }
 
-                Text('取消')
-                  .fontSize(Math.round(14 * this.fontSizeScale))
-                  .fontColor($r('app.color.text_sixty_color'))
-                  .onClick(() => { this.closeSearch() })
-                  .transition(TransitionEffect.OPACITY)
+                ScaleButton({
+                  pressScale: 0.8,
+                  hoverScale: 1.1,
+                  onButtonTap: () => {
+                    this.closeSearch()
+                  }
+                }) {
+                  Text('取消')
+                    .fontSize(Math.round(14 * this.fontSizeScale))
+                    .fontColor($r('app.color.text_sixty_color'))
+                    .transition(TransitionEffect.OPACITY)
+                }
               }
             }
             .width(this.isSearchActive ? '100%' : this.scaledSize(32))
@@ -1565,31 +1597,45 @@ export struct HomeContent {
 
             if (!this.isSearchActive) {
               Row() {
-                Row() {
-                  Image($r('app.media.ic_sort_list'))
-                    .width(16).height(16)
-                    .fillColor($r('app.color.text_primary'))
-                  Text(this.getSortLabel())
-                    .fontSize(Math.round(12 * this.fontSizeScale))
-                    .fontColor($r('app.color.text_primary'))
-                    .margin({ left: 4 })
+                ScaleButton({
+                  pressScale: 0.8,
+                  hoverScale: 1.1,
+                  onButtonTap: () => {
+                    this.switchSortMode()
+                  }
+                }) {
+                  Row() {
+                    Image($r('app.media.ic_sort_list'))
+                      .width(16).height(16)
+                      .fillColor($r('app.color.text_primary'))
+                    Text(this.getSortLabel())
+                      .fontSize(Math.round(12 * this.fontSizeScale))
+                      .fontColor($r('app.color.text_primary'))
+                      .margin({ left: 4 })
+                  }
+                  .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+                  .margin({ left: 8 })
+                  .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+                  .borderRadius(16)
                 }
-                .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-                .margin({ left: 8 })
-                .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-                .borderRadius(16)
-                .onClick(() => { this.switchSortMode() })
 
-                Row() {
-                  Text(this.viewModeLabel())
-                    .fontSize(Math.round(12 * this.fontSizeScale))
-                    .fontColor($r('app.color.text_primary'))
+                ScaleButton({
+                  pressScale: 0.8,
+                  hoverScale: 1.1,
+                  onButtonTap: () => {
+                    this.toggleViewMode()
+                  }
+                }) {
+                  Row() {
+                    Text(this.viewModeLabel())
+                      .fontSize(Math.round(12 * this.fontSizeScale))
+                      .fontColor($r('app.color.text_primary'))
+                  }
+                  .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+                  .margin({ left: 8 })
+                  .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+                  .borderRadius(16)
                 }
-                .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-                .margin({ left: 8 })
-                .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-                .borderRadius(16)
-                .onClick(() => { this.toggleViewMode() })
               }
               .alignItems(VerticalAlign.Center)
               .transition(TransitionEffect.OPACITY.combine(TransitionEffect.translate({ x: this.scaledSize(48) })))
@@ -1631,49 +1677,77 @@ export struct HomeContent {
             .fontColor($r('app.color.text_primary'))
           Blank()
           // 全选按钮 - 带图标
-          Row({ space: 4 }) {
-            Image(this.isAllSelected() ? $r('app.media.ic_public_deselect_all') : $r('app.media.ic_public_select_all'))
-              .width(Math.round(16 * this.fontSizeScale))
-              .height(Math.round(16 * this.fontSizeScale))
-              .fillColor(this.primaryColor)
-            Text(this.isAllSelected() ? '取消全选' : '全选')
-              .fontSize(Math.round(14 * this.fontSizeScale))
-              .fontColor(this.primaryColor)
+          ScaleButton({
+            pressScale: 0.8,
+            hoverScale: 1.1,
+            onButtonTap: () => {
+              this.toggleSelectAll()
+            }
+          }) {
+            Row({ space: 4 }) {
+              Image(this.isAllSelected() ? $r('app.media.ic_public_deselect_all') : $r('app.media.ic_public_select_all'))
+                .width(Math.round(16 * this.fontSizeScale))
+                .height(Math.round(16 * this.fontSizeScale))
+                .fillColor(this.primaryColor)
+              Text(this.isAllSelected() ? '取消全选' : '全选')
+                .fontSize(Math.round(14 * this.fontSizeScale))
+                .fontColor(this.primaryColor)
+            }
+            .margin({ right: 16 })
           }
-          .margin({ right: 16 })
-          .onClick(() => { this.toggleSelectAll() })
 
           // 反选 - 纯文字按钮（图标库无对应图标，置于全选后）
-          Text('反选')
-            .fontSize(Math.round(14 * this.fontSizeScale))
-            .fontColor(this.primaryColor)
-            .margin({ right: 16 })
-            .onClick(() => { this.invertVisibleSelection() })
-
-          // 加入歌单（P2-3）- 带图标：弹窗选择目标歌单或新建
-          Row({ space: 4 }) {
-            Image($r('app.media.ic_public_add_norm_filled'))
-              .width(Math.round(16 * this.fontSizeScale))
-              .height(Math.round(16 * this.fontSizeScale))
-              .fillColor(this.primaryColor)
-            Text('加入歌单')
+          ScaleButton({
+            pressScale: 0.8,
+            hoverScale: 1.1,
+            onButtonTap: () => {
+              this.invertVisibleSelection()
+            }
+          }) {
+            Text('反选')
               .fontSize(Math.round(14 * this.fontSizeScale))
               .fontColor(this.primaryColor)
+              .margin({ right: 16 })
           }
-          .margin({ right: 16 })
-          .onClick(() => { this.openPlaylistPicker() })
+
+          // 加入歌单（P2-3）- 带图标：弹窗选择目标歌单或新建
+          ScaleButton({
+            pressScale: 0.8,
+            hoverScale: 1.1,
+            onButtonTap: () => {
+              this.openPlaylistPicker()
+            }
+          }) {
+            Row({ space: 4 }) {
+              Image($r('app.media.ic_public_add_norm_filled'))
+                .width(Math.round(16 * this.fontSizeScale))
+                .height(Math.round(16 * this.fontSizeScale))
+                .fillColor(this.primaryColor)
+              Text('加入歌单')
+                .fontSize(Math.round(14 * this.fontSizeScale))
+                .fontColor(this.primaryColor)
+            }
+            .margin({ right: 16 })
+          }
 
           // 删除按钮 - 带图标；歌单筛选态（P2-3）语义变为「移出歌单」（不删文件）
-          Row({ space: 4 }) {
-            Image($r('app.media.ic_public_delete'))
-              .width(Math.round(16 * this.fontSizeScale))
-              .height(Math.round(16 * this.fontSizeScale))
-              .fillColor(StyleConstants.COLOR_DANGER_RED)
-            Text(this.playlistFilterId.length > 0 ? '移出歌单' : '删除')
-              .fontSize(Math.round(14 * this.fontSizeScale))
-              .fontColor(StyleConstants.COLOR_DANGER_RED)
+          ScaleButton({
+            pressScale: 0.8,
+            hoverScale: 1.1,
+            onButtonTap: () => {
+              this.deleteSelected()
+            }
+          }) {
+            Row({ space: 4 }) {
+              Image($r('app.media.ic_public_delete'))
+                .width(Math.round(16 * this.fontSizeScale))
+                .height(Math.round(16 * this.fontSizeScale))
+                .fillColor(StyleConstants.COLOR_DANGER_RED)
+              Text(this.playlistFilterId.length > 0 ? '移出歌单' : '删除')
+                .fontSize(Math.round(14 * this.fontSizeScale))
+                .fontColor(StyleConstants.COLOR_DANGER_RED)
+            }
           }
-          .onClick(() => { this.deleteSelected() })
         }
         .width('100%')
         .height(this.multiSelectBarHeight())
@@ -1728,18 +1802,32 @@ export struct HomeContent {
                 .fontWeight(FontWeight.Bold)
                 .fontColor($r('app.color.text_primary'))
               Blank()
-              Text('重置')
-                .fontSize(Math.round(14 * this.fontSizeScale))
-                .fontColor($r('app.color.text_sixty_color'))
-                .onClick(() => { this.resetFilterPanel() })
-              Text('完成')
-                .fontSize(Math.round(14 * this.fontSizeScale))
-                .fontColor(Color.White)
-                .padding({ left: 14, right: 14, top: 6, bottom: 6 })
-                .backgroundColor(this.primaryColor)
-                .borderRadius(14)
-                .margin({ left: 16 })
-                .onClick(() => { this.applyFilterPanel() })
+              ScaleButton({
+                pressScale: 0.8,
+                hoverScale: 1.1,
+                onButtonTap: () => {
+                  this.resetFilterPanel()
+                }
+              }) {
+                Text('重置')
+                  .fontSize(Math.round(14 * this.fontSizeScale))
+                  .fontColor($r('app.color.text_sixty_color'))
+              }
+              ScaleButton({
+                pressScale: 0.8,
+                hoverScale: 1.1,
+                onButtonTap: () => {
+                  this.applyFilterPanel()
+                }
+              }) {
+                Text('完成')
+                  .fontSize(Math.round(14 * this.fontSizeScale))
+                  .fontColor(Color.White)
+                  .padding({ left: 14, right: 14, top: 6, bottom: 6 })
+                  .backgroundColor(this.primaryColor)
+                  .borderRadius(14)
+                  .margin({ left: 16 })
+              }
             }
             .width('100%')
             .alignItems(VerticalAlign.Center)
@@ -1801,35 +1889,48 @@ export struct HomeContent {
                 .fontWeight(FontWeight.Bold)
                 .fontColor($r('app.color.text_primary'))
               Blank()
-              Text('取消')
-                .fontSize(Math.round(14 * this.fontSizeScale))
-                .fontColor($r('app.color.text_sixty_color'))
-                .padding({ left: 14, right: 14, top: 6, bottom: 6 })
-                .onClick(() => { this.isPlaylistPickerVisible = false })
+              ScaleButton({
+                pressScale: 0.8,
+                hoverScale: 1.1,
+                onButtonTap: () => {
+                  this.isPlaylistPickerVisible = false
+                }
+              }) {
+                Text('取消')
+                  .fontSize(Math.round(14 * this.fontSizeScale))
+                  .fontColor($r('app.color.text_sixty_color'))
+                  .padding({ left: 14, right: 14, top: 6, bottom: 6 })
+              }
             }
             .width('100%')
             .alignItems(VerticalAlign.Center)
 
             // 新建歌单：进入统一新建弹窗（预选当前多选歌曲，可在全曲库继续加选）
-            Row({ space: 8 }) {
-              Image($r('app.media.ic_public_add_norm_filled'))
-                .width(20)
-                .height(20)
-                .fillColor(this.primaryColor)
-              Text('新建歌单')
-                .fontSize(Math.round(14 * this.fontSizeScale))
-                .fontColor(this.primaryColor)
-                .fontWeight(FontWeight.Medium)
+            ScaleButton({
+              pressScale: 0.9,
+              hoverScale: 1.02,
+              expandWidth: true,
+              onButtonTap: () => {
+                this.openPlaylistCreateDialog()
+              }
+            }) {
+              Row({ space: 8 }) {
+                Image($r('app.media.ic_public_add_norm_filled'))
+                  .width(20)
+                  .height(20)
+                  .fillColor(this.primaryColor)
+                Text('新建歌单')
+                  .fontSize(Math.round(14 * this.fontSizeScale))
+                  .fontColor(this.primaryColor)
+                  .fontWeight(FontWeight.Medium)
+              }
+              .width('100%')
+              .justifyContent(FlexAlign.Center)
+              .padding({ top: 10, bottom: 10 })
+              .margin({ top: 12 })
+              .borderRadius(12)
+              .backgroundColor(ColorHelper.hexWithAlpha(this.primaryColor, '14'))
             }
-            .width('100%')
-            .justifyContent(FlexAlign.Center)
-            .padding({ top: 10, bottom: 10 })
-            .margin({ top: 12 })
-            .borderRadius(12)
-            .backgroundColor(ColorHelper.hexWithAlpha(this.primaryColor, '14'))
-            .onClick(() => {
-              this.openPlaylistCreateDialog()
-            })
 
             if (this.pickerRows.length === 0) {
               Text('还没有歌单，输入名称创建一个吧')
@@ -1842,30 +1943,36 @@ export struct HomeContent {
               Scroll() {
                 Column() {
                   ForEach(this.pickerRows, (row: PickerPlaylistRow) => {
-                    Row() {
-                      Image($r('app.media.ic_public_music'))
-                        .width(20)
-                        .height(20)
-                        .fillColor($r('app.color.text_sixty_color'))
-                        .margin({ right: 12 })
-                      Text(row.name)
-                        .fontSize(Math.round(14 * this.fontSizeScale))
-                        .fontColor($r('app.color.text_primary'))
-                        .maxLines(1)
-                        .textOverflow({ overflow: TextOverflow.Ellipsis })
-                        .layoutWeight(1)
-                      Text(row.count + ' 首')
-                        .fontSize(Math.round(12 * this.fontSizeScale))
-                        .fontColor($r('app.color.text_sixty_color'))
-                        .margin({ left: 12 })
+                    ScaleButton({
+                      pressScale: 0.9,
+                      hoverScale: 1.02,
+                      expandWidth: true,
+                      onButtonTap: () => {
+                        this.addSelectedToPlaylist(row.id).catch((err: Error) => {
+                          Logger.error(TAG, `addSelectedToPlaylist failed: ${JSON.stringify(err)}`)
+                        })
+                      }
+                    }) {
+                      Row() {
+                        Image($r('app.media.ic_public_music'))
+                          .width(20)
+                          .height(20)
+                          .fillColor($r('app.color.text_sixty_color'))
+                          .margin({ right: 12 })
+                        Text(row.name)
+                          .fontSize(Math.round(14 * this.fontSizeScale))
+                          .fontColor($r('app.color.text_primary'))
+                          .maxLines(1)
+                          .textOverflow({ overflow: TextOverflow.Ellipsis })
+                          .layoutWeight(1)
+                        Text(row.count + ' 首')
+                          .fontSize(Math.round(12 * this.fontSizeScale))
+                          .fontColor($r('app.color.text_sixty_color'))
+                          .margin({ left: 12 })
+                      }
+                      .width('100%')
+                      .padding({ top: 12, bottom: 12 })
                     }
-                    .width('100%')
-                    .padding({ top: 12, bottom: 12 })
-                    .onClick(() => {
-                      this.addSelectedToPlaylist(row.id).catch((err: Error) => {
-                        Logger.error(TAG, `addSelectedToPlaylist failed: ${JSON.stringify(err)}`)
-                      })
-                    })
                   }, (row: PickerPlaylistRow) => row.id + '_' + row.count)
                 }
                 .width('100%')
@@ -1925,40 +2032,46 @@ export struct HomeContent {
   // 专辑/歌手分组头（P2-4）：代表封面 + 组名 + 曲目数，整行点击连播组内歌曲
   @Builder
   groupHeaderRow(item: DisplayItem): void {
-    Row({ space: this.scaledSize(10) }) {
-      AlbumCover({ song: item.song, coverWidth: this.scaledSize(40), coverHeight: this.scaledSize(40),
-        coverRadius: this.scaledSize(8), decodeSize: AlbumCoverSize.SMALL })
-
-      Column({ space: 2 }) {
-        Text(item.headerText)
-          .fontSize(Math.round(15 * this.fontSizeScale))
-          .fontColor($r('app.color.text_primary'))
-          .fontWeight(FontWeight.Medium)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .width('100%')
-        Text(`${item.headerCount} 首`)
-          .fontSize(Math.round(12 * this.fontSizeScale))
-          .fontColor($r('app.color.text_sixty_color'))
+    ScaleButton({
+      pressScale: 0.9,
+      hoverScale: 1.02,
+      expandWidth: true,
+      onButtonTap: () => {
+        this.playGroupFromHeader(item.headerText)
       }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
+    }) {
+      Row({ space: this.scaledSize(10) }) {
+        AlbumCover({ song: item.song, coverWidth: this.scaledSize(40), coverHeight: this.scaledSize(40),
+          coverRadius: this.scaledSize(8), decodeSize: AlbumCoverSize.SMALL })
 
-      Image($r('app.media.ic_public_play'))
-        .width(this.scaledSize(22)).height(this.scaledSize(22))
-        .fillColor($r('app.color.text_sixty_color'))
+        Column({ space: 2 }) {
+          Text(item.headerText)
+            .fontSize(Math.round(15 * this.fontSizeScale))
+            .fontColor($r('app.color.text_primary'))
+            .fontWeight(FontWeight.Medium)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .width('100%')
+          Text(`${item.headerCount} 首`)
+            .fontSize(Math.round(12 * this.fontSizeScale))
+            .fontColor($r('app.color.text_sixty_color'))
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+
+        Image($r('app.media.ic_public_play'))
+          .width(this.scaledSize(22)).height(this.scaledSize(22))
+          .fillColor($r('app.color.text_sixty_color'))
+      }
+      .width('100%')
+      .padding({
+        left: this.scaledSize(16), right: this.scaledSize(16),
+        top: this.scaledSize(8), bottom: this.scaledSize(8)
+      })
+      .margin({ top: this.scaledSize(4) })
+      .borderRadius(10)
+      .backgroundColor('rgba(0,0,0,0.02)')
     }
-    .width('100%')
-    .padding({
-      left: this.scaledSize(16), right: this.scaledSize(16),
-      top: this.scaledSize(8), bottom: this.scaledSize(8)
-    })
-    .margin({ top: this.scaledSize(4) })
-    .borderRadius(10)
-    .backgroundColor('rgba(0,0,0,0.02)')
-    .onClick(() => {
-      this.playGroupFromHeader(item.headerText)
-    })
   }
 
   // 筛选面板单维度分区（S1）：标题 + 芯片流式换行，多选高亮；
@@ -1973,18 +2086,23 @@ export struct HomeContent {
           .margin({ bottom: 8 })
         Flex({ wrap: FlexWrap.Wrap }) {
           ForEach($$.options, (option: FilterChipOption) => {
-            Text(option.label + ' ' + option.count)
-              .fontSize(Math.round(12 * this.fontSizeScale))
-              .fontColor(this.isChipSelected($$.selected, option.value) ?
-                this.primaryColor : $r('app.color.text_primary'))
-              .padding({ left: 10, right: 10, top: 5, bottom: 5 })
-              .margin({ right: 8, bottom: 8 })
-              .borderRadius(14)
-              .backgroundColor(this.isChipSelected($$.selected, option.value) ?
-                ColorHelper.hexToRgba(this.primaryColor, 0.18) : 'rgba(0,0,0,0.05)')
-              .onClick(() => {
+            ScaleButton({
+              pressScale: 0.8,
+              hoverScale: 1.1,
+              onButtonTap: () => {
                 this.onChipToggle($$.dim, option.value)
-              })
+              }
+            }) {
+              Text(option.label + ' ' + option.count)
+                .fontSize(Math.round(12 * this.fontSizeScale))
+                .fontColor(this.isChipSelected($$.selected, option.value) ?
+                  this.primaryColor : $r('app.color.text_primary'))
+                .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+                .margin({ right: 8, bottom: 8 })
+                .borderRadius(14)
+                .backgroundColor(this.isChipSelected($$.selected, option.value) ?
+                  ColorHelper.hexToRgba(this.primaryColor, 0.18) : 'rgba(0,0,0,0.05)')
+            }
           }, (option: FilterChipOption) => $$.dim + '_' + option.value)
         }
         .width('100%')
@@ -2074,30 +2192,40 @@ export struct HomeContent {
 
       if (item.isAvailable) {
         Row() {
-          SymbolGlyph($r('sys.symbol.list_bullet'))
-            .fontSize(Math.round(22 * this.fontSizeScale))
-            .renderingStrategy(SymbolRenderingStrategy.SINGLE)
-            .fontColor([$r('app.color.text_sixty_color')])
-            .hitTestBehavior(HitTestMode.Block)
-            .onClick(() => {
+          ScaleButton({
+            pressScale: 0.8,
+            hoverScale: 1.1,
+            blockHitTest: true,
+            onButtonTap: () => {
               this.dataService.addToPlayNext(item.id)
               try {
                 showToastGlassMaterial(this.getUIContext()?.getPromptAction(), '已添加到下一首播放')
               } catch (e) {
                 Logger.error(TAG, 'toast failed')
               }
-            })
+            }
+          }) {
+            SymbolGlyph($r('sys.symbol.list_bullet'))
+              .fontSize(Math.round(22 * this.fontSizeScale))
+              .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+              .fontColor([$r('app.color.text_sixty_color')])
+          }
         }
         .margin({ right: this.scaledSize(16) })
       }
 
-      Image(item.isFavorite ? $r('app.media.ic_public_favor_filled') : $r('app.media.ic_public_favor'))
-        .width(this.scaledSize(22)).height(this.scaledSize(22))
-        .fillColor(item.isFavorite ? StyleConstants.COLOR_DANGER_RED : $r('app.color.text_sixty_color'))
-        .hitTestBehavior(HitTestMode.Block)
-        .onClick(() => {
+      ScaleButton({
+        pressScale: 0.8,
+        hoverScale: 1.1,
+        blockHitTest: true,
+        onButtonTap: () => {
           this.toggleFavorite(item.id)
-        })
+        }
+      }) {
+        Image(item.isFavorite ? $r('app.media.ic_public_favor_filled') : $r('app.media.ic_public_favor'))
+          .width(this.scaledSize(22)).height(this.scaledSize(22))
+          .fillColor(item.isFavorite ? StyleConstants.COLOR_DANGER_RED : $r('app.color.text_sixty_color'))
+      }
     }
     .width('100%')
     .padding({
@@ -2134,22 +2262,27 @@ export struct HomeContent {
   @Builder
   songSwipeDeleteButton(song: SongInfo): void {
     Row() {
-      Row() {
-        Image($r('app.media.ic_public_delete'))
-          .width(this.scaledSize(16))
-          .height(this.scaledSize(16))
-          .fillColor(Color.White)
+      ScaleButton({
+        pressScale: 0.8,
+        hoverScale: 1.1,
+        onButtonTap: () => {
+          this.deleteSongById(song.id)
+        }
+      }) {
+        Row() {
+          Image($r('app.media.ic_public_delete'))
+            .width(this.scaledSize(16))
+            .height(this.scaledSize(16))
+            .fillColor(Color.White)
+        }
+        .height(this.scaledSize(36))
+        .width(this.scaledSize(36))
+        .borderRadius(this.scaledSize(18))
+        .backgroundColor(StyleConstants.COLOR_DANGER_RED)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .margin({ right: this.scaledSize(12) })
       }
-      .height(this.scaledSize(36))
-      .width(this.scaledSize(36))
-      .borderRadius(this.scaledSize(18))
-      .backgroundColor(StyleConstants.COLOR_DANGER_RED)
-      .justifyContent(FlexAlign.Center)
-      .alignItems(VerticalAlign.Center)
-      .margin({ right: this.scaledSize(12) })
-      .onClick(() => {
-        this.deleteSongById(song.id)
-      })
     }
     .width(this.scaledSize(48))
     .height('100%')

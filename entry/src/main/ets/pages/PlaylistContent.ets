@@ -12,13 +12,14 @@ import { ColorHelper } from '../common/utils/ColorHelper'
 import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { StyleConstants } from '../common/constants/StyleConstants'
-import { display, uiMaterial } from '@kit.ArkUI'
+import { display, uiMaterial, curves } from '@kit.ArkUI'
 import { deviceInfo } from '@kit.BasicServicesKit'
 import { AlbumCover } from '../component/AlbumCover'
 import { PlaylistCreateDialog } from '../component/PlaylistCreateDialog'
 import { AlbumCoverSize } from '../service/AudioMetadataService'
 import { createBarGlassMaterial, createStyleGlassMaterial, DEFAULT_GLASS_STYLE } from '../common/utils/GlassUtil'
 import { GlassBackButton } from '../view/GlassBackButton'
+import { ScaleButton } from '../component/ScaleButton'
 
 const TAG = 'PlaylistContent'
 const FAVORITES_FOLDER_ID: string = '__favorites__'
@@ -38,6 +39,9 @@ export struct PlaylistContent {
   // 底部让位原始输入（Index 传入），页内自算 bottomOverlayInset() 以实时跟随显示大小
   bottomSafeHeight: number = 0
   smallBreakpoint: boolean = false
+  // 歌单卡/文件夹卡带长按气泡与 bindPopup，无法用 ScaleButton 包裹，改用「当前按下的卡片 id」单一状态驱动
+  @State pressedCardId: string = ''
+  @StorageLink('uplayer_press_animation') pressAnimOn: boolean = false
   private context: common.UIAbilityContext | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
   @State folders: FolderInfo[] = []
   @State songs: SongInfo[] = []
@@ -618,11 +622,18 @@ export struct PlaylistContent {
               .fontSize(Math.round(18 * this.fontSizeScale))
               .fontColor($r('app.color.text_primary'))
               .fontWeight(FontWeight.Bold)
-            Text(this.sortModeLabel())
-              .fontSize(Math.round(12 * this.fontSizeScale))
-              .fontColor($r('app.color.text_sixty_color'))
-              .margin({ left: 10 })
-              .onClick(() => { this.cycleSortMode() })
+            ScaleButton({
+              pressScale: 0.8,
+              hoverScale: 1.1,
+              onButtonTap: () => {
+                this.cycleSortMode()
+              }
+            }) {
+              Text(this.sortModeLabel())
+                .fontSize(Math.round(12 * this.fontSizeScale))
+                .fontColor($r('app.color.text_sixty_color'))
+                .margin({ left: 10 })
+            }
           }
           .width('100%')
           .height(this.topContentPadding + this.topBandHeight)
@@ -660,13 +671,20 @@ export struct PlaylistContent {
               .padding({ left: 16, right: 16, top: 12 })
               .width('100%')
             } else {
-              Text('暂无歌单，点击添加歌曲')
-                .fontSize(Math.round(14 * this.fontSizeScale))
-                .fontColor($r('app.color.text_twenty_color'))
-                .width('100%')
-                .height(200)
-                .textAlign(TextAlign.Center)
-                .onClick(() => { this.onPlusClick() })
+              ScaleButton({
+                pressScale: 0.9,
+                hoverScale: 1.02,
+                onButtonTap: () => {
+                  this.onPlusClick()
+                }
+              }) {
+                Text('暂无歌单，点击添加歌曲')
+                  .fontSize(Math.round(14 * this.fontSizeScale))
+                  .fontColor($r('app.color.text_twenty_color'))
+                  .width('100%')
+                  .height(200)
+                  .textAlign(TextAlign.Center)
+              }
             }
             Blank()
               .width('100%')
@@ -859,36 +877,57 @@ export struct PlaylistContent {
         .fontColor($r('app.color.text_primary'))
       Blank()
       // 全选按钮 - 带图标（与首页一致：全选后变为取消全选）
-      Row({ space: 4 }) {
-        Image(this.isAllSelected() ? $r('app.media.ic_public_deselect_all') : $r('app.media.ic_public_select_all'))
-          .width(Math.round(16 * this.fontSizeScale))
-          .height(Math.round(16 * this.fontSizeScale))
-          .fillColor(this.primaryColor)
-        Text(this.isAllSelected() ? '取消全选' : '全选')
-          .fontSize(Math.round(14 * this.fontSizeScale))
-          .fontColor(this.primaryColor)
+      ScaleButton({
+        pressScale: 0.8,
+        hoverScale: 1.1,
+        onButtonTap: () => {
+          this.toggleSelectAll()
+        }
+      }) {
+        Row({ space: 4 }) {
+          Image(this.isAllSelected() ? $r('app.media.ic_public_deselect_all') : $r('app.media.ic_public_select_all'))
+            .width(Math.round(16 * this.fontSizeScale))
+            .height(Math.round(16 * this.fontSizeScale))
+            .fillColor(this.primaryColor)
+          Text(this.isAllSelected() ? '取消全选' : '全选')
+            .fontSize(Math.round(14 * this.fontSizeScale))
+            .fontColor(this.primaryColor)
+        }
+        .margin({ right: 16 })
       }
-      .margin({ right: 16 })
-      .onClick(() => { this.toggleSelectAll() })
 
       // 反选 - 纯文字按钮（图标库无对应图标，置于全选后）
-      Text('反选')
-        .fontSize(Math.round(14 * this.fontSizeScale))
-        .fontColor(this.primaryColor)
-        .margin({ right: 16 })
-        .onClick(() => { this.invertSelection() })
+      ScaleButton({
+        pressScale: 0.8,
+        hoverScale: 1.1,
+        onButtonTap: () => {
+          this.invertSelection()
+        }
+      }) {
+        Text('反选')
+          .fontSize(Math.round(14 * this.fontSizeScale))
+          .fontColor(this.primaryColor)
+          .margin({ right: 16 })
+      }
 
       // 删除按钮 - 带图标：歌单多选只删歌单与关联关系；文件夹编辑走原有的曲库删除确认
-      Row({ space: 4 }) {
-        Image($r('app.media.ic_public_delete'))
-          .width(Math.round(16 * this.fontSizeScale))
-          .height(Math.round(16 * this.fontSizeScale))
-          .fillColor(StyleConstants.COLOR_DANGER_RED)
-        Text('删除')
-          .fontSize(Math.round(14 * this.fontSizeScale))
-          .fontColor(StyleConstants.COLOR_DANGER_RED)
+      ScaleButton({
+        pressScale: 0.8,
+        hoverScale: 1.1,
+        onButtonTap: () => {
+          this.deleteInSelectMode()
+        }
+      }) {
+        Row({ space: 4 }) {
+          Image($r('app.media.ic_public_delete'))
+            .width(Math.round(16 * this.fontSizeScale))
+            .height(Math.round(16 * this.fontSizeScale))
+            .fillColor(StyleConstants.COLOR_DANGER_RED)
+          Text('删除')
+            .fontSize(Math.round(14 * this.fontSizeScale))
+            .fontColor(StyleConstants.COLOR_DANGER_RED)
+        }
       }
-      .onClick(() => { this.deleteInSelectMode() })
     }
     .width('100%')
     .height(this.topContentPadding + this.topBandHeight)
@@ -1012,6 +1051,10 @@ export struct PlaylistContent {
       ColorHelper.hexWithAlpha(this.primaryColor, '22') : 'rgba(0,0,0,0.03)')
     .border({ width: this.isPlaylistCardActive(card) ? 2 : 1,
       color: this.isPlaylistCardActive(card) ? this.primaryColor : $r('app.color.list_divider') })
+    .scale({ x: this.pressedCardId === card.playlist.id ? 0.9 : 1.0, y: this.pressedCardId === card.playlist.id ? 0.9 : 1.0 })
+    .onTouch((event: TouchEvent) => {
+      this.onCardTouch(card.playlist.id, event)
+    })
     .onClick(() => {
       if (this.isPlaylistEditMode) {
         this.togglePlaylistEditSelect(card.playlist.id)
@@ -1068,73 +1111,97 @@ export struct PlaylistContent {
 
   @Builder
   newPlaylistCard(): void {
-    Row() {
-      Image($r('app.media.ic_public_add_norm_filled'))
-        .width(28)
-        .height(28)
-        .fillColor(this.primaryColor)
-      Text('新建歌单')
-        .fontSize(Math.round(12 * this.fontSizeScale))
-        .fontColor($r('app.color.text_primary'))
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .margin({ left: 12 })
+    ScaleButton({
+      pressScale: 0.9,
+      hoverScale: 1.02,
+      expandWidth: true,
+      onButtonTap: () => {
+        this.openPlaylistCreateDialog()
+      }
+    }) {
+      Row() {
+        Image($r('app.media.ic_public_add_norm_filled'))
+          .width(28)
+          .height(28)
+          .fillColor(this.primaryColor)
+        Text('新建歌单')
+          .fontSize(Math.round(12 * this.fontSizeScale))
+          .fontColor($r('app.color.text_primary'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .margin({ left: 12 })
+      }
+      .width('100%')
+      .height(80)
+      .padding({ left: 16, right: 16 })
+      .alignItems(VerticalAlign.Center)
+      .borderRadius(16)
+      .backgroundColor('rgba(0,0,0,0.03)')
+      .border({ width: 1, color: $r('app.color.list_divider') })
     }
-    .width('100%')
-    .height(80)
-    .padding({ left: 16, right: 16 })
-    .alignItems(VerticalAlign.Center)
-    .borderRadius(16)
-    .backgroundColor('rgba(0,0,0,0.03)')
-    .border({ width: 1, color: $r('app.color.list_divider') })
-    .onClick(() => {
-      this.openPlaylistCreateDialog()
-    })
   }
 
   // 长按歌单卡冒泡菜单（bindPopup，倍速弹窗同款气泡）：编辑 / 多选 / 删除
   @Builder
   playlistActionPopupBuilder(): void {
     Column() {
-      Text('编辑')
-        .fontSize(Math.round(14 * this.fontSizeScale))
-        .fontColor($r('app.color.text_primary'))
-        .width('100%')
-        .textAlign(TextAlign.Center)
-        .padding({ top: 12, bottom: 12 })
-        .onClick(() => {
+      ScaleButton({
+        pressScale: 0.9,
+        hoverScale: 1.02,
+        expandWidth: true,
+        onButtonTap: () => {
           const playlistId: string = this.playlistActionCardId
           this.playlistActionCardId = ''
           if (playlistId.length > 0) {
             this.openPlaylistEdit(playlistId)
           }
-        })
+        }
+      }) {
+        Text('编辑')
+          .fontSize(Math.round(14 * this.fontSizeScale))
+          .fontColor($r('app.color.text_primary'))
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .padding({ top: 12, bottom: 12 })
+      }
       Divider()
         .color($r('app.color.list_divider'))
-      Text('多选')
-        .fontSize(Math.round(14 * this.fontSizeScale))
-        .fontColor($r('app.color.text_primary'))
-        .width('100%')
-        .textAlign(TextAlign.Center)
-        .padding({ top: 12, bottom: 12 })
-        .onClick(() => {
+      ScaleButton({
+        pressScale: 0.9,
+        hoverScale: 1.02,
+        expandWidth: true,
+        onButtonTap: () => {
           const playlistId: string = this.playlistActionCardId
           this.playlistActionCardId = ''
           // 与首页长按进入多选一致：进入即把目标卡置为选中
           this.enterPlaylistEditMode(playlistId)
-        })
+        }
+      }) {
+        Text('多选')
+          .fontSize(Math.round(14 * this.fontSizeScale))
+          .fontColor($r('app.color.text_primary'))
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .padding({ top: 12, bottom: 12 })
+      }
       Divider()
         .color($r('app.color.list_divider'))
-      Text('删除')
-        .fontSize(Math.round(14 * this.fontSizeScale))
-        .fontColor(StyleConstants.COLOR_DANGER_RED)
-        .width('100%')
-        .textAlign(TextAlign.Center)
-        .padding({ top: 12, bottom: 12 })
-        .onClick(() => {
+      ScaleButton({
+        pressScale: 0.9,
+        hoverScale: 1.02,
+        expandWidth: true,
+        onButtonTap: () => {
           this.playlistDeleteConfirmId = this.playlistActionCardId
           this.playlistActionCardId = ''
-        })
+        }
+      }) {
+        Text('删除')
+          .fontSize(Math.round(14 * this.fontSizeScale))
+          .fontColor(StyleConstants.COLOR_DANGER_RED)
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .padding({ top: 12, bottom: 12 })
+      }
     }
     .width(112)
     .padding({ top: 4, bottom: 4 })
@@ -1173,30 +1240,49 @@ export struct PlaylistContent {
           .width('100%')
 
         Row({ space: 10 }) {
-          Text('取消')
-            .fontSize(Math.round(14 * this.fontSizeScale))
-            .fontColor($r('app.color.text_sixty_color'))
-            .layoutWeight(1)
-            .textAlign(TextAlign.Center)
-            .padding({ top: 8, bottom: 8 })
-            .borderRadius(16)
-            .backgroundColor('rgba(0,0,0,0.05)')
-            .onClick(() => {
-              this.playlistDeleteConfirmId = ''
-            })
-          Text('删除')
-            .fontSize(Math.round(14 * this.fontSizeScale))
-            .fontColor(Color.White)
-            .layoutWeight(1)
-            .textAlign(TextAlign.Center)
-            .padding({ top: 8, bottom: 8 })
-            .borderRadius(16)
-            .backgroundColor(StyleConstants.COLOR_DANGER_RED)
-            .onClick(() => {
-              this.confirmPlaylistDelete().catch((err: Error) => {
-                Logger.error(TAG, `confirmPlaylistDelete failed: ${JSON.stringify(err)}`)
-              })
-            })
+          Row() {
+            ScaleButton({
+              pressScale: 0.8,
+              hoverScale: 1.1,
+              expandWidth: true,
+              onButtonTap: () => {
+                this.playlistDeleteConfirmId = ''
+              }
+            }) {
+              Text('取消')
+                .fontSize(Math.round(14 * this.fontSizeScale))
+                .fontColor($r('app.color.text_sixty_color'))
+                .width('100%')
+                .textAlign(TextAlign.Center)
+                .padding({ top: 8, bottom: 8 })
+                .borderRadius(16)
+                .backgroundColor('rgba(0,0,0,0.05)')
+            }
+          }
+          .layoutWeight(1)
+
+          Row() {
+            ScaleButton({
+              pressScale: 0.8,
+              hoverScale: 1.1,
+              expandWidth: true,
+              onButtonTap: () => {
+                this.confirmPlaylistDelete().catch((err: Error) => {
+                  Logger.error(TAG, `confirmPlaylistDelete failed: ${JSON.stringify(err)}`)
+                })
+              }
+            }) {
+              Text('删除')
+                .fontSize(Math.round(14 * this.fontSizeScale))
+                .fontColor(Color.White)
+                .width('100%')
+                .textAlign(TextAlign.Center)
+                .padding({ top: 8, bottom: 8 })
+                .borderRadius(16)
+                .backgroundColor(StyleConstants.COLOR_DANGER_RED)
+            }
+          }
+          .layoutWeight(1)
         }
         .width('100%')
       }
@@ -1208,6 +1294,25 @@ export struct PlaylistContent {
     .width('100%')
     .height('100%')
     .zIndex(30)
+  }
+
+  // 卡片按压弹簧动画（大块档 0.9）：受「按压动效」开关控制，关闭时立即回 1.0
+  private onCardTouch(id: string, event: TouchEvent): void {
+    if (!this.pressAnimOn) {
+      if (this.pressedCardId.length > 0) {
+        this.pressedCardId = ''
+      }
+      return
+    }
+    if (event.type === TouchType.Down) {
+      this.getUIContext()?.animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
+        this.pressedCardId = id
+      })
+    } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+      this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
+        this.pressedCardId = ''
+      })
+    }
   }
 
   private findPlaylistCard(playlistId: string): PlaylistCardData | undefined {
@@ -1261,6 +1366,10 @@ export struct PlaylistContent {
     .borderRadius(16)
     .border({ width: this.isFolderSelected(item) ? 2 : 1,
       color: this.isFolderSelected(item) ? this.primaryColor : $r('app.color.list_divider') })
+    .scale({ x: this.pressedCardId === item.id ? 0.9 : 1.0, y: this.pressedCardId === item.id ? 0.9 : 1.0 })
+    .onTouch((event: TouchEvent) => {
+      this.onCardTouch(item.id, event)
+    })
     .gesture(
       LongPressGesture()
         .onAction(() => {

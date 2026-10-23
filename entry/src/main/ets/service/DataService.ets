@@ -30,6 +30,8 @@ const KEY_FAVORITES_SELECTED: string = 'uplayer_favorites_selected'
 const KEY_PLAY_NEXT_QUEUE: string = 'uplayer_play_next_queue'
 const KEY_PLAY_MODE: string = 'uplayer_play_mode'
 const KEY_REPLAYGAIN_BACKFILLED: string = 'uplayer_replaygain_backfilled'
+// 按压动效开关：ScaleButton 内部以 @StorageLink 直读此键，键名必须与组件里一致
+const KEY_PRESS_ANIMATION: string = 'uplayer_press_animation'
 const EQUALIZER_MIN_GAIN_DB: number = -10
 const EQUALIZER_MAX_GAIN_DB: number = 10
 
@@ -146,6 +148,8 @@ export class AppSettingsData {
   // Tab 栏材质等级（玻璃样式）：adaptive=自适应/exquisite=精美/gentle=轻柔/smooth=流畅
   // → hdsMaterial.MaterialLevel（systemMaterialEffect.materialLevel）
   tabMaterialLevel: string = 'adaptive'
+  // 按压动效：全项目可点击元素的按下缩放/悬停放大开关（ScaleButton 统一消费，默认关）
+  pressAnimation: boolean = false
   }
 
 export class DataService {
@@ -1175,6 +1179,8 @@ return result
       s.folderSortMode = rawFolderSort !== undefined ? rawFolderSort as string : 'name'
       let rawFadeInOut: Object | undefined = r['fadeInOut']
       s.fadeInOut = rawFadeInOut !== undefined ? rawFadeInOut as boolean : false
+      let rawPressAnimation: Object | undefined = r['pressAnimation']
+      s.pressAnimation = rawPressAnimation !== undefined ? rawPressAnimation as boolean : false
       s.timerFadeSeconds = this.pickNum(r, 'timerFadeSeconds', 3, 0, 10)
       let rawResumePlaybackOnStart: Object | undefined = r['resumePlaybackOnStart']
       s.resumePlaybackOnStart = rawResumePlaybackOnStart !== undefined ?
@@ -1279,6 +1285,7 @@ return result
     r['playSpeed'] = settings.playSpeed
     r['folderSortMode'] = settings.folderSortMode
     r['fadeInOut'] = settings.fadeInOut
+    r['pressAnimation'] = settings.pressAnimation
     r['timerFadeSeconds'] = settings.timerFadeSeconds
     r['resumePlaybackOnStart'] = settings.resumePlaybackOnStart
     r['autoPlayAfterResume'] = settings.autoPlayAfterResume
@@ -1304,6 +1311,7 @@ return result
     SettingsStore.getInstance().set(KEY_SETTINGS, JSON.stringify(r), immediate)
     // 跨页实时联动只推"有独立消费键"的字段（整份 settings 对象无消费者，不再推送，避免死广播）
     AppStorage.setOrCreate('uplayer_fade_in_out', settings.fadeInOut)
+    AppStorage.setOrCreate(KEY_PRESS_ANIMATION, settings.pressAnimation)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_FADE_SECONDS, settings.timerFadeSeconds)
     AppStorage.setOrCreate('uplayer_plus_button_scroll_hide', settings.plusButtonScrollHide)
     AppStorage.setOrCreate('uplayer_tab_material_level', settings.tabMaterialLevel)
@@ -1511,6 +1519,7 @@ return result
     AppStorage.setOrCreate('uplayer_primary_color', '#007DFF')
     AppStorage.setOrCreate('uplayer_theme_mode', 'system')
     AppStorage.setOrCreate('uplayer_fade_in_out', false)
+    AppStorage.setOrCreate(KEY_PRESS_ANIMATION, false)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_FADE_SECONDS, 3)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_SONGS_REMAINING, 0)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_PRESET_SONGS, -1)
@@ -1565,6 +1574,7 @@ return result
     AppStorage.setOrCreate('uplayer_primary_color', settings.primaryColor)
     AppStorage.setOrCreate('uplayer_theme_mode', settings.themeMode)
     AppStorage.setOrCreate('uplayer_fade_in_out', settings.fadeInOut)
+    AppStorage.setOrCreate(KEY_PRESS_ANIMATION, settings.pressAnimation)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_FADE_SECONDS, settings.timerFadeSeconds)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CONTINUE_PLAY_ON_UNPLUG, settings.continuePlayOnHeadsetUnplug)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_IGNORE_NOTIFICATION_DUCK, settings.ignoreNotificationDuck)

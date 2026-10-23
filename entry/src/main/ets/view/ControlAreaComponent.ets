@@ -63,6 +63,11 @@ export struct ControlAreaComponent {
   // 「更多」面板内部层级：0 主列表 / 1 歌曲信息 / 2 定时关闭 / 3 输出设备。
   // 二级页在同一 sheet 内原地覆盖显示，不另开弹窗
   @State morePanelLevel: number = 0;
+  // ── 按压动效（受设置「按压动效」开关控制）──
+  // 本组件内可点元素多为直挂链式属性的 Row/Button，「更多」半模态里的高度与内边距几何敏感，
+  // 故改用「当前按下的键」单一状态驱动缩放，不做 ScaleButton 包裹
+  @State pressedKey: string = '';
+  @StorageLink('uplayer_press_animation') pressAnimOn: boolean = false;
   @State timerRemainingSeconds: number = 0;
   @State timerIntervalID: number = -1;
   @State activePresetMinutes: number = -1;
@@ -148,6 +153,30 @@ export struct ControlAreaComponent {
 
   private scaledSize(size: number): number {
     return Math.round(size * this.displaySizeScale)
+  }
+
+  // 当前按下键对应的缩放值：开关关闭恒 1.0
+  private pressScaleOf(key: string): number {
+    return this.pressAnimOn && this.pressedKey === key ? 0.9 : 1.0;
+  }
+
+  // 按压/松手弹簧动画：按下立即缩小、松开/取消弹簧回弹
+  private onPressTouch(key: string, event: TouchEvent): void {
+    if (!this.pressAnimOn) {
+      if (this.pressedKey.length > 0) {
+        this.pressedKey = '';
+      }
+      return;
+    }
+    if (event.type === TouchType.Down) {
+      this.getUIContext()?.animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
+        this.pressedKey = key;
+      });
+    } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+      this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
+        this.pressedKey = '';
+      });
+    }
   }
 
   // Toast 液态玻璃材质（API 26+ 调用级 systemMaterial）：
@@ -1015,6 +1044,8 @@ export struct ControlAreaComponent {
       .padding({ left: 16, right: 16 })
       .backgroundColor('rgba(206,206,210,0.22)')
       .borderRadius(this.scaledSize(10))
+      .scale({ x: this.pressScaleOf('moreSongInfo'), y: this.pressScaleOf('moreSongInfo') })
+      .onTouch((event: TouchEvent) => { this.onPressTouch('moreSongInfo', event) })
       .onClick(() => {
         this.refreshSongMetadataIfNeeded()
         this.morePanelLevel = 1
@@ -1049,6 +1080,8 @@ export struct ControlAreaComponent {
       .padding({ left: 16, right: 16 })
       .backgroundColor('rgba(206,206,210,0.22)')
       .borderRadius(this.scaledSize(10))
+      .scale({ x: this.pressScaleOf('moreTimer'), y: this.pressScaleOf('moreTimer') })
+      .onTouch((event: TouchEvent) => { this.onPressTouch('moreTimer', event) })
       .onClick(() => {
         this.morePanelLevel = 2
       })
@@ -1090,6 +1123,8 @@ export struct ControlAreaComponent {
       .padding({ left: 16, right: 16 })
       .backgroundColor('rgba(206,206,210,0.22)')
       .borderRadius(this.scaledSize(10))
+      .scale({ x: this.pressScaleOf('moreBt'), y: this.pressScaleOf('moreBt') })
+      .onTouch((event: TouchEvent) => { this.onPressTouch('moreBt', event) })
       .onClick(() => {
         // 用户主动点行才申请权限：允许弹系统权限框
         this.initBluetoothAudio(true);
@@ -1119,6 +1154,8 @@ export struct ControlAreaComponent {
       .padding({ left: 16, right: 16 })
       .backgroundColor('rgba(206,206,210,0.22)')
       .borderRadius(this.scaledSize(10))
+      .scale({ x: this.pressScaleOf('moreLyricOffset'), y: this.pressScaleOf('moreLyricOffset') })
+      .onTouch((event: TouchEvent) => { this.onPressTouch('moreLyricOffset', event) })
       .onClick(() => {
         // 先收半模态，等它退场再点亮滑轨，这样滑出动画能被看见（不然被面板盖住）
         this.isShowMorePanel = false;
@@ -1257,6 +1294,8 @@ export struct ControlAreaComponent {
           .borderRadius(4)
           .margin({ left: 8 })
           .padding({ left: 10, right: 10 })
+          .scale({ x: this.pressScaleOf('editFieldSave'), y: this.pressScaleOf('editFieldSave') })
+          .onTouch((event: TouchEvent) => { this.onPressTouch('editFieldSave', event) })
           .onClick(() => { this.saveEditField() })
         Button('取消')
           .height(this.scaledFont(32))
@@ -1266,6 +1305,8 @@ export struct ControlAreaComponent {
           .borderRadius(4)
           .margin({ left: 8 })
           .padding({ left: 10, right: 10 })
+          .scale({ x: this.pressScaleOf('editFieldCancel'), y: this.pressScaleOf('editFieldCancel') })
+          .onTouch((event: TouchEvent) => { this.onPressTouch('editFieldCancel', event) })
           .onClick(() => { this.cancelEditField() })
       } else {
         Text(value && value.length > 0 ? value : '-')
@@ -1280,6 +1321,8 @@ export struct ControlAreaComponent {
     .height(this.scaledFont(40))
     .alignItems(VerticalAlign.Center)
     .border({ width: { bottom: 1 }, color: $r('app.color.list_divider') })
+    .scale({ x: this.pressScaleOf('editFieldRow'), y: this.pressScaleOf('editFieldRow') })
+    .onTouch((event: TouchEvent) => { this.onPressTouch('editFieldRow', event) })
     .onClick(() => {
       if (editable && index !== this.edittingFieldIndex) {
         this.startEditField(index, this.infoValue(index))
@@ -1319,6 +1362,8 @@ export struct ControlAreaComponent {
             .fontColor(this.settingTextColor())
             .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.08))
             .borderRadius(this.scaledSize(10))
+            .scale({ x: this.pressScaleOf('timerCustomCancel'), y: this.pressScaleOf('timerCustomCancel') })
+            .onTouch((event: TouchEvent) => { this.onPressTouch('timerCustomCancel', event) })
             .onClick(() => {
               this.isShowCustomPicker = false
             })
@@ -1330,6 +1375,8 @@ export struct ControlAreaComponent {
             .backgroundColor(this.customHours * 3600 + this.customMinutes * 60 + this.customSeconds > 0 ? this.primaryColor : '#555555')
             .borderRadius(this.scaledSize(10))
             .enabled(this.customHours * 3600 + this.customMinutes * 60 + this.customSeconds > 0)
+            .scale({ x: this.pressScaleOf('timerCustomOk'), y: this.pressScaleOf('timerCustomOk') })
+            .onTouch((event: TouchEvent) => { this.onPressTouch('timerCustomOk', event) })
             .onClick(() => {
               this.setTimerSeconds(this.customHours * 3600 + this.customMinutes * 60 + this.customSeconds)
               this.customHours = 0
@@ -1372,6 +1419,8 @@ export struct ControlAreaComponent {
               .backgroundColor(this.isCustomSongCountValid() ? this.primaryColor : '#555555')
               .borderRadius(this.scaledSize(10))
               .enabled(this.isCustomSongCountValid())
+              .scale({ x: this.pressScaleOf('songCountOk'), y: this.pressScaleOf('songCountOk') })
+              .onTouch((event: TouchEvent) => { this.onPressTouch('songCountOk', event) })
               .onClick(() => {
                 this.setTimerSongs(this.customSongCountValue())
               })
@@ -1385,6 +1434,8 @@ export struct ControlAreaComponent {
             .fontColor(this.settingTextColor())
             .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.08))
             .borderRadius(this.scaledSize(10))
+            .scale({ x: this.pressScaleOf('songCountCancel'), y: this.pressScaleOf('songCountCancel') })
+            .onTouch((event: TouchEvent) => { this.onPressTouch('songCountCancel', event) })
             .onClick(() => {
               this.isShowSongCountPicker = false
             })
@@ -1421,6 +1472,8 @@ export struct ControlAreaComponent {
                 : (this.isEffectiveDarkMode() ? '#333333' : ColorHelper.hexToRgba(this.primaryColor, 0.08))))
             .borderRadius(this.scaledSize(8))
             .alignItems(VerticalAlign.Center)
+            .scale({ x: this.pressScaleOf('timerPreset'), y: this.pressScaleOf('timerPreset') })
+            .onTouch((event: TouchEvent) => { this.onPressTouch('timerPreset', event) })
             .onClick(() => {
               this.selectedPresetMinutes = this.selectedPresetMinutes === min ? -1 : min
             })
@@ -1450,6 +1503,8 @@ export struct ControlAreaComponent {
           .backgroundColor(Color.Transparent)
           .border({ width: 1, color: this.isEffectiveDarkMode() ? 'rgba(255,255,255,0.15)' : ColorHelper.hexToRgba(this.primaryColor, 0.2), radius: this.scaledSize(8) })
           .alignItems(VerticalAlign.Center)
+          .scale({ x: this.pressScaleOf('timerCustomRow'), y: this.pressScaleOf('timerCustomRow') })
+          .onTouch((event: TouchEvent) => { this.onPressTouch('timerCustomRow', event) })
           .onClick(() => {
             this.isShowCustomPicker = true
           })
@@ -1463,6 +1518,8 @@ export struct ControlAreaComponent {
           .backgroundColor(this.selectedPresetMinutes > 0 ? this.primaryColor : '#555555')
           .borderRadius(this.scaledSize(10))
           .enabled(this.selectedPresetMinutes > 0)
+          .scale({ x: this.pressScaleOf('timerConfirm'), y: this.pressScaleOf('timerConfirm') })
+          .onTouch((event: TouchEvent) => { this.onPressTouch('timerConfirm', event) })
           .onClick(() => {
             this.setTimerSeconds(this.selectedPresetMinutes * 60)
             this.selectedPresetMinutes = -1
@@ -1499,6 +1556,8 @@ export struct ControlAreaComponent {
               .backgroundColor(this.isTimerSongsPresetActive(count) ? this.primaryColor
                 : (this.isEffectiveDarkMode() ? '#333333' : ColorHelper.hexToRgba(this.primaryColor, 0.08)))
               .margin({ right: this.scaledSize(8), bottom: this.scaledSize(4) })
+              .scale({ x: this.pressScaleOf('timerSongChip'), y: this.pressScaleOf('timerSongChip') })
+              .onTouch((event: TouchEvent) => { this.onPressTouch('timerSongChip', event) })
               .onClick(() => {
                 if (this.isTimerSongsPresetActive(count)) {
                   this.clearTimer()
@@ -1518,6 +1577,8 @@ export struct ControlAreaComponent {
             .backgroundColor(this.isTimerSongsCustomActive() ? this.primaryColor
               : (this.isEffectiveDarkMode() ? '#333333' : ColorHelper.hexToRgba(this.primaryColor, 0.08)))
             .margin({ right: this.scaledSize(8), bottom: this.scaledSize(4) })
+            .scale({ x: this.pressScaleOf('timerSongCustom'), y: this.pressScaleOf('timerSongCustom') })
+            .onTouch((event: TouchEvent) => { this.onPressTouch('timerSongCustom', event) })
             .onClick(() => {
               if (this.isTimerSongsCustomActive()) {
                 this.clearTimer()
@@ -1537,6 +1598,8 @@ export struct ControlAreaComponent {
             .fontColor(StyleConstants.COLOR_DANGER_RED)
             .backgroundColor(Color.Transparent)
             .border({ width: 1, color: StyleConstants.COLOR_DANGER_RED, radius: this.scaledSize(10) })
+            .scale({ x: this.pressScaleOf('timerCancelBtn'), y: this.pressScaleOf('timerCancelBtn') })
+            .onTouch((event: TouchEvent) => { this.onPressTouch('timerCancelBtn', event) })
             .onClick(() => {
               this.clearTimer()
             })
@@ -1733,6 +1796,8 @@ export struct ControlAreaComponent {
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
         .borderRadius(this.scaledSize(22))
+        .scale({ x: this.pressScaleOf('moreBack'), y: this.pressScaleOf('moreBack') })
+        .onTouch((event: TouchEvent) => { this.onPressTouch('moreBack', event) })
         .onClick(() => {
           this.backToMorePanelRoot()
         })
@@ -1790,8 +1855,33 @@ function controlImageBuilder() {
 struct MusicListContainer {
   @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) isPlay: boolean = false;
   @StorageLink(AppStorageKeyConstants.KEY_SELECT_INDEX) selectIndex: number = 0;
+  // 列表项按压缩放（大块档 0.9），受「按压动效」开关控制
+  @StorageLink('uplayer_press_animation') pressAnimOn: boolean = false;
+  @State pressed: boolean = false;
   item: SongInfo = new SongInfo();
   index: number = 0;
+
+  private scaleValue(): number {
+    return this.pressAnimOn && this.pressed ? 0.9 : 1.0;
+  }
+
+  private onItemTouch(event: TouchEvent): void {
+    if (!this.pressAnimOn) {
+      if (this.pressed) {
+        this.pressed = false;
+      }
+      return;
+    }
+    if (event.type === TouchType.Down) {
+      this.getUIContext()?.animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
+        this.pressed = true;
+      });
+    } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+      this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
+        this.pressed = false;
+      });
+    }
+  }
 
   build() {
     Column() {
@@ -1829,6 +1919,8 @@ struct MusicListContainer {
         }
       }
       .justifyContent(FlexAlign.SpaceBetween)
+      .scale({ x: this.scaleValue(), y: this.scaleValue() })
+      .onTouch((event: TouchEvent) => { this.onItemTouch(event) })
       .onClick(() => {
         const avService: AVPlayerService = AVPlayerService.getInstance();
         avService.playSongAt(this.index);
