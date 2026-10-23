@@ -23,3 +23,4 @@
 /.workbuddy/
 .env
 *private.json
+.agc-service-account.json
