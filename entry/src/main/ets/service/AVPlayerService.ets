@@ -731,11 +731,23 @@ export class AVPlayerService {
   }
 
   setSpeed(speed: number): void {
+    // 时延模式在建渲染器时按倍速选定（1.0 → FAST 低时延；≠1.0 → NORMAL，FAST 不支持 SetSpeed），
+    // 运行期无法切换。因此跨越 1.0 边界时必须重建管线，否则 1.0→其它 的倍速不会生效。
+    const wasUnity: boolean = Math.abs(this.desiredSpeed - 1) < 0.01
+    const isUnity: boolean = Math.abs(speed - 1) < 0.01
     this.desiredSpeed = speed
     if (!this.isEngineLoaded()) {
       return
     }
     nativeAudio.setSpeed(speed)
+    if (wasUnity !== isUnity && this.currentFilePath.length > 0) {
+      const position: number = this.getCurrentPositionMs()
+      const wasPlaying: boolean = AppStorage.get<boolean>(AppStorageKeyConstants.KEY_IS_PLAY) ?? false
+      this.forcePipelineRebuild = true
+      this.play(this.currentFilePath, position, !wasPlaying).catch((err: Error): void => {
+        Logger.error(TAG, `speed latency-mode rebuild failed: ${JSON.stringify(err)}`)
+      })
+    }
   }
 
   // 低功耗播放模式（OH_LowPowerAudioSink 压缩帧直通）：设置页开关入口。

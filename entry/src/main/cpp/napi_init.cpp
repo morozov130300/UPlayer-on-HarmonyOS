@@ -2697,6 +2697,24 @@ private:
         return true;
     }
 
+    // 探测当前设备对 48kHz/立体声/S16LE 音乐流是否支持 FAST 低时延通路。
+    // 注意：本机 SDK 头文件中 OH_AudioManager_GetAudioStreamManager 为单参签名，
+    // OH_AudioStreamInfo（v19 布局）无 channels 字段，声道用 channelLayout 表达
+    bool IsFastPlaybackSupported()
+    {
+        OH_AudioStreamManager* streamManager = nullptr;
+        if (OH_AudioManager_GetAudioStreamManager(&streamManager) != AUDIOCOMMON_RESULT_SUCCESS ||
+            streamManager == nullptr) {
+            return false;
+        }
+        OH_AudioStreamInfo streamInfo = {};
+        streamInfo.samplingRate = 48000;
+        streamInfo.channelLayout = CH_LAYOUT_STEREO;
+        streamInfo.encodingType = AUDIOSTREAM_ENCODING_TYPE_RAW;
+        streamInfo.sampleFormat = AUDIOSTREAM_SAMPLE_S16LE;
+        return OH_AudioStreamManager_IsFastPlaybackSupported(streamManager, &streamInfo, AUDIOSTREAM_USAGE_MUSIC);
+    }
+
     bool ConfigureRenderer()
     {
         OH_AudioStreamBuilder* builder = nullptr;
@@ -2710,8 +2728,20 @@ private:
         OH_AudioStreamBuilder_SetEncodingType(builder, AUDIOSTREAM_ENCODING_TYPE_RAW);
         OH_AudioStreamBuilder_SetRendererInfo(builder, AUDIOSTREAM_USAGE_MUSIC);
         OH_AudioStreamBuilder_SetRendererWriteDataCallback(builder, RendererDataCallback, this);
-        // 不启用 FAST 低时延模式：官方文档明确低时延播放不支持调整播放速度，
-        // 音乐播放对时延不敏感，保持默认 NORMAL 模式
+        // 时延模式按当前倍速选择（时延模式在建流时固定，运行期不可切换）：
+        // - 倍速 == 1.0：走 FAST 低时延通路（本应用的渲染/环形缓冲按 FAST 调校，是历史稳定路径）
+        // - 倍速 != 1.0：FAST 不支持 SetSpeed，必须用 NORMAL，否则倍速（尤其 <1.0）完全不生效
+        // 因此 JS 侧 setSpeed 跨过 1.0 边界时会重建管线，让本函数重新选模式。
+        const float targetSpeed = playbackSpeed_.load(std::memory_order_relaxed);
+        const bool unitySpeed = std::fabs(targetSpeed - 1.0f) < 0.01f;
+        bool fastEnabled = false;
+        if (unitySpeed && IsFastPlaybackSupported()) {
+            fastEnabled = (OH_AudioStreamBuilder_SetLatencyMode(builder, AUDIOSTREAM_LATENCY_MODE_FAST) ==
+                AUDIOSTREAM_SUCCESS);
+            if (fastEnabled) {
+                OH_AudioStreamBuilder_SetFrameSizeInCallback(builder, 2500);
+            }
+        }
         bool success = OH_AudioStreamBuilder_GenerateRenderer(builder, &renderer_) == AUDIOSTREAM_SUCCESS;
         OH_AudioStreamBuilder_Destroy(builder);
         if (success) {
@@ -2737,8 +2767,9 @@ private:
             }
             OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                 "renderer actual rate=%{public}d channels=%{public}d latency=%{public}d "
-                "frameSize=%{public}d speed=%{public}.3f",
-                actualRate, actualChannels, static_cast<int>(latencyMode), actualFrameSize, actualSpeed);
+                "frameSize=%{public}d speed=%{public}.3f fastRequested=%{public}d",
+                actualRate, actualChannels, static_cast<int>(latencyMode), actualFrameSize, actualSpeed,
+                fastEnabled ? 1 : 0);
         }
         if (!success) {
             OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG, "generate renderer failed");
