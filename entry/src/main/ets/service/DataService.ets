@@ -1431,6 +1431,19 @@ return result
     this.setFilterState(paths, this.isFavoritesSelected())
   }
 
+  // 组合筛选维度快照：保留现有艺术家/专辑/流派/年份，只替换歌单维度。
+  // 歌单与文件夹/收藏是并斥的顶级列表来源，切换时只应改动 playlistId，不能顺手清掉首页筛选面板的维度
+  dimsWithPlaylistId(playlistId: string): FilterDimensions {
+    const current: FilterStateRecord = this.readFilterState()
+    const dims: FilterDimensions = new FilterDimensions()
+    dims.artists = current.artists.slice()
+    dims.albums = current.albums.slice()
+    dims.genres = current.genres.slice()
+    dims.years = current.years.slice()
+    dims.playlistId = playlistId
+    return dims
+  }
+
   isFavoritesSelected(): boolean {
     return this.readFilterState().favoritesSelected
   }

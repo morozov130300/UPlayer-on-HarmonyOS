@@ -3,7 +3,7 @@ import { common } from '@kit.AbilityKit'
 import { FolderInfo } from '../model/FolderInfo'
 import { SongInfo } from '../model/SongInfo'
 import { PlaylistInfo } from '../model/PlaylistInfo'
-import { DataService, AppSettingsData, LibraryDeleteResult, FilterDimensions } from '../service/DataService'
+import { DataService, AppSettingsData, LibraryDeleteResult } from '../service/DataService'
 import { importSongsWithToast } from '../service/SongScanner'
 import { AVPlayerService } from '../service/AVPlayerService'
 import { AVSessionController } from '../common/utils/mediautils/AVSessionController'
@@ -47,6 +47,10 @@ export struct PlaylistContent {
   @State isPlusVisible: boolean = true
   @State selectedFolderPaths: string[] = []
   @State favoritesSelected: boolean = false
+  // 选中自建歌单前的文件夹/收藏选中态快照：取消歌单选中时原样恢复（歌单与文件夹互斥）
+  private savedFolderPathsBeforePlaylist: string[] = []
+  private savedPrevFolderPathsBeforePlaylist: string[] = []
+  private savedFavoritesBeforePlaylist: boolean = false
   @StorageLink(AppStorageKeyConstants.KEY_TITLE_BUTTON_WIDTH) titleButtonWidth: number = 140
   @StorageLink('uplayer_primary_color') primaryColor: string = '#007DFF'
   // 组件风格（玻璃/经典）必须走 AppStorage 实时键：settings 是 loadData 时的快照副本，
@@ -252,6 +256,11 @@ export struct PlaylistContent {
   }
 
   onFolderToggle(folder: FolderInfo): void {
+    // 与自建歌单互斥：一旦操作文件夹/收藏，就取消歌单筛选并丢弃恢复快照
+    // （否则之后再去点歌单会把过期快照又恢复回来）
+    this.savedFolderPathsBeforePlaylist = []
+    this.savedPrevFolderPathsBeforePlaylist = []
+    this.savedFavoritesBeforePlaylist = false
     if (folder.id === FAVORITES_FOLDER_ID) {
       if (this.favoritesSelected) {
         this.favoritesSelected = false
@@ -279,7 +288,10 @@ export struct PlaylistContent {
         this.selectedFolderPaths = newPaths
       }
     }
-    this.dataService.setFilterState(this.selectedFolderPaths, this.favoritesSelected)
+    this.dataService.setFilterState(this.selectedFolderPaths, this.favoritesSelected,
+      this.dataService.dimsWithPlaylistId(''))
+    // 歌单卡高亮要跟着刷新（歌单筛选已被清掉）
+    this.buildPlaylistCards()
   }
 
   isFolderSelected(folder: FolderInfo): boolean {
@@ -432,13 +444,31 @@ export struct PlaylistContent {
     return this.dataService.getFilterPlaylistId() === card.playlist.id
   }
 
-  // 点击歌单卡：设/取消歌单筛选（与文件夹/收藏互斥——歌单是并列的顶级列表来源），
-  // 首页胶囊显示歌单名、列表即歌单曲目（复用全部现有链路）
+  // 点击歌单卡：设/取消歌单筛选，与文件夹/收藏互斥。
+  // 选中歌单 → 先快照当前文件夹/收藏选中态再清空（界面上文件夹卡立即取消选中）；
+  // 取消歌单 → 原样恢复快照，回到选歌单之前的选中状态
   onPlaylistToggle(card: PlaylistCardData): void {
     const activeId: string = this.dataService.getFilterPlaylistId()
-    const dims: FilterDimensions = new FilterDimensions()
-    dims.playlistId = activeId === card.playlist.id ? '' : card.playlist.id
-    this.dataService.setFilterState([], false, dims)
+    if (activeId === card.playlist.id) {
+      // 取消选中：恢复快照
+      this.selectedFolderPaths = [...this.savedFolderPathsBeforePlaylist]
+      this.favoritesSelected = this.savedFavoritesBeforePlaylist
+      this.previousFolderPaths = [...this.savedPrevFolderPathsBeforePlaylist]
+      this.dataService.setFilterState(this.selectedFolderPaths, this.favoritesSelected,
+        this.dataService.dimsWithPlaylistId(''))
+    } else {
+      // 选中新歌单：仅在「此前没有激活歌单」时快照，切换歌单之间不覆盖快照
+      if (activeId.length === 0) {
+        this.savedFolderPathsBeforePlaylist = [...this.selectedFolderPaths]
+        this.savedPrevFolderPathsBeforePlaylist = [...this.previousFolderPaths]
+        this.savedFavoritesBeforePlaylist = this.favoritesSelected
+      }
+      this.selectedFolderPaths = []
+      this.favoritesSelected = false
+      // 收藏态的临时还原栈随之清空，避免收藏卡复选时把旧路径带回来
+      this.previousFolderPaths = []
+      this.dataService.setFilterState([], false, this.dataService.dimsWithPlaylistId(card.playlist.id))
+    }
     this.buildPlaylistCards()
   }
 
@@ -1036,8 +1066,10 @@ export struct PlaylistContent {
         Text(card.playlist.name)
           .fontSize(Math.round(12 * this.fontSizeScale))
           .fontColor($r('app.color.text_primary'))
-          .maxLines(1)
+          // 手机窄卡（2 列）时名称列只有 ~60vp，单行必然截断：允许两行，卡高 80 放得下
+          .maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
         Text(card.count + ' 首')
           .fontSize(10)
           .fontColor($r('app.color.text_sixty_color'))
@@ -1328,8 +1360,10 @@ export struct PlaylistContent {
         Text(item.name)
           .fontSize(Math.round(12 * this.fontSizeScale))
           .fontColor($r('app.color.text_primary'))
-          .maxLines(1)
+          // 同歌单卡：窄卡允许两行，避免文件夹名被截成「MemoSp…」
+          .maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
         Text(item.songCount + ' 首歌曲')
           .fontSize(10)
           .fontColor($r('app.color.text_sixty_color'))
