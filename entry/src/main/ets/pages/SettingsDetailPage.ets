@@ -2880,7 +2880,7 @@ struct SettingsDetailPage {
 
       if (this.settings.replayGainMode !== 'off') {
         Column() {
-          this.optionSliderRow('预增益', this.settings.replayGainPreGainDb, -12, 12, 1, 'dB',
+          this.optionSliderRow('预增益', (): number => this.settings.replayGainPreGainDb, -12, 12, 1, 'dB',
             (value: number, mode: SliderChangeMode) => {
               this.onReplayGainPreGainChange(value, mode)
             })
@@ -3288,11 +3288,11 @@ struct SettingsDetailPage {
 
       if (this.settings.tempoPitchEnabled && this.tempoPitchSupported) {
         Column({ space: this.scaledSize(10) }) {
-          this.optionSliderRow('速度', this.settings.tempoSpeed, 0.5, 10.0, 0.1, 'x',
+          this.optionSliderRow('速度', (): number => this.settings.tempoSpeed, 0.5, 10.0, 0.1, 'x',
             (value: number, mode: SliderChangeMode) => {
               this.onTempoSpeedChange(value, mode)
             })
-          this.optionSliderRow('音调', this.settings.tempoPitch, 0.1, 5.0, 0.1, 'x',
+          this.optionSliderRow('音调', (): number => this.settings.tempoPitch, 0.1, 5.0, 0.1, 'x',
             (value: number, mode: SliderChangeMode) => {
               this.onTempoPitchChange(value, mode)
             })
@@ -3826,9 +3826,10 @@ struct SettingsDetailPage {
     .width('100%')
   }
 
-  // 通用参数滑块行：标签 + 水平滑杆 + 当前值（变速变调速度/音调等）
+  // 通用参数滑块行：标签 + 水平滑杆 + 当前值（变速变调速度/音调等）。
+  // valueGetter 闭包在渲染时实时读取状态，修复按值传参不随状态刷新的问题
   @Builder
-  optionSliderRow(label: string, value: number, min: number, max: number, step: number, unit: string,
+  optionSliderRow(label: string, valueGetter: () => number, min: number, max: number, step: number, unit: string,
     onChange: (value: number, mode: SliderChangeMode) => void): void {
     Row() {
       Text(label)
@@ -3837,7 +3838,7 @@ struct SettingsDetailPage {
         .width(this.scaledSize(72))
         .flexShrink(0)
       Slider({
-        value: value,
+        value: valueGetter(),
         min: min,
         max: max,
         step: step,
@@ -3855,7 +3856,7 @@ struct SettingsDetailPage {
         .onChange((v: number, mode: SliderChangeMode) => {
           onChange(v, mode)
         })
-      Text((Number.isInteger(value) ? value.toString() : value.toFixed(1)) + unit)
+      Text((Number.isInteger(valueGetter()) ? valueGetter().toString() : valueGetter().toFixed(1)) + unit)
         .fontSize(this.scaledFont(12))
         .fontColor(this.settingTextColor())
         .width(this.scaledSize(56))

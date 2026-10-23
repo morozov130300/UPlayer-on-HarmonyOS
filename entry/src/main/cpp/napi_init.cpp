@@ -1177,6 +1177,13 @@ public:
         bool result;
         {
             std::lock_guard<std::mutex> lock(effectMutex_);
+            if (renderer_ == nullptr) {
+                // 无活跃渲染会话：仅记录开关，起播时由 ConfigureEffects 统一建管/选管/应用状态
+                requestedNoiseReductionEnabled_ = enabled;
+                OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                    "effect toggle noiseReduction=%{public}d idle-deferred", enabled ? 1 : 0);
+                return true;
+            }
             if (enabled && !EnsureEffectsBuiltLocked()) {
                 return false;
             }
@@ -1205,6 +1212,13 @@ public:
         bool result;
         {
             std::lock_guard<std::mutex> lock(effectMutex_);
+            if (renderer_ == nullptr) {
+                // 无活跃渲染会话：仅记录开关，起播时由 ConfigureEffects 统一建管/选管/应用状态
+                requestedPureVoiceChangeEnabled_ = enabled;
+                OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                    "effect toggle pureVoiceChange=%{public}d idle-deferred", enabled ? 1 : 0);
+                return true;
+            }
             if (enabled && !EnsureEffectsBuiltLocked()) {
                 return false;
             }
@@ -1250,6 +1264,13 @@ public:
         bool result;
         {
             std::lock_guard<std::mutex> lock(effectMutex_);
+            if (renderer_ == nullptr) {
+                // 无活跃渲染会话：仅记录开关，起播时由 ConfigureEffects 统一建管/选管/应用状态
+                requestedTempoPitchEnabled_ = enabled;
+                OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                    "effect toggle tempoPitch=%{public}d idle-deferred", enabled ? 1 : 0);
+                return true;
+            }
             if (enabled && !EnsureEffectsBuiltLocked()) {
                 return false;
             }
@@ -2601,6 +2622,28 @@ private:
         return true;
     }
 
+    // 停止目标管线之外仍在运行的管线，恢复"至多一条管线运行"不变量（调用方须已持有 effectMutex_）。
+    // 场景：空闲态首个音效开关经 EnsureEffectsBuiltLocked 已启动主管线，特殊音效开关空闲延迟
+    // 仅记录标志；起播改选特殊管线时若不停止旧管线，两条管线会同时经 InputDataCallback 拉源
+    void StopOtherRunningPipelinesLocked(ActivePipeline target)
+    {
+        PipelineGroup* groups[] = { &mainGroup_, &specialGroup_, &sepGroup_ };
+        const ActivePipeline owners[] = { ActivePipeline::MAIN, ActivePipeline::SPECIAL, ActivePipeline::SEP };
+        const size_t groupCount = sizeof(groups) / sizeof(groups[0]);
+        for (size_t i = 0; i < groupCount; ++i) {
+            if (owners[i] == target || groups[i]->pipeline == nullptr) {
+                continue;
+            }
+            OH_AudioSuite_PipelineState state = AUDIOSUITE_PIPELINE_STOPPED;
+            if (OH_AudioSuiteEngine_GetPipelineState(groups[i]->pipeline, &state) == AUDIOSUITE_SUCCESS &&
+                state == AUDIOSUITE_PIPELINE_RUNNING) {
+                OH_AudioSuiteEngine_StopPipeline(groups[i]->pipeline);
+                OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                    "stop leftover pipeline owner=%{public}d", static_cast<int>(owners[i]));
+            }
+        }
+    }
+
     // 初始活跃管线选择 + 效果状态应用 + 启动（调用方须已持有 effectMutex_）
     bool StartInitialPipelineLocked()
     {
@@ -2612,6 +2655,7 @@ private:
             initial = ActivePipeline::SPECIAL;
         }
         activePipeline_ = initial;
+        StopOtherRunningPipelinesLocked(initial);
         if (!ApplyEffectStatesLocked()) {
             OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                 "cfg stage=applyStates failed initial=%{public}d", static_cast<int>(initial));
@@ -2666,28 +2710,8 @@ private:
         OH_AudioStreamBuilder_SetEncodingType(builder, AUDIOSTREAM_ENCODING_TYPE_RAW);
         OH_AudioStreamBuilder_SetRendererInfo(builder, AUDIOSTREAM_USAGE_MUSIC);
         OH_AudioStreamBuilder_SetRendererWriteDataCallback(builder, RendererDataCallback, this);
-        // 低时延播放：用系统接口探测当前设备对 48kHz/立体声/S16LE 音乐流是否支持 FAST 通路，
-        // 支持则启用低时延模式并设置官方示例回调帧长；不支持时系统静默回落普通模式（官方文档行为）。
-        // 注意：本机 SDK 头文件中 OH_AudioManager_GetAudioStreamManager 为单参签名，
-        // OH_AudioStreamInfo（v19 布局）无 channels 字段，声道用 channelLayout 表达
-        {
-            OH_AudioStreamManager* streamManager = nullptr;
-            if (OH_AudioManager_GetAudioStreamManager(&streamManager) == AUDIOCOMMON_RESULT_SUCCESS &&
-                streamManager != nullptr) {
-            OH_AudioStreamInfo streamInfo = {};
-            streamInfo.samplingRate = 48000;
-                streamInfo.channelLayout = CH_LAYOUT_STEREO;
-                streamInfo.encodingType = AUDIOSTREAM_ENCODING_TYPE_RAW;
-                streamInfo.sampleFormat = AUDIOSTREAM_SAMPLE_S16LE;
-                if (OH_AudioStreamManager_IsFastPlaybackSupported(streamManager, &streamInfo,
-                    AUDIOSTREAM_USAGE_MUSIC)) {
-                    OH_AudioStreamBuilder_SetLatencyMode(builder, AUDIOSTREAM_LATENCY_MODE_FAST);
-                    OH_AudioStreamBuilder_SetFrameSizeInCallback(builder, 2500);
-                    OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                        "low-latency playback supported: FAST latency mode enabled");
-                }
-            }
-        }
+        // 不启用 FAST 低时延模式：官方文档明确低时延播放不支持调整播放速度，
+        // 音乐播放对时延不敏感，保持默认 NORMAL 模式
         bool success = OH_AudioStreamBuilder_GenerateRenderer(builder, &renderer_) == AUDIOSTREAM_SUCCESS;
         OH_AudioStreamBuilder_Destroy(builder);
         if (success) {
