@@ -21,3 +21,4 @@
 
 # WorkBuddy 智能体工作目录，不纳入仓库
 /.workbuddy/
+.env
