@@ -668,6 +668,11 @@ struct SettingsDetailPage {
   onSpeedChange(value: number, mode: SliderChangeMode): void {
     this.settings.playSpeed = 0.5 + value / 100
     this.updateSetting(this.isSliderSettled(mode))
+    // 只在松手帧下发倍速：倍速会触发管线切换与节点 IPC，拖动过程连续下发会造成
+    // 频繁保持/重锚（进度抖动）与无谓开销
+    if (!this.isSliderSettled(mode)) {
+      return
+    }
     try {
       this.avPlayerService.setSpeed(this.settings.playSpeed)
     } catch (e) {

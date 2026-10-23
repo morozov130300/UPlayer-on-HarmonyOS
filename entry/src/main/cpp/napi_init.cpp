@@ -345,6 +345,38 @@ public:
         return result == AUDIOSUITE_SUCCESS && supported;
     }
 
+    // 变速节点能力探测（一次即可，结果缓存）：决定倍速走「AudioSuite 变速节点（不变调）」
+    // 还是回退「渲染器 NORMAL 模式的 SetSpeed」。两者都不可用时倍速不生效，仅打点不崩。
+    bool IsTempoPitchSupported() const
+    {
+        if (tempoSupportProbed_.load(std::memory_order_acquire)) {
+            return tempoSupported_.load(std::memory_order_relaxed);
+        }
+        bool supported = false;
+        const OH_AudioSuite_Result result =
+            OH_AudioSuiteEngine_IsNodeTypeSupported(EFFECT_NODE_TYPE_TEMPO_PITCH, &supported);
+        if (result != AUDIOSUITE_SUCCESS) {
+            // 查询失败（引擎/服务暂不可用）不缓存结论，下次再探；限流打点避免刷屏
+            if (!tempoProbeFailLogged_) {
+                tempoProbeFailLogged_ = true;
+                OH_LOG_Print(LOG_APP, LOG_WARN, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                    "tempoPitchSupported query failed result=%{public}d, will retry",
+                    static_cast<int>(result));
+            }
+            return false;
+        }
+        tempoSupported_.store(supported, std::memory_order_relaxed);
+        tempoSupportProbed_.store(true, std::memory_order_release);
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "tempoPitchSupported supported=%{public}d", supported ? 1 : 0);
+        return supported;
+    }
+
+    bool SpeedActive() const
+    {
+        return std::fabs(playbackSpeed_.load(std::memory_order_relaxed) - 1.0f) >= 0.01f;
+    }
+
     bool Play(int32_t fd, int64_t size, int64_t startPositionMs, uint64_t requestId)
     {
         const auto startedAt = std::chrono::steady_clock::now();
@@ -497,6 +529,10 @@ public:
         }
         resampleInputRate_ = sampleRate_;
         inputDensityFactor_.store(1);
+        // 起播时确定「生效速率」：变速节点可用 → 节点执行；否则看回退路线是否真的下发成功。
+        // 只有生效速率才参与位置换算与管线激活，未生效时保持 1.0，进度不会凭空按倍速跑
+        effectiveSpeed_.store((IsTempoPitchSupported() || rendererSpeedApplied_.load()) ?
+            playbackSpeed_.load(std::memory_order_relaxed) : 1.0f, std::memory_order_relaxed);
         converterInputFinished_.store(false);
         inputWindowFrames_ = 0;
         inputWindowStartMs_ = 0;
@@ -555,34 +591,7 @@ public:
         }
         OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "native startup stage=started elapsedMs=%{public}lld", elapsedMs());
-        ApplySpeedToRenderer();
         return true;
-    }
-
-    // 倍速应用：SetSpeed 只在渲染器 STARTED 后才有确定语义（建流后、Start 前调用在部分实现上
-    // 会被丢弃），因此起播/恢复成功后必须重放一次；同时回读校验，失败重试一次并打点，
-    // 避免「倍速静默不生效、听起来还是 1.0 倍」这类无从取证的问题
-    void ApplySpeedToRenderer()
-    {
-        if (renderer_ == nullptr || lpActive_.load()) {
-            return;
-        }
-        const float requested = std::clamp(playbackSpeed_.load(std::memory_order_relaxed), 0.5f, 3.0f);
-        for (int32_t attempt = 0; attempt < 2; ++attempt) {
-            OH_AudioStream_Result setResult = OH_AudioRenderer_SetSpeed(renderer_, requested);
-            float actual = -1.0f;
-            OH_AudioStream_Result getResult = OH_AudioRenderer_GetSpeed(renderer_, &actual);
-            const bool speedOk = setResult == AUDIOSTREAM_SUCCESS &&
-                (getResult != AUDIOSTREAM_SUCCESS || std::fabs(actual - requested) < 0.02f);
-            OH_LOG_Print(LOG_APP, speedOk ? LOG_INFO : LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                "renderer apply speed req=%{public}.3f actual=%{public}.3f set=%{public}d get=%{public}d "
-                "attempt=%{public}d ok=%{public}d",
-                requested, actual, static_cast<int>(setResult), static_cast<int>(getResult),
-                attempt, speedOk ? 1 : 0);
-            if (speedOk) {
-                return;
-            }
-        }
     }
 
     bool Resume()
@@ -632,7 +641,6 @@ public:
                 "renderer resume start failed, rollback to paused");
             return false;
         }
-        ApplySpeedToRenderer();
         return true;
     }
 
@@ -918,22 +926,27 @@ public:
     // 是否有任一效果被请求（懒构建判定：ExecutePlay 时全假则跳过 ConfigureEffects）
     bool IsAnyEffectRequested() const
     {
+        // 倍速（走变速节点时）同样需要建管：否则起播不建 SPECIAL 管线，倍速无处执行
         return requestedEqEnabled_.load() || requestedSoundFieldEnabled_.load() ||
             requestedEnvironmentEnabled_.load() || requestedBeautifierEnabled_.load() ||
             requestedSpaceRenderEnabled_.load() || requestedGeneralVoiceChangeEnabled_.load() ||
             requestedNoiseReductionEnabled_.load() || requestedPureVoiceChangeEnabled_.load() ||
-            requestedTempoPitchEnabled_.load() || requestedSeparationEnabled_.load();
+            requestedTempoPitchEnabled_.load() || requestedSeparationEnabled_.load() ||
+            (SpeedActive() && IsTempoPitchSupported());
     }
 
     // 任一效果启用即需要走管线渲染：EQ 用 Play 时的 active 快照，
-    // 其余效果节点建管时全建 + Bypass 即时切换，直接用 requested 原子量
+    // 其余效果节点建管时全建 + Bypass 即时切换，直接用 requested 原子量。
+    // 倍速用 effectiveSpeed_（仅在实际生效时置位）：每 10ms 渲染块都会调用本函数，
+    // 绝不能在这里做能力探测（IPC）
     bool IsPipelineActive() const
     {
         return activeEqEnabled_.load() || requestedSoundFieldEnabled_.load() ||
             requestedEnvironmentEnabled_.load() || requestedBeautifierEnabled_.load() ||
             requestedSpaceRenderEnabled_.load() || requestedGeneralVoiceChangeEnabled_.load() ||
             requestedNoiseReductionEnabled_.load() || requestedPureVoiceChangeEnabled_.load() ||
-            requestedTempoPitchEnabled_.load() || requestedSeparationEnabled_.load();
+            requestedTempoPitchEnabled_.load() || requestedSeparationEnabled_.load() ||
+            std::fabs(effectiveSpeed_.load(std::memory_order_relaxed) - 1.0f) >= 0.01f;
     }
 
     bool SetSoundFieldEnabled(bool enabled)
@@ -1316,6 +1329,13 @@ public:
             if (!result) {
                 return false;
             }
+            if (!enabled) {
+                // 关闭「变速变调」后 tempo 节点交还给播放倍速驱动：
+                // 否则节点会沿用效果残留的 speed/pitch，导致关掉效果后播放速度莫名改变
+                tempoSpeed_.store(std::clamp(playbackSpeed_.load(std::memory_order_relaxed), 0.5f, 3.0f),
+                    std::memory_order_relaxed);
+                tempoPitch_.store(1.0f, std::memory_order_relaxed);
+            }
         }
         return true;
     }
@@ -1385,22 +1405,100 @@ public:
 
     bool SetSpeed(float speed)
     {
-        // 非法值（NaN/Inf/越界）一律收敛到合法区间：框架 SetSpeed 收到脏值会让排空速率失控
+        // 非法值（NaN/Inf/越界）一律收敛到合法区间
         if (!std::isfinite(speed)) {
             OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                 "set speed rejected non-finite=%{public}.3f", speed);
             return false;
         }
         const float clamped = std::clamp(speed, 0.5f, 3.0f);
-        playbackSpeed_.store(clamped, std::memory_order_relaxed);
+        const bool speedActive = std::fabs(clamped - 1.0f) >= 0.01f;
+        // 低功耗链路自己实现倍速，与渲染链路无关；失败则回滚请求值，避免 UI 与实际不一致
         if (lpActive_.load() && lpSink_ != nullptr) {
-            return OH_LowPowerAudioSink_SetPlaybackSpeed(lpSink_, clamped) == AV_ERR_OK;
+            const bool lpOk = OH_LowPowerAudioSink_SetPlaybackSpeed(lpSink_, clamped) == AV_ERR_OK;
+            if (lpOk) {
+                playbackSpeed_.store(clamped, std::memory_order_relaxed);
+                effectiveSpeed_.store(clamped, std::memory_order_relaxed);
+            }
+            return lpOk;
         }
         if (renderer_ == nullptr) {
+            // 尚未起播：仅记录意图，起播时由 ConfigureEffects 按初始态选管线并下发
+            playbackSpeed_.store(clamped, std::memory_order_relaxed);
             return true;
         }
-        ApplySpeedToRenderer();
-        return true;
+        // 回到 1.0 且未启用「变速变调」效果：直接旁路节点、退出倍速管线，无节点可下发也属正常
+        if (!speedActive && !requestedTempoPitchEnabled_.load()) {
+            std::lock_guard<std::mutex> lock(effectMutex_);
+            OH_AudioNode* bypassNode = ActiveEffectNodes().tempoPitch;
+            if (bypassNode != nullptr && !BypassNodeLocked(bypassNode, true)) {
+                OH_LOG_Print(LOG_APP, LOG_WARN, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                    "speed reset: bypass tempo node failed");
+                return false;
+            }
+            playbackSpeed_.store(clamped, std::memory_order_relaxed);
+            effectiveSpeed_.store(1.0f, std::memory_order_relaxed);
+            SwitchPipelineLocked();
+            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG, "speed reset to 1.0");
+            return true;
+        }
+        // 先取旧速率下的内容时间锚点（GetPosition 内部读 effectiveSpeed_），
+        // 再改请求速率：否则历史段会被新速率重算，切换瞬间进度成倍跳变
+        const int64_t anchorMs = GetPosition();
+        // 内容时间基线重锚：RT 回调在下一块用当前呈递帧重设 presentedBaseFrames_。
+        // 只写 pendingBaseMs_ + rebasePending_，不直接写 presentedBaseMs_（避免 ms/frames 半更新窗口）
+        pendingBaseMs_.store(anchorMs, std::memory_order_relaxed);
+        lastPositionMs_.store(anchorMs, std::memory_order_relaxed);
+        rebasePending_.store(true, std::memory_order_release);
+        // 路线一（首选）：AudioSuite 变速节点，变速不变调，渲染器保持 FAST 恒 1.0 消费
+        if (IsTempoPitchSupported()) {
+            {
+                std::lock_guard<std::mutex> lock(effectMutex_);
+                if (!requestedTempoPitchEnabled_.load()) {
+                    // 未启用「变速变调」效果时，tempo 节点完全由播放倍速驱动，音调保持不变
+                    tempoSpeed_.store(clamped, std::memory_order_relaxed);
+                    tempoPitch_.store(1.0f, std::memory_order_relaxed);
+                }
+                if (!EnsureEffectsBuiltLocked() || !SwitchPipelineLocked()) {
+                    OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                        "speed apply failed: pipeline unavailable speed=%{public}.3f", clamped);
+                    return false;
+                }
+                OH_AudioNode* node = ActiveEffectNodes().tempoPitch;
+                if (node == nullptr) {
+                    // 分离管线/管线不可用：倍速无法执行，保持原速率并如实返回失败
+                    OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                        "speed apply failed: tempo node missing active=%{public}d speed=%{public}.3f",
+                        static_cast<int>(activePipeline_), clamped);
+                    return false;
+                }
+                const bool applied = SetTempoPitchStateLocked(node);
+                if (!applied) {
+                    OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                        "speed apply failed: set tempo node speed=%{public}.3f", clamped);
+                    return false;
+                }
+            }
+            // 只有真正下发成功才更新请求值/生效值：失败时进度不会按错误速率走
+            playbackSpeed_.store(clamped, std::memory_order_relaxed);
+            effectiveSpeed_.store(clamped, std::memory_order_relaxed);
+            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "speed applied via tempo node speed=%{public}.3f", clamped);
+            return true;
+        }
+        // 路线二（回退）：设备无变速节点时用渲染器 SetSpeed。
+        // 只有 NORMAL 时延模式支持；ConfigureRenderer 在「倍速激活且无变速节点」时起播走 NORMAL，
+        // 运行期由 1.0 切非 1.0 无法切换时延模式，这里如实返回失败、不缩放位置。
+        const OH_AudioStream_Result setResult = OH_AudioRenderer_SetSpeed(renderer_, clamped);
+        const bool rendererApplied = setResult == AUDIOSTREAM_SUCCESS;
+        if (rendererApplied) {
+            playbackSpeed_.store(clamped, std::memory_order_relaxed);
+            effectiveSpeed_.store(clamped, std::memory_order_relaxed);
+        }
+        OH_LOG_Print(LOG_APP, rendererApplied ? LOG_INFO : LOG_WARN, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "speed applied via renderer fallback speed=%{public}.3f ok=%{public}d code=%{public}d",
+            clamped, rendererApplied ? 1 : 0, static_cast<int>(setResult));
+        return rendererApplied;
     }
 
     bool SetVolume(float volume)
@@ -1520,8 +1618,14 @@ public:
         const int32_t safeRate = rate > 0 ? rate : 48000;
         int64_t position = baseMs;
         if (framePosition > 0 && static_cast<uint64_t>(framePosition) > baseFrames) {
-            position += static_cast<int64_t>((static_cast<uint64_t>(framePosition) - baseFrames) *
-                1000 / static_cast<uint64_t>(safeRate));
+            // 呈递帧按「输出时间」推进（渲染器恒 48kHz 消费）；倍速由变速节点在链路内完成，
+            // 源内容按 speed 倍推进，故内容时间 = 输出时间 × speed。
+            // 倍速切换时会重锚基线（见 SetSpeed），保证这里始终是同一速率的线性段。
+            const double outputMs = static_cast<double>(static_cast<uint64_t>(framePosition) - baseFrames) *
+                1000.0 / static_cast<double>(safeRate);
+            const float speed = effectiveSpeed_.load(std::memory_order_relaxed);
+            const double speedFactor = (speed > 0.05f) ? static_cast<double>(speed) : 1.0;
+            position += static_cast<int64_t>(outputMs * speedFactor);
         }
         const int64_t duration = durationMs_.load(std::memory_order_relaxed);
         if (duration > 0 && position > duration) {
@@ -1870,8 +1974,11 @@ private:
 
     bool NeedSpecialPipeline() const
     {
+        // 播放倍速优先走特殊管线的变速节点（变速不变调）：渲染器侧 SetSpeed 在 FAST 流上
+        // 返回 not supported，而 FAST 是无音效正常播放的稳定路径。
+        // 仅当设备不支持变速节点时，才回退渲染器 SetSpeed（此时起播改用 NORMAL 时延模式）。
         return requestedNoiseReductionEnabled_.load() || requestedPureVoiceChangeEnabled_.load() ||
-            requestedTempoPitchEnabled_.load();
+            requestedTempoPitchEnabled_.load() || (SpeedActive() && IsTempoPitchSupported());
     }
 
     // 按当前效果开关选择活跃管线：分离 > 特殊（降噪/传统变声/变速变调）> 主管线。
@@ -2010,7 +2117,9 @@ private:
             }
         }
         if (nodes.tempoPitch != nullptr) {
-            if (requestedTempoPitchEnabled_.load()) {
+            // 变速节点由「变速变调效果开关」或「播放倍速」任一驱动
+            const float nodeSpeed = playbackSpeed_.load(std::memory_order_relaxed);
+            if (requestedTempoPitchEnabled_.load() || std::fabs(nodeSpeed - 1.0f) >= 0.01f) {
                 if (!SetTempoPitchStateLocked(nodes.tempoPitch)) {
                     return false;
                 }
@@ -2767,24 +2876,28 @@ private:
         OH_AudioStreamBuilder_SetEncodingType(builder, AUDIOSTREAM_ENCODING_TYPE_RAW);
         OH_AudioStreamBuilder_SetRendererInfo(builder, AUDIOSTREAM_USAGE_MUSIC);
         OH_AudioStreamBuilder_SetRendererWriteDataCallback(builder, RendererDataCallback, this);
-        // 时延模式按当前倍速选择（时延模式在建流时固定，运行期不可切换）：
-        // - 倍速 == 1.0：走 FAST 低时延通路（本应用的渲染/环形缓冲按 FAST 调校，是历史稳定路径）
-        // - 倍速 != 1.0：FAST 不支持 SetSpeed，必须用 NORMAL，否则倍速（尤其 <1.0）完全不生效
-        // 因此 JS 侧 setSpeed 跨过 1.0 边界时会重建管线，让本函数重新选模式。
-        const float targetSpeed = playbackSpeed_.load(std::memory_order_relaxed);
-        const bool unitySpeed = std::fabs(targetSpeed - 1.0f) < 0.01f;
-        bool fastEnabled = false;
-        if (unitySpeed && IsFastPlaybackSupported()) {
-            fastEnabled = (OH_AudioStreamBuilder_SetLatencyMode(builder, AUDIOSTREAM_LATENCY_MODE_FAST) ==
+        // 时延模式：默认 FAST（本应用的渲染/环形缓冲按 FAST 调校，是历史稳定路径）。
+        // 例外：倍速激活且设备不支持变速节点 → 只能用渲染器 SetSpeed，而它仅 NORMAL 模式支持，
+        // 此时起播走 NORMAL；其余情况（含倍速走变速节点）恒 FAST。
+        const bool speedNeedsNormalRenderer = SpeedActive() && !IsTempoPitchSupported();
+        const bool fastEnabled = !speedNeedsNormalRenderer && IsFastPlaybackSupported() &&
+            (OH_AudioStreamBuilder_SetLatencyMode(builder, AUDIOSTREAM_LATENCY_MODE_FAST) ==
                 AUDIOSTREAM_SUCCESS);
-            if (fastEnabled) {
-                OH_AudioStreamBuilder_SetFrameSizeInCallback(builder, 2500);
-            }
+        if (fastEnabled) {
+            // 2500 帧超出本机上限（hilog: maxByte:3840 ≈ 960 帧），会被系统钳制并报
+            // ReportPreferredFrameSizeOutOfRange；直接按合法上限 960 帧（20ms）申请
+            OH_AudioStreamBuilder_SetFrameSizeInCallback(builder, 960);
         }
         bool success = OH_AudioStreamBuilder_GenerateRenderer(builder, &renderer_) == AUDIOSTREAM_SUCCESS;
         OH_AudioStreamBuilder_Destroy(builder);
         if (success) {
-            OH_AudioRenderer_SetSpeed(renderer_, playbackSpeed_.load(std::memory_order_relaxed));
+            rendererSpeedApplied_.store(false, std::memory_order_relaxed);
+            if (speedNeedsNormalRenderer) {
+                // 回退路线：渲染器侧倍速只在 NORMAL 模式有效，起播即下发当前倍速
+                rendererSpeedApplied_.store(
+                    OH_AudioRenderer_SetSpeed(renderer_, playbackSpeed_.load(std::memory_order_relaxed)) ==
+                        AUDIOSTREAM_SUCCESS, std::memory_order_relaxed);
+            }
             OH_AudioRenderer_SetVolume(renderer_, volume_);
             int32_t actualRate = 0;
             int32_t actualChannels = 0;
@@ -2799,11 +2912,9 @@ private:
             OH_AudioRenderer_GetChannelCount(renderer_, &actualChannels);
             OH_AudioRenderer_GetLatencyMode(renderer_, &latencyMode);
             OH_AudioRenderer_GetFrameSizeInCallback(renderer_, &actualFrameSize);
-            if (OH_AudioRenderer_GetSpeed(renderer_, &actualSpeed) != AUDIOSTREAM_SUCCESS) {
-                OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                    "renderer get speed failed; fallback to requested speed");
-                actualSpeed = playbackSpeed_.load(std::memory_order_relaxed);
-            }
+            // 不再查询 GetSpeed：FAST 流上该接口返回 not supported，只会刷错误日志。
+            // 倍速记录来自我们的 playbackSpeed_（由 tempo 节点实际执行）
+            actualSpeed = playbackSpeed_.load(std::memory_order_relaxed);
             OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                 "renderer actual rate=%{public}d channels=%{public}d latency=%{public}d "
                 "frameSize=%{public}d speed=%{public}.3f fastRequested=%{public}d",
@@ -3314,7 +3425,7 @@ private:
         // 倍速时渲染器拉取帧率本身随倍速变化，一旦判档偏差把因子顶到 2，就会走
         // ReadPcmDirect 的抽取分支（每 2 帧取 1 帧）→ 内容被抽取、时间缩短、音调抬高，
         // 听感即「倍速反而变快 + 音质全损」。故倍速期间因子恒定 1，切档只在 1.0 倍速下发生。
-        const float densitySpeed = playbackSpeed_.load(std::memory_order_relaxed);
+        const float densitySpeed = effectiveSpeed_.load(std::memory_order_relaxed);
         if (std::fabs(densitySpeed - 1.0f) >= 0.01f) {
             if (inputDensityFactor_.load(std::memory_order_relaxed) != 1) {
                 inputDensityFactor_.store(1, std::memory_order_relaxed);
@@ -4539,6 +4650,15 @@ private:
     std::atomic<int32_t> separationOutput_ = 1;            // 1=仅人声 2=仅伴奏 3=人声+伴奏混合
     // JS 线程 SetSpeed 写、渲染回调 MeasureInputDensity 读，必须原子
     std::atomic<float> playbackSpeed_ = 1.0f;
+    // 实际生效速率：只有倍速真正下发成功才写入。位置换算/密度锁/管线激活全部以它为准，
+    // 避免「音频 1.0× 但进度按倍速走」的状态不一致
+    std::atomic<float> effectiveSpeed_ = 1.0f;
+    // 回退路线（渲染器 SetSpeed）是否在起播时下发成功
+    std::atomic<bool> rendererSpeedApplied_{false};
+    // 变速节点能力探测缓存（仅缓存「查询成功」的结论）。mutable+atomic：渲染线程/JS 线程都可能调用
+    mutable std::atomic<bool> tempoSupportProbed_{false};
+    mutable std::atomic<bool> tempoSupported_{false};
+    mutable bool tempoProbeFailLogged_ = false;
     float volume_ = 1.0f;
     double measurementSquareSum_ = 0.0;
     uint64_t measurementSampleCount_ = 0;

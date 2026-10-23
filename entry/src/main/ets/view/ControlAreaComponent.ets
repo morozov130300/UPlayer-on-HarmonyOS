@@ -1715,7 +1715,10 @@ export struct ControlAreaComponent {
         .onChange((value: number, mode: SliderChangeMode) => {
           this.speed = Math.round(value * 4) / 4
           AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_SPEED, this.speed)
-          this.avPlayerService.setSpeed(this.speed)
+          // 松手帧才下发：倍速会触发管线切换与节点 IPC，拖动中连续下发会造成进度抖动
+          if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+            this.avPlayerService.setSpeed(this.speed)
+          }
         })
 
       Row() {
