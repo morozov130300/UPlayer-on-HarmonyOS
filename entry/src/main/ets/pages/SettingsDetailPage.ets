@@ -171,6 +171,8 @@ struct SettingsDetailPage {
   @State showColorPicker: boolean = false
   @State showGlassScope: boolean = false
   @State showShortcutSheet: boolean = false
+  // 详情页内容滚动控制器：自绘 ScrollBar 需要挂在可控 Scroller 上
+  private detailScroller: Scroller = new Scroller()
   // 自动音量均衡说明弹窗
   @State showReplayGainHelp: boolean = false
   @State pickerHue: number = 210
@@ -927,7 +929,7 @@ struct SettingsDetailPage {
           // 内容向上滚动时从标题栏下方穿过，被标题栏玻璃/渐变层模糊（与首页上端一致）
           Stack({ alignContent: Alignment.Center }) {
             Column() {
-              Scroll() {
+              Scroll(this.detailScroller) {
                 Column({ space: this.scaledSize(10) }) {
                   if (this.pageTitle === '定制') {
                     this.buildCustomizeSection()
@@ -952,6 +954,7 @@ struct SettingsDetailPage {
               .layoutWeight(1)
               .align(Alignment.Top)
               .edgeEffect(EdgeEffect.Spring)
+              .scrollBar(BarState.Off)
             }
             .width('100%')
             .height('100%')
@@ -962,6 +965,16 @@ struct SettingsDetailPage {
 
             // 顶部渐变模糊/着色层保留（内容滚动到标题栏下方时被模糊）；返回按钮与标题已移至标题栏
             this.titleBand()
+
+            // 自绘滚动条：内置滚动条导轨从窗口顶端起画，会伸进标题带；改从标题带下方开始
+            ScrollBar({
+              scroller: this.detailScroller,
+              direction: ScrollBarDirection.Vertical,
+              state: BarState.Auto
+            })
+              .width(this.scaledSize(4))
+              .height('calc(100% - ' + this.titleBandHeight() + 'vp)')
+              .position({ top: this.titleBandHeight(), right: 0 })
           }
           .width('100%')
           .layoutWeight(1)
@@ -1017,8 +1030,8 @@ struct SettingsDetailPage {
         }
       })
       Text(this.pageTitle)
-        .fontSize(this.scaledFont(17))
-        .fontColor(this.settingTextColor())
+        .fontSize(this.scaledFont(18))
+        .fontColor($r('app.color.text_primary'))
         .fontWeight(FontWeight.Bold)
         .margin({ left: 4 })
       Blank()

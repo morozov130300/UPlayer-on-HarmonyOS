@@ -1467,6 +1467,10 @@ export struct HomeContent {
             fractionStops: [[1, 0], [1, 0.5], [0, 1]],
             direction: GradientDirection.Bottom
           })
+          // PC 窗口上两角为系统圆角遮罩，全宽模糊层采样到遮罩外黑区会在窗口左上/右上
+          // 拖出暗角；用大于窗口圆角的半径裁掉模糊层上两角（露出原始内容，无暗角）
+          .borderRadius({ topLeft: this.isPC ? 32 : 0, topRight: this.isPC ? 32 : 0 })
+          .clip(true)
 
         Row()
           .width('100%')
