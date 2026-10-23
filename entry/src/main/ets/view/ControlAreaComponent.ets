@@ -11,6 +11,7 @@ import { SongInfo } from '../model/SongInfo';
 import { SongDataSource } from '../viewmodel/SongDataSource';
 import { AVPlayerService } from '../service/AVPlayerService';
 import { ColorHelper } from '../common/utils/ColorHelper';
+import { PressScaleHost } from '../component/PressScaleHost';
 import { common } from '@kit.AbilityKit';
 import { MediaTools } from '../common/utils/mediautils/MediaTools';
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
@@ -1262,7 +1263,9 @@ export struct ControlAreaComponent {
 
   @Builder
   morePanelInfoRow(index: number, label: string, value: string, editable: boolean) {
-    Row() {
+    // 本 builder 带参（按值传参不会随页面状态重新求值），缩放交给自带状态的 PressScaleHost
+    PressScaleHost({ pressScale: 0.9, hoverScale: 1.02 }) {
+      Row() {
       Text(label)
         .fontSize(this.scaledFont(12))
         .fontColor($r('app.color.text_sixty_color'))
@@ -1286,28 +1289,38 @@ export struct ControlAreaComponent {
           .onSubmit(() => {
             this.saveEditField()
           })
-        Button('确定')
-          .height(this.scaledFont(32))
-          .fontSize(this.scaledFont(12))
-          .fontColor(Color.White)
-          .backgroundColor(this.primaryColor)
-          .borderRadius(4)
-          .margin({ left: 8 })
-          .padding({ left: 10, right: 10 })
-          .scale({ x: this.pressScaleOf('editFieldSave'), y: this.pressScaleOf('editFieldSave') })
-          .onTouch((event: TouchEvent) => { this.onPressTouch('editFieldSave', event) })
-          .onClick(() => { this.saveEditField() })
-        Button('取消')
-          .height(this.scaledFont(32))
-          .fontSize(this.scaledFont(12))
-          .fontColor($r('app.color.text_sixty_color'))
-          .backgroundColor('rgba(206,206,210,0.22)')
-          .borderRadius(4)
-          .margin({ left: 8 })
-          .padding({ left: 10, right: 10 })
-          .scale({ x: this.pressScaleOf('editFieldCancel'), y: this.pressScaleOf('editFieldCancel') })
-          .onTouch((event: TouchEvent) => { this.onPressTouch('editFieldCancel', event) })
-          .onClick(() => { this.cancelEditField() })
+        ScaleButton({
+          pressScale: 0.8,
+          hoverScale: 1.1,
+          onButtonTap: () => {
+            this.saveEditField()
+          }
+        }) {
+          Button('确定')
+            .height(this.scaledFont(32))
+            .fontSize(this.scaledFont(12))
+            .fontColor(Color.White)
+            .backgroundColor(this.primaryColor)
+            .borderRadius(4)
+            .margin({ left: 8 })
+            .padding({ left: 10, right: 10 })
+        }
+        ScaleButton({
+          pressScale: 0.8,
+          hoverScale: 1.1,
+          onButtonTap: () => {
+            this.cancelEditField()
+          }
+        }) {
+          Button('取消')
+            .height(this.scaledFont(32))
+            .fontSize(this.scaledFont(12))
+            .fontColor($r('app.color.text_sixty_color'))
+            .backgroundColor('rgba(206,206,210,0.22)')
+            .borderRadius(4)
+            .margin({ left: 8 })
+            .padding({ left: 10, right: 10 })
+        }
       } else {
         Text(value && value.length > 0 ? value : '-')
           .fontSize(this.scaledFont(13))
@@ -1316,18 +1329,17 @@ export struct ControlAreaComponent {
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .layoutWeight(1)
       }
-    }
-    .width('100%')
-    .height(this.scaledFont(40))
-    .alignItems(VerticalAlign.Center)
-    .border({ width: { bottom: 1 }, color: $r('app.color.list_divider') })
-    .scale({ x: this.pressScaleOf('editFieldRow'), y: this.pressScaleOf('editFieldRow') })
-    .onTouch((event: TouchEvent) => { this.onPressTouch('editFieldRow', event) })
-    .onClick(() => {
-      if (editable && index !== this.edittingFieldIndex) {
-        this.startEditField(index, this.infoValue(index))
       }
-    })
+      .width('100%')
+      .height(this.scaledFont(40))
+      .alignItems(VerticalAlign.Center)
+      .border({ width: { bottom: 1 }, color: $r('app.color.list_divider') })
+      .onClick(() => {
+        if (editable && index !== this.edittingFieldIndex) {
+          this.startEditField(index, this.infoValue(index))
+        }
+      })
+    }
   }
 
   @Builder

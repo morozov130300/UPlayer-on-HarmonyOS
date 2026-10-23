@@ -12,7 +12,7 @@ import { ColorHelper } from '../common/utils/ColorHelper'
 import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { StyleConstants } from '../common/constants/StyleConstants'
-import { display, uiMaterial, curves } from '@kit.ArkUI'
+import { display, uiMaterial } from '@kit.ArkUI'
 import { deviceInfo } from '@kit.BasicServicesKit'
 import { AlbumCover } from '../component/AlbumCover'
 import { PlaylistCreateDialog } from '../component/PlaylistCreateDialog'
@@ -20,6 +20,7 @@ import { AlbumCoverSize } from '../service/AudioMetadataService'
 import { createBarGlassMaterial, createStyleGlassMaterial, DEFAULT_GLASS_STYLE } from '../common/utils/GlassUtil'
 import { GlassBackButton } from '../view/GlassBackButton'
 import { ScaleButton } from '../component/ScaleButton'
+import { PressScaleHost } from '../component/PressScaleHost'
 
 const TAG = 'PlaylistContent'
 const FAVORITES_FOLDER_ID: string = '__favorites__'
@@ -39,9 +40,6 @@ export struct PlaylistContent {
   // 底部让位原始输入（Index 传入），页内自算 bottomOverlayInset() 以实时跟随显示大小
   bottomSafeHeight: number = 0
   smallBreakpoint: boolean = false
-  // 歌单卡/文件夹卡带长按气泡与 bindPopup，无法用 ScaleButton 包裹，改用「当前按下的卡片 id」单一状态驱动
-  @State pressedCardId: string = ''
-  @StorageLink('uplayer_press_animation') pressAnimOn: boolean = false
   private context: common.UIAbilityContext | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
   @State folders: FolderInfo[] = []
   @State songs: SongInfo[] = []
@@ -661,7 +659,9 @@ export struct PlaylistContent {
               Grid() {
                 ForEach(this.folders, (item: FolderInfo) => {
                   GridItem() {
-                    this.folderCard(item)
+                    PressScaleHost({ pressScale: 0.9, hoverScale: 1.02 }) {
+                      this.folderCard(item)
+                    }
                   }
                 }, (item: FolderInfo) => item.id)
               }
@@ -976,7 +976,11 @@ export struct PlaylistContent {
       Grid() {
         ForEach(this.playlistCards, (card: PlaylistCardData) => {
           GridItem() {
-            this.playlistCard(card)
+            // 卡片带 bindPopup 与长按手势，不能包 ScaleButton；也不能在带参 @Builder 内用页面状态驱动缩放
+            // （按值传参的 @Builder 不会随状态重新求值），故用只做缩放的宿主组件，逐卡独立状态
+            PressScaleHost({ pressScale: 0.9, hoverScale: 1.02 }) {
+              this.playlistCard(card)
+            }
           }
         }, (card: PlaylistCardData) =>
           card.playlist.id + '_' + card.playlist.name + '_' + card.count + '_' +
@@ -1051,10 +1055,6 @@ export struct PlaylistContent {
       ColorHelper.hexWithAlpha(this.primaryColor, '22') : 'rgba(0,0,0,0.03)')
     .border({ width: this.isPlaylistCardActive(card) ? 2 : 1,
       color: this.isPlaylistCardActive(card) ? this.primaryColor : $r('app.color.list_divider') })
-    .scale({ x: this.pressedCardId === card.playlist.id ? 0.9 : 1.0, y: this.pressedCardId === card.playlist.id ? 0.9 : 1.0 })
-    .onTouch((event: TouchEvent) => {
-      this.onCardTouch(card.playlist.id, event)
-    })
     .onClick(() => {
       if (this.isPlaylistEditMode) {
         this.togglePlaylistEditSelect(card.playlist.id)
@@ -1296,25 +1296,6 @@ export struct PlaylistContent {
     .zIndex(30)
   }
 
-  // 卡片按压弹簧动画（大块档 0.9）：受「按压动效」开关控制，关闭时立即回 1.0
-  private onCardTouch(id: string, event: TouchEvent): void {
-    if (!this.pressAnimOn) {
-      if (this.pressedCardId.length > 0) {
-        this.pressedCardId = ''
-      }
-      return
-    }
-    if (event.type === TouchType.Down) {
-      this.getUIContext()?.animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
-        this.pressedCardId = id
-      })
-    } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
-      this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
-        this.pressedCardId = ''
-      })
-    }
-  }
-
   private findPlaylistCard(playlistId: string): PlaylistCardData | undefined {
     for (let i = 0; i < this.playlistCards.length; i++) {
       if (this.playlistCards[i].playlist.id === playlistId) {
@@ -1366,10 +1347,6 @@ export struct PlaylistContent {
     .borderRadius(16)
     .border({ width: this.isFolderSelected(item) ? 2 : 1,
       color: this.isFolderSelected(item) ? this.primaryColor : $r('app.color.list_divider') })
-    .scale({ x: this.pressedCardId === item.id ? 0.9 : 1.0, y: this.pressedCardId === item.id ? 0.9 : 1.0 })
-    .onTouch((event: TouchEvent) => {
-      this.onCardTouch(item.id, event)
-    })
     .gesture(
       LongPressGesture()
         .onAction(() => {

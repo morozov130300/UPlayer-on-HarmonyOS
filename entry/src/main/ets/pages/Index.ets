@@ -29,6 +29,7 @@ import { isDarkThemeEffective } from '../common/utils/ThemeUtil'
 import { StyleConstants } from '../common/constants/StyleConstants'
 import { ImportProgressOverlay } from '../view/ImportProgressOverlay'
 import { ScaleButton } from '../component/ScaleButton'
+import { PressScaleHost } from '../component/PressScaleHost'
 import { GlassPlusButton } from '../view/GlassPlusButton'
 
 const TAG = 'Index'
@@ -58,8 +59,6 @@ struct MainPage {
   @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) @Watch('onPlayStateChange') isPlaying: boolean = false
   @State rotationAngle: number = 0
   @State isGlowing: boolean = false
-  // Tab 栏按压动效：当前按下的页签下标（-1 无），受「按压动效」开关控制
-  @State pressedTabIndex: number = -1
   // 播控条「打开播放页」区域按压动效（封面/歌名/歌词块共用，同一时刻只有一处被按）
   @State pressedBarItem: boolean = false
   @StorageLink('uplayer_press_animation') pressAnimOn: boolean = false
@@ -359,26 +358,6 @@ struct MainPage {
     }
   }
 
-  // Tab 项按压缩放：按下 0.9、松手弹簧回弹（与列表行同一档），开关关闭恒 1.0
-  private tabPressScale(index: number): number {
-    return this.pressAnimOn && this.pressedTabIndex === index ? 0.9 : 1.0
-  }
-
-  private onTabPressTouch(index: number, event: TouchEvent): void {
-    if (!this.pressAnimOn) {
-      return
-    }
-    if (event.type === TouchType.Down) {
-      this.getUIContext()?.animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
-        this.pressedTabIndex = index
-      })
-    } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
-      this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
-        this.pressedTabIndex = -1
-      })
-    }
-  }
-
   @Builder
   private tabLabelBuilder(index: number, name: string, icon: Resource) {
     Stack() {
@@ -408,23 +387,24 @@ struct MainPage {
         .translate({ x: (this.currentIndex - index) * this.tabSlotWidth() })
         .hitTestBehavior(HitTestMode.None)
 
-      Column() {
-        Image(icon)
-          .height(this.scaledSize(20))
-          .fillColor(this.currentIndex === index ? this.selectedTabContentColor() : $r('app.color.tab_content_secondary'))
-          .scale({
-            x: this.currentIndex === index ? 1.25 : 1.0, y: this.currentIndex === index ? 1.25 : 1.0
-          })
-        Text(name)
-          .fontSize(8)
-          .fontColor(this.currentIndex === index ? this.selectedTabContentColor() : $r('app.color.tab_content_secondary'))
-          .margin({ top: this.scaledSize(3) })
-      }.width(this.scaledSize(this.tabWidth)).height(this.scaledSize(36)).justifyContent(FlexAlign.Center)
-        .offset({ y: 2 })
-        .scale({ x: this.tabPressScale(index), y: this.tabPressScale(index) })
-        .onTouch((event: TouchEvent) => {
-          this.onTabPressTouch(index, event)
-        })
+      // Tab 项按压缩放：本 builder 带参（按值传参不随状态重算），交给自带状态的 PressScaleHost
+      PressScaleHost({ pressScale: 0.9, hoverScale: 1.02 }) {
+        Column() {
+          Image(icon)
+            .height(this.scaledSize(20))
+            .fillColor(this.currentIndex === index ? this.selectedTabContentColor() :
+              $r('app.color.tab_content_secondary'))
+            .scale({
+              x: this.currentIndex === index ? 1.25 : 1.0, y: this.currentIndex === index ? 1.25 : 1.0
+            })
+          Text(name)
+            .fontSize(8)
+            .fontColor(this.currentIndex === index ? this.selectedTabContentColor() :
+              $r('app.color.tab_content_secondary'))
+            .margin({ top: this.scaledSize(3) })
+        }.width(this.scaledSize(this.tabWidth)).height(this.scaledSize(36)).justifyContent(FlexAlign.Center)
+          .offset({ y: 2 })
+      }
     }
     .width(this.scaledSize(this.tabWidth))
     .height(this.scaledSize(36))
