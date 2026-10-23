@@ -1017,8 +1017,8 @@ struct SettingsDetailPage {
         }
       })
       Text(this.pageTitle)
-        .fontSize(this.scaledFont(17))
-        .fontColor(this.settingTextColor())
+        .fontSize(this.scaledFont(18))
+        .fontColor($r('app.color.text_primary'))
         .fontWeight(FontWeight.Bold)
         .margin({ left: 4 })
       Blank()

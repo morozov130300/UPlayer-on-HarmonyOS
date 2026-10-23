@@ -1036,7 +1036,7 @@ export struct PlaylistContent {
       showInSubWindow: false,
       // 玻璃样式：容器透明 + 磨砂，让气泡自己出真玻璃（不再依赖系统默认底板）
       // 经典样式：页面同色实底卡片
-      backgroundColor: this.tabStyle === 'immersive' ? Color.Transparent : $r('app.color.page_background_sm'),
+      popupColor: this.tabStyle === 'immersive' ? Color.Transparent : $r('app.color.page_background_sm'),
       backgroundBlurStyle: this.tabStyle === 'immersive' ? BlurStyle.COMPONENT_THICK : BlurStyle.NONE,
       radius: this.scaledSize(14),
       systemMaterial: this.styleGlassMaterial(),
