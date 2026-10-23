@@ -3310,6 +3310,23 @@ private:
         if (audioDataSize <= 0) {
             return;
         }
+        // 倍速下禁用密度自动补偿：密度环的标定（实测 fps = 密度 × 48000）只在 1.0 倍速成立。
+        // 倍速时渲染器拉取帧率本身随倍速变化，一旦判档偏差把因子顶到 2，就会走
+        // ReadPcmDirect 的抽取分支（每 2 帧取 1 帧）→ 内容被抽取、时间缩短、音调抬高，
+        // 听感即「倍速反而变快 + 音质全损」。故倍速期间因子恒定 1，切档只在 1.0 倍速下发生。
+        const float densitySpeed = playbackSpeed_.load(std::memory_order_relaxed);
+        if (std::fabs(densitySpeed - 1.0f) >= 0.01f) {
+            if (inputDensityFactor_.load(std::memory_order_relaxed) != 1) {
+                inputDensityFactor_.store(1, std::memory_order_relaxed);
+                OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                    "density locked to 1 under speed=%{public}.3f", densitySpeed);
+            }
+            inputWindowStartMs_ = 0;
+            inputWindowFrames_ = 0;
+            densityPendingCandidate_ = 0;
+            densityPendingCount_ = 0;
+            return;
+        }
         // 效果开关/保持期起点请求重测：丢弃陈旧窗口与滞回暂存，从干净窗口重新测量
         if (densityWindowResetRequested_.exchange(false)) {
             inputWindowStartMs_ = 0;
