@@ -555,7 +555,34 @@ public:
         }
         OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "native startup stage=started elapsedMs=%{public}lld", elapsedMs());
+        ApplySpeedToRenderer();
         return true;
+    }
+
+    // 倍速应用：SetSpeed 只在渲染器 STARTED 后才有确定语义（建流后、Start 前调用在部分实现上
+    // 会被丢弃），因此起播/恢复成功后必须重放一次；同时回读校验，失败重试一次并打点，
+    // 避免「倍速静默不生效、听起来还是 1.0 倍」这类无从取证的问题
+    void ApplySpeedToRenderer()
+    {
+        if (renderer_ == nullptr || lpActive_.load()) {
+            return;
+        }
+        const float requested = std::clamp(playbackSpeed_.load(std::memory_order_relaxed), 0.5f, 3.0f);
+        for (int32_t attempt = 0; attempt < 2; ++attempt) {
+            OH_AudioStream_Result setResult = OH_AudioRenderer_SetSpeed(renderer_, requested);
+            float actual = -1.0f;
+            OH_AudioStream_Result getResult = OH_AudioRenderer_GetSpeed(renderer_, &actual);
+            const bool speedOk = setResult == AUDIOSTREAM_SUCCESS &&
+                (getResult != AUDIOSTREAM_SUCCESS || std::fabs(actual - requested) < 0.02f);
+            OH_LOG_Print(LOG_APP, speedOk ? LOG_INFO : LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "renderer apply speed req=%{public}.3f actual=%{public}.3f set=%{public}d get=%{public}d "
+                "attempt=%{public}d ok=%{public}d",
+                requested, actual, static_cast<int>(setResult), static_cast<int>(getResult),
+                attempt, speedOk ? 1 : 0);
+            if (speedOk) {
+                return;
+            }
+        }
     }
 
     bool Resume()
@@ -605,6 +632,7 @@ public:
                 "renderer resume start failed, rollback to paused");
             return false;
         }
+        ApplySpeedToRenderer();
         return true;
     }
 
@@ -1357,11 +1385,22 @@ public:
 
     bool SetSpeed(float speed)
     {
-        playbackSpeed_.store(speed, std::memory_order_relaxed);
-        if (lpActive_.load() && lpSink_ != nullptr) {
-            return OH_LowPowerAudioSink_SetPlaybackSpeed(lpSink_, speed) == AV_ERR_OK;
+        // 非法值（NaN/Inf/越界）一律收敛到合法区间：框架 SetSpeed 收到脏值会让排空速率失控
+        if (!std::isfinite(speed)) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "set speed rejected non-finite=%{public}.3f", speed);
+            return false;
         }
-        return renderer_ == nullptr || OH_AudioRenderer_SetSpeed(renderer_, speed) == AUDIOSTREAM_SUCCESS;
+        const float clamped = std::clamp(speed, 0.5f, 3.0f);
+        playbackSpeed_.store(clamped, std::memory_order_relaxed);
+        if (lpActive_.load() && lpSink_ != nullptr) {
+            return OH_LowPowerAudioSink_SetPlaybackSpeed(lpSink_, clamped) == AV_ERR_OK;
+        }
+        if (renderer_ == nullptr) {
+            return true;
+        }
+        ApplySpeedToRenderer();
+        return true;
     }
 
     bool SetVolume(float volume)
@@ -2857,6 +2896,7 @@ private:
         // Phase 4：单调计数器播放中绝不跨线程清零，此处仅复位本线程差值基线与私有指标，
         // 首条健康行在 1 秒后输出，差值从本基线起算
         healthLastReportMs_ = 0;
+        healthPrevFrames_ = rtSubmittedFrames_.load(std::memory_order_relaxed);
         healthPrevUnderruns_ = ringUnderrunCount_.load(std::memory_order_relaxed);
         healthPrevSlowChunks_ = renderChunkSlowCount_.load(std::memory_order_relaxed);
         healthPrevShorts_ = converterShortCount_.load(std::memory_order_relaxed);
@@ -4295,6 +4335,13 @@ private:
         healthPrevInBytes_ = inBytes;
         const int64_t lastUnderrunSteady = lastUnderrunSteadyMs_.load(std::memory_order_relaxed);
         const int64_t lastUnderrunAgoMs = lastUnderrunSteady > 0 ? nowMs - lastUnderrunSteady : -1;
+        // 倍速取证：呈递帧率（渲染器每秒真实拉走多少帧）对比理论值 48000×倍速
+        const float healthSpeed = playbackSpeed_.load(std::memory_order_relaxed);
+        const uint64_t framesNow = rtSubmittedFrames_.load(std::memory_order_relaxed);
+        const uint64_t framesDelta = framesNow >= healthPrevFrames_ ? framesNow - healthPrevFrames_ : 0;
+        healthPrevFrames_ = framesNow;
+        const double consumeFps = static_cast<double>(framesDelta) * 1000.0 /
+            static_cast<double>(std::max<int64_t>(1, HEALTH_LOG_INTERVAL_MS));
         OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "pipeline health eq=%{public}d peak=%{public}d rms=%{public}.1f "
             "inClip=%{public}llu(%{public}.1f%%) outClip=%{public}llu(%{public}.1f%%) "
@@ -4303,7 +4350,8 @@ private:
             "slow=%{public}llu(+%{public}llu maxChunk=%{public}lld) "
             "short=%{public}llu(+%{public}llu) dry=%{public}llu(+%{public}llu) "
             "gap=%{public}llu(+%{public}llu maxGap=%{public}lld) "
-            "hold=%{public}llu/%{public}llu flow=%{public}llu/%{public}llu/%{public}llukBps",
+            "hold=%{public}llu/%{public}llu flow=%{public}llu/%{public}llu/%{public}llukBps "
+            "speed=%{public}.3f consFps=%{public}.0f expFps=%{public}.0f",
             activeEqEnabled_.load() ? 1 : 0,
             levelPeakSnapshot_.load(std::memory_order_relaxed),
             static_cast<double>(levelRmsTenfoldSnapshot_.load(std::memory_order_relaxed)) / 10.0,
@@ -4332,7 +4380,10 @@ private:
             static_cast<unsigned long long>(holdReleaseCount_.load(std::memory_order_relaxed)),
             static_cast<unsigned long long>(reqDelta / 1000),
             static_cast<unsigned long long>(respDelta / 1000),
-            static_cast<unsigned long long>(inDelta / 1000));
+            static_cast<unsigned long long>(inDelta / 1000),
+            healthSpeed,
+            consumeFps,
+            static_cast<double>(48000.0f * healthSpeed));
         decoderGapMaxMs_ = 0;
     }
 
@@ -4518,6 +4569,9 @@ private:
     int64_t chunkWinMaxMs_ = 0;
     // 解码线程私有：健康行节流与差值基线；decoderGap* 追踪解码输出入队间隔
     int64_t healthLastReportMs_ = 0;
+    // 倍速取证：健康行同时上报「渲染器实际拉取帧率」与「理论帧率（48000×倍速）」，
+    // 两者不等即说明倍速没有被渲染器落到实处
+    uint64_t healthPrevFrames_ = 0;
     uint64_t healthPrevUnderruns_ = 0;
     uint64_t healthPrevSlowChunks_ = 0;
     uint64_t healthPrevShorts_ = 0;
