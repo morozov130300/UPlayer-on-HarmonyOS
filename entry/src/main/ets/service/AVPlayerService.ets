@@ -731,14 +731,17 @@ export class AVPlayerService {
   }
 
   setSpeed(speed: number): void {
-    // 注意：OH_AudioRenderer_SetSpeed 在本机渲染器上返回 not supported（实测日志），
-    // 渲染器侧倍速一律无效，故此处只做状态记录与低功耗链路下发，不再重建管线
-    // （重建只会让音频线程重启，造成卡顿与音质劣化，已被真机日志证伪）。
+    // 倍速由原生渲染器执行（普通时延模式 NORMAL 支持 OH_AudioRenderer_SetSpeed）。
+    // 曾经失败的 FAST 低时延流已不再启用，且变速节点（AudioSuite）不再参与播放倍速。
+    // 这里只负责转发：渲染器未就绪时原生层仅记录请求值，起播时统一下发。
+    // 引擎明确拒绝时（部分设备的普通模式也不支持调速）如实记日志，便于真机取证。
     this.desiredSpeed = speed
     if (!this.isEngineLoaded()) {
       return
     }
-    nativeAudio.setSpeed(speed)
+    if (!nativeAudio.setSpeed(speed)) {
+      Logger.warn(TAG, `setSpeed rejected by engine: ${speed}`)
+    }
   }
 
   // 低功耗播放模式（OH_LowPowerAudioSink 压缩帧直通）：设置页开关入口。
