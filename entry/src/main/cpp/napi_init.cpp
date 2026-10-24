@@ -4429,6 +4429,10 @@ private:
         if (nowMs - healthLastReportMs_ < HEALTH_LOG_INTERVAL_MS) {
             return;
         }
+        // 真实窗口毫秒：健康行只在渲染块里被调用，实际间隔是 1000ms + 若干毫秒抖动。
+        // 用常量 1000 作分母会让 consFps 系统性偏高几个百分点，无法据此判断倍速是否真落地，
+        // 故这里记录真实间隔并把分母换成它（日志里输出 winMs 便于核对）。
+        const int64_t reportWinMs = std::max<int64_t>(1, nowMs - healthLastReportMs_);
         healthLastReportMs_ = nowMs;
         const uint64_t underruns = ringUnderrunCount_.load(std::memory_order_relaxed);
         const uint64_t slowChunks = renderChunkSlowCount_.load(std::memory_order_relaxed);
@@ -4461,7 +4465,7 @@ private:
         const uint64_t framesDelta = framesNow >= healthPrevFrames_ ? framesNow - healthPrevFrames_ : 0;
         healthPrevFrames_ = framesNow;
         const double consumeFps = static_cast<double>(framesDelta) * 1000.0 /
-            static_cast<double>(std::max<int64_t>(1, HEALTH_LOG_INTERVAL_MS));
+            static_cast<double>(reportWinMs);
         OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "pipeline health eq=%{public}d peak=%{public}d rms=%{public}.1f "
             "inClip=%{public}llu(%{public}.1f%%) outClip=%{public}llu(%{public}.1f%%) "
@@ -4471,7 +4475,7 @@ private:
             "short=%{public}llu(+%{public}llu) dry=%{public}llu(+%{public}llu) "
             "gap=%{public}llu(+%{public}llu maxGap=%{public}lld) "
             "hold=%{public}llu/%{public}llu flow=%{public}llu/%{public}llu/%{public}llukBps "
-            "speed=%{public}.3f consFps=%{public}.0f expFps=%{public}.0f",
+            "speed=%{public}.3f consFps=%{public}.0f expFps=%{public}.0f winMs=%{public}lld",
             activeEqEnabled_.load() ? 1 : 0,
             levelPeakSnapshot_.load(std::memory_order_relaxed),
             static_cast<double>(levelRmsTenfoldSnapshot_.load(std::memory_order_relaxed)) / 10.0,
@@ -4503,7 +4507,8 @@ private:
             static_cast<unsigned long long>(inDelta / 1000),
             healthSpeed,
             consumeFps,
-            static_cast<double>(48000.0f * healthSpeed));
+            static_cast<double>(48000.0f * healthSpeed),
+            static_cast<long long>(reportWinMs));
         decoderGapMaxMs_ = 0;
     }
 
