@@ -1330,26 +1330,24 @@ public:
                 return false;
             }
             if (!enabled) {
-                // 关闭「变速变调」后 tempo 节点交还给播放倍速驱动：
-                // 否则节点会沿用效果残留的 speed/pitch，导致关掉效果后播放速度莫名改变
-                tempoSpeed_.store(std::clamp(playbackSpeed_.load(std::memory_order_relaxed), 0.5f, 3.0f),
-                    std::memory_order_relaxed);
-                tempoPitch_.store(1.0f, std::memory_order_relaxed);
+                // 关闭「变速变调」后节点交还给播放倍速驱动（无倍速则回中性值）
+                SyncTempoNodeParamsLocked();
             }
         }
         return true;
     }
 
-    // speed: [0.5, 10.0]；pitch: [0.1, 5.0]
+    // speed: [0.5, 10.0]；pitch: [0.1, 5.0]（「变速变调」效果自身的参数）
     bool SetTempoPitchConfig(float speed, float pitch)
     {
         const float clampedSpeed = std::clamp(speed, 0.5f, 10.0f);
         const float clampedPitch = std::clamp(pitch, 0.1f, 5.0f);
-        tempoSpeed_ = clampedSpeed;
-        tempoPitch_ = clampedPitch;
+        effectTempoSpeed_.store(clampedSpeed, std::memory_order_relaxed);
+        effectTempoPitch_.store(clampedPitch, std::memory_order_relaxed);
         std::lock_guard<std::mutex> lock(effectMutex_);
+        SyncTempoNodeParamsLocked();
         OH_AudioNode* node = ActiveEffectNodes().tempoPitch;
-        if (node == nullptr || !requestedTempoPitchEnabled_.load()) {
+        if (node == nullptr || !(requestedTempoPitchEnabled_.load() || SpeedActive())) {
             return true;
         }
         return SetTempoPitchStateLocked(node);
@@ -1462,11 +1460,8 @@ public:
             bool tempoApplied = false;
             {
                 std::lock_guard<std::mutex> lock(effectMutex_);
-                if (!requestedTempoPitchEnabled_.load()) {
-                    // 未启用「变速变调」效果时，tempo 节点完全由播放倍速驱动，音调保持不变
-                    tempoSpeed_.store(clamped, std::memory_order_relaxed);
-                    tempoPitch_.store(1.0f, std::memory_order_relaxed);
-                }
+                // 倍速优先级最高：节点速率=播放倍速、音调恒 1.0（变速不变调）
+                SyncTempoNodeParamsLocked();
                 if (EnsureEffectsBuiltLocked() && SwitchPipelineLocked()) {
                     OH_AudioNode* node = ActiveEffectNodes().tempoPitch;
                     if (node != nullptr) {
@@ -1484,8 +1479,11 @@ public:
             if (tempoApplied) {
                 // 只有真正下发成功才更新生效值：失败时进度不会按错误速率走
                 effectiveSpeed_.store(clamped, std::memory_order_relaxed);
-                OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                    "speed applied via tempo node speed=%{public}.3f", clamped);
+                // WARN 级：hilog 默认级别会过滤 INFO，关键链路必须能在常规抓取里看到
+                OH_LOG_Print(LOG_APP, LOG_WARN, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                    "speed applied via tempo node speed=%{public}.3f pitch=%{public}.3f",
+                    tempoSpeed_.load(std::memory_order_relaxed),
+                    tempoPitch_.load(std::memory_order_relaxed));
                 return true;
             }
         }
@@ -1814,6 +1812,27 @@ private:
         return true;
     }
 
+    // 统一计算下发到变速节点的参数（调用方须持 effectMutex_）：
+    // 优先级 —— 播放倍速 > 「变速变调」效果参数 > 中性值。
+    // 倍速生效时音调恒为 1.0（变速不变调）；退出倍速后原样还给效果，
+    // 避免两套参数互相覆盖造成「速度不对 + 变调」。
+    void SyncTempoNodeParamsLocked()
+    {
+        if (SpeedActive()) {
+            tempoSpeed_.store(std::clamp(playbackSpeed_.load(std::memory_order_relaxed), 0.5f, 3.0f),
+                std::memory_order_relaxed);
+            tempoPitch_.store(1.0f, std::memory_order_relaxed);
+            return;
+        }
+        if (requestedTempoPitchEnabled_.load()) {
+            tempoSpeed_.store(effectTempoSpeed_.load(std::memory_order_relaxed), std::memory_order_relaxed);
+            tempoPitch_.store(effectTempoPitch_.load(std::memory_order_relaxed), std::memory_order_relaxed);
+            return;
+        }
+        tempoSpeed_.store(1.0f, std::memory_order_relaxed);
+        tempoPitch_.store(1.0f, std::memory_order_relaxed);
+    }
+
     bool SetTempoPitchStateLocked(OH_AudioNode* node)
     {
         if (node == nullptr) {
@@ -1824,6 +1843,11 @@ private:
         }
         OH_AudioSuite_Result result = OH_AudioSuiteEngine_SetTempoAndPitch(
             node, tempoSpeed_.load(), tempoPitch_.load());
+        // WARN 级：默认 hilog 级别会滤掉 INFO，变速链路的关键参数必须能被常规抓取看到
+        OH_LOG_Print(LOG_APP, result == AUDIOSUITE_SUCCESS ? LOG_WARN : LOG_ERROR,
+            UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "tempo node apply speed=%{public}.3f pitch=%{public}.3f code=%{public}d",
+            tempoSpeed_.load(), tempoPitch_.load(), static_cast<int>(result));
         if (result != AUDIOSUITE_SUCCESS) {
             OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                 "set tempo and pitch failed code=%{public}d speed=%{public}.2f pitch=%{public}.2f",
@@ -2124,6 +2148,8 @@ private:
             // 变速节点由「变速变调效果开关」或「播放倍速」任一驱动
             const float nodeSpeed = playbackSpeed_.load(std::memory_order_relaxed);
             if (requestedTempoPitchEnabled_.load() || std::fabs(nodeSpeed - 1.0f) >= 0.01f) {
+                // 先按优先级同步参数（倍速 > 效果），再启用节点，避免用到陈旧参数
+                SyncTempoNodeParamsLocked();
                 if (!SetTempoPitchStateLocked(nodes.tempoPitch)) {
                     return false;
                 }
@@ -4648,8 +4674,12 @@ private:
     std::atomic<int32_t> pureVoiceChangeType_ = 1;         // 1..7，见 OH_AudioSuite_PureVoiceChangeType
     std::atomic<float> pureVoiceChangePitch_ = 0.0f;       // 0=系统推荐（OH_PURE_VOICE_DEFAULT_PITCH），自定义 [0.3,3.0]
     std::atomic<bool> requestedTempoPitchEnabled_ = false;
-    std::atomic<float> tempoSpeed_ = 1.0f;                 // [0.5,10.0]
-    std::atomic<float> tempoPitch_ = 1.0f;                 // [0.1,5.0]
+    std::atomic<float> tempoSpeed_ = 1.0f;                 // [0.5,10.0] 当前下发到节点的速率
+    std::atomic<float> tempoPitch_ = 1.0f;                 // [0.1,5.0] 当前下发到节点的音调
+    // 「变速变调」效果自身的参数（与播放倍速分开存）：播放倍速生效期间由倍速接管节点，
+    // 退出倍速后原样还给效果，避免两者互相覆盖导致「速度不对 + 变调」
+    std::atomic<float> effectTempoSpeed_ = 1.0f;
+    std::atomic<float> effectTempoPitch_ = 1.0f;
     std::atomic<bool> requestedSeparationEnabled_ = false;
     std::atomic<int32_t> separationOutput_ = 1;            // 1=仅人声 2=仅伴奏 3=人声+伴奏混合
     // JS 线程 SetSpeed 写、渲染回调 MeasureInputDensity 读，必须原子
