@@ -3,7 +3,9 @@ import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstan
 import { ColorHelper } from '../common/utils/ColorHelper'
 import { isDarkThemeEffective } from '../common/utils/ThemeUtil'
 import { ScaleButton } from '../component/ScaleButton'
+import Logger from '../common/utils/Logger'
 
+const TAG = 'SettingsContent'
 const KEY_PRIMARY_COLOR = 'uplayer_primary_color'
 
 interface SettingCategory {
@@ -56,10 +58,14 @@ export struct SettingsContent {
   }
 
   onCategoryClick(category: SettingCategory): void {
-    this.getUIContext()?.getRouter().pushUrl({
-      url: 'pages/SettingsDetailPage',
-      params: { category: category.route }
-    })
+    try {
+      this.getUIContext()?.getRouter().pushUrl({
+        url: 'pages/SettingsDetailPage',
+        params: { category: category.route }
+      })
+    } catch (err) {
+      Logger.error(TAG, `push settings detail failed: ${JSON.stringify(err)}`)
+    }
   }
 
   build() {

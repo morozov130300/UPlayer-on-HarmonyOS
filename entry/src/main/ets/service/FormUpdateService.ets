@@ -22,6 +22,9 @@ export const KEY_SNAP_IS_PLAYING: string = 'snap_is_playing'
 export const KEY_SNAP_PERCENT: string = 'snap_percent'
 export const KEY_SNAP_HAS_COVER: string = 'snap_has_cover'
 const DISCOVERY_INTERVAL_MS: number = 15000
+// 无卡片（16500100）连续失败退避：15s → 60s → 300s 封顶，避免空转 IPC 刷错误日志
+const DISCOVERY_BACKOFF_MS: number = 60000
+const DISCOVERY_BACKOFF_MAX_MS: number = 300000
 const UPDATE_INTERVAL_MS: number = 1000
 const REDISCOVER_TICKS: number = 15
 
@@ -36,6 +39,7 @@ export class FormUpdateService {
   private store: preferences.Preferences | undefined = undefined
   private storeReady: boolean = false
   private discoveryTimer: number = -1
+  private discoveryFailCount: number = 0
   private updateTimer: number = -1
   private tickCount: number = 0
   private formIds: string[] = []
@@ -68,7 +72,7 @@ export class FormUpdateService {
 
   shutdown(): void {
     if (this.discoveryTimer !== -1) {
-      clearInterval(this.discoveryTimer)
+      clearTimeout(this.discoveryTimer)
       this.discoveryTimer = -1
     }
     this.stopUpdateTimer()
@@ -76,13 +80,37 @@ export class FormUpdateService {
   }
 
   private startDiscovery(): void {
+    this.scheduleDiscovery(0)
+  }
+
+  // 自调度发现：由 refreshFormIds 结果决定下一次间隔（有卡 15s，无卡退避）
+  private scheduleDiscovery(delayMs: number): void {
     if (this.discoveryTimer !== -1) {
+      clearTimeout(this.discoveryTimer)
+    }
+    this.discoveryTimer = setTimeout((): void => {
+      this.discoveryTimer = -1
+      this.refreshFormIds(false)
+    }, delayMs)
+  }
+
+  private nextDiscoveryDelay(): number {
+    if (this.discoveryFailCount <= 0) {
+      return DISCOVERY_INTERVAL_MS
+    }
+    if (this.discoveryFailCount === 1) {
+      return DISCOVERY_BACKOFF_MS
+    }
+    return DISCOVERY_BACKOFF_MAX_MS
+  }
+
+  // 前台切换等时机立即检查卡片并重置退避（EntryAbility.onForeground 调用）
+  public refreshNow(): void {
+    if (this.context === undefined) {
       return
     }
-    this.discoveryTimer = setInterval((): void => {
-      this.refreshFormIds(false)
-    }, DISCOVERY_INTERVAL_MS)
-    this.refreshFormIds(true)
+    this.discoveryFailCount = 0
+    this.scheduleDiscovery(0)
   }
 
   private stopUpdateTimer(): void {
@@ -118,6 +146,7 @@ export class FormUpdateService {
       }
       const changed: boolean = ids.length !== this.formIds.length || ids.join(',') !== this.formIds.join(',')
       this.formIds = ids
+      this.discoveryFailCount = 0
       if (ids.length > 0) {
         this.ensureUpdateTimer()
         if (changed || forcePush) {
@@ -126,10 +155,13 @@ export class FormUpdateService {
       } else {
         this.stopUpdateTimer()
       }
+      this.scheduleDiscovery(this.nextDiscoveryDelay())
     }).catch((err: BusinessError): void => {
-      // 无卡片加桌时返回 16500100，视为空列表
+      // 无卡片加桌时返回 16500100，视为空列表并退避，避免每 15s 空转刷错误日志
       this.formIds = []
+      this.discoveryFailCount++
       this.stopUpdateTimer()
+      this.scheduleDiscovery(this.nextDiscoveryDelay())
       Logger.debug(TAG, `getPublishedRunningFormInfos: ${err.code} ${err.message}`)
     })
   }

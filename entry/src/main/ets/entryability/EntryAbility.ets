@@ -336,6 +336,10 @@ export default class EntryAbility extends UIAbility {
     AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_UI_ACTIVE, true)
     AVPlayerService.getInstance().onForegroundRestore();
     HoldingHandService.getInstance().syncWithSetting();
+    // 回前台立即检查桌面卡片并重置发现退避（后台期间用户新加卡片可被及时感知）
+    this.safeRun('FormUpdateService.refreshNow', () => {
+      FormUpdateService.getInstance().refreshNow();
+    });
   }
 
   onBackground(): void {

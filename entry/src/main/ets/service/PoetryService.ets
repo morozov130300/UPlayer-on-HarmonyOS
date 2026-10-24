@@ -21,7 +21,7 @@ export class PoetryService {
     return PoetryService.instance
   }
 
-  private getSession(): rcp.Session {
+  private getSession(): rcp.Session | undefined {
     if (this.session === undefined) {
       const sessionConfig: rcp.SessionConfiguration = {
         requestConfiguration: {
@@ -33,7 +33,12 @@ export class PoetryService {
           }
         }
       }
-      this.session = rcp.createSession(sessionConfig)
+      try {
+        this.session = rcp.createSession(sessionConfig)
+      } catch (e) {
+        Logger.error(TAG, `create session failed: ${JSON.stringify(e)}`)
+        return undefined
+      }
     }
     return this.session
   }
@@ -47,7 +52,10 @@ export class PoetryService {
   }
 
   public async fetchRandomLine(): Promise<string> {
-    const session: rcp.Session = this.getSession()
+    const session: rcp.Session | undefined = this.getSession()
+    if (session === undefined) {
+      return ''
+    }
     try {
       // 随机接口无法指定类型，取到不满足“唐诗/宋词/元曲/五言/七言”的篇目时重试
       for (let attempt = 0; attempt < MAX_FETCH_ATTEMPTS; attempt++) {

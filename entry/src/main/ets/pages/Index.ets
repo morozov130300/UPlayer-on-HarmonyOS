@@ -751,7 +751,11 @@ struct MainPage {
   }
 
   openPlayer(): void {
-    this.getUIContext().getRouter().pushUrl({ url: 'pages/MusicPlayer' })
+    try {
+      this.getUIContext().getRouter().pushUrl({ url: 'pages/MusicPlayer' })
+    } catch (err) {
+      Logger.error(TAG, `open player page failed: ${JSON.stringify(err)}`)
+    }
   }
 
   // 仅当「玻璃样式 + 设备系统达到 API 26」时启用真·液态玻璃（厚度档位设置已删除，默认开启）；

@@ -12,6 +12,9 @@ import { image } from '@kit.ImageKit';
 import { MediaTools } from './MediaTools';
 
 const TAG = 'AVSessionController';
+// 播放中播放状态上报节流间隔：播控中心按 position.updateTime 自行插值进度，
+// 无需每秒全量上报，降低系统 AVSession 同步超时（syncExecutor timeout）触发概率
+const PROGRESS_REPORT_INTERVAL_MS: number = 5000;
 
 export class AVSessionController {
   private context: common.UIAbilityContext | undefined = undefined;
@@ -663,19 +666,28 @@ export class AVSessionController {
       return;
     }
     const now: number = new Date().getTime();
-    const positionChanged: boolean = this.lastProgressReportPosition < 0 ||
-      Math.abs(ms - this.lastProgressReportPosition) >= 1000 || ms < this.lastProgressReportPosition;
-    if (!positionChanged && now - this.lastProgressReportTime < 1000) {
+    // 回退（seek 后退）或大步前进（seek 前进）立即上报，否则按节流间隔上报
+    const seekBack: boolean = this.lastProgressReportPosition >= 0 && ms < this.lastProgressReportPosition;
+    const seekForward: boolean = this.lastProgressReportPosition >= 0 &&
+      ms - this.lastProgressReportPosition >= PROGRESS_REPORT_INTERVAL_MS;
+    if (!seekBack && !seekForward && now - this.lastProgressReportTime < PROGRESS_REPORT_INTERVAL_MS) {
       return;
     }
     this.lastProgressReportTime = now;
     this.lastProgressReportPosition = ms;
-    this.queuePlaybackState({
+    // 补齐 state / activeItemId：只报 position 会让系统侧整型字段缺省为 -1 刷日志
+    const update: avSession.AVPlaybackState = {
       position: {
         elapsedTime: ms,
         updateTime: now
       }
-    });
+    };
+    if (this.lastSubmittedPlayState !== undefined) {
+      update.state = this.lastSubmittedPlayState;
+    }
+    const currentIndex: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_SELECT_INDEX) ?? 0;
+    update.activeItemId = currentIndex + 1;
+    this.queuePlaybackState(update);
   }
 
   public setPlayState(isPlay: boolean): void {
