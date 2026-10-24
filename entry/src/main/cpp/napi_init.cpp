@@ -1412,13 +1412,19 @@ public:
             return false;
         }
         const float clamped = std::clamp(speed, 0.5f, 3.0f);
+        const float previousSpeed = playbackSpeed_.load(std::memory_order_relaxed);
         const bool speedActive = std::fabs(clamped - 1.0f) >= 0.01f;
+        // 请求值先落：NeedSpecialPipeline()/IsAnyEffectRequested() 都以它判断「是否要特殊管线」，
+        // 放到下发成功之后再写会导致管线不切换（实测 active=MAIN 时取不到 tempo 节点）。
+        // 位置换算/密度锁只看 effectiveSpeed_，不受这里影响
+        playbackSpeed_.store(clamped, std::memory_order_relaxed);
         // 低功耗链路自己实现倍速，与渲染链路无关；失败则回滚请求值，避免 UI 与实际不一致
         if (lpActive_.load() && lpSink_ != nullptr) {
             const bool lpOk = OH_LowPowerAudioSink_SetPlaybackSpeed(lpSink_, clamped) == AV_ERR_OK;
             if (lpOk) {
-                playbackSpeed_.store(clamped, std::memory_order_relaxed);
                 effectiveSpeed_.store(clamped, std::memory_order_relaxed);
+            } else {
+                playbackSpeed_.store(previousSpeed, std::memory_order_relaxed);
             }
             return lpOk;
         }
@@ -1434,6 +1440,7 @@ public:
             if (bypassNode != nullptr && !BypassNodeLocked(bypassNode, true)) {
                 OH_LOG_Print(LOG_APP, LOG_WARN, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                     "speed reset: bypass tempo node failed");
+                playbackSpeed_.store(previousSpeed, std::memory_order_relaxed);
                 return false;
             }
             playbackSpeed_.store(clamped, std::memory_order_relaxed);
@@ -1452,6 +1459,7 @@ public:
         rebasePending_.store(true, std::memory_order_release);
         // 路线一（首选）：AudioSuite 变速节点，变速不变调，渲染器保持 FAST 恒 1.0 消费
         if (IsTempoPitchSupported()) {
+            bool tempoApplied = false;
             {
                 std::lock_guard<std::mutex> lock(effectMutex_);
                 if (!requestedTempoPitchEnabled_.load()) {
@@ -1459,32 +1467,27 @@ public:
                     tempoSpeed_.store(clamped, std::memory_order_relaxed);
                     tempoPitch_.store(1.0f, std::memory_order_relaxed);
                 }
-                if (!EnsureEffectsBuiltLocked() || !SwitchPipelineLocked()) {
-                    OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                        "speed apply failed: pipeline unavailable speed=%{public}.3f", clamped);
-                    return false;
+                if (EnsureEffectsBuiltLocked() && SwitchPipelineLocked()) {
+                    OH_AudioNode* node = ActiveEffectNodes().tempoPitch;
+                    if (node != nullptr) {
+                        tempoApplied = SetTempoPitchStateLocked(node);
+                    }
                 }
-                OH_AudioNode* node = ActiveEffectNodes().tempoPitch;
-                if (node == nullptr) {
-                    // 分离管线/管线不可用：倍速无法执行，保持原速率并如实返回失败
-                    OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                        "speed apply failed: tempo node missing active=%{public}d speed=%{public}.3f",
-                        static_cast<int>(activePipeline_), clamped);
-                    return false;
-                }
-                const bool applied = SetTempoPitchStateLocked(node);
-                if (!applied) {
-                    OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                        "speed apply failed: set tempo node speed=%{public}.3f", clamped);
-                    return false;
+                if (!tempoApplied) {
+                    // 特殊管线不可用/节点缺失：不在这里判死刑，继续走渲染器回退路线
+                    OH_LOG_Print(LOG_APP, LOG_WARN, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                        "tempo path unavailable active=%{public}d special=%{public}d speed=%{public}.3f, "
+                        "fallback to renderer", static_cast<int>(activePipeline_),
+                        specialPipelineUsable_ ? 1 : 0, clamped);
                 }
             }
-            // 只有真正下发成功才更新请求值/生效值：失败时进度不会按错误速率走
-            playbackSpeed_.store(clamped, std::memory_order_relaxed);
-            effectiveSpeed_.store(clamped, std::memory_order_relaxed);
-            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                "speed applied via tempo node speed=%{public}.3f", clamped);
-            return true;
+            if (tempoApplied) {
+                // 只有真正下发成功才更新生效值：失败时进度不会按错误速率走
+                effectiveSpeed_.store(clamped, std::memory_order_relaxed);
+                OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                    "speed applied via tempo node speed=%{public}.3f", clamped);
+                return true;
+            }
         }
         // 路线二（回退）：设备无变速节点时用渲染器 SetSpeed。
         // 只有 NORMAL 时延模式支持；ConfigureRenderer 在「倍速激活且无变速节点」时起播走 NORMAL，
@@ -1492,8 +1495,9 @@ public:
         const OH_AudioStream_Result setResult = OH_AudioRenderer_SetSpeed(renderer_, clamped);
         const bool rendererApplied = setResult == AUDIOSTREAM_SUCCESS;
         if (rendererApplied) {
-            playbackSpeed_.store(clamped, std::memory_order_relaxed);
             effectiveSpeed_.store(clamped, std::memory_order_relaxed);
+        } else {
+            playbackSpeed_.store(previousSpeed, std::memory_order_relaxed);
         }
         OH_LOG_Print(LOG_APP, rendererApplied ? LOG_INFO : LOG_WARN, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "speed applied via renderer fallback speed=%{public}.3f ok=%{public}d code=%{public}d",
