@@ -193,7 +193,9 @@ export class AVPlayerService {
     }
     this.backendState = BackendState.STARTING
     this.forcePipelineRebuild = false
-    nativeAudio.stop()
+    // 切歌不在主线程同步 stop：worker 侧 NativeAudioPlayer::Play（ExecutePlay）开头即做全量 Stop 拆旧管线，
+    // 主线程同步 stop 会 join 解码/渲染线程、停 renderer（实测 ~135ms）并销毁音效引擎（~110ms），
+    // 阻塞 UI 导致跟手光效顿挫，且对播放路径完全冗余
     this.stopNativeProgressTimer()
     this.stopNativeStartupCheck()
     if (requestId !== this.playRequestId) {
