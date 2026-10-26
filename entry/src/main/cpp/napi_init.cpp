@@ -75,6 +75,13 @@ constexpr int64_t DENSITY_HOLD_COOLDOWN_MS = 2000;       // 播放中自动保�
 // 短响应时在回调预算内重试拉取剩余字节，用真实数据补满帧，而非补零遮蔽。
 constexpr int32_t PIPELINE_SHORTFALL_RETRY_MAX = 4;      // 短响应重试上限（单帧总调用 ≤5 次）
 constexpr int32_t PIPELINE_SHORTFALL_RETRY_WAIT_MS = 1;  // 零产出时的微等待，给效果服务补块时间
+// 管线切换安全窗：官方状态机规定管线进入 stopped 后各节点释放缓存，且系统 SuitePipeline 线程
+// 可能仍在处理上一次 RenderFrame 请求。实测「Stop 旧 → 立刻 Start 新 → 立刻渲染」会让首帧
+// 效果节点的 PcmBuffer 为空，系统库 ObtainProcessedData→GetDataDuration 空指针解引用崩溃
+// （SIGSEGV@0x40，x0=0，8 层节点链）。故 Stop 后先静置，Start 后先直通再恢复渲染。
+constexpr int32_t PIPELINE_SWITCH_SETTLE_MS = 30;        // StopPipeline 与 StartPipeline 之间的静置时长
+constexpr int64_t PIPELINE_SWITCH_GRACE_MS = 120;        // StartPipeline 后强制直通的时长（此间不调 RenderFrame；
+                                                         // 取 1 个密度窗口，给 300ms 保持期留出 ≥1.5 窗口预热测量）
 
 // 渲染工作线程 + 环形缓冲解耦：官方文档明示 RenderFrame 处理时长与链上效果节点数相关（本
 // 项目 7 节点），直接在 RT 回调内执行时效果服务 IPC 抖动会超出低时延回调预算（≈13ms），
@@ -430,7 +437,7 @@ public:
             activeEqEnabled_ = requestedEqEnabled_.load();
         }
         ResetLoudnessCompensation();
-        OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "native startup stage=stop elapsedMs=%{public}lld", elapsedMs());
         if (requestId != latestPlayRequest.load()) {
             return false;
@@ -456,18 +463,18 @@ public:
             Stop();
             return false;
         }
-        OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "native startup stage=source elapsedMs=%{public}lld", elapsedMs());
         if (!ConfigureTrack()) {
             Stop();
             return false;
         }
-        OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "native startup stage=track elapsedMs=%{public}lld", elapsedMs());
         // 低功耗链路（OH_LowPowerAudioSink）：压缩帧直通，解码+渲染卸载至低功耗硬件，
         // 与 AP 侧效果链互斥。创建/配置失败（设备/格式不支持）自动回退下方正常管线。
         if (lowPowerRequested_.load() && !lpRuntimeError_.load() && StartLowPowerSink(startPositionMs)) {
-            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                 "native startup stage=low-power-started elapsedMs=%{public}lld", elapsedMs());
             return true;
         }
@@ -475,7 +482,7 @@ public:
             Stop();
             return false;
         }
-        OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "native startup stage=decoder elapsedMs=%{public}lld", elapsedMs());
         // Phase 1 懒构建：无任何效果请求时跳过引擎/管线创建（省 ~110ms 起播开销与效果服务 IPC），
         // 首个效果开关经 EnsureEffectsBuiltLocked 按需补建，播放全程无感
@@ -484,17 +491,17 @@ public:
                 Stop();
                 return false;
             }
-            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                 "native startup stage=effects elapsedMs=%{public}lld", elapsedMs());
         } else {
-            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                 "native startup effects=skipped elapsedMs=%{public}lld", elapsedMs());
         }
         if (!ConfigureRenderer()) {
             Stop();
             return false;
         }
-        OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "native startup stage=renderer-config elapsedMs=%{public}lld", elapsedMs());
         if (requestId != latestPlayRequest.load()) {
             Stop();
@@ -571,7 +578,7 @@ public:
                 }
                 std::this_thread::sleep_for(std::chrono::milliseconds(2));
             }
-            OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                 "native startup stage=render-thread elapsedMs=%{public}lld prefillReached=%{public}d",
                 elapsedMs(), prefillReached ? 1 : 0);
         }
@@ -1977,8 +1984,25 @@ private:
             requestedTempoPitchEnabled_.load();
     }
 
+    // 切管线安全窗是否生效：窗口内禁止一切 RenderFrame/MultiRenderFrame 调用（含保持期预热），
+    // 否则仍会在节点缓存未就绪时触发系统库空 PcmBuffer 崩溃。
+    bool InPipelineGrace()
+    {
+        const int64_t graceUntilMs = pipelineGraceUntilMs_.load(std::memory_order_relaxed);
+        return graceUntilMs > 0 && SteadyNowMs() < graceUntilMs;
+    }
+
+    // StartPipeline 成功后进入切换安全窗：该窗口内渲染线程只走直通兜底，不触发 RenderFrame，
+    // 给系统侧效果服务/节点缓存留出就绪时间（规避切管线后首帧空 PcmBuffer 导致的系统库崩溃）。
+    void ArmPipelineGrace()
+    {
+        pipelineGraceUntilMs_.store(SteadyNowMs() + PIPELINE_SWITCH_GRACE_MS,
+            std::memory_order_relaxed);
+        pipelineGraceLogged_.store(false, std::memory_order_relaxed);
+    }
+
     // 按当前效果开关选择活跃管线：分离 > 特殊（降噪/传统变声/变速变调）> 主管线。
-    // 切换 = 停旧管线 → 起新管线 → 全量重放状态 → 请求直通保持（密度因子重测）。
+    // 切换 = 静置停旧管线 → 起新管线 → 进安全窗 → 全量重放状态 → 请求直通保持（密度因子重测）。
     // 失败时回退旧管线：目标效果不生效，但播放链路不被破坏。调用方须持有 effectMutex_。
     bool SwitchPipelineLocked()
     {
@@ -2003,8 +2027,13 @@ private:
             return true;
         }
         OH_AudioSuitePipeline* oldPipeline = ActivePipelineHandle();
+        OH_AudioSuite_Result stopResult = AUDIOSUITE_SUCCESS;
         if (oldPipeline != nullptr) {
-            OH_AudioSuiteEngine_StopPipeline(oldPipeline);
+            stopResult = OH_AudioSuiteEngine_StopPipeline(oldPipeline);
+            // 静置：stopped 后各节点释放缓存，系统 SuitePipeline 线程可能仍在处理上一次
+            // RenderFrame 请求；紧接着 Start 新管线并立即渲染，首帧节点的 PcmBuffer 会是空，
+            // 系统库 ObtainProcessedData→GetDataDuration 直接空指针崩溃（SIGSEGV@0x40）。
+            std::this_thread::sleep_for(std::chrono::milliseconds(PIPELINE_SWITCH_SETTLE_MS));
         }
         PipelineGroup& nextGroup = GroupFor(target);
         if (nextGroup.pipeline == nullptr) {
@@ -2012,6 +2041,7 @@ private:
                 "switch target pipeline missing target=%{public}d", static_cast<int>(target));
             if (oldPipeline != nullptr) {
                 OH_AudioSuiteEngine_StartPipeline(oldPipeline);
+                ArmPipelineGrace();
             }
             return false;
         }
@@ -2022,15 +2052,20 @@ private:
                 static_cast<int>(target), static_cast<int>(startResult));
             if (oldPipeline != nullptr) {
                 OH_AudioSuiteEngine_StartPipeline(oldPipeline);
+                ArmPipelineGrace();
             }
             return false;
         }
         activePipeline_ = target;
+        ArmPipelineGrace();
         ApplyEffectStatesLocked();
         // 新管线节点数不同 → 拉取密度可能变化，走直通保持重测，避免开关瞬间变调
         pipelineHoldRequested_.store(true);
         OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-            "active pipeline switched target=%{public}d", static_cast<int>(target));
+            "active pipeline switched target=%{public}d stopCode=%{public}d startCode=%{public}d "
+            "settleMs=%{public}d graceMs=%{public}lld", static_cast<int>(target),
+            static_cast<int>(stopResult), static_cast<int>(startResult),
+            PIPELINE_SWITCH_SETTLE_MS, static_cast<long long>(PIPELINE_SWITCH_GRACE_MS));
         return true;
     }
 
@@ -2491,6 +2526,11 @@ private:
     // 停止并销毁三组管线的全部节点与管线；引擎由随后的 DestroyEffectEngine() 销毁
     void DestroyPipelineGroups()
     {
+        // 管线即将销毁：整帧中转 carry 必须一并丢弃（重建后地址可能复用，不能靠指针判归属）
+        pipelineRenderCarryLen_ = 0;
+        pipelineRenderCarryOwner_ = nullptr;
+        // 安全窗属于上一次切换，管线全销毁后失效（下次 Play 首帧应正常渲染）
+        pipelineGraceUntilMs_.store(0, std::memory_order_relaxed);
         PipelineGroup* groups[] = { &mainGroup_, &specialGroup_, &sepGroup_ };
         for (PipelineGroup* group : groups) {
             if (group->pipeline != nullptr) {
@@ -3423,6 +3463,8 @@ private:
         if (audioDataSize <= 0) {
             return;
         }
+        // 输入回调可能并发（切管线瞬间两条链路都在拉源），窗口状态必须串行读写
+        std::lock_guard<std::mutex> densityLock(densityMutex_);
         // 效果开关/保持期起点请求重测：丢弃陈旧窗口与滞回暂存，从干净窗口重新测量
         if (densityWindowResetRequested_.exchange(false)) {
             inputWindowStartMs_ = 0;
@@ -3711,8 +3753,11 @@ private:
                 // 暂停期冻结后恢复：密度窗口/保持期/响度补偿参考全部过时，恢复生产前重置
                 // （与 RenderAudio 直通分支进入时的清理对齐，全部 worker 私有或原子量）
                 wasPaused = false;
-                inputWindowStartMs_ = 0;
-                inputWindowFrames_ = 0;
+                {
+                    std::lock_guard<std::mutex> densityLock(densityMutex_);
+                    inputWindowStartMs_ = 0;
+                    inputWindowFrames_ = 0;
+                }
                 pipelineHoldActive_.store(false);
                 holdCarrySamples_ = 0;
                 densityRetarget_ = 0;
@@ -3820,8 +3865,27 @@ private:
             std::memset(audioData, 0, static_cast<size_t>(audioDataSize));
             return true;
         }
+        // 切管线安全窗：StartPipeline 后系统侧效果服务/节点缓存尚未就绪，此时调 RenderFrame
+        // 会拿到空 PcmBuffer（系统库 ObtainProcessedData→GetDataDuration 空指针崩溃）。
+        // 窗口内改用直通兜底，声音不断，窗口结束再恢复管线渲染。
+        const int64_t graceUntilMs = pipelineGraceUntilMs_.load(std::memory_order_relaxed);
+        if (graceUntilMs > 0) {
+            const int64_t remainMs = graceUntilMs - SteadyNowMs();
+            if (remainMs > 0) {
+                if (!pipelineGraceLogged_.exchange(true, std::memory_order_relaxed)) {
+                    OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                        "pipeline grace direct fallback remainMs=%{public}lld",
+                        static_cast<long long>(remainMs));
+                }
+                return RenderDirectFallback(audioData, audioDataSize);
+            }
+            pipelineGraceUntilMs_.store(0, std::memory_order_relaxed);
+        }
         // 分离管线为多输出（人声/伴奏两路），必须走 MultiRenderFrame 并按输出模式选路/混合；
-        // 管线未构建（Phase 1 懒构建跳过后的防御路径）兜底直通，绝不解引用空管线
+        // 管线未构建（Phase 1 懒构建跳过后的防御路径）兜底直通，绝不解引用空管线。
+        // 两类判定与渲染在同一把 effectMutex_ 内完成，避免判定与使用之间被切管线。
+        bool finished = false;
+        int32_t produced = 0;
         {
             std::lock_guard<std::mutex> lock(effectMutex_);
             if (activePipeline_ == ActivePipeline::SEP) {
@@ -3831,39 +3895,71 @@ private:
                 pipelineEverRendered_.store(true, std::memory_order_relaxed);
                 return true;
             }
-            if (ActivePipelineHandle() == nullptr) {
+            OH_AudioSuitePipeline* activePipeline = ActivePipelineHandle();
+            if (activePipeline == nullptr) {
                 return RenderDirectFallback(audioData, audioDataSize);
             }
-        }
-        bool finished = false;
-        int32_t produced = 0;
-        {
-            std::lock_guard<std::mutex> lock(effectMutex_);
-            OH_AudioSuitePipeline* activePipeline = ActivePipelineHandle();
+            // carry 归属校验：管线切换/重建后必须丢弃上一链路的残帧，避免跨链串音
+            if (pipelineRenderCarryOwner_ != activePipeline) {
+                pipelineRenderCarryLen_ = 0;
+                pipelineRenderCarryOwner_ = activePipeline;
+            }
+            if (static_cast<int32_t>(pipelineRenderScratch_.size()) < audioDataSize) {
+                pipelineRenderScratch_.resize(static_cast<size_t>(audioDataSize));
+            }
+            uint8_t* out = static_cast<uint8_t*>(audioData);
+            // 上帧整帧请求多出的尾部先回填，本帧不足部分才继续向引擎请求
+            if (pipelineRenderCarryLen_ > 0) {
+                const int32_t carryTake = std::min(pipelineRenderCarryLen_, audioDataSize);
+                std::memcpy(out, pipelineRenderCarry_.data(), static_cast<size_t>(carryTake));
+                if (pipelineRenderCarryLen_ > carryTake) {
+                    std::memmove(pipelineRenderCarry_.data(), pipelineRenderCarry_.data() + carryTake,
+                        static_cast<size_t>(pipelineRenderCarryLen_ - carryTake));
+                    pipelineRenderCarryLen_ -= carryTake;
+                } else {
+                    pipelineRenderCarryLen_ = 0;
+                }
+                produced = carryTake;
+            }
             int32_t attempt = 0;
             while (produced < audioDataSize) {
+                // 整帧请求：官方 RenderFrame 契约按固定 frameSize 调用，请求长度不随已产出量收缩
+                // （旧实现在补块时传「剩余字节数」，非帧对齐长度会让引擎内部缓冲与帧长错配）
                 int32_t responseSize = 0;
                 bool partFinished = false;
                 OH_AudioSuite_Result result = OH_AudioSuiteEngine_RenderFrame(
-                    activePipeline, static_cast<uint8_t*>(audioData) + produced,
-                    audioDataSize - produced, &responseSize, &partFinished);
+                    activePipeline, pipelineRenderScratch_.data(), audioDataSize,
+                    &responseSize, &partFinished);
                 if (result != AUDIOSUITE_SUCCESS) {
                     OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                        "RenderFrame failed result=%d responseSize=%d finished=%d inputSize=%d",
+                        "RenderFrame failed result=%d responseSize=%d finished=%d frameSize=%d",
                         static_cast<int>(result), responseSize, partFinished ? 1 : 0,
-                        audioDataSize - produced);
+                        audioDataSize);
                     if (produced == 0) {
                         return false;
                     }
                     break; // 已拉到部分数据：交付部分帧，尾部按短响应淡出处理
                 }
-                if (responseSize > audioDataSize - produced) {
-                    responseSize = audioDataSize - produced;
-                }
-                if (responseSize > 0) {
-                    produced += responseSize;
+                if (responseSize > audioDataSize) {
+                    responseSize = audioDataSize;
                 }
                 finished = finished || partFinished;
+                if (responseSize > 0) {
+                    const int32_t space = audioDataSize - produced;
+                    const int32_t take = std::min(responseSize, space);
+                    std::memcpy(out + produced, pipelineRenderScratch_.data(),
+                        static_cast<size_t>(take));
+                    produced += take;
+                    const int32_t rest = responseSize - take;
+                    if (rest > 0) {
+                        if (static_cast<int32_t>(pipelineRenderCarry_.size()) < rest) {
+                            pipelineRenderCarry_.resize(static_cast<size_t>(rest));
+                        }
+                        std::memcpy(pipelineRenderCarry_.data(),
+                            pipelineRenderScratch_.data() + take, static_cast<size_t>(rest));
+                        pipelineRenderCarryLen_ = rest;
+                    }
+                }
                 if (partFinished || produced >= audioDataSize) {
                     break;
                 }
@@ -4041,8 +4137,11 @@ private:
         if (!usePipeline) {
             // 音效全关走直通渲染：清空密度测量窗口，避免切回管线时沿用陈旧窗口，
             // 也确保直通路径不受管线期补偿倍数影响（ReadPcm 传 usePipeline=false）。
-            inputWindowStartMs_ = 0;
-            inputWindowFrames_ = 0;
+            {
+                std::lock_guard<std::mutex> densityLock(densityMutex_);
+                inputWindowStartMs_ = 0;
+                inputWindowFrames_ = 0;
+            }
             // 直通无拉取音调问题，保持态作废（carry 已过时，不再参与后续交叉淡化）
             pipelineHoldActive_.store(false);
             holdCarrySamples_ = 0;
@@ -4128,7 +4227,7 @@ private:
                     MarkPlaybackCompleted();
                 }
                 if (static_cast<size_t>(audioDataSize) / sizeof(int16_t) <= holdScratch_.size() &&
-                    !audioSuiteEofReached_.load()) {
+                    !audioSuiteEofReached_.load() && !InPipelineGrace()) {
                     int32_t responseSize = 0;
                     bool warmupFinished = false;
                     std::lock_guard<std::mutex> lock(effectMutex_);
@@ -4679,6 +4778,16 @@ private:
     std::atomic<uint64_t> pipelineRenderRespBytes_ = 0;
     bool pipelineRenderFirstLogged_ = false;
     bool pipelineShortfallPrev_ = false;
+    // 渲染线程私有：RenderFrame 一律按整帧长度请求，产出经该整帧中转缓冲回填到输出，
+    // 不足/超出部分由 carry 承接（跨帧续用），避免把「剩余字节数」当请求帧长传给引擎。
+    std::vector<uint8_t> pipelineRenderScratch_;
+    std::vector<uint8_t> pipelineRenderCarry_;
+    int32_t pipelineRenderCarryLen_ = 0;
+    // carry 归属的管线：切换/重建管线后旧 carry 必须丢弃，防止把上一链路的残帧喂给新链路
+    OH_AudioSuitePipeline* pipelineRenderCarryOwner_ = nullptr;
+    // 切管线安全窗截止时刻（steady ms，0 表示无窗口）：窗口内渲染线程只走直通，不调 RenderFrame
+    std::atomic<int64_t> pipelineGraceUntilMs_ = 0;
+    std::atomic<bool> pipelineGraceLogged_ = false;
     bool directShortfallPrev_ = false;   // 渲染线程私有：直通路径短读状态（尾部淡出/恢复淡入）
     // ═══ Phase 4 断音插桩 ═══ 事件点（RT/worker/转换回调）仅原子写：无锁、无日志、无分配；
     // 解码线程 ReportPipelineHealth 每秒汇总一条 health 行。单调计数器只在 Play 起点复位
@@ -4754,6 +4863,10 @@ private:
     // 仅在管线路径生效（ReadPcm 的 usePipeline 参数），直通渲染恒按 48000 推进。
     // 渲染线程与管线输入回调线程都会访问，必须原子。
     std::atomic<int32_t> inputDensityFactor_ = 1;
+    // 密度窗口状态：系统输入回调可能来自多条管线/多个系统线程（切管线瞬间旧链路仍在拉取），
+    // 无锁读改写会让 winMs 与 frames 配错，实测出现过 measuredFps=369777 的窗口撕裂值，
+    // 进而误判密度 2 档、源被 2 倍速推进。用专锁串行化整个测量函数。
+    std::mutex densityMutex_;
     uint64_t inputWindowFrames_ = 0;
     int64_t inputWindowStartMs_ = 0;
     // 管线直通保持状态：效果开关/管线激活瞬间拉取模式突变，旧密度因子未收敛前按旧速率
