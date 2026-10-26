@@ -158,7 +158,7 @@ export struct ControlAreaComponent {
 
   // 当前按下键对应的缩放值：开关关闭恒 1.0
   private pressScaleOf(key: string): number {
-    return this.pressAnimOn && this.pressedKey === key ? 0.9 : 1.0;
+    return this.pressAnimOn && this.pressedKey === key ? StyleConstants.PRESS_SCALE : 1.0;
   }
 
   // 按压/松手弹簧动画：按下立即缩小、松开/取消弹簧回弹
@@ -760,8 +760,8 @@ export struct ControlAreaComponent {
       Row() {
         Column() {
           ScaleButton({
-            pressScale: 0.8,
-            hoverScale: 1.1,
+            pressScale: StyleConstants.PRESS_SCALE,
+            hoverScale: StyleConstants.HOVER_SCALE,
             onButtonTap: () => { this.skipBackward(); }
           }) {
             Image($r('app.media.ic_public_fast_backward'))
@@ -776,8 +776,8 @@ export struct ControlAreaComponent {
 
         Column() {
           ScaleButton({
-            pressScale: 0.8,
-            hoverScale: 1.1,
+            pressScale: StyleConstants.PRESS_SCALE,
+            hoverScale: StyleConstants.HOVER_SCALE,
             onButtonTap: () => {
               this.avPlayerService.playPreviousSong();
               this.pageShowTime = 0;
@@ -794,8 +794,8 @@ export struct ControlAreaComponent {
 
         Column() {
           ScaleButton({
-            pressScale: 0.85,
-            hoverScale: 1.05,
+            pressScale: StyleConstants.PRESS_SCALE,
+            hoverScale: StyleConstants.HOVER_SCALE,
             onButtonTap: () => {
               if (this.isPlay) {
                 this.avPlayerService.pause();
@@ -817,8 +817,8 @@ export struct ControlAreaComponent {
 
         Column() {
           ScaleButton({
-            pressScale: 0.8,
-            hoverScale: 1.1,
+            pressScale: StyleConstants.PRESS_SCALE,
+            hoverScale: StyleConstants.HOVER_SCALE,
             onButtonTap: () => {
               this.avPlayerService.playNextSong();
               this.pageShowTime = 0;
@@ -835,8 +835,8 @@ export struct ControlAreaComponent {
 
         Column() {
           ScaleButton({
-            pressScale: 0.8,
-            hoverScale: 1.1,
+            pressScale: StyleConstants.PRESS_SCALE,
+            hoverScale: StyleConstants.HOVER_SCALE,
             onButtonTap: () => { this.skipForward(); }
           }) {
             Image($r('app.media.ic_public_fast_forward'))
@@ -853,8 +853,8 @@ export struct ControlAreaComponent {
 
       Row() {
         ScaleButton({
-          pressScale: 0.75,
-          hoverScale: 1.1,
+          pressScale: StyleConstants.PRESS_SCALE,
+          hoverScale: StyleConstants.HOVER_SCALE,
           onButtonTap: () => { this.switchPlayMode(); }
         }) {
           SymbolGlyph(this.playMode === MusicPlayMode.ORDER ? $r('sys.symbol.order_play') :
@@ -866,8 +866,8 @@ export struct ControlAreaComponent {
         }
 
         ScaleButton({
-          pressScale: 0.8,
-          hoverScale: 1.1,
+          pressScale: StyleConstants.PRESS_SCALE,
+          hoverScale: StyleConstants.HOVER_SCALE,
           onButtonTap: () => { this.isShowPlayList = true; }
         }) {
           SymbolGlyph($r('sys.symbol.music_note_list'))
@@ -890,8 +890,8 @@ export struct ControlAreaComponent {
         }
 
         ScaleButton({
-          pressScale: 0.8,
-          hoverScale: 1.1,
+          pressScale: StyleConstants.PRESS_SCALE,
+          hoverScale: StyleConstants.HOVER_SCALE,
           onButtonTap: () => { this.isShowSpeedBuild = true; }
         }) {
           SymbolGlyph($r('sys.symbol.speed_multiple'))
@@ -914,8 +914,8 @@ export struct ControlAreaComponent {
 
         // 音量入口：自定义 Slider 弹层（AVVolumePanel 无法被点击主动弹出，见 toggleVolumePanel 注释）
         ScaleButton({
-          pressScale: 0.8,
-          hoverScale: 1.1,
+          pressScale: StyleConstants.PRESS_SCALE,
+          hoverScale: StyleConstants.HOVER_SCALE,
           onButtonTap: () => { this.toggleVolumePanel(); }
         }) {
           Image($r('app.media.ic_public_sound'))
@@ -937,8 +937,8 @@ export struct ControlAreaComponent {
         }
 
         ScaleButton({
-          pressScale: 0.8,
-          hoverScale: 1.1,
+          pressScale: StyleConstants.PRESS_SCALE,
+          hoverScale: StyleConstants.HOVER_SCALE,
           onButtonTap: () => {
             this.isShowMorePanel = true;
             this.initBluetoothAudio(false);
@@ -1264,7 +1264,7 @@ export struct ControlAreaComponent {
   @Builder
   morePanelInfoRow(index: number, label: string, value: string, editable: boolean) {
     // 本 builder 带参（按值传参不会随页面状态重新求值），缩放交给自带状态的 PressScaleHost
-    PressScaleHost({ pressScale: 0.9, hoverScale: 1.02 }) {
+    PressScaleHost({ pressScale: StyleConstants.PRESS_SCALE, hoverScale: StyleConstants.HOVER_SCALE }) {
       Row() {
       Text(label)
         .fontSize(this.scaledFont(12))
@@ -1290,8 +1290,8 @@ export struct ControlAreaComponent {
             this.saveEditField()
           })
         ScaleButton({
-          pressScale: 0.8,
-          hoverScale: 1.1,
+          pressScale: StyleConstants.PRESS_SCALE,
+          hoverScale: StyleConstants.HOVER_SCALE,
           onButtonTap: () => {
             this.saveEditField()
           }
@@ -1306,8 +1306,8 @@ export struct ControlAreaComponent {
             .padding({ left: 10, right: 10 })
         }
         ScaleButton({
-          pressScale: 0.8,
-          hoverScale: 1.1,
+          pressScale: StyleConstants.PRESS_SCALE,
+          hoverScale: StyleConstants.HOVER_SCALE,
           onButtonTap: () => {
             this.cancelEditField()
           }

@@ -30,6 +30,10 @@ export class StyleConstants {
    */
   static readonly FULL_HEIGHT: string = '100%';
 
+  // 按压/悬停动效缩放比例（全局统一）：按下缩到 0.95、悬停放大到 1.05
+  static readonly PRESS_SCALE: number = 0.95;
+  static readonly HOVER_SCALE: number = 1.05;
+
   static readonly ANIMATION_PRESS_DELAY_SHORT: number = 100;
   static readonly ANIMATION_PRESS_DELAY_MEDIUM: number = 120;
   static readonly ANIMATION_PRESS_DELAY_LONG: number = 150;

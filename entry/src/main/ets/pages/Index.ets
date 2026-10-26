@@ -337,7 +337,7 @@ struct MainPage {
 
   // 播控条打开播放页区域的按压弹簧动画（大块档 0.9）
   private barItemScale(): number {
-    return this.pressAnimOn && this.pressedBarItem ? 0.9 : 1.0
+    return this.pressAnimOn && this.pressedBarItem ? StyleConstants.PRESS_SCALE : 1.0
   }
 
   private onBarItemTouch(event: TouchEvent): void {
@@ -388,7 +388,7 @@ struct MainPage {
         .hitTestBehavior(HitTestMode.None)
 
       // Tab 项按压缩放：本 builder 带参（按值传参不随状态重算），交给自带状态的 PressScaleHost
-      PressScaleHost({ pressScale: 0.9, hoverScale: 1.02 }) {
+      PressScaleHost({ pressScale: StyleConstants.PRESS_SCALE, hoverScale: StyleConstants.HOVER_SCALE }) {
         Column() {
           Image(icon)
             .height(this.scaledSize(20))
@@ -533,19 +533,19 @@ struct MainPage {
           this.openPlayer()
         })
       }
-      ScaleButton({ pressScale: 0.8, hoverScale: 1.1, onButtonTap: () => { this.playPrevious() } }) {
+      ScaleButton({ pressScale: StyleConstants.PRESS_SCALE, hoverScale: StyleConstants.HOVER_SCALE, onButtonTap: () => { this.playPrevious() } }) {
         Image($r('app.media.ic_public_play_last'))
           .height(this.scaledSize(18))
           .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
             $r('app.color.player_icon_inactive_color'))
       }
-      ScaleButton({ pressScale: 0.8, hoverScale: 1.1, onButtonTap: () => { this.togglePlay() } }) {
+      ScaleButton({ pressScale: StyleConstants.PRESS_SCALE, hoverScale: StyleConstants.HOVER_SCALE, onButtonTap: () => { this.togglePlay() } }) {
         Image(this.isPlaying ? $r('app.media.ic_public_play') : $r('app.media.ic_public_pause'))
           .height(this.scaledSize(22))
           .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
             $r('app.color.player_icon_inactive_color'))
       }
-      ScaleButton({ pressScale: 0.8, hoverScale: 1.1, onButtonTap: () => { this.playNext() } }) {
+      ScaleButton({ pressScale: StyleConstants.PRESS_SCALE, hoverScale: StyleConstants.HOVER_SCALE, onButtonTap: () => { this.playNext() } }) {
         Image($r('app.media.ic_public_play_next'))
           .height(this.scaledSize(18))
           .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
@@ -697,19 +697,19 @@ struct MainPage {
         this.openPlayer()
       })
 
-      ScaleButton({ pressScale: 0.8, hoverScale: 1.1, onButtonTap: () => { this.playPrevious() } }) {
+      ScaleButton({ pressScale: StyleConstants.PRESS_SCALE, hoverScale: StyleConstants.HOVER_SCALE, onButtonTap: () => { this.playPrevious() } }) {
         Image($r('app.media.ic_public_play_last'))
           .height(this.scaledSize(24))
           .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
             $r('app.color.player_icon_inactive_color'))
       }
-      ScaleButton({ pressScale: 0.8, hoverScale: 1.1, onButtonTap: () => { this.togglePlay() } }) {
+      ScaleButton({ pressScale: StyleConstants.PRESS_SCALE, hoverScale: StyleConstants.HOVER_SCALE, onButtonTap: () => { this.togglePlay() } }) {
         Image(this.isPlaying ? $r('app.media.ic_public_play') : $r('app.media.ic_public_pause'))
           .height(this.scaledSize(28))
           .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
             $r('app.color.player_icon_inactive_color'))
       }
-      ScaleButton({ pressScale: 0.8, hoverScale: 1.1, onButtonTap: () => { this.playNext() } }) {
+      ScaleButton({ pressScale: StyleConstants.PRESS_SCALE, hoverScale: StyleConstants.HOVER_SCALE, onButtonTap: () => { this.playNext() } }) {
         Image($r('app.media.ic_public_play_next'))
           .height(this.scaledSize(24))
           .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
@@ -897,11 +897,8 @@ struct MainPage {
         TabContent() {
           Stack({ alignContent: Alignment.Top }) {
             HomeContent({
-              topContentPadding: this.homeHeaderHeight(),
               bottomSafeHeight: this.bottomSafeHeight,
-              smallBreakpoint: this.breakpoint === 'sm' || this.breakpoint === 'md',
-              greetingBandTop: this.topContentInset(),
-              greetingBandHeight: this.homeHeaderHeight() - this.topContentInset()
+              smallBreakpoint: this.breakpoint === 'sm' || this.breakpoint === 'md'
             }).width('100%').height('100%')
 
             Stack() {

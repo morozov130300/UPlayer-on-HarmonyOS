@@ -14,9 +14,8 @@ import { clearLyricCache } from './LyricLoader'
 import { fillPinyinForSongs, hasChinese } from './PinyinTask'
 import { backfillReplayGainForSongs } from './MetadataTask'
 import { HOLDING_HAND_CONFIRM_WINDOW_DEFAULT_MS, HOLDING_HAND_CONFIRM_WINDOW_MAX_MS,
-  HOLDING_HAND_CONFIRM_WINDOW_MIN_MS, HOLDING_HAND_SOFT_FALLBACK_DEFAULT_MS,
-  HOLDING_HAND_SOFT_FALLBACK_MAX_MS, HOLDING_HAND_SOFT_FALLBACK_MIN_MS,
-  KEY_HOLDING_HAND_CONFIRM_WINDOW_MS, KEY_HOLDING_HAND_SOFT_FALLBACK_MS } from './HoldingHandService'
+  HOLDING_HAND_CONFIRM_WINDOW_MIN_MS,
+  KEY_HOLDING_HAND_CONFIRM_WINDOW_MS } from './HoldingHandService'
 
 const TAG = 'DataService'
 
@@ -138,9 +137,8 @@ export class AppSettingsData {
   tabIndicatorOpacity: number = 50
   // 质感握姿：开启后系统根据单手握持方向自动让首页顶部模糊预览/控件靠左或靠右
   holdingHandEnabled: boolean = true
-  // 智感握姿灵敏度：切换确认窗 / 不确定态回落窗（ms），默认值与范围同 HoldingHandService 导出常量
+  // 智感握姿灵敏度：切换确认窗（ms），默认值与范围同 HoldingHandService 导出常量
   holdingHandConfirmWindowMs: number = 500
-  holdingHandSoftFallbackMs: number = 1000
   // 跟手光效开关（派生自 tabLightColor，供 GlassBackButton/HomeContent 联动消费）：light=开，off=关
   tabTouchIndicator: string = 'light'
   // 跟手光效颜色：none=无（即关闭），white=白光，theme=主题色
@@ -1205,9 +1203,6 @@ return result
       s.holdingHandConfirmWindowMs = this.pickNum(r, 'holdingHandConfirmWindowMs',
         HOLDING_HAND_CONFIRM_WINDOW_DEFAULT_MS, HOLDING_HAND_CONFIRM_WINDOW_MIN_MS,
         HOLDING_HAND_CONFIRM_WINDOW_MAX_MS)
-      s.holdingHandSoftFallbackMs = this.pickNum(r, 'holdingHandSoftFallbackMs',
-        HOLDING_HAND_SOFT_FALLBACK_DEFAULT_MS, HOLDING_HAND_SOFT_FALLBACK_MIN_MS,
-        HOLDING_HAND_SOFT_FALLBACK_MAX_MS)
       let rawTabTouchIndicator: Object | undefined = r['tabTouchIndicator']
       // v1.0.7 起删除旧值 'mask' 的兼容迁移（不跨版本兼容）：「白色蒙版」选项
       // 早已删除，遗留 'mask' 值在所有消费侧均按 === 'light' 比较，行为等价于
@@ -1298,7 +1293,6 @@ return result
 
     r['holdingHandEnabled'] = settings.holdingHandEnabled
     r['holdingHandConfirmWindowMs'] = settings.holdingHandConfirmWindowMs
-    r['holdingHandSoftFallbackMs'] = settings.holdingHandSoftFallbackMs
     r['tabTouchIndicator'] = settings.tabTouchIndicator
     r['tabLightColor'] = settings.tabLightColor
     r['tabMaterialLevel'] = settings.tabMaterialLevel
@@ -1547,7 +1541,6 @@ return result
     AppStorage.setOrCreate('uplayer_plus_button_scroll_hide', true)
     AppStorage.setOrCreate('uplayer_holding_hand_enabled', true)
     AppStorage.setOrCreate(KEY_HOLDING_HAND_CONFIRM_WINDOW_MS, HOLDING_HAND_CONFIRM_WINDOW_DEFAULT_MS)
-    AppStorage.setOrCreate(KEY_HOLDING_HAND_SOFT_FALLBACK_MS, HOLDING_HAND_SOFT_FALLBACK_DEFAULT_MS)
     AppStorage.setOrCreate('uplayer_tab_touch_indicator', 'light')
     AppStorage.setOrCreate('uplayer_tab_light_color', 'theme')
     AppStorage.setOrCreate('uplayer_tab_material_level', 'adaptive')
@@ -1600,7 +1593,6 @@ return result
     AppStorage.setOrCreate('uplayer_plus_button_scroll_hide', settings.plusButtonScrollHide)
     AppStorage.setOrCreate('uplayer_holding_hand_enabled', settings.holdingHandEnabled)
     AppStorage.setOrCreate(KEY_HOLDING_HAND_CONFIRM_WINDOW_MS, settings.holdingHandConfirmWindowMs)
-    AppStorage.setOrCreate(KEY_HOLDING_HAND_SOFT_FALLBACK_MS, settings.holdingHandSoftFallbackMs)
     AppStorage.setOrCreate('uplayer_tab_touch_indicator', settings.tabTouchIndicator)
     AppStorage.setOrCreate('uplayer_tab_light_color', settings.tabLightColor)
     AppStorage.setOrCreate('uplayer_tab_material_level', settings.tabMaterialLevel)

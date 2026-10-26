@@ -13,10 +13,8 @@ import { ColorHelper } from '../common/utils/ColorHelper'
 import Logger from '../common/utils/Logger'
 import { BusinessError, deviceInfo, pasteboard, SuppressWarnings, SuppressWarningsType } from '@kit.BasicServicesKit'
 import { HoldingHandService, HOLDING_HAND_CONFIRM_WINDOW_MAX_MS, HOLDING_HAND_CONFIRM_WINDOW_MIN_MS,
-  HOLDING_HAND_CONFIRM_WINDOW_STEP_MS, HOLDING_HAND_SOFT_FALLBACK_MAX_MS,
-  HOLDING_HAND_SOFT_FALLBACK_MIN_MS, HOLDING_HAND_SOFT_FALLBACK_STEP_MS,
-  KEY_HOLDING_HAND_CONFIRM_WINDOW_MS, KEY_HOLDING_HAND_ENABLED, KEY_HOLDING_HAND_LEFT,
-  KEY_HOLDING_HAND_SOFT_FALLBACK_MS } from '../service/HoldingHandService'
+  HOLDING_HAND_CONFIRM_WINDOW_STEP_MS, KEY_HOLDING_HAND_CONFIRM_WINDOW_MS, KEY_HOLDING_HAND_ENABLED,
+  KEY_HOLDING_HAND_LEFT } from '../service/HoldingHandService'
 import { ColorConversion } from '../common/utils/ColorConversion'
 import { createStyleGlassMaterial, DEFAULT_GLASS_STYLE, isLiquidGlassAvailable,
   showToastGlassMaterial, topBlurRadiusFromStrength } from '../common/utils/GlassUtil'
@@ -27,6 +25,12 @@ import { ScaleButton } from '../component/ScaleButton'
 
 const TAG = 'SettingsDetailPage'
 const KEY_PRIMARY_COLOR = 'uplayer_primary_color'
+
+// 统一说明弹窗的当前内容：同一时刻只允许一个半模态，避免同一节点多次 bindSheet 互相覆盖
+const HELP_SHEET_GLASS: number = 1
+const HELP_SHEET_SHORTCUT: number = 2
+const HELP_SHEET_HOLDING_HAND: number = 3
+const HELP_SHEET_CONFIRM_WINDOW: number = 4
 
 class EqBandInfo {
   freq: string = ''
@@ -170,8 +174,8 @@ struct SettingsDetailPage {
   // Tab 栏实时预览：直接使用 HdsTabs 系统组件，与 Index 完全一致的渲染管线
   @State previewTabIndex: number = 0
   @State showColorPicker: boolean = false
-  @State showGlassScope: boolean = false
-  @State showShortcutSheet: boolean = false
+  @State showHelpSheet: boolean = false
+  @State helpSheetKind: number = 0
   // 自动音量均衡说明弹窗
   @State showReplayGainHelp: boolean = false
   @State pickerHue: number = 210
@@ -991,18 +995,10 @@ struct SettingsDetailPage {
     .mode(NavigationMode.Stack)
     .width('100%')
     .height('100%')
-    .bindSheet($$this.showGlassScope, this.glassScopeSheetBuilder(), {
+    .bindSheet($$this.showHelpSheet, this.helpSheetBuilder(), {
       detents: [SheetSize.MEDIUM],
       dragBar: false,
-      title: this.glassScopeSheetTitle(),
-      showClose: true,
-      preferType: SheetType.CENTER,
-      systemMaterial: this.styleGlassMaterial()
-    })
-    .bindSheet($$this.showShortcutSheet, this.shortcutSheetBuilder(), {
-      detents: [SheetSize.MEDIUM],
-      dragBar: false,
-      title: this.shortcutSheetTitle(),
+      title: this.helpSheetTitle(),
       showClose: true,
       preferType: SheetType.CENTER,
       systemMaterial: this.styleGlassMaterial()
@@ -1085,14 +1081,14 @@ struct SettingsDetailPage {
       .padding({ left: this.scaledSize(8), top: this.scaledSize(1), bottom: this.scaledSize(4) })
   }
 
-  // 玻璃效果范围说明问号按钮：点击弹出半模态说明
+  // 说明问号按钮：点击打开统一说明弹窗
   @Builder
-  glassHelpIcon(): void {
+  helpIcon(kind: number): void {
     ScaleButton({
-      pressScale: 0.8,
-      hoverScale: 1.1,
+      pressScale: StyleConstants.PRESS_SCALE,
+      hoverScale: StyleConstants.HOVER_SCALE,
       onButtonTap: () => {
-        this.showGlassScope = true
+        this.openHelpSheet(kind)
       }
     }) {
       Stack({ alignContent: Alignment.Center }) {
@@ -1109,6 +1105,104 @@ struct SettingsDetailPage {
       .height(this.scaledSize(18))
       .margin({ left: this.scaledSize(4) })
     }
+  }
+
+  private openHelpSheet(kind: number): void {
+    this.helpSheetKind = kind
+    this.showHelpSheet = true
+  }
+
+  private helpSheetTitleText(): string {
+    if (this.helpSheetKind === HELP_SHEET_HOLDING_HAND) {
+      return '智感握姿'
+    }
+    if (this.helpSheetKind === HELP_SHEET_CONFIRM_WINDOW) {
+      return '切换确认窗'
+    }
+    return ''
+  }
+
+  @Builder
+  helpSheetTitle(): void {
+    if (this.helpSheetKind === HELP_SHEET_GLASS) {
+      this.glassScopeSheetTitle()
+    } else if (this.helpSheetKind === HELP_SHEET_SHORTCUT) {
+      this.shortcutSheetTitle()
+    } else {
+      Text(this.helpSheetTitleText())
+        .fontSize(this.scaledFont(20))
+        .fontColor($r('app.color.text_primary'))
+        .fontWeight(FontWeight.Bold)
+        .maxLines(1)
+        .width('100%')
+    }
+  }
+
+  @Builder
+  helpSheetBuilder(): void {
+    if (this.helpSheetKind === HELP_SHEET_GLASS) {
+      this.glassScopeSheetBuilder()
+    } else if (this.helpSheetKind === HELP_SHEET_SHORTCUT) {
+      this.shortcutSheetBuilder()
+    } else {
+      this.gripHelpSheetBuilder()
+    }
+  }
+
+  @Builder
+  helpParagraph(text: string): void {
+    Text(text)
+      .fontSize(this.scaledFont(12))
+      .fontColor(this.settingSubTextColor())
+      .width('100%')
+      .padding({ top: this.scaledSize(2) })
+  }
+
+  // 智感握姿/切换确认窗的详细说明
+  @Builder
+  gripHelpSheetBuilder(): void {
+    Column({ space: this.scaledSize(10) }) {
+      Scroll() {
+        Column({ space: this.scaledSize(10) }) {
+          if (this.helpSheetKind === HELP_SHEET_HOLDING_HAND) {
+            this.helpParagraph('开启后，根据单手握持方向自动调整首页顶部预览与控件靠左/靠右。')
+            this.helpParagraph('仅在设备支持智感握姿时显示该开关。')
+          } else if (this.helpSheetKind === HELP_SHEET_CONFIRM_WINDOW) {
+            this.helpParagraph('握姿切换滤波的确认时间：检测到换手后，需持续该时长无回摆才真正切边。')
+            this.helpParagraph('值越小：换手贴边越快，但越容易被瞬时误报带偏。')
+            this.helpParagraph('值越大：切换越稳，但换手响应越慢。')
+          }
+        }
+        .width('100%')
+      }
+      .layoutWeight(1)
+      .width('100%')
+      .align(Alignment.Top)
+      .edgeEffect(EdgeEffect.Spring)
+
+      Row() {
+        ScaleButton({
+          pressScale: StyleConstants.PRESS_SCALE,
+          hoverScale: StyleConstants.HOVER_SCALE,
+          expandWidth: true,
+          onButtonTap: () => {
+            this.showHelpSheet = false
+          }
+        }) {
+          Button('知道了')
+            .height(this.scaledSize(30))
+            .fontColor('#FFFFFF')
+            .backgroundColor(this.primaryColor)
+            .borderRadius(this.scaledSize(15))
+            .width('100%')
+        }
+      }
+      .width('100%')
+      .padding({ top: this.scaledSize(8), bottom: this.scaledSize(10) })
+    }
+    .width('100%')
+    .height('100%')
+    .padding({ left: this.scaledSize(20), right: this.scaledSize(20), top: this.scaledSize(14) })
   }
 
   // 行内二级标题（用于 Row 内，不带 width 约束，避免溢出）
@@ -1180,11 +1274,11 @@ struct SettingsDetailPage {
 
       Row() {
         ScaleButton({
-          pressScale: 0.8,
-          hoverScale: 1.1,
+          pressScale: StyleConstants.PRESS_SCALE,
+          hoverScale: StyleConstants.HOVER_SCALE,
           expandWidth: true,
           onButtonTap: () => {
-            this.showGlassScope = false
+            this.showHelpSheet = false
           }
         }) {
           Button('知道了')
@@ -1237,8 +1331,8 @@ struct SettingsDetailPage {
 
       Row() {
         ScaleButton({
-          pressScale: 0.8,
-          hoverScale: 1.1,
+          pressScale: StyleConstants.PRESS_SCALE,
+          hoverScale: StyleConstants.HOVER_SCALE,
           expandWidth: true,
           onButtonTap: () => {
             this.showReplayGainHelp = false
@@ -1281,6 +1375,114 @@ struct SettingsDetailPage {
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(this.scaledSize(10))
 
+      Column() {
+        Row() {
+          Text('主题模式')
+            .fontSize(this.scaledFont(14))
+            .fontColor(this.settingTextColor())
+            .fontWeight(FontWeight.Medium)
+          Blank()
+          ForEach(this.themeOptions, (opt: ThemeOption) => {
+            ScaleButton({
+              pressScale: StyleConstants.PRESS_SCALE,
+              hoverScale: StyleConstants.HOVER_SCALE,
+              onButtonTap: () => {
+                this.setThemeMode(opt.value)
+              }
+            }) {
+              Column() {
+                Text(opt.label)
+                  .fontSize(this.scaledFont(11))
+                  .fontColor(this.settings.themeMode === opt.value ? '#FFFFFF' : this.settingInactiveTextColor())
+              }
+              .padding({
+                left: this.scaledSize(10),
+                right: this.scaledSize(10),
+                top: this.scaledSize(5),
+                bottom: this.scaledSize(5)
+              })
+              .backgroundColor(this.settings.themeMode === opt.value ? this.primaryColor :
+                ColorHelper.hexToRgba(this.primaryColor, 0.08))
+              .borderRadius(this.scaledSize(14))
+              .animation({ duration: 200, curve: Curve.EaseInOut })
+            }
+          }, (opt: ThemeOption) => opt.value)
+        }
+        .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+        .width('100%')
+        .height(this.scaledSize(44))
+        .alignItems(VerticalAlign.Center)
+      }
+      .width('100%')
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
+
+      Column({ space: this.scaledSize(6) }) {
+        Row() {
+          this.subTitleRow('首页上端模糊强度')
+          Blank()
+        }
+        .width('100%')
+
+        Text('控制首页顶部标题区玻璃模糊的渐变强度。')
+          .fontSize(this.scaledFont(12))
+          .fontColor(this.settingSubTextColor())
+          .width('100%')
+        Row({ space: this.scaledSize(12) }) {
+          if (!this.previewOnRight) {
+            this.homeTopBlurPreview()
+          }
+          Text('浅')
+            .fontSize(this.scaledFont(11))
+            .fontColor(this.settingTextColor())
+            .margin({
+              left: this.previewOnRight ? 0 : this.scaledSize(14),
+              right: this.scaledSize(8)
+            })
+          Slider({
+            value: this.settings.homeTopBlurStrength,
+            min: 0,
+            max: 100,
+            step: 1,
+            style: SliderStyle.OutSet
+          })
+            .layoutWeight(1)
+            .selectedColor(this.primaryColor)
+            .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+            .blockColor('#FFFFFF')
+            .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
+            .blockBorderColor(this.primaryColor)
+            .blockBorderWidth(3)
+            .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
+            .systemMaterial(this.styleGlassMaterial())
+            .onChange((value: number, mode: SliderChangeMode) => {
+              this.settings.homeTopBlurStrength = value
+              this.homeTopBlurStrength = value
+              this.updateSetting(this.isSliderSettled(mode))
+            })
+          Text('深')
+            .fontSize(this.scaledFont(11))
+            .fontColor(this.settingTextColor())
+            .margin({ left: this.scaledSize(8) })
+          if (this.previewOnRight) {
+            Blank().width(this.scaledSize(14))
+            this.homeTopBlurPreview()
+          }
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+        .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
+      }
+      .width('100%')
+      .padding({
+        top: this.scaledSize(10),
+        left: this.scaledSize(14),
+        right: this.scaledSize(14),
+        bottom: this.scaledSize(10)
+      })
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
+
       Row() {
         this.groupTitle('交互反馈')
       }
@@ -1309,11 +1511,15 @@ struct SettingsDetailPage {
       if (this.holdingHandSupported) {
         Row() {
           Column({ space: this.scaledSize(6) }) {
-            Text('智感握姿')
-              .fontSize(this.scaledFont(14))
-              .fontColor(this.settingTextColor())
-              .fontWeight(FontWeight.Medium)
-            Text('根据单手握持方向自动调整首页顶部预览与控件靠左/靠右。')
+            Row() {
+              Text('智感握姿')
+                .fontSize(this.scaledFont(14))
+                .fontColor(this.settingTextColor())
+                .fontWeight(FontWeight.Medium)
+              this.helpIcon(HELP_SHEET_HOLDING_HAND)
+            }
+
+            Text('按单手握持方向自动调整顶部预览与控件的左右位置。')
               .fontSize(this.scaledFont(12))
               .fontColor(this.settingSubTextColor())
           }
@@ -1346,6 +1552,7 @@ struct SettingsDetailPage {
           Column({ space: this.scaledSize(6) }) {
             Row() {
               this.subTitleRow('切换确认窗')
+              this.helpIcon(HELP_SHEET_CONFIRM_WINDOW)
               Blank()
               Text(`${this.settings.holdingHandConfirmWindowMs} ms`)
                 .fontSize(this.scaledFont(12))
@@ -1354,7 +1561,7 @@ struct SettingsDetailPage {
             }
             .width('100%')
 
-            Text('握姿切换滤波的确认时间：检测到换手后需持续该时长无回摆才真正切边。值越小换手贴边越快，但越易被瞬时误报带偏；值越大越稳，但换手响应越慢。')
+            Text('换手后需稳定该时长才切边，越短响应越快、越长越稳。')
               .fontSize(this.scaledFont(12))
               .fontColor(this.settingSubTextColor())
               .width('100%')
@@ -1403,184 +1610,8 @@ struct SettingsDetailPage {
           .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
           .borderRadius(this.scaledSize(10))
           .transition(this.settingCardTransition())
-
-          Column({ space: this.scaledSize(6) }) {
-            Row() {
-              this.subTitleRow('不确定回落窗')
-              Blank()
-              Text(`${this.settings.holdingHandSoftFallbackMs} ms`)
-                .fontSize(this.scaledFont(12))
-                .fontColor(this.primaryColor)
-                .fontWeight(FontWeight.Medium)
-            }
-            .width('100%')
-
-            Text('不确定状态（未握持/双手/未识别）的回落时间：已贴左后握姿变模糊，持续该时长无左手复确认才回落默认右侧。值越小回退越快；值越大对短暂识别抖动越不敏感。')
-              .fontSize(this.scaledFont(12))
-              .fontColor(this.settingSubTextColor())
-              .width('100%')
-
-            Row({ space: this.scaledSize(8) }) {
-              Text('快')
-                .fontSize(this.scaledFont(11))
-                .fontColor(this.settingTextColor())
-                .margin({ right: this.scaledSize(4) })
-              Slider({
-                value: this.settings.holdingHandSoftFallbackMs,
-                min: HOLDING_HAND_SOFT_FALLBACK_MIN_MS,
-                max: HOLDING_HAND_SOFT_FALLBACK_MAX_MS,
-                step: HOLDING_HAND_SOFT_FALLBACK_STEP_MS,
-                style: SliderStyle.OutSet
-              })
-                .layoutWeight(1)
-                .selectedColor(this.primaryColor)
-                .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-                .blockColor('#FFFFFF')
-                .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
-                .blockBorderColor(this.primaryColor)
-                .blockBorderWidth(3)
-                .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
-                .systemMaterial(this.styleGlassMaterial())
-                .onChange((value: number, mode: SliderChangeMode) => {
-                  this.settings.holdingHandSoftFallbackMs = value
-                  AppStorage.setOrCreate(KEY_HOLDING_HAND_SOFT_FALLBACK_MS, value)
-                  this.updateSetting(this.isSliderSettled(mode))
-                })
-              Text('钝')
-                .fontSize(this.scaledFont(11))
-                .fontColor(this.settingTextColor())
-                .margin({ left: this.scaledSize(4) })
-            }
-            .width('100%')
-            .alignItems(VerticalAlign.Center)
-          }
-          .width('100%')
-          .padding({
-            top: this.scaledSize(10),
-            left: this.scaledSize(14),
-            right: this.scaledSize(14),
-            bottom: this.scaledSize(10)
-          })
-          .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-          .borderRadius(this.scaledSize(10))
-          .transition(this.settingCardTransition())
         }
       }
-
-      Column() {
-        Row() {
-          Text('主题模式')
-            .fontSize(this.scaledFont(14))
-            .fontColor(this.settingTextColor())
-            .fontWeight(FontWeight.Medium)
-          Blank()
-          ForEach(this.themeOptions, (opt: ThemeOption) => {
-            ScaleButton({
-              pressScale: 0.8,
-              hoverScale: 1.1,
-              onButtonTap: () => {
-                this.setThemeMode(opt.value)
-              }
-            }) {
-              Column() {
-                Text(opt.label)
-                  .fontSize(this.scaledFont(11))
-                  .fontColor(this.settings.themeMode === opt.value ? '#FFFFFF' : this.settingInactiveTextColor())
-              }
-              .padding({
-                left: this.scaledSize(10),
-                right: this.scaledSize(10),
-                top: this.scaledSize(5),
-                bottom: this.scaledSize(5)
-              })
-              .backgroundColor(this.settings.themeMode === opt.value ? this.primaryColor :
-                ColorHelper.hexToRgba(this.primaryColor, 0.08))
-              .borderRadius(this.scaledSize(14))
-              .animation({ duration: 200, curve: Curve.EaseInOut })
-            }
-          }, (opt: ThemeOption) => opt.value)
-        }
-        .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-        .width('100%')
-        .height(this.scaledSize(44))
-        .alignItems(VerticalAlign.Center)
-      }
-      .width('100%')
-      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(this.scaledSize(10))
-
-      Column() {
-        // 首页上端模糊强度
-        Column({ space: this.scaledSize(6) }) {
-          Row() {
-            this.subTitleRow('首页上端模糊强度')
-            Blank()
-          }
-          .width('100%')
-
-          Text('控制首页顶部标题区玻璃模糊的渐变强度。')
-            .fontSize(this.scaledFont(12))
-            .fontColor(this.settingSubTextColor())
-            .width('100%')
-          Row({ space: this.scaledSize(12) }) {
-            if (!this.previewOnRight) {
-              this.homeTopBlurPreview()
-            }
-            Text('浅')
-              .fontSize(this.scaledFont(11))
-              .fontColor(this.settingTextColor())
-              .margin({
-                left: this.previewOnRight ? 0 : this.scaledSize(14),
-                right: this.scaledSize(8)
-              })
-            Slider({
-              value: this.settings.homeTopBlurStrength,
-              min: 0,
-              max: 100,
-              step: 1,
-              style: SliderStyle.OutSet
-            })
-              .layoutWeight(1)
-              .selectedColor(this.primaryColor)
-              .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-              .blockColor('#FFFFFF')
-              .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
-              .blockBorderColor(this.primaryColor)
-              .blockBorderWidth(3)
-              .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
-              .systemMaterial(this.styleGlassMaterial())
-              .onChange((value: number, mode: SliderChangeMode) => {
-                this.settings.homeTopBlurStrength = value
-                this.homeTopBlurStrength = value
-                this.updateSetting(this.isSliderSettled(mode))
-              })
-            Text('深')
-              .fontSize(this.scaledFont(11))
-              .fontColor(this.settingTextColor())
-              .margin({ left: this.scaledSize(8) })
-            if (this.previewOnRight) {
-              Blank().width(this.scaledSize(14))
-              this.homeTopBlurPreview()
-            }
-          }
-          .width('100%')
-          .alignItems(VerticalAlign.Center)
-          .padding({ top: this.scaledSize(2), bottom: this.scaledSize(2) })
-        }
-        .width('100%')
-        .padding({
-          top: this.scaledSize(10),
-          left: this.scaledSize(14),
-          right: this.scaledSize(14),
-          bottom: this.scaledSize(10)
-        })
-        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-        .borderRadius(this.scaledSize(10))
-
-        // 「Tab栏与播控条模糊强度」「Tab 指示器不透明度」是「高级样式」组的独立设置项卡片，
-        // Tab 实时预览卡片只负责预览效果、不携带任何设置项
-      }
-      .width('100%')
 
       Column({ space: this.scaledSize(8) }) {
         Row() {
@@ -1593,8 +1624,8 @@ struct SettingsDetailPage {
           ForEach(this.colorOptions, (option: ThemeColorOption) => {
             GridItem() {
               ScaleButton({
-                pressScale: 0.9,
-                hoverScale: 1.02,
+                pressScale: StyleConstants.PRESS_SCALE,
+                hoverScale: StyleConstants.HOVER_SCALE,
                 expandWidth: true,
                 onButtonTap: () => {
                   this.setPrimaryColor(option.value)
@@ -1636,8 +1667,8 @@ struct SettingsDetailPage {
         .width('100%')
 
         ScaleButton({
-          pressScale: 0.9,
-          hoverScale: 1.02,
+          pressScale: StyleConstants.PRESS_SCALE,
+          hoverScale: StyleConstants.HOVER_SCALE,
           expandWidth: true,
           onButtonTap: () => {
             this.openColorPicker()
@@ -1814,12 +1845,12 @@ struct SettingsDetailPage {
               .fontSize(this.scaledFont(14))
               .fontColor(this.settingTextColor())
               .fontWeight(FontWeight.Medium)
-            this.glassHelpIcon()
+            this.helpIcon(HELP_SHEET_GLASS)
             Blank()
             ForEach(this.tabStyleOptions, (opt: TabStyleOption) => {
               ScaleButton({
-                pressScale: 0.8,
-                hoverScale: 1.1,
+                pressScale: StyleConstants.PRESS_SCALE,
+                hoverScale: StyleConstants.HOVER_SCALE,
                 onButtonTap: () => {
                   this.setTabStyle(opt.value)
                 }
@@ -1861,8 +1892,8 @@ struct SettingsDetailPage {
               Blank()
               ForEach(this.lightColorOptions, (opt: TouchIndicatorOption) => {
                 ScaleButton({
-                  pressScale: 0.8,
-                  hoverScale: 1.1,
+                  pressScale: StyleConstants.PRESS_SCALE,
+                  hoverScale: StyleConstants.HOVER_SCALE,
                   onButtonTap: () => {
                     this.animateSettingChange(() => {
                       this.settings.tabLightColor = opt.value
@@ -1917,8 +1948,8 @@ struct SettingsDetailPage {
               Blank()
               ForEach(this.materialLevelOptions, (opt: TouchIndicatorOption) => {
                 ScaleButton({
-                  pressScale: 0.8,
-                  hoverScale: 1.1,
+                  pressScale: StyleConstants.PRESS_SCALE,
+                  hoverScale: StyleConstants.HOVER_SCALE,
                   onButtonTap: () => {
                     this.settings.tabMaterialLevel = opt.value
                     this.updateSetting()
@@ -2195,8 +2226,8 @@ struct SettingsDetailPage {
         Row({ space: this.scaledSize(10) }) {
           Row() {
             ScaleButton({
-              pressScale: 0.8,
-              hoverScale: 1.1,
+              pressScale: StyleConstants.PRESS_SCALE,
+              hoverScale: StyleConstants.HOVER_SCALE,
               expandWidth: true,
               onButtonTap: () => {
                 this.cancelColorPicker()
@@ -2213,8 +2244,8 @@ struct SettingsDetailPage {
 
           Row() {
             ScaleButton({
-              pressScale: 0.8,
-              hoverScale: 1.1,
+              pressScale: StyleConstants.PRESS_SCALE,
+              hoverScale: StyleConstants.HOVER_SCALE,
               expandWidth: true,
               onButtonTap: () => {
                 this.confirmColorPicker()
@@ -2565,8 +2596,8 @@ struct SettingsDetailPage {
         Flex({ wrap: FlexWrap.Wrap }) {
           ForEach(this.artistSeparatorOptions, (sep: string) => {
             ScaleButton({
-              pressScale: 0.8,
-              hoverScale: 1.1,
+              pressScale: StyleConstants.PRESS_SCALE,
+              hoverScale: StyleConstants.HOVER_SCALE,
               onButtonTap: () => {
                 this.toggleArtistSeparator(sep)
               }
@@ -2590,8 +2621,8 @@ struct SettingsDetailPage {
           // 自定义分隔符紧随预置候选同一行/同一样式（启用态主色 + ×，点击移除）
           ForEach(this.customArtistSeparators(), (sep: string) => {
             ScaleButton({
-              pressScale: 0.8,
-              hoverScale: 1.1,
+              pressScale: StyleConstants.PRESS_SCALE,
+              hoverScale: StyleConstants.HOVER_SCALE,
               onButtonTap: () => {
                 this.removeArtistSeparator(sep)
               }
@@ -2629,8 +2660,8 @@ struct SettingsDetailPage {
               this.addCustomArtistSeparators()
             })
           ScaleButton({
-            pressScale: 0.8,
-            hoverScale: 1.1,
+            pressScale: StyleConstants.PRESS_SCALE,
+            hoverScale: StyleConstants.HOVER_SCALE,
             onButtonTap: () => {
               this.addCustomArtistSeparators()
             }
@@ -2695,8 +2726,8 @@ struct SettingsDetailPage {
               Row({ space: this.scaledSize(6) }) {
                 ForEach(EqPresetTable.NAMES, (name: string, i: number) => {
                   ScaleButton({
-                    pressScale: 0.8,
-                    hoverScale: 1.1,
+                    pressScale: StyleConstants.PRESS_SCALE,
+                    hoverScale: StyleConstants.HOVER_SCALE,
                     onButtonTap: () => {
                       this.applyEqPreset(i)
                     }
@@ -2824,8 +2855,8 @@ struct SettingsDetailPage {
             .fontColor(this.settingTextColor())
           // 说明弹窗入口：与分组标题问号同款样式
           ScaleButton({
-            pressScale: 0.8,
-            hoverScale: 1.1,
+            pressScale: StyleConstants.PRESS_SCALE,
+            hoverScale: StyleConstants.HOVER_SCALE,
             onButtonTap: () => {
               this.showReplayGainHelp = true
             }
@@ -3403,8 +3434,8 @@ struct SettingsDetailPage {
   @Builder
   aboutInfoRow(label: string, value: string): void {
     ScaleButton({
-      pressScale: 0.9,
-      hoverScale: 1.02,
+      pressScale: StyleConstants.PRESS_SCALE,
+      hoverScale: StyleConstants.HOVER_SCALE,
       expandWidth: true,
       onButtonTap: () => {
         this.copyToClipboard(label, value)
@@ -3586,11 +3617,11 @@ struct SettingsDetailPage {
   @Builder
   shortcutEntryRow(): void {
     ScaleButton({
-      pressScale: 0.9,
-      hoverScale: 1.02,
+      pressScale: StyleConstants.PRESS_SCALE,
+      hoverScale: StyleConstants.HOVER_SCALE,
       expandWidth: true,
       onButtonTap: () => {
-        this.showShortcutSheet = true
+        this.openHelpSheet(HELP_SHEET_SHORTCUT)
       }
     }) {
       Row() {
@@ -3692,8 +3723,8 @@ struct SettingsDetailPage {
   @Builder
   checkUpdateRow(): void {
     ScaleButton({
-      pressScale: 0.9,
-      hoverScale: 1.02,
+      pressScale: StyleConstants.PRESS_SCALE,
+      hoverScale: StyleConstants.HOVER_SCALE,
       expandWidth: true,
       onButtonTap: () => {
         this.checkForUpdate()
@@ -3768,8 +3799,8 @@ struct SettingsDetailPage {
     Row({ space: this.scaledSize(6) }) {
       ForEach($$.labels, (label: string, i: number) => {
         ScaleButton({
-          pressScale: 0.8,
-          hoverScale: 1.1,
+          pressScale: StyleConstants.PRESS_SCALE,
+          hoverScale: StyleConstants.HOVER_SCALE,
           onButtonTap: () => {
             if ($$.current !== i) {
               $$.onPick(i)
@@ -3801,8 +3832,8 @@ struct SettingsDetailPage {
       Row({ space: this.scaledSize(6) }) {
         ForEach($$.labels, (label: string, i: number) => {
           ScaleButton({
-            pressScale: 0.8,
-            hoverScale: 1.1,
+            pressScale: StyleConstants.PRESS_SCALE,
+            hoverScale: StyleConstants.HOVER_SCALE,
             onButtonTap: () => {
               if ($$.current !== i) {
                 $$.onPick(i)

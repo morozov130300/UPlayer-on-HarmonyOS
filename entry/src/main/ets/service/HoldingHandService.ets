@@ -9,7 +9,7 @@ export const KEY_HOLDING_HAND_ENABLED: string = 'uplayer_holding_hand_enabled'
 
 // AppStorage 键：智感握姿的滤波结果，true = 左手握持。
 // 服务只广播「滤波后的握姿」这一件事，靠左还是靠右由各使用方自己决定：
-//   - 首页加号：左手握持 → 靠左，其余（右手/双手/无握持/未知）→ 靠右（默认）
+//   - 首页加号：左手握持 → 靠左，右手/复位 → 靠右；不确定态不广播，保持当前侧
 //   - 设置页顶部预览：左手握持 → 靠右（沿用原有映射）
 export const KEY_HOLDING_HAND_LEFT: string = 'uplayer_holding_hand_left'
 
@@ -20,12 +20,6 @@ export const HOLDING_HAND_CONFIRM_WINDOW_DEFAULT_MS: number = 500
 export const HOLDING_HAND_CONFIRM_WINDOW_MIN_MS: number = 100
 export const HOLDING_HAND_CONFIRM_WINDOW_MAX_MS: number = 2000
 export const HOLDING_HAND_CONFIRM_WINDOW_STEP_MS: number = 50
-// 不确定态回落窗：已靠左时进入不确定态持续该时长无左手复确认才回落默认侧（靠右）
-export const KEY_HOLDING_HAND_SOFT_FALLBACK_MS: string = 'uplayer_holding_hand_soft_fallback_ms'
-export const HOLDING_HAND_SOFT_FALLBACK_DEFAULT_MS: number = 1000
-export const HOLDING_HAND_SOFT_FALLBACK_MIN_MS: number = 200
-export const HOLDING_HAND_SOFT_FALLBACK_MAX_MS: number = 3000
-export const HOLDING_HAND_SOFT_FALLBACK_STEP_MS: number = 100
 
 // 智感握姿共享监听服务
 // 全应用只向系统订阅一次 holdingHandChanged：设置页预览与首页控件共用同一份滤波结果，
@@ -34,12 +28,12 @@ export const HOLDING_HAND_SOFT_FALLBACK_STEP_MS: number = 100
 // 滤波设计（针对「未换手仍左右抽搐」）：
 // holdingHandChanged 是变化型事件（系统只在状态改变时回调），历史帧计数滤波（连续 N 帧同向）
 // 与该事件模型不匹配：N=1 等于零滤波（瞬态抽搐），N=3 因相邻回调必不同而几乎永不翻转（迟钝）。
-// 现改为「不确定态忽略 + 时间窗确认 + 不对称回落」三级滤波：
-//   1) NOT_HELD / UNKNOWN_STATUS / BOTH_HANDS_HELD 属不确定态，不允许直接切边
+// 现改为「不确定态保持现状 + 时间窗确认」两级滤波：
+//   1) NOT_HELD / UNKNOWN_STATUS / BOTH_HANDS_HELD 属不确定态，既不允许直接切边，
+//      也不回落默认侧——保持当前贴边不变
 //      （左手握持时传感器瞬时报未握持/未识别/双手，正是抽搐根源）；
-//   2) 置信翻转（LEFT/RIGHT）需经 CONFIRM_WINDOW_MS 确认窗，窗内出现反向或不确定报告即取消；
-//   3) 不对称回落：已靠左时进入不确定态，持续 SOFT_FALLBACK_MS 无左手复确认才回落默认（靠右）；
-//      RIGHT 仍走短确认窗快速回右，保证真换手不迟钝。
+//   2) 置信翻转（LEFT/RIGHT）需经 CONFIRM_WINDOW_MS 确认窗，窗内出现反向或不确定报告即取消，
+//      真换手仍能快速切边。
 @SuppressWarnings({ rules: [SuppressWarningsType.SYSCAP] })
 export class HoldingHandService {
   private static readonly instance: HoldingHandService = new HoldingHandService()
@@ -48,9 +42,6 @@ export class HoldingHandService {
   // 置信翻转待定窗：待定目标侧与定时器 id。窗口内收到反向/不确定报告则取消，杜绝瞬态来回切边
   private pendingLeft: boolean | undefined = undefined
   private pendingTimerId: number = -1
-  // 不确定态回落定时器：只在「已靠左」时启动，锚定在最后一次左手报告之后；
-  // 窗内左手复确认即取消，超时才回落右侧（短暂识别抖动完全不动）
-  private softTimerId: number = -1
   private readonly callback: (status: motion.HoldingHandStatus) => void =
     (status: motion.HoldingHandStatus): void => {
       this.onStatusChanged(status)
@@ -112,13 +103,6 @@ export class HoldingHandService {
     return Math.min(HOLDING_HAND_CONFIRM_WINDOW_MAX_MS, Math.max(HOLDING_HAND_CONFIRM_WINDOW_MIN_MS, v))
   }
 
-  // 当前生效的不确定态回落窗（ms）：同上
-  private softFallbackMs(): number {
-    const v: number = AppStorage.get<number>(KEY_HOLDING_HAND_SOFT_FALLBACK_MS) ??
-      HOLDING_HAND_SOFT_FALLBACK_DEFAULT_MS
-    return Math.min(HOLDING_HAND_SOFT_FALLBACK_MAX_MS, Math.max(HOLDING_HAND_SOFT_FALLBACK_MIN_MS, v))
-  }
-
   // 公开：检测设备是否支持智感握姿（非 PC + 系统 Motion 能力可用）
   public static isSupported(): boolean {
     return deviceInfo.deviceType !== '2in1' && canIUse('SystemCapability.MultimodalAwareness.Motion')
@@ -146,12 +130,11 @@ export class HoldingHandService {
       return
     }
     // NOT_HELD / BOTH_HANDS_HELD / UNKNOWN_STATUS：不确定态，不允许直接切边
-    this.onSoftStatusReported()
+    this.onUncertainStatusReported()
   }
 
-  // 左手报告：取消不确定态回落；当前不靠左时开确认窗，窗内无回摆才真正切左
+  // 左手报告：当前不靠左时开确认窗，窗内无回摆才真正切左
   private onLeftReported(): void {
-    this.clearSoftTimer()
     this.clearPendingTimer()
     if (this.isLeftHandHeld()) {
       return
@@ -163,9 +146,8 @@ export class HoldingHandService {
     }, this.confirmWindowMs())
   }
 
-  // 右手报告（置信反向）：取消不确定态回落，开确认窗快速切回默认右侧
+  // 右手报告（置信反向）：开确认窗快速切回右侧
   private onRightReported(): void {
-    this.clearSoftTimer()
     this.clearPendingTimer()
     if (!this.isLeftHandHeld()) {
       return
@@ -177,22 +159,14 @@ export class HoldingHandService {
     }, this.confirmWindowMs())
   }
 
-  // 不确定态：取消任何待定翻转（窗口内出现回摆说明刚收到的置信报告是瞬态）；
-  // 已靠左时启动回落窗——窗内左手复确认即取消，超时才回落右侧
-  private onSoftStatusReported(): void {
+  // 不确定态：保持当前贴边不变，只取消窗口内的待定翻转
+  // （窗口内出现回摆说明刚收到的置信报告是瞬态）
+  private onUncertainStatusReported(): void {
     this.clearPendingTimer()
-    if (!this.isLeftHandHeld() || this.softTimerId !== -1) {
-      return
-    }
-    this.softTimerId = setTimeout((): void => {
-      this.softTimerId = -1
-      this.publish(false)
-    }, this.softFallbackMs())
   }
 
   private clearFilter(): void {
     this.clearPendingTimer()
-    this.clearSoftTimer()
   }
 
   private clearPendingTimer(): void {
@@ -201,13 +175,6 @@ export class HoldingHandService {
       this.pendingTimerId = -1
     }
     this.pendingLeft = undefined
-  }
-
-  private clearSoftTimer(): void {
-    if (this.softTimerId !== -1) {
-      clearTimeout(this.softTimerId)
-      this.softTimerId = -1
-    }
   }
 
   private publish(isLeftHandHeld: boolean): void {

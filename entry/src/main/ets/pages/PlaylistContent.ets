@@ -651,8 +651,8 @@ export struct PlaylistContent {
               .fontColor($r('app.color.text_primary'))
               .fontWeight(FontWeight.Bold)
             ScaleButton({
-              pressScale: 0.8,
-              hoverScale: 1.1,
+              pressScale: StyleConstants.PRESS_SCALE,
+              hoverScale: StyleConstants.HOVER_SCALE,
               onButtonTap: () => {
                 this.cycleSortMode()
               }
@@ -689,7 +689,7 @@ export struct PlaylistContent {
               Grid() {
                 ForEach(this.folders, (item: FolderInfo) => {
                   GridItem() {
-                    PressScaleHost({ pressScale: 0.9, hoverScale: 1.02 }) {
+                    PressScaleHost({ pressScale: StyleConstants.PRESS_SCALE, hoverScale: StyleConstants.HOVER_SCALE }) {
                       this.folderCard(item)
                     }
                   }
@@ -702,8 +702,8 @@ export struct PlaylistContent {
               .width('100%')
             } else {
               ScaleButton({
-                pressScale: 0.9,
-                hoverScale: 1.02,
+                pressScale: StyleConstants.PRESS_SCALE,
+                hoverScale: StyleConstants.HOVER_SCALE,
                 onButtonTap: () => {
                   this.onPlusClick()
                 }
@@ -908,8 +908,8 @@ export struct PlaylistContent {
       Blank()
       // 全选按钮 - 带图标（与首页一致：全选后变为取消全选）
       ScaleButton({
-        pressScale: 0.8,
-        hoverScale: 1.1,
+        pressScale: StyleConstants.PRESS_SCALE,
+        hoverScale: StyleConstants.HOVER_SCALE,
         onButtonTap: () => {
           this.toggleSelectAll()
         }
@@ -928,8 +928,8 @@ export struct PlaylistContent {
 
       // 反选 - 纯文字按钮（图标库无对应图标，置于全选后）
       ScaleButton({
-        pressScale: 0.8,
-        hoverScale: 1.1,
+        pressScale: StyleConstants.PRESS_SCALE,
+        hoverScale: StyleConstants.HOVER_SCALE,
         onButtonTap: () => {
           this.invertSelection()
         }
@@ -942,8 +942,8 @@ export struct PlaylistContent {
 
       // 删除按钮 - 带图标：歌单多选只删歌单与关联关系；文件夹编辑走原有的曲库删除确认
       ScaleButton({
-        pressScale: 0.8,
-        hoverScale: 1.1,
+        pressScale: StyleConstants.PRESS_SCALE,
+        hoverScale: StyleConstants.HOVER_SCALE,
         onButtonTap: () => {
           this.deleteInSelectMode()
         }
@@ -1008,7 +1008,7 @@ export struct PlaylistContent {
           GridItem() {
             // 卡片带 bindPopup 与长按手势，不能包 ScaleButton；也不能在带参 @Builder 内用页面状态驱动缩放
             // （按值传参的 @Builder 不会随状态重新求值），故用只做缩放的宿主组件，逐卡独立状态
-            PressScaleHost({ pressScale: 0.9, hoverScale: 1.02 }) {
+            PressScaleHost({ pressScale: StyleConstants.PRESS_SCALE, hoverScale: StyleConstants.HOVER_SCALE }) {
               this.playlistCard(card)
             }
           }
@@ -1144,8 +1144,8 @@ export struct PlaylistContent {
   @Builder
   newPlaylistCard(): void {
     ScaleButton({
-      pressScale: 0.9,
-      hoverScale: 1.02,
+      pressScale: StyleConstants.PRESS_SCALE,
+      hoverScale: StyleConstants.HOVER_SCALE,
       expandWidth: true,
       onButtonTap: () => {
         this.openPlaylistCreateDialog()
@@ -1178,8 +1178,8 @@ export struct PlaylistContent {
   playlistActionPopupBuilder(): void {
     Column() {
       ScaleButton({
-        pressScale: 0.9,
-        hoverScale: 1.02,
+        pressScale: StyleConstants.PRESS_SCALE,
+        hoverScale: StyleConstants.HOVER_SCALE,
         expandWidth: true,
         onButtonTap: () => {
           const playlistId: string = this.playlistActionCardId
@@ -1199,8 +1199,8 @@ export struct PlaylistContent {
       Divider()
         .color($r('app.color.list_divider'))
       ScaleButton({
-        pressScale: 0.9,
-        hoverScale: 1.02,
+        pressScale: StyleConstants.PRESS_SCALE,
+        hoverScale: StyleConstants.HOVER_SCALE,
         expandWidth: true,
         onButtonTap: () => {
           const playlistId: string = this.playlistActionCardId
@@ -1219,8 +1219,8 @@ export struct PlaylistContent {
       Divider()
         .color($r('app.color.list_divider'))
       ScaleButton({
-        pressScale: 0.9,
-        hoverScale: 1.02,
+        pressScale: StyleConstants.PRESS_SCALE,
+        hoverScale: StyleConstants.HOVER_SCALE,
         expandWidth: true,
         onButtonTap: () => {
           this.playlistDeleteConfirmId = this.playlistActionCardId
@@ -1274,8 +1274,8 @@ export struct PlaylistContent {
         Row({ space: 10 }) {
           Row() {
             ScaleButton({
-              pressScale: 0.8,
-              hoverScale: 1.1,
+              pressScale: StyleConstants.PRESS_SCALE,
+              hoverScale: StyleConstants.HOVER_SCALE,
               expandWidth: true,
               onButtonTap: () => {
                 this.playlistDeleteConfirmId = ''
@@ -1295,8 +1295,8 @@ export struct PlaylistContent {
 
           Row() {
             ScaleButton({
-              pressScale: 0.8,
-              hoverScale: 1.1,
+              pressScale: StyleConstants.PRESS_SCALE,
+              hoverScale: StyleConstants.HOVER_SCALE,
               expandWidth: true,
               onButtonTap: () => {
                 this.confirmPlaylistDelete().catch((err: Error) => {

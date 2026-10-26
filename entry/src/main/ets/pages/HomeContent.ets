@@ -66,13 +66,13 @@ class PickerPlaylistRow {
 
 @Component
 export struct HomeContent {
-  topContentPadding: number = 0
   // 底部让位原始输入（Index 传入），页内自算 bottomOverlayInset() 以实时跟随显示大小
   bottomSafeHeight: number = 0
   smallBreakpoint: boolean = false
-  // 问候语内容带（由 Index 传入）：多选菜单栏进入多选时落在该带内，替换问候语的位置
-  greetingBandTop: number = 0
-  greetingBandHeight: number = 0
+  // 顶部安全区/标题按钮高度直接订阅 AppStorage：安全区是窗口异步测得的，经父组件普通成员传入
+  // 只会保留初始值 0，导致筛选行停在旧位置、与问候语重叠
+  @StorageLink(AppStorageKeyConstants.KEY_TOP_HEIGHT) topSafeHeight: number = 0
+  @StorageLink(AppStorageKeyConstants.KEY_TITLE_BUTTON_HEIGHT) titleButtonHeight: number = 0
   private isPC: boolean = deviceInfo.deviceType === '2in1'
   private context: common.UIAbilityContext | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
   @State songs: SongInfo[] = []
@@ -203,9 +203,18 @@ export struct HomeContent {
     return 56
   }
 
+  private topContentInset(): number {
+    return this.isPC ? Math.max(this.topSafeHeight, this.titleButtonHeight) : this.topSafeHeight
+  }
+
+  // 顶部内容带（问候语区）高度：与 Index.homeHeaderHeight 的几何保持一致
+  private headerTopPadding(): number {
+    return this.isPC ? Math.max(64, this.topContentInset() + 32) : this.topContentInset() + 40
+  }
+
   private multiSelectBarTop(): number {
-    const band: number = this.greetingBandHeight > 0 ? this.greetingBandHeight : 72
-    const top: number = this.greetingBandTop + (band - this.multiSelectBarHeight()) / 2
+    const band: number = this.headerTopPadding() - this.topContentInset()
+    const top: number = this.topContentInset() + (band - this.multiSelectBarHeight()) / 2
     return top > 0 ? top : 0
   }
 
@@ -215,7 +224,7 @@ export struct HomeContent {
   }
 
   private listTopPadding(): number {
-    return this.topContentPadding + this.headerOverlayHeight()
+    return this.headerTopPadding() + this.headerOverlayHeight()
   }
 
   private scrollBarHeight(): string {
@@ -1434,8 +1443,8 @@ export struct HomeContent {
 
           if (this.displayItems.length === 0) {
             ScaleButton({
-              pressScale: 0.9,
-              hoverScale: 1.02,
+              pressScale: StyleConstants.PRESS_SCALE,
+              hoverScale: StyleConstants.HOVER_SCALE,
               onButtonTap: () => {
                 if (this.searchText.trim().length === 0) {
                   this.onPlusClick()
@@ -1491,8 +1500,8 @@ export struct HomeContent {
             if (!this.isSearchActive) {
               Row() {
                 ScaleButton({
-                  pressScale: 0.8,
-                  hoverScale: 1.1,
+                  pressScale: StyleConstants.PRESS_SCALE,
+                  hoverScale: StyleConstants.HOVER_SCALE,
                   onButtonTap: () => {
                     this.clearFilters()
                   }
@@ -1508,8 +1517,8 @@ export struct HomeContent {
 
                 // 组合筛选入口（S1）：维度激活时高亮提示
                 ScaleButton({
-                  pressScale: 0.8,
-                  hoverScale: 1.1,
+                  pressScale: StyleConstants.PRESS_SCALE,
+                  hoverScale: StyleConstants.HOVER_SCALE,
                   onButtonTap: () => {
                     this.openFilterPanel()
                   }
@@ -1555,8 +1564,8 @@ export struct HomeContent {
 
                 if (this.searchText.length > 0) {
                   ScaleButton({
-                    pressScale: 0.8,
-                    hoverScale: 1.1,
+                    pressScale: StyleConstants.PRESS_SCALE,
+                    hoverScale: StyleConstants.HOVER_SCALE,
                     onButtonTap: () => {
                       this.searchText = ''
                       this.applyFilters()
@@ -1570,8 +1579,8 @@ export struct HomeContent {
                 }
 
                 ScaleButton({
-                  pressScale: 0.8,
-                  hoverScale: 1.1,
+                  pressScale: StyleConstants.PRESS_SCALE,
+                  hoverScale: StyleConstants.HOVER_SCALE,
                   onButtonTap: () => {
                     this.closeSearch()
                   }
@@ -1598,8 +1607,8 @@ export struct HomeContent {
             if (!this.isSearchActive) {
               Row() {
                 ScaleButton({
-                  pressScale: 0.8,
-                  hoverScale: 1.1,
+                  pressScale: StyleConstants.PRESS_SCALE,
+                  hoverScale: StyleConstants.HOVER_SCALE,
                   onButtonTap: () => {
                     this.switchSortMode()
                   }
@@ -1620,8 +1629,8 @@ export struct HomeContent {
                 }
 
                 ScaleButton({
-                  pressScale: 0.8,
-                  hoverScale: 1.1,
+                  pressScale: StyleConstants.PRESS_SCALE,
+                  hoverScale: StyleConstants.HOVER_SCALE,
                   onButtonTap: () => {
                     this.toggleViewMode()
                   }
@@ -1645,7 +1654,7 @@ export struct HomeContent {
         }
         .width('100%')
         .padding({ left: 16, right: 16, top: 6 })
-        .position({ top: this.topContentPadding - this.scaledSize(8) })
+        .position({ top: this.headerTopPadding() - this.scaledSize(8) })
         .onAreaChange((oldValue: Area, newValue: Area) => {
           this.onHeaderRowAreaChange(newValue)
         })
@@ -1678,8 +1687,8 @@ export struct HomeContent {
           Blank()
           // 全选按钮 - 带图标
           ScaleButton({
-            pressScale: 0.8,
-            hoverScale: 1.1,
+            pressScale: StyleConstants.PRESS_SCALE,
+            hoverScale: StyleConstants.HOVER_SCALE,
             onButtonTap: () => {
               this.toggleSelectAll()
             }
@@ -1698,8 +1707,8 @@ export struct HomeContent {
 
           // 反选 - 纯文字按钮（图标库无对应图标，置于全选后）
           ScaleButton({
-            pressScale: 0.8,
-            hoverScale: 1.1,
+            pressScale: StyleConstants.PRESS_SCALE,
+            hoverScale: StyleConstants.HOVER_SCALE,
             onButtonTap: () => {
               this.invertVisibleSelection()
             }
@@ -1712,8 +1721,8 @@ export struct HomeContent {
 
           // 加入歌单（P2-3）- 带图标：弹窗选择目标歌单或新建
           ScaleButton({
-            pressScale: 0.8,
-            hoverScale: 1.1,
+            pressScale: StyleConstants.PRESS_SCALE,
+            hoverScale: StyleConstants.HOVER_SCALE,
             onButtonTap: () => {
               this.openPlaylistPicker()
             }
@@ -1732,8 +1741,8 @@ export struct HomeContent {
 
           // 删除按钮 - 带图标；歌单筛选态（P2-3）语义变为「移出歌单」（不删文件）
           ScaleButton({
-            pressScale: 0.8,
-            hoverScale: 1.1,
+            pressScale: StyleConstants.PRESS_SCALE,
+            hoverScale: StyleConstants.HOVER_SCALE,
             onButtonTap: () => {
               this.deleteSelected()
             }
@@ -1803,8 +1812,8 @@ export struct HomeContent {
                 .fontColor($r('app.color.text_primary'))
               Blank()
               ScaleButton({
-                pressScale: 0.8,
-                hoverScale: 1.1,
+                pressScale: StyleConstants.PRESS_SCALE,
+                hoverScale: StyleConstants.HOVER_SCALE,
                 onButtonTap: () => {
                   this.resetFilterPanel()
                 }
@@ -1814,8 +1823,8 @@ export struct HomeContent {
                   .fontColor($r('app.color.text_sixty_color'))
               }
               ScaleButton({
-                pressScale: 0.8,
-                hoverScale: 1.1,
+                pressScale: StyleConstants.PRESS_SCALE,
+                hoverScale: StyleConstants.HOVER_SCALE,
                 onButtonTap: () => {
                   this.applyFilterPanel()
                 }
@@ -1890,8 +1899,8 @@ export struct HomeContent {
                 .fontColor($r('app.color.text_primary'))
               Blank()
               ScaleButton({
-                pressScale: 0.8,
-                hoverScale: 1.1,
+                pressScale: StyleConstants.PRESS_SCALE,
+                hoverScale: StyleConstants.HOVER_SCALE,
                 onButtonTap: () => {
                   this.isPlaylistPickerVisible = false
                 }
@@ -1907,8 +1916,8 @@ export struct HomeContent {
 
             // 新建歌单：进入统一新建弹窗（预选当前多选歌曲，可在全曲库继续加选）
             ScaleButton({
-              pressScale: 0.9,
-              hoverScale: 1.02,
+              pressScale: StyleConstants.PRESS_SCALE,
+              hoverScale: StyleConstants.HOVER_SCALE,
               expandWidth: true,
               onButtonTap: () => {
                 this.openPlaylistCreateDialog()
@@ -1944,8 +1953,8 @@ export struct HomeContent {
                 Column() {
                   ForEach(this.pickerRows, (row: PickerPlaylistRow) => {
                     ScaleButton({
-                      pressScale: 0.9,
-                      hoverScale: 1.02,
+                      pressScale: StyleConstants.PRESS_SCALE,
+                      hoverScale: StyleConstants.HOVER_SCALE,
                       expandWidth: true,
                       onButtonTap: () => {
                         this.addSelectedToPlaylist(row.id).catch((err: Error) => {
@@ -2033,8 +2042,8 @@ export struct HomeContent {
   @Builder
   groupHeaderRow(item: DisplayItem): void {
     ScaleButton({
-      pressScale: 0.9,
-      hoverScale: 1.02,
+      pressScale: StyleConstants.PRESS_SCALE,
+      hoverScale: StyleConstants.HOVER_SCALE,
       expandWidth: true,
       onButtonTap: () => {
         this.playGroupFromHeader(item.headerText)
@@ -2087,8 +2096,8 @@ export struct HomeContent {
         Flex({ wrap: FlexWrap.Wrap }) {
           ForEach($$.options, (option: FilterChipOption) => {
             ScaleButton({
-              pressScale: 0.8,
-              hoverScale: 1.1,
+              pressScale: StyleConstants.PRESS_SCALE,
+              hoverScale: StyleConstants.HOVER_SCALE,
               onButtonTap: () => {
                 this.onChipToggle($$.dim, option.value)
               }
@@ -2193,8 +2202,8 @@ export struct HomeContent {
       if (item.isAvailable) {
         Row() {
           ScaleButton({
-            pressScale: 0.8,
-            hoverScale: 1.1,
+            pressScale: StyleConstants.PRESS_SCALE,
+            hoverScale: StyleConstants.HOVER_SCALE,
             blockHitTest: true,
             onButtonTap: () => {
               this.dataService.addToPlayNext(item.id)
@@ -2215,8 +2224,8 @@ export struct HomeContent {
       }
 
       ScaleButton({
-        pressScale: 0.8,
-        hoverScale: 1.1,
+        pressScale: StyleConstants.PRESS_SCALE,
+        hoverScale: StyleConstants.HOVER_SCALE,
         blockHitTest: true,
         onButtonTap: () => {
           this.toggleFavorite(item.id)
@@ -2263,8 +2272,8 @@ export struct HomeContent {
   songSwipeDeleteButton(song: SongInfo): void {
     Row() {
       ScaleButton({
-        pressScale: 0.8,
-        hoverScale: 1.1,
+        pressScale: StyleConstants.PRESS_SCALE,
+        hoverScale: StyleConstants.HOVER_SCALE,
         onButtonTap: () => {
           this.deleteSongById(song.id)
         }

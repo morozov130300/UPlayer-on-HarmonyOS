@@ -18,6 +18,7 @@ import { LrcEntry } from "../viewmodel/LrcEntry";
 import { LengthMetrics } from "@kit.ArkUI";
 import { AVPlayerService } from '../service/AVPlayerService';
 import { ScaleButton } from '../component/ScaleButton';
+import { StyleConstants } from '../common/constants/StyleConstants';
 
 const NONE_LINE: number = -1;
 
@@ -152,8 +153,8 @@ export default struct LrcListView {
           ForEach(this.mLrcEntryList, (item: LrcEntry, index: number) => {
             ListItem() {
               ScaleButton({
-                pressScale: 0.9,
-                hoverScale: 1.02,
+                pressScale: StyleConstants.PRESS_SCALE,
+                hoverScale: StyleConstants.HOVER_SCALE,
                 onButtonTap: () => {
                   this.onLyricLineClick(item);
                 }

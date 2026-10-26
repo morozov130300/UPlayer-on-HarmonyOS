@@ -3,6 +3,7 @@
 // 受设置「按压动效」开关（AppStorage: uplayer_press_animation）统一控制：关闭时恒为 1.0，
 // 不缩放、不悬停、不拦截事件；运行中关闭会立即弹簧复位。
 import { curves } from '@kit.ArkUI';
+import { StyleConstants } from '../common/constants/StyleConstants';
 
 @Component
 export struct ScaleButton {
@@ -14,9 +15,9 @@ export struct ScaleButton {
   @State btnScale: number = 1.0;
   private isPressed: boolean = false;
   private isHovered: boolean = false;
-  // 小按钮档位默认 0.8/1.1；大块元素（列表行、卡片）调用方传 0.9/1.02
-  pressScale: number = 0.8;
-  hoverScale: number = 1.1;
+  // 全局统一档位：按下 0.9、悬停 1.1（StyleConstants.PRESS_SCALE / HOVER_SCALE）
+  pressScale: number = StyleConstants.PRESS_SCALE;
+  hoverScale: number = StyleConstants.HOVER_SCALE;
   // 大块元素悬停放大观感突兀，可单独关掉悬停只保留按压
   enableHover: boolean = true;
   // 整行/卡片场景：容器撑满父宽度，避免被 Column 包裹后宽度塌陷

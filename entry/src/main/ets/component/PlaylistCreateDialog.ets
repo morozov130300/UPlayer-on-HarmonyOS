@@ -6,6 +6,7 @@ import Logger from '../common/utils/Logger'
 import { AlbumCover } from './AlbumCover'
 import { AlbumCoverSize } from '../service/AudioMetadataService'
 import { ScaleButton } from './ScaleButton'
+import { StyleConstants } from '../common/constants/StyleConstants'
 
 const TAG = 'PlaylistCreateDialog'
 
@@ -190,8 +191,8 @@ export struct PlaylistCreateDialog {
   @Builder
   selectAllButton(): void {
     ScaleButton({
-      pressScale: 0.8,
-      hoverScale: 1.1,
+      pressScale: StyleConstants.PRESS_SCALE,
+      hoverScale: StyleConstants.HOVER_SCALE,
       onButtonTap: () => {
         this.toggleSelectAllFiltered()
       }
@@ -246,8 +247,8 @@ export struct PlaylistCreateDialog {
           Blank()
           this.selectAllButton()
           ScaleButton({
-            pressScale: 0.8,
-            hoverScale: 1.1,
+            pressScale: StyleConstants.PRESS_SCALE,
+            hoverScale: StyleConstants.HOVER_SCALE,
             onButtonTap: () => {
               this.invertFilteredSelection()
             }
@@ -264,8 +265,8 @@ export struct PlaylistCreateDialog {
           ForEach(this.filteredSongs(), (song: SongInfo) => {
             ListItem() {
               ScaleButton({
-                pressScale: 0.9,
-                hoverScale: 1.02,
+                pressScale: StyleConstants.PRESS_SCALE,
+                hoverScale: StyleConstants.HOVER_SCALE,
                 expandWidth: true,
                 onButtonTap: () => {
                   this.toggleSong(song.id)
@@ -313,8 +314,8 @@ export struct PlaylistCreateDialog {
         Row() {
           Blank()
           ScaleButton({
-            pressScale: 0.8,
-            hoverScale: 1.1,
+            pressScale: StyleConstants.PRESS_SCALE,
+            hoverScale: StyleConstants.HOVER_SCALE,
             onButtonTap: () => {
               this.confirmCommit().catch((err: Error) => {
                 Logger.error(TAG, `confirmCommit failed: ${JSON.stringify(err)}`)

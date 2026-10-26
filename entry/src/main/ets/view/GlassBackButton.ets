@@ -2,6 +2,7 @@ import { uiMaterial } from '@kit.ArkUI'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import { createTabGlassMaterial, DEFAULT_GLASS_STYLE, isLiquidGlassAvailable } from '../common/utils/GlassUtil'
 import { ScaleButton } from '../component/ScaleButton'
+import { StyleConstants } from '../common/constants/StyleConstants'
 
 // 返回按钮统一组件：可点击区域维持原尺寸，内部套一层「可点击区域 × 0.6」的内切圆形，
 // 圆形的液态玻璃/磨砂/描边/阴影完全与底部 Tab 栏同源同参（同一批 AppStorage 配置驱动），
@@ -53,8 +54,8 @@ export struct GlassBackButton {
   // 按压缩放/悬停放大统一交给 ScaleButton（受「按压动效」开关控制）
   build() {
     ScaleButton({
-      pressScale: 0.8,
-      hoverScale: 1.1,
+      pressScale: StyleConstants.PRESS_SCALE,
+      hoverScale: StyleConstants.HOVER_SCALE,
       onButtonTap: () => {
         this.onBack()
       }

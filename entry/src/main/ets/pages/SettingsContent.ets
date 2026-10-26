@@ -3,6 +3,7 @@ import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstan
 import { ColorHelper } from '../common/utils/ColorHelper'
 import { isDarkThemeEffective } from '../common/utils/ThemeUtil'
 import { ScaleButton } from '../component/ScaleButton'
+import { StyleConstants } from '../common/constants/StyleConstants'
 import Logger from '../common/utils/Logger'
 
 const TAG = 'SettingsContent'
@@ -88,8 +89,8 @@ export struct SettingsContent {
       Column({ space: this.scaledSize(6) }) {
         ForEach(this.categories, (cat: SettingCategory) => {
           ScaleButton({
-            pressScale: 0.9,
-            hoverScale: 1.02,
+            pressScale: StyleConstants.PRESS_SCALE,
+            hoverScale: StyleConstants.HOVER_SCALE,
             expandWidth: true,
             onButtonTap: () => {
               this.onCategoryClick(cat)

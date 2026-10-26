@@ -202,8 +202,8 @@ export struct MusicInfoComponent {
       .padding({ bottom: 10 })
 
       ScaleButton({
-        pressScale: 0.8,
-        hoverScale: 1.1,
+        pressScale: StyleConstants.PRESS_SCALE,
+        hoverScale: StyleConstants.HOVER_SCALE,
         onButtonTap: () => { this.toggleFavorite() }
       }) {
         Image(this.isFavorite ? $r('app.media.ic_public_favor_filled') : $r('app.media.ic_public_favor'))

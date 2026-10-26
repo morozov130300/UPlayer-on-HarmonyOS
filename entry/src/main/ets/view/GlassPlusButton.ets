@@ -4,6 +4,7 @@
 import { curves } from '@kit.ArkUI'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import { KEY_HOLDING_HAND_LEFT } from '../service/HoldingHandService'
+import { StyleConstants } from '../common/constants/StyleConstants'
 
 @Component
 export struct GlassPlusButton {
@@ -14,7 +15,7 @@ export struct GlassPlusButton {
   @Prop @Watch('onVisibleChange') visible: boolean = true
   // 淡入淡出透明度：只在动画闭包内跟随 visible 变化
   @State plusOpacity: number = 1
-  // 智感握姿：左手握持 → 靠左；其余（右手/双手/无握持/未知即默认）→ 靠右。
+  // 智感握姿：左手握持 → 靠左；右手/复位 → 靠右；不确定态由服务保持当前侧不变。
   // 滤波与订阅由 HoldingHandService 统一持有，本组件只订阅它的广播结果
   @StorageLink(KEY_HOLDING_HAND_LEFT) @Watch('onHoldingHandLeftChange') holdingHandLeft: boolean = false
   // 真正参与布局的贴边状态：只在 animateTo 闭包里跟随 holdingHandLeft 变化，
@@ -115,7 +116,7 @@ export struct GlassPlusButton {
       }
       if (event.type === TouchType.Down) {
         this.getUIContext()?.animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
-          this.plusBtnScale = 0.85
+          this.plusBtnScale = StyleConstants.PRESS_SCALE
         })
       } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
         this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {

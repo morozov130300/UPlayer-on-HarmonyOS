@@ -3,6 +3,7 @@
 // 只在外层包一层缩放，避免改变内部手势与弹窗的挂载节点。
 // 受设置「按压动效」开关（AppStorage: uplayer_press_animation）统一控制。
 import { curves } from '@kit.ArkUI';
+import { StyleConstants } from '../common/constants/StyleConstants';
 
 @Component
 export struct PressScaleHost {
@@ -14,9 +15,9 @@ export struct PressScaleHost {
   @State btnScale: number = 1.0;
   private isPressed: boolean = false;
   private isHovered: boolean = false;
-  // 大块元素默认 0.9/1.02；小按钮可传 0.8/1.1
-  pressScale: number = 0.9;
-  hoverScale: number = 1.02;
+  // 全局统一档位：按下 0.9、悬停 1.1（StyleConstants.PRESS_SCALE / HOVER_SCALE）
+  pressScale: number = StyleConstants.PRESS_SCALE;
+  hoverScale: number = StyleConstants.HOVER_SCALE;
   enableHover: boolean = true;
   @StorageLink('uplayer_press_animation') @Watch('onPressAnimSwitchChange') pressAnimOn: boolean = false;
 
