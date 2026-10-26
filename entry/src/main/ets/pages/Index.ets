@@ -335,6 +335,29 @@ struct MainPage {
     return BlurStyle.Thick
   }
 
+  // 小屏自建播控条底板：两种样式统一无底色纯磨砂（backgroundEffect），不用系统磨砂材质
+  // （backgroundBlurStyle）——系统材质自带高不透明度底色填充，页面背景为纯色时磨出来
+  // 就是一块实心色块（玻璃模式下与 Tab 栏液态玻璃对比尤为明显）。
+  // - 玻璃样式：固定 radius 20（玻璃模式无「Tab栏与播控条模糊强度」设置入口，写死，
+  //   与多选栏/歌单顶栏纯磨砂同款参数）
+  // - 经典样式：跟随「Tab栏与播控条模糊强度」×0.5 映射（与 GlassBackButton 磨砂层一致），
+  //   设为 0 时返回 undefined 彻底关闭
+  private playerControlBlurOptions(): BackgroundEffectOptions | undefined {
+    if (this.tabStyle === 'immersive') {
+      const glassBlur: BackgroundEffectOptions = { radius: 20, saturation: 1.0, brightness: 1.0 }
+      return glassBlur
+    }
+    if (this.glassBlurStrength <= 0) {
+      return undefined
+    }
+    const classicBlur: BackgroundEffectOptions = {
+      radius: this.glassBlurStrength * 0.5,
+      saturation: 1.0,
+      brightness: 1.0
+    }
+    return classicBlur
+  }
+
   // 播控条打开播放页区域的按压弹簧动画（大块档 0.9）
   private barItemScale(): number {
     return this.pressAnimOn && this.pressedBarItem ? StyleConstants.PRESS_SCALE : 1.0
@@ -563,9 +586,10 @@ struct MainPage {
     })
     .backgroundColor(Color.Transparent)
     // 播控条挂在根 Stack，位于 Tabs 底部栏液态玻璃生效区外（官方文档：ImmersiveMaterial
-    // 仅在 Navigation 标题栏/底部 TabBar 生效区渲染），systemMaterial 在此永不生效，
-    // 两种样式统一走系统磨砂底板
-    .backgroundBlurStyle(this.getBarBackgroundBlur())
+    // 仅在 Navigation 标题栏/底部 TabBar 生效区渲染），systemMaterial 在此永不生效。
+    // 底板走无底色纯磨砂（见 playerControlBlurOptions），不再用系统磨砂材质（自带
+    // 高不透明度底色填充，纯色页面背景下磨出来像一块实心色块）
+    .backgroundEffect(this.playerControlBlurOptions())
     .border({
       width: 1, color: 'rgba(255,255,255,0.22)'
     })
@@ -907,7 +931,7 @@ struct MainPage {
                   Text(this.greetingTitle)
                     .fontWeight(FontWeight.Bolder)
                     .fontSize(Math.round(28 * this.fontSizeScale))
-                    .lineHeight(Math.round(28 * this.fontSizeScale))
+                    // 不锁死 lineHeight：行盒等于字号时装不下中文字形上伸部，交给文本自然行高
                     .fontColor($r('app.color.text_primary'))
                     .opacity(this.greetingOpacity)
                   if (this.poetryLine.length > 0) {
@@ -1073,8 +1097,15 @@ struct MainPage {
     return this.isPC ? Math.max(this.topSafeHeight, this.titleButtonHeight) : this.topSafeHeight
   }
 
+  // 问候语内容带高度：随「字体大小」缩放，避免放大后标题行盒超出带高、压到筛选行
+  private greetingBandHeight(): number {
+    const base: number = this.isPC ? 32 : 40
+    return Math.max(base, Math.round(base * this.fontSizeScale))
+  }
+
   private homeHeaderHeight(): number {
-    return this.isPC ? Math.max(64, this.topContentInset() + 32) : this.topContentInset() + 40
+    return this.isPC ? Math.max(64, this.topContentInset() + this.greetingBandHeight())
+      : this.topContentInset() + this.greetingBandHeight()
   }
 
   private scaledSize(size: number): number {

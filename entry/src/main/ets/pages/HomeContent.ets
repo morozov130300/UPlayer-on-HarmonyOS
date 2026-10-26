@@ -207,9 +207,16 @@ export struct HomeContent {
     return this.isPC ? Math.max(this.topSafeHeight, this.titleButtonHeight) : this.topSafeHeight
   }
 
+  // 问候语内容带高度：必须与 Index.greetingBandHeight 的公式保持一致
+  private greetingBandHeight(): number {
+    const base: number = this.isPC ? 32 : 40
+    return Math.max(base, Math.round(base * this.fontSizeScale))
+  }
+
   // 顶部内容带（问候语区）高度：与 Index.homeHeaderHeight 的几何保持一致
   private headerTopPadding(): number {
-    return this.isPC ? Math.max(64, this.topContentInset() + 32) : this.topContentInset() + 40
+    return this.isPC ? Math.max(64, this.topContentInset() + this.greetingBandHeight())
+      : this.topContentInset() + this.greetingBandHeight()
   }
 
   private multiSelectBarTop(): number {

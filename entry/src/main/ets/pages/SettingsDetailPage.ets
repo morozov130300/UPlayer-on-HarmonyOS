@@ -1201,7 +1201,7 @@ struct SettingsDetailPage {
       Column()
         .width('100%')
         .height('100%')
-        .backgroundColor('rgba(0,0,0,0.45)')
+        .backgroundColor('rgba(0,0,0,0.6)')
         .onClick(() => {
           this.showHelpSheet = false
         })
@@ -1221,9 +1221,9 @@ struct SettingsDetailPage {
               this.showHelpSheet = false
             }
           }) {
-            Image($r('app.media.ic_public_close'))
-              .width(this.scaledSize(20))
-              .height(this.scaledSize(20))
+            Image($r('app.media.ic_public_cancel'))
+              .width(this.scaledSize(22))
+              .height(this.scaledSize(22))
               .fillColor(this.settingTextColor())
           }
         }

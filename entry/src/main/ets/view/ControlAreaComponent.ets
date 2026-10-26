@@ -745,12 +745,13 @@ export struct ControlAreaComponent {
             .fontColor(this.songTimeFontColor)
             .fontSize(this.songTimeFontSize)
             .fontFamily(PlayerConstants.FONT_FAMILY_BLACK)
-            .lineHeight('14vp')
+            // 跟随字体缩放：固定 vp 会在系统字体放大后小于字号，把时间数字压扁/裁切
+            .lineHeight('14fp')
           Text(this.totalTime)
             .fontColor(this.songTimeFontColor)
             .fontSize(this.songTimeFontSize)
             .fontFamily(PlayerConstants.FONT_FAMILY_BLACK)
-            .lineHeight('14vp')
+            .lineHeight('14fp')
         }
         .width(StyleConstants.FULL_WIDTH)
         .justifyContent(FlexAlign.SpaceBetween)
