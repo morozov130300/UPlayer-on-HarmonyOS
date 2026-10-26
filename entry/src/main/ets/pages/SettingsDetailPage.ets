@@ -13,8 +13,9 @@ import { ColorHelper } from '../common/utils/ColorHelper'
 import Logger from '../common/utils/Logger'
 import { BusinessError, deviceInfo, pasteboard, SuppressWarnings, SuppressWarningsType } from '@kit.BasicServicesKit'
 import { HoldingHandService, HOLDING_HAND_CONFIRM_WINDOW_MAX_MS, HOLDING_HAND_CONFIRM_WINDOW_MIN_MS,
-  HOLDING_HAND_CONFIRM_WINDOW_STEP_MS, KEY_HOLDING_HAND_CONFIRM_WINDOW_MS, KEY_HOLDING_HAND_ENABLED,
-  KEY_HOLDING_HAND_LEFT } from '../service/HoldingHandService'
+  HOLDING_HAND_CONFIRM_WINDOW_STEP_MS, HOLDING_HAND_SOFT_FALLBACK_MAX_MS, HOLDING_HAND_SOFT_FALLBACK_MIN_MS,
+  HOLDING_HAND_SOFT_FALLBACK_STEP_MS, KEY_HOLDING_HAND_CONFIRM_WINDOW_MS, KEY_HOLDING_HAND_ENABLED,
+  KEY_HOLDING_HAND_LEFT, KEY_HOLDING_HAND_SOFT_FALLBACK_MS } from '../service/HoldingHandService'
 import { ColorConversion } from '../common/utils/ColorConversion'
 import { createStyleGlassMaterial, DEFAULT_GLASS_STYLE, isLiquidGlassAvailable,
   showToastGlassMaterial, topBlurRadiusFromStrength } from '../common/utils/GlassUtil'
@@ -31,6 +32,8 @@ const HELP_SHEET_GLASS: number = 1
 const HELP_SHEET_SHORTCUT: number = 2
 const HELP_SHEET_HOLDING_HAND: number = 3
 const HELP_SHEET_CONFIRM_WINDOW: number = 4
+const HELP_SHEET_FALLBACK_WINDOW: number = 5
+const HELP_SHEET_REPLAY_GAIN: number = 6
 
 class EqBandInfo {
   freq: string = ''
@@ -176,8 +179,6 @@ struct SettingsDetailPage {
   @State showColorPicker: boolean = false
   @State showHelpSheet: boolean = false
   @State helpSheetKind: number = 0
-  // 自动音量均衡说明弹窗
-  @State showReplayGainHelp: boolean = false
   @State pickerHue: number = 210
   @State pickerSaturation: number = 1
   @State pickerValue: number = 1
@@ -995,13 +996,9 @@ struct SettingsDetailPage {
     .mode(NavigationMode.Stack)
     .width('100%')
     .height('100%')
-    .bindSheet($$this.showHelpSheet, this.helpSheetBuilder(), {
-      detents: [SheetSize.MEDIUM],
-      dragBar: false,
-      title: this.helpSheetTitle(),
-      showClose: true,
-      preferType: SheetType.CENTER,
-      systemMaterial: this.styleGlassMaterial()
+    .bindContentCover($$this.showHelpSheet, this.helpDialogOverlay(), {
+      modalTransition: ModalTransition.NONE,
+      backgroundColor: '#00000000'
     })
   }
 
@@ -1113,96 +1110,222 @@ struct SettingsDetailPage {
   }
 
   private helpSheetTitleText(): string {
+    if (this.helpSheetKind === HELP_SHEET_GLASS) {
+      return '玻璃效果生效范围'
+    }
+    if (this.helpSheetKind === HELP_SHEET_SHORTCUT) {
+      return '快捷键'
+    }
     if (this.helpSheetKind === HELP_SHEET_HOLDING_HAND) {
       return '智感握姿'
     }
     if (this.helpSheetKind === HELP_SHEET_CONFIRM_WINDOW) {
       return '切换确认窗'
     }
+    if (this.helpSheetKind === HELP_SHEET_FALLBACK_WINDOW) {
+      return '不确定回落窗'
+    }
+    if (this.helpSheetKind === HELP_SHEET_REPLAY_GAIN) {
+      return '自动音量均衡'
+    }
     return ''
   }
 
+  private helpDialogBackground(): ResourceColor {
+    return this.isDark() ? ColorHelper.hexToRgba('#3A3A3C', 0.96) : ColorHelper.hexToRgba('#F2F2F7', 0.98)
+  }
+
+  private helpBlockBackground(): ResourceColor {
+    return this.isDark() ? ColorHelper.hexToRgba('#5A5A5E', 0.92) : '#FFFFFF'
+  }
+
+  private helpUseLines(): string[] {
+    return [
+      '• 底部 Tab 栏：玻璃样式下挂液态玻璃（跟手光效由「跟手光效颜色」决定，设为「无」即关闭）；经典样式为磨砂，强度随「Tab栏与播控条模糊强度」',
+      '• 右下角播控条：大屏上玻璃样式生效（与底部 Tab 栏一致），小屏上为磨砂效果',
+      '• 首页上端与设置详情页顶部的渐变模糊层（随「首页上端模糊强度」设置变化）',
+      '• 首页长按歌曲进入多选后的顶部菜单栏：玻璃样式下液态玻璃叠加磨砂兜底，经典样式不挂背景效果',
+      '• 各页面左上角圆形返回按钮（设置详情、播放器等页面；玻璃样式出真玻璃，经典样式为磨砂兜底）',
+      '• 全局悬浮加号按钮（磨砂玻璃盘）',
+      '• 操作时屏幕底部短暂弹出的文字提示浮层（如切换播放模式时的“随机播放”）——设备支持液态玻璃时固定使用液态玻璃材质',
+      '• 半模态弹窗与气泡（播放列表、更多面板、倍速/音量气泡、本说明弹窗等）：玻璃样式下使用液态玻璃，经典样式恢复常规背景',
+      '• 设置页的开关与滑块：玻璃样式下跟随液态玻璃，经典样式恢复主题色自定义样式'
+    ]
+  }
+
+  private helpSkipLines(): string[] {
+    return [
+      '• 首页 / 歌单 / 设置 / 设置详情 页面的顶层背景（均使用预设纯色背景，明暗自适应）',
+      '• 音乐播放器页面背景（仅左上角返回按钮使用玻璃）',
+      '• 系统 API < 26 或未声明支持沉浸式材质的设备（液态玻璃自动降级为磨砂模糊）'
+    ]
+  }
+
+  private gripHelpLines(): string[] {
+    if (this.helpSheetKind === HELP_SHEET_HOLDING_HAND) {
+      return [
+        '开启后，根据单手握持方向自动调整首页顶部预览与控件靠左/靠右。',
+        '仅在设备支持智感握姿时显示该开关。'
+      ]
+    }
+    if (this.helpSheetKind === HELP_SHEET_CONFIRM_WINDOW) {
+      return [
+        '握姿切换滤波的确认时间：检测到换手后，需持续该时长无回摆才真正切边。',
+        '值越小：换手贴边越快，但越容易被瞬时误报带偏。',
+        '值越大：切换越稳，但换手响应越慢。'
+      ]
+    }
+    return [
+      '不确定状态（未握持/双手/未识别）的回落时间：已贴左后握姿变模糊，持续该时长无左手复确认才回落默认右侧。',
+      '值越小：回退越快。',
+      '值越大：对短暂识别抖动越不敏感。'
+    ]
+  }
+
+  private replayGainHelpLines(): string[] {
+    return [
+      '按歌曲内嵌 ReplayGain 标签在播放时统一响度，不修改文件本身。',
+      '• 均衡关：不处理，保持原始音量',
+      '• 按曲目：每首歌用自己的增益，逐首拉平',
+      '• 按专辑：同专辑共用一个增益，保留专辑内强弱起伏；缺专辑标签时按曲目处理',
+      '• 预增益：在标签增益上整体叠加，正数更响、负数更轻',
+      '• 增益切换与换曲逐采样平滑，无爆音；增益过大时软限幅防削波',
+      '• 仅 MP3（ID3v2）/ FLAC 标签有效，其他格式与无标签歌曲不调整；设了非 0 预增益时仍会整体加减'
+    ]
+  }
+
+  // 问号说明弹窗：居中大卡片 + 标题栏关闭按钮，与设置弹窗同一套视觉语言
   @Builder
-  helpSheetTitle(): void {
-    if (this.helpSheetKind === HELP_SHEET_GLASS) {
-      this.glassScopeSheetTitle()
-    } else if (this.helpSheetKind === HELP_SHEET_SHORTCUT) {
-      this.shortcutSheetTitle()
-    } else {
-      Text(this.helpSheetTitleText())
-        .fontSize(this.scaledFont(20))
-        .fontColor($r('app.color.text_primary'))
-        .fontWeight(FontWeight.Bold)
-        .maxLines(1)
+  helpDialogOverlay(): void {
+    Stack({ alignContent: Alignment.Center }) {
+      Column()
         .width('100%')
+        .height('100%')
+        .backgroundColor('rgba(0,0,0,0.45)')
+        .onClick(() => {
+          this.showHelpSheet = false
+        })
+
+      Column() {
+        Row() {
+          Text(this.helpSheetTitleText())
+            .fontSize(this.scaledFont(22))
+            .fontColor(this.settingTextColor())
+            .fontWeight(FontWeight.Bold)
+            .maxLines(1)
+          Blank()
+          ScaleButton({
+            pressScale: StyleConstants.PRESS_SCALE,
+            hoverScale: StyleConstants.HOVER_SCALE,
+            onButtonTap: () => {
+              this.showHelpSheet = false
+            }
+          }) {
+            Image($r('app.media.ic_public_close'))
+              .width(this.scaledSize(20))
+              .height(this.scaledSize(20))
+              .fillColor(this.settingTextColor())
+          }
+        }
+        .width('100%')
+        .padding({
+          left: this.scaledSize(20),
+          right: this.scaledSize(20),
+          top: this.scaledSize(18),
+          bottom: this.scaledSize(14)
+        })
+
+        Scroll() {
+          Column({ space: this.scaledSize(12) }) {
+            if (this.helpSheetKind === HELP_SHEET_GLASS) {
+              this.helpSectionLabel('以下位置会使用玻璃效果')
+              this.helpTextBlock(this.helpUseLines())
+              this.helpSectionLabel('以下位置不使用玻璃效果')
+              this.helpTextBlock(this.helpSkipLines())
+            } else if (this.helpSheetKind === HELP_SHEET_SHORTCUT) {
+              ForEach(ShortcutTable.ALL, (entry: ShortcutEntry) => {
+                Row() {
+                  Text(entry.description)
+                    .fontSize(this.scaledFont(14))
+                    .fontColor(this.settingTextColor())
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .layoutWeight(1)
+                  Row({ space: this.scaledSize(4) }) {
+                    ForEach(entry.keys, (key: string) => {
+                      Text(key)
+                        .fontSize(this.scaledFont(11))
+                        .fontColor(this.settingTextColor())
+                        .padding({
+                          left: this.scaledSize(7),
+                          right: this.scaledSize(7),
+                          top: this.scaledSize(3),
+                          bottom: this.scaledSize(3)
+                        })
+                        .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.08))
+                        .borderRadius(this.scaledSize(6))
+                        .constraintSize({ minWidth: this.scaledSize(22) })
+                        .textAlign(TextAlign.Center)
+                    }, (key: string) => key)
+                  }
+                  .flexShrink(0)
+                  .margin({ left: this.scaledSize(8) })
+                }
+                .width('100%')
+                .height(this.scaledSize(44))
+                .alignItems(VerticalAlign.Center)
+                .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+                .backgroundColor(this.helpBlockBackground())
+                .borderRadius(this.scaledSize(12))
+              }, (entry: ShortcutEntry) => entry.description)
+            } else if (this.helpSheetKind === HELP_SHEET_REPLAY_GAIN) {
+              this.helpTextBlock(this.replayGainHelpLines())
+            } else {
+              this.helpTextBlock(this.gripHelpLines())
+            }
+          }
+          .width('100%')
+        }
+        .width('100%')
+        .constraintSize({ maxHeight: this.scaledSize(420) })
+        .scrollBar(BarState.Off)
+        .padding({ left: this.scaledSize(16), right: this.scaledSize(16), bottom: this.scaledSize(18) })
+      }
+      .width('86%')
+      .constraintSize({ maxWidth: this.scaledSize(520) })
+      .backgroundColor(this.helpDialogBackground())
+      .borderRadius(this.scaledSize(24))
+      .clip(true)
+      .shadow({ radius: this.scaledSize(30), color: '#66000000', offsetY: this.scaledSize(8) })
     }
+    .width('100%')
+    .height('100%')
   }
 
   @Builder
-  helpSheetBuilder(): void {
-    if (this.helpSheetKind === HELP_SHEET_GLASS) {
-      this.glassScopeSheetBuilder()
-    } else if (this.helpSheetKind === HELP_SHEET_SHORTCUT) {
-      this.shortcutSheetBuilder()
-    } else {
-      this.gripHelpSheetBuilder()
-    }
-  }
-
-  @Builder
-  helpParagraph(text: string): void {
+  helpSectionLabel(text: string): void {
     Text(text)
       .fontSize(this.scaledFont(12))
       .fontColor(this.settingSubTextColor())
       .width('100%')
-      .padding({ top: this.scaledSize(2) })
+      .padding({ left: this.scaledSize(4), top: this.scaledSize(2) })
   }
 
-  // 智感握姿/切换确认窗的详细说明
   @Builder
-  gripHelpSheetBuilder(): void {
-    Column({ space: this.scaledSize(10) }) {
-      Scroll() {
-        Column({ space: this.scaledSize(10) }) {
-          if (this.helpSheetKind === HELP_SHEET_HOLDING_HAND) {
-            this.helpParagraph('开启后，根据单手握持方向自动调整首页顶部预览与控件靠左/靠右。')
-            this.helpParagraph('仅在设备支持智感握姿时显示该开关。')
-          } else if (this.helpSheetKind === HELP_SHEET_CONFIRM_WINDOW) {
-            this.helpParagraph('握姿切换滤波的确认时间：检测到换手后，需持续该时长无回摆才真正切边。')
-            this.helpParagraph('值越小：换手贴边越快，但越容易被瞬时误报带偏。')
-            this.helpParagraph('值越大：切换越稳，但换手响应越慢。')
-          }
-        }
-        .width('100%')
-      }
-      .layoutWeight(1)
-      .width('100%')
-      .align(Alignment.Top)
-      .edgeEffect(EdgeEffect.Spring)
-
-      Row() {
-        ScaleButton({
-          pressScale: StyleConstants.PRESS_SCALE,
-          hoverScale: StyleConstants.HOVER_SCALE,
-          expandWidth: true,
-          onButtonTap: () => {
-            this.showHelpSheet = false
-          }
-        }) {
-          Button('知道了')
-            .height(this.scaledSize(30))
-            .fontColor('#FFFFFF')
-            .backgroundColor(this.primaryColor)
-            .borderRadius(this.scaledSize(15))
-            .width('100%')
-        }
-      }
-      .width('100%')
-      .padding({ top: this.scaledSize(8), bottom: this.scaledSize(10) })
+  helpTextBlock(lines: string[]): void {
+    Column({ space: this.scaledSize(8) }) {
+      ForEach(lines, (line: string, index: number) => {
+        Text(line)
+          .fontSize(this.scaledFont(14))
+          .fontColor(this.settingTextColor())
+          .lineHeight(this.scaledFont(21))
+          .width('100%')
+      }, (line: string, index: number) => index.toString())
     }
     .width('100%')
-    .height('100%')
-    .padding({ left: this.scaledSize(20), right: this.scaledSize(20), top: this.scaledSize(14) })
+    .padding(this.scaledSize(14))
+    .backgroundColor(this.helpBlockBackground())
+    .borderRadius(this.scaledSize(14))
   }
 
   // 行内二级标题（用于 Row 内，不带 width 约束，避免溢出）
@@ -1215,142 +1338,20 @@ struct SettingsDetailPage {
       .padding({ right: this.scaledSize(4) })
   }
 
+  // 滑轨右侧实时数值（与「切换确认窗」同款：主题色、12fp、Medium）
+  @Builder
+  sliderValueText(text: string): void {
+    Text(text)
+      .fontSize(this.scaledFont(12))
+      .fontColor(this.primaryColor)
+      .fontWeight(FontWeight.Medium)
+  }
+
   // 组件风格（tabStyle）驱动的弹窗与选择类组件材质（bindSheet options 的 systemMaterial
   // 字段、Toggle/Slider 通用属性）：玻璃风格 → 液态玻璃；经典风格 → Material.empty
   // 显式关闭（undefined 只会恢复系统默认，关不干净）；设备不支持 → undefined
   private styleGlassMaterial(): uiMaterial.Material | undefined {
     return createStyleGlassMaterial(this.settings.tabStyle, DEFAULT_GLASS_STYLE)
-  }
-
-  // 玻璃效果生效范围说明弹窗标题（bindSheet 官方标题栏）
-  @Builder
-  glassScopeSheetTitle(): void {
-    Text('玻璃效果生效范围')
-      .fontSize(this.scaledFont(20))
-      .fontColor($r('app.color.text_primary'))
-      .fontWeight(FontWeight.Bold)
-      .maxLines(1)
-      .width('100%')
-  }
-
-  // 玻璃效果生效范围说明弹窗（bindSheet 半模态内容）：标题移入官方标题栏，正文可滚、按钮固定底部
-  @Builder
-  glassScopeSheetBuilder(): void {
-    Column({ space: this.scaledSize(10) }) {
-      Scroll() {
-        Column({ space: this.scaledSize(10) }) {
-          Text('以下位置会使用玻璃效果：')
-            .fontSize(this.scaledFont(12))
-            .fontColor(this.settingSubTextColor())
-            .width('100%')
-            .padding({ top: this.scaledSize(2) })
-          this.scopeLine('• 底部 Tab 栏：玻璃样式下挂液态玻璃（跟手光效由「跟手光效颜色」决定，设为「无」即关闭）；经典样式为磨砂，强度随「Tab栏与播控条模糊强度」')
-          this.scopeLine('• 右下角播控条：大屏上玻璃样式生效（与底部 Tab 栏一致），小屏上为磨砂效果')
-          this.scopeLine('• 首页上端与设置详情页顶部的渐变模糊层（随「首页上端模糊强度」设置变化）')
-          this.scopeLine('• 首页长按歌曲进入多选后的顶部菜单栏：玻璃样式下液态玻璃叠加磨砂兜底，经典样式不挂背景效果')
-          this.scopeLine('• 各页面左上角圆形返回按钮（设置详情、播放器等页面；玻璃样式出真玻璃，经典样式为磨砂兜底）')
-          this.scopeLine('• 全局悬浮加号按钮（磨砂玻璃盘）')
-          this.scopeLine(
-            '• 操作时屏幕底部短暂弹出的文字提示浮层（如切换播放模式时的"随机播放"）——设备支持液态玻璃时固定使用液态玻璃材质')
-          this.scopeLine('• 半模态弹窗与气泡（播放列表、更多面板、倍速/音量气泡、本说明弹窗等）：玻璃样式下使用液态玻璃，经典样式恢复常规背景')
-          this.scopeLine('• 设置页的开关与滑块：玻璃样式下跟随液态玻璃，经典样式恢复主题色自定义样式')
-
-          Text('以下位置不使用玻璃效果：')
-            .fontSize(this.scaledFont(12))
-            .fontColor(this.settingSubTextColor())
-            .width('100%')
-            .padding({ top: this.scaledSize(6) })
-          this.scopeLine('• 首页 / 歌单 / 设置 / 设置详情 页面的顶层背景（均使用预设纯色背景，明暗自适应）')
-          this.scopeLine('• 音乐播放器页面背景（仅左上角返回按钮使用玻璃）')
-          this.scopeLine('• 系统 API < 26 或未声明支持沉浸式材质的设备（液态玻璃自动降级为磨砂模糊）')
-
-        }
-        .width('100%')
-      }
-      .layoutWeight(1)
-      .width('100%')
-      .align(Alignment.Top)
-      .edgeEffect(EdgeEffect.Spring)
-
-      Row() {
-        ScaleButton({
-          pressScale: StyleConstants.PRESS_SCALE,
-          hoverScale: StyleConstants.HOVER_SCALE,
-          expandWidth: true,
-          onButtonTap: () => {
-            this.showHelpSheet = false
-          }
-        }) {
-          Button('知道了')
-            .height(this.scaledSize(30))
-            .fontColor('#FFFFFF')
-            .backgroundColor(this.primaryColor)
-            .borderRadius(this.scaledSize(15))
-            .width('100%')
-        }
-      }
-      .width('100%')
-      .padding({ top: this.scaledSize(8), bottom: this.scaledSize(10) })
-    }
-    .width('100%')
-    .height('100%')
-    .padding({ left: this.scaledSize(20), right: this.scaledSize(20), top: this.scaledSize(14) })
-  }
-
-  @Builder
-  scopeLine(text: string): void {
-    Text(text)
-      .fontSize(this.scaledFont(12))
-      .fontColor(this.settingSubTextColor())
-      .width('100%')
-      .padding({ top: this.scaledSize(2) })
-  }
-
-  // 自动音量均衡说明弹窗（bindSheet 半模态内容）
-  @Builder
-  replayGainHelpSheetBuilder(): void {
-    Column({ space: this.scaledSize(10) }) {
-      Text('自动音量均衡')
-        .fontSize(this.scaledFont(16))
-        .fontColor(this.settingTextColor())
-        .fontWeight(FontWeight.Bold)
-        .width('100%')
-        .textAlign(TextAlign.Start)
-
-      Text('按歌曲内嵌 ReplayGain 标签在播放时统一响度，不修改文件本身。')
-        .fontSize(this.scaledFont(12))
-        .fontColor(this.settingSubTextColor())
-        .width('100%')
-        .padding({ top: this.scaledSize(2) })
-      this.scopeLine('• 均衡关：不处理，保持原始音量')
-      this.scopeLine('• 按曲目：每首歌用自己的增益，逐首拉平')
-      this.scopeLine('• 按专辑：同专辑共用一个增益，保留专辑内强弱起伏；缺专辑标签时按曲目处理')
-      this.scopeLine('• 预增益：在标签增益上整体叠加，正数更响、负数更轻')
-      this.scopeLine('• 增益切换与换曲逐采样平滑，无爆音；增益过大时软限幅防削波')
-      this.scopeLine('• 仅 MP3（ID3v2）/ FLAC 标签有效，其他格式与无标签歌曲不调整；设了非 0 预增益时仍会整体加减')
-
-      Row() {
-        ScaleButton({
-          pressScale: StyleConstants.PRESS_SCALE,
-          hoverScale: StyleConstants.HOVER_SCALE,
-          expandWidth: true,
-          onButtonTap: () => {
-            this.showReplayGainHelp = false
-          }
-        }) {
-          Button('知道了')
-            .height(this.scaledSize(30))
-            .fontColor('#FFFFFF')
-            .backgroundColor(this.primaryColor)
-            .borderRadius(this.scaledSize(15))
-            .width('100%')
-        }
-      }
-      .width('100%')
-      .padding({ top: this.scaledSize(8), bottom: this.scaledSize(10) })
-    }
-    .width('100%')
-    .padding({ left: this.scaledSize(20), right: this.scaledSize(20), top: this.scaledSize(14) })
   }
 
   @Builder
@@ -1421,6 +1422,7 @@ struct SettingsDetailPage {
         Row() {
           this.subTitleRow('首页上端模糊强度')
           Blank()
+          this.sliderValueText(`${Math.round(this.settings.homeTopBlurStrength)}`)
         }
         .width('100%')
 
@@ -1610,6 +1612,68 @@ struct SettingsDetailPage {
           .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
           .borderRadius(this.scaledSize(10))
           .transition(this.settingCardTransition())
+
+          Column({ space: this.scaledSize(6) }) {
+            Row() {
+              this.subTitleRow('不确定回落窗')
+              this.helpIcon(HELP_SHEET_FALLBACK_WINDOW)
+              Blank()
+              Text(`${this.settings.holdingHandSoftFallbackMs} ms`)
+                .fontSize(this.scaledFont(12))
+                .fontColor(this.primaryColor)
+                .fontWeight(FontWeight.Medium)
+            }
+            .width('100%')
+
+            Text('握姿无法识别时，持续该时长后回落默认右侧。')
+              .fontSize(this.scaledFont(12))
+              .fontColor(this.settingSubTextColor())
+              .width('100%')
+
+            Row({ space: this.scaledSize(8) }) {
+              Text('快')
+                .fontSize(this.scaledFont(11))
+                .fontColor(this.settingTextColor())
+                .margin({ right: this.scaledSize(4) })
+              Slider({
+                value: this.settings.holdingHandSoftFallbackMs,
+                min: HOLDING_HAND_SOFT_FALLBACK_MIN_MS,
+                max: HOLDING_HAND_SOFT_FALLBACK_MAX_MS,
+                step: HOLDING_HAND_SOFT_FALLBACK_STEP_MS,
+                style: SliderStyle.OutSet
+              })
+                .layoutWeight(1)
+                .selectedColor(this.primaryColor)
+                .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+                .blockColor('#FFFFFF')
+                .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
+                .blockBorderColor(this.primaryColor)
+                .blockBorderWidth(3)
+                .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
+                .systemMaterial(this.styleGlassMaterial())
+                .onChange((value: number, mode: SliderChangeMode) => {
+                  this.settings.holdingHandSoftFallbackMs = value
+                  AppStorage.setOrCreate(KEY_HOLDING_HAND_SOFT_FALLBACK_MS, value)
+                  this.updateSetting(this.isSliderSettled(mode))
+                })
+              Text('钝')
+                .fontSize(this.scaledFont(11))
+                .fontColor(this.settingTextColor())
+                .margin({ left: this.scaledSize(4) })
+            }
+            .width('100%')
+            .alignItems(VerticalAlign.Center)
+          }
+          .width('100%')
+          .padding({
+            top: this.scaledSize(10),
+            left: this.scaledSize(14),
+            right: this.scaledSize(14),
+            bottom: this.scaledSize(10)
+          })
+          .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+          .borderRadius(this.scaledSize(10))
+          .transition(this.settingCardTransition())
         }
       }
 
@@ -1717,6 +1781,7 @@ struct SettingsDetailPage {
         Row() {
           this.subTitleRow('字体大小')
           Blank()
+          this.sliderValueText(`${Math.round(this.settings.fontSizeScale * 100)}%`)
         }
         .width('100%')
 
@@ -1771,6 +1836,7 @@ struct SettingsDetailPage {
         Row() {
           this.subTitleRow('显示大小')
           Blank()
+          this.sliderValueText(`${Math.round(this.settings.displaySizeScale * 100)}%`)
         }
         .width('100%')
 
@@ -2005,6 +2071,7 @@ struct SettingsDetailPage {
             Row() {
               this.subTitleRow('Tab栏与播控条模糊强度')
               Blank()
+              this.sliderValueText(`${Math.round(this.settings.glassBlurStrength)}`)
             }
             .width('100%')
 
@@ -2062,6 +2129,7 @@ struct SettingsDetailPage {
           Row() {
             this.subTitleRow('Tab 指示器不透明度')
             Blank()
+            this.sliderValueText(`${Math.round(this.settings.tabIndicatorOpacity)}%`)
           }
           .width('100%')
 
@@ -2187,10 +2255,14 @@ struct SettingsDetailPage {
             })
         )
 
-        Text('色相')
-          .fontSize(this.scaledFont(11))
-          .fontColor(this.settingSubTextColor())
-          .width('100%')
+        Row() {
+          Text('色相')
+            .fontSize(this.scaledFont(11))
+            .fontColor(this.settingSubTextColor())
+          Blank()
+          this.sliderValueText(`${Math.round(this.pickerHue)}°`)
+        }
+        .width('100%')
         Slider({
           value: this.pickerHue,
           min: 0,
@@ -2329,7 +2401,8 @@ struct SettingsDetailPage {
 
           Text(this.settings.timerFadeSeconds + ' 秒')
             .fontSize(this.scaledFont(12))
-            .fontColor(this.settingTextColor())
+            .fontColor(this.primaryColor)
+            .fontWeight(FontWeight.Medium)
             .alignSelf(ItemAlign.Center)
             .margin({ left: this.scaledSize(10) })
         }
@@ -2510,7 +2583,8 @@ struct SettingsDetailPage {
           Blank()
           Text(this.settings.playSpeed.toFixed(1) + 'x')
             .fontSize(this.scaledFont(12))
-            .fontColor(this.settingTextColor())
+            .fontColor(this.primaryColor)
+            .fontWeight(FontWeight.Medium)
         }
         .width('100%')
         .height(this.scaledSize(44))
@@ -2853,40 +2927,12 @@ struct SettingsDetailPage {
             .fontSize(this.scaledFont(13))
             .fontWeight(FontWeight.Medium)
             .fontColor(this.settingTextColor())
-          // 说明弹窗入口：与分组标题问号同款样式
-          ScaleButton({
-            pressScale: StyleConstants.PRESS_SCALE,
-            hoverScale: StyleConstants.HOVER_SCALE,
-            onButtonTap: () => {
-              this.showReplayGainHelp = true
-            }
-          }) {
-            Stack({ alignContent: Alignment.Center }) {
-              Circle()
-                .width(this.scaledSize(18))
-                .height(this.scaledSize(18))
-                .fill(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-              Image($r('app.media.ic_public_help'))
-                .width(this.scaledSize(13))
-                .height(this.scaledSize(13))
-                .fillColor(this.primaryColor)
-            }
-            .width(this.scaledSize(18))
-            .height(this.scaledSize(18))
-            .margin({ left: this.scaledSize(6) })
-          }
+          // 说明弹窗入口：统一问号弹窗
+          this.helpIcon(HELP_SHEET_REPLAY_GAIN)
           Blank()
         }
         .width('100%')
         .alignItems(VerticalAlign.Center)
-        .bindSheet($$this.showReplayGainHelp, this.replayGainHelpSheetBuilder(), {
-          height: SheetSize.FIT_CONTENT,
-          dragBar: false,
-          preferType: SheetType.CENTER,
-          showClose: true,
-          systemMaterial: this.styleGlassMaterial(),
-          backgroundColor: $r('app.color.page_background_other')
-        })
         Text('按内嵌 ReplayGain 标签统一响度')
           .fontSize(this.scaledFont(11))
           .fontColor(this.settingSubTextColor())
@@ -3276,7 +3322,8 @@ struct SettingsDetailPage {
               })
             Text(this.pureVoicePitchText())
               .fontSize(this.scaledFont(12))
-              .fontColor(this.settingTextColor())
+              .fontColor(this.primaryColor)
+              .fontWeight(FontWeight.Medium)
               .width(this.scaledSize(64))
               .textAlign(TextAlign.End)
               .flexShrink(0)
@@ -3647,78 +3694,6 @@ struct SettingsDetailPage {
     }
   }
 
-  // 快捷键速查二级弹窗标题（bindSheet 官方标题栏）
-  @Builder
-  shortcutSheetTitle(): void {
-    Text('快捷键')
-      .fontSize(this.scaledFont(20))
-      .fontColor($r('app.color.text_primary'))
-      .fontWeight(FontWeight.Bold)
-      .maxLines(1)
-      .width('100%')
-  }
-
-  // 快捷键速查二级弹窗（bindSheet 半模态内容）：标题移入官方标题栏，单一扁平列表不分组、铺满弹窗可滚
-  @Builder
-  shortcutSheetBuilder(): void {
-    Column({ space: this.scaledSize(10) }) {
-      Scroll() {
-        Column({ space: this.scaledSize(10) }) {
-          ForEach(ShortcutTable.ALL, (entry: ShortcutEntry) => {
-            Row() {
-              Text(entry.description)
-                .fontSize(this.scaledFont(14))
-                .fontColor(this.settingTextColor())
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-                .layoutWeight(1)
-              Row({ space: this.scaledSize(4) }) {
-                ForEach(entry.keys, (key: string) => {
-                  Text(key)
-                    .fontSize(this.scaledFont(11))
-                    .fontColor(this.settingTextColor())
-                    .padding({
-                      left: this.scaledSize(7),
-                      right: this.scaledSize(7),
-                      top: this.scaledSize(3),
-                      bottom: this.scaledSize(3)
-                    })
-                    .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.08))
-                    .borderRadius(this.scaledSize(6))
-                    .constraintSize({ minWidth: this.scaledSize(22) })
-                    .textAlign(TextAlign.Center)
-                }, (key: string) => key)
-              }
-              .flexShrink(0)
-              .margin({ left: this.scaledSize(8) })
-            }
-            .width('100%')
-            .height(this.scaledSize(44))
-            .alignItems(VerticalAlign.Center)
-            .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-            .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-            .borderRadius(this.scaledSize(10))
-          }, (entry: ShortcutEntry) => entry.description)
-        }
-        .width('100%')
-        .constraintSize({ minWidth: 0, maxWidth: '100%' })
-      }
-      .width('100%')
-      .layoutWeight(1)
-      .align(Alignment.Top)
-      .edgeEffect(EdgeEffect.Spring)
-    }
-    .width('100%')
-    .height('100%')
-    .constraintSize({ minWidth: 0, maxWidth: '100%' })
-    .padding({
-      left: this.scaledSize(18),
-      right: this.scaledSize(18),
-      top: this.scaledSize(16),
-      bottom: this.scaledSize(12)
-    })
-  }
-
   // 检查更新行：点击调用应用市场更新服务（checkAppUpdate + showUpdateDialog）
   @Builder
   checkUpdateRow(): void {
@@ -3894,7 +3869,8 @@ struct SettingsDetailPage {
         })
       Text((Number.isInteger(valueGetter()) ? valueGetter().toString() : valueGetter().toFixed(1)) + unit)
         .fontSize(this.scaledFont(12))
-        .fontColor(this.settingTextColor())
+        .fontColor(this.primaryColor)
+        .fontWeight(FontWeight.Medium)
         .width(this.scaledSize(56))
         .textAlign(TextAlign.End)
         .flexShrink(0)
@@ -3933,7 +3909,8 @@ struct SettingsDetailPage {
         })
       Text(this.spaceText(index) + unit)
         .fontSize(this.scaledFont(12))
-        .fontColor(this.settingTextColor())
+        .fontColor(this.primaryColor)
+        .fontWeight(FontWeight.Medium)
         .width(this.scaledSize(56))
         .textAlign(TextAlign.End)
         .flexShrink(0)

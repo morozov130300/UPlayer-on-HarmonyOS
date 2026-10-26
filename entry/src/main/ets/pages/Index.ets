@@ -913,7 +913,8 @@ struct MainPage {
                   if (this.poetryLine.length > 0) {
                     Text(this.poetryLine)
                       .fontSize(Math.round(12 * this.fontSizeScale))
-                      .lineHeight(Math.round(12 * this.fontSizeScale))
+                      // 不锁死 lineHeight：lineHeight 等于字号时行盒装不下中文字形的上伸部，
+                      // marquee 会按行盒裁剪，导致诗句上半部分被切掉；交给文本自然行高
                       .fontColor($r('app.color.text_sixty_color'))
                       .maxLines(1)
                       .textOverflow({ overflow: TextOverflow.MARQUEE })
