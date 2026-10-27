@@ -151,9 +151,21 @@ export class AudioMetadataService {
     return new AlbumCoverLease(this, entry)
   }
 
+  // 同步取缓存中已解码的封面（不触发提取、不排队）：供组件首帧/重建时直接上屏。
+  // 组件重建时若走异步 acquire，首帧必然空白（封面闪一下），同步命中可彻底消除该闪烁
+  peekAlbumCover(song: SongInfo, maxEdge: number = AlbumCoverSize.LARGE): AlbumCoverLease | undefined {
+    const normalizedEdge: number = this.normalizeCoverEdge(maxEdge)
+    const entry: AlbumCoverCacheEntry | undefined = this.coverCache.get(this.coverKey(song, normalizedEdge))
+    if (entry === undefined || entry.pixelMap === undefined) {
+      return undefined
+    }
+    entry.references++
+    entry.lastAccess = ++this.accessCounter
+    return new AlbumCoverLease(this, entry)
+  }
+
   prefetchAlbumCover(song: SongInfo, maxEdge: number = AlbumCoverSize.SMALL,
-    priority: CoverPriority = CoverPriority.LOW): void {
-    this.acquireAlbumCover(song, maxEdge, priority).then((lease: AlbumCoverLease | undefined) => {
+    priority: CoverPriority = CoverPriority.LOW): void {    this.acquireAlbumCover(song, maxEdge, priority).then((lease: AlbumCoverLease | undefined) => {
       lease?.release()
     }).catch((err: Error) => {
       Logger.debug(TAG, `Album cover prefetch failed: ${JSON.stringify(err)}`)

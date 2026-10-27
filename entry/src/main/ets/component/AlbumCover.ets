@@ -20,24 +20,70 @@ export struct AlbumCover {
   private requestId: number = 0
   private retryTimer: number = -1
   private retryCount: number = 0
+  // 当前已上屏封面对应的歌曲标识（见 songKey）
+  private loadedKey: string = ''
 
   aboutToAppear(): void {
-    this.load()
+    // 首帧必须同步定状态：播控条等场景切页签会反复销毁重建本组件，异步加载会让首帧空白，
+    // 表现为封面/占位图闪一下。缓存已解码时同步上屏；已确认无封面时同步走占位
+    if (!this.applyCachedCover()) {
+      if (AudioMetadataService.getInstance().isCoverConfirmedAbsent(this.song)) {
+        this.isCoverSettled = true
+      }
+      this.load()
+    }
   }
 
   aboutToDisappear(): void {
     this.invalidate()
   }
 
+  // 歌曲标识：id + 源路径 + 解码尺寸。@Prop 对对象做深拷贝，父组件重推同一首歌
+  // 也会得到新对象引用，必须按业务标识判等，否则会被误判为换歌而清空重载
+  private songKey(): string {
+    const sourcePath: string = this.song.uri.length > 0 ? this.song.uri : this.song.filePath
+    return `${this.song.id}|${sourcePath}|${this.decodeSize}`
+  }
+
   private onSongChange(): void {
-    this.invalidate()
-    this.load()
+    if (this.songKey() === this.loadedKey && this.cover !== undefined) {
+      // 同一首歌（父组件重渲染/深拷贝重推）：沿用已上屏的封面，不重载
+      return
+    }
+    this.requestId++
+    this.retryCount = 0
+    this.isCoverSettled = false
+    this.clearRetryTimer()
+    if (!this.applyCachedCover()) {
+      // 换歌且缓存未命中：先保留旧图，等新图就绪再替换，避免中间出现空白帧
+      this.load()
+    }
+  }
+
+  // 同步用缓存封面直接上屏；命中返回 true
+  private applyCachedCover(): boolean {
+    const lease: AlbumCoverLease | undefined =
+      AudioMetadataService.getInstance().peekAlbumCover(this.song, this.decodeSize)
+    if (lease === undefined) {
+      return false
+    }
+    this.requestId++
+    this.retryCount = 0
+    this.clearRetryTimer()
+    const previousLease: AlbumCoverLease | undefined = this.coverLease
+    this.coverLease = lease
+    this.cover = lease.pixelMap
+    this.isCoverSettled = true
+    this.loadedKey = this.songKey()
+    previousLease?.release()
+    return true
   }
 
   private invalidate(): void {
     this.requestId++
     this.retryCount = 0
     this.isCoverSettled = false
+    this.loadedKey = ''
     this.clearRetryTimer()
     this.releaseCover()
   }
@@ -53,6 +99,7 @@ export struct AlbumCover {
     const requestId: number = ++this.requestId
     const songId: string = this.song.id
     const songPath: string = this.song.uri.length > 0 ? this.song.uri : this.song.filePath
+    const key: string = this.songKey()
     try {
       const loaded: AlbumCoverLease | undefined =
         await AudioMetadataService.getInstance().acquireAlbumCover(this.song, this.decodeSize)
@@ -67,7 +114,10 @@ export struct AlbumCover {
           this.retryCount < COVER_RETRY_MAX) {
           this.scheduleRetry(requestId)
         } else {
+          // 确认无封面：清空旧图走占位（换歌等待期间不会走到这里，仍保留旧图）
           this.isCoverSettled = true
+          this.loadedKey = key
+          this.releaseCover()
         }
         return
       }
@@ -75,6 +125,7 @@ export struct AlbumCover {
       const previousLease: AlbumCoverLease | undefined = this.coverLease
       this.coverLease = loaded
       this.cover = loaded.pixelMap
+      this.loadedKey = key
       this.isCoverSettled = true
       previousLease?.release()
     } catch (_) {
@@ -82,7 +133,10 @@ export struct AlbumCover {
         if (this.retryCount < COVER_RETRY_MAX) {
           this.scheduleRetry(requestId)
         } else {
+          // 重试耗尽仍失败：清空旧图走占位，避免一直显示上一首的封面
           this.isCoverSettled = true
+          this.loadedKey = key
+          this.releaseCover()
         }
       }
     }

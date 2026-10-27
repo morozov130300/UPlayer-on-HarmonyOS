@@ -177,8 +177,10 @@ struct SettingsDetailPage {
   // Tab 栏实时预览：直接使用 HdsTabs 系统组件，与 Index 完全一致的渲染管线
   @State previewTabIndex: number = 0
   @State showColorPicker: boolean = false
-  @State showHelpSheet: boolean = false
   @State helpSheetKind: number = 0
+  // 问号说明弹窗控制器：每次打开重建（CustomDialogControllerOptions 不支持动态刷新，
+  // tabStyle/显示大小可能在两次打开之间已变），由 openHelpSheet 赋值
+  private helpDialogController: CustomDialogController | undefined = undefined
   @State pickerHue: number = 210
   @State pickerSaturation: number = 1
   @State pickerValue: number = 1
@@ -342,6 +344,8 @@ struct SettingsDetailPage {
       this.primaryColor = this.pickerOriginalColor
       this.showColorPicker = false
     }
+    // 弹窗是页面级浮层：不关就会盖到下一页去
+    this.closeHelpSheet()
     // 监听不随本页销毁而退订：首页加号仍在用同一份握姿结果（由 EntryAbility 按前后台与开关同步订阅）
   }
 
@@ -996,10 +1000,6 @@ struct SettingsDetailPage {
     .mode(NavigationMode.Stack)
     .width('100%')
     .height('100%')
-    .bindContentCover($$this.showHelpSheet, this.helpDialogOverlay(), {
-      modalTransition: ModalTransition.NONE,
-      backgroundColor: '#00000000'
-    })
   }
 
   // 右侧预留 PC 窗口标题按钮区（titleButtonWidth + 12），沿用原 titleBand 的避让逻辑。
@@ -1104,9 +1104,49 @@ struct SettingsDetailPage {
     }
   }
 
+  // 问号说明弹窗：CustomDialog。弹窗类组件/接口才在沉浸光感的「全页面生效」范围内，
+  // 手绘卡片（如普通 Column）+ systemMaterial 只在 Navigation 标题栏/底部 TabBar 生效，
+  // 因此弹窗背板必须交给 CustomDialog 的 systemMaterial，内容区只放内容。
   private openHelpSheet(kind: number): void {
     this.helpSheetKind = kind
-    this.showHelpSheet = true
+    if (this.helpDialogController !== undefined) {
+      this.helpDialogController.close()
+      this.helpDialogController = undefined
+    }
+    // options 不支持动态刷新 → 每次打开按当前样式重建控制器
+    if (this.isGlassHelpDialog()) {
+      // 玻璃样式：不设 backgroundColor（不透明底色会盖在材质层之上），背板由材质绘制
+      this.helpDialogController = new CustomDialogController({
+        builder: HelpDialogHost({ content: this.helpDialogContent }),
+        autoCancel: true,
+        alignment: DialogAlignment.Center,
+        width: '86%',
+        cornerRadius: this.scaledSize(24),
+        maskColor: 'rgba(0,0,0,0.45)',
+        systemMaterial: this.styleGlassMaterial()
+      })
+    } else {
+      // 经典样式：沿用居中卡片的实心底色
+      this.helpDialogController = new CustomDialogController({
+        builder: HelpDialogHost({ content: this.helpDialogContent }),
+        autoCancel: true,
+        alignment: DialogAlignment.Center,
+        width: '86%',
+        cornerRadius: this.scaledSize(24),
+        maskColor: 'rgba(0,0,0,0.45)',
+        backgroundColor: this.helpDialogBackground()
+      })
+    }
+    this.helpDialogController.open()
+  }
+
+  private closeHelpSheet(): void {
+    this.helpDialogController?.close()
+  }
+
+  // 玻璃是否真的会渲染（沉浸式材质才走玻璃背板；Material.empty/undefined 都按实心底色处理）
+  private isGlassHelpDialog(): boolean {
+    return this.styleGlassMaterial() instanceof uiMaterial.ImmersiveMaterial
   }
 
   private helpSheetTitleText(): string {
@@ -1136,6 +1176,10 @@ struct SettingsDetailPage {
   }
 
   private helpBlockBackground(): ResourceColor {
+    // 玻璃样式：内容块用半透明白，让背板材质透出来；经典样式：沿用原来的实心块颜色
+    if (this.isGlassHelpDialog()) {
+      return this.isDark() ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.60)'
+    }
     return this.isDark() ? ColorHelper.hexToRgba('#5A5A5E', 0.92) : '#FFFFFF'
   }
 
@@ -1194,46 +1238,38 @@ struct SettingsDetailPage {
     ]
   }
 
-  // 问号说明弹窗：居中大卡片 + 标题栏关闭按钮，与设置弹窗同一套视觉语言
+  // 问号说明弹窗内容：只放标题栏 + 正文，底色/圆角/阴影/材质全部由 CustomDialog options 接管
+  // （内容区一旦设不透明底色或 clip，就会把背板材质盖掉，玻璃效果直接消失）
   @Builder
-  helpDialogOverlay(): void {
-    Stack({ alignContent: Alignment.Center }) {
-      Column()
-        .width('100%')
-        .height('100%')
-        .backgroundColor('rgba(0,0,0,0.6)')
-        .onClick(() => {
-          this.showHelpSheet = false
-        })
-
-      Column() {
-        Row() {
-          Text(this.helpSheetTitleText())
-            .fontSize(this.scaledFont(22))
-            .fontColor(this.settingTextColor())
-            .fontWeight(FontWeight.Bold)
-            .maxLines(1)
-          Blank()
-          ScaleButton({
-            pressScale: StyleConstants.PRESS_SCALE,
-            hoverScale: StyleConstants.HOVER_SCALE,
-            onButtonTap: () => {
-              this.showHelpSheet = false
-            }
-          }) {
-            Image($r('app.media.ic_public_cancel'))
-              .width(this.scaledSize(22))
-              .height(this.scaledSize(22))
-              .fillColor(this.settingTextColor())
+  helpDialogContent(): void {
+    Column() {
+      Row() {
+        Text(this.helpSheetTitleText())
+          .fontSize(this.scaledFont(22))
+          .fontColor(this.settingTextColor())
+          .fontWeight(FontWeight.Bold)
+          .maxLines(1)
+        Blank()
+        ScaleButton({
+          pressScale: StyleConstants.PRESS_SCALE,
+          hoverScale: StyleConstants.HOVER_SCALE,
+          onButtonTap: () => {
+            this.closeHelpSheet()
           }
+        }) {
+          Image($r('app.media.ic_public_cancel'))
+            .width(this.scaledSize(22))
+            .height(this.scaledSize(22))
+            .fillColor(this.settingTextColor())
         }
-        .width('100%')
-        .padding({
-          left: this.scaledSize(20),
-          right: this.scaledSize(20),
-          top: this.scaledSize(18),
-          bottom: this.scaledSize(14)
-        })
+      }
+      .width('100%')
+      .padding({
+        left: this.scaledSize(20),
+        right: this.scaledSize(20),
+        top: this.scaledSize(18),
+        bottom: this.scaledSize(14)
+      })
 
         Scroll() {
           Column({ space: this.scaledSize(12) }) {
@@ -1291,15 +1327,8 @@ struct SettingsDetailPage {
         .scrollBar(BarState.Off)
         .padding({ left: this.scaledSize(16), right: this.scaledSize(16), bottom: this.scaledSize(18) })
       }
-      .width('86%')
-      .constraintSize({ maxWidth: this.scaledSize(520) })
-      .backgroundColor(this.helpDialogBackground())
-      .borderRadius(this.scaledSize(24))
-      .clip(true)
-      .shadow({ radius: this.scaledSize(30), color: '#66000000', offsetY: this.scaledSize(8) })
+      .width('100%')
     }
-    .width('100%')
-    .height('100%')
   }
 
   @Builder
@@ -1336,15 +1365,6 @@ struct SettingsDetailPage {
       .fontColor(this.settingTextColor())
       .fontWeight(FontWeight.Medium)
       .padding({ right: this.scaledSize(4) })
-  }
-
-  // 滑轨右侧实时数值（与「切换确认窗」同款：主题色、12fp、Medium）
-  @Builder
-  sliderValueText(text: string): void {
-    Text(text)
-      .fontSize(this.scaledFont(12))
-      .fontColor(this.primaryColor)
-      .fontWeight(FontWeight.Medium)
   }
 
   // 组件风格（tabStyle）驱动的弹窗与选择类组件材质（bindSheet options 的 systemMaterial
@@ -1422,7 +1442,10 @@ struct SettingsDetailPage {
         Row() {
           this.subTitleRow('首页上端模糊强度')
           Blank()
-          this.sliderValueText(`${Math.round(this.settings.homeTopBlurStrength)}`)
+          Text(`${Math.round(this.settings.homeTopBlurStrength)}`)
+            .fontSize(this.scaledFont(12))
+            .fontColor(this.primaryColor)
+            .fontWeight(FontWeight.Medium)
         }
         .width('100%')
 
@@ -1781,7 +1804,10 @@ struct SettingsDetailPage {
         Row() {
           this.subTitleRow('字体大小')
           Blank()
-          this.sliderValueText(`${Math.round(this.settings.fontSizeScale * 100)}%`)
+          Text(`${Math.round(this.settings.fontSizeScale * 100)}%`)
+            .fontSize(this.scaledFont(12))
+            .fontColor(this.primaryColor)
+            .fontWeight(FontWeight.Medium)
         }
         .width('100%')
 
@@ -1836,7 +1862,10 @@ struct SettingsDetailPage {
         Row() {
           this.subTitleRow('显示大小')
           Blank()
-          this.sliderValueText(`${Math.round(this.settings.displaySizeScale * 100)}%`)
+          Text(`${Math.round(this.settings.displaySizeScale * 100)}%`)
+            .fontSize(this.scaledFont(12))
+            .fontColor(this.primaryColor)
+            .fontWeight(FontWeight.Medium)
         }
         .width('100%')
 
@@ -2071,7 +2100,10 @@ struct SettingsDetailPage {
             Row() {
               this.subTitleRow('Tab栏与播控条模糊强度')
               Blank()
-              this.sliderValueText(`${Math.round(this.settings.glassBlurStrength)}`)
+              Text(`${Math.round(this.settings.glassBlurStrength)}`)
+                .fontSize(this.scaledFont(12))
+                .fontColor(this.primaryColor)
+                .fontWeight(FontWeight.Medium)
             }
             .width('100%')
 
@@ -2129,7 +2161,10 @@ struct SettingsDetailPage {
           Row() {
             this.subTitleRow('Tab 指示器不透明度')
             Blank()
-            this.sliderValueText(`${Math.round(this.settings.tabIndicatorOpacity)}%`)
+            Text(`${Math.round(this.settings.tabIndicatorOpacity)}%`)
+              .fontSize(this.scaledFont(12))
+              .fontColor(this.primaryColor)
+              .fontWeight(FontWeight.Medium)
           }
           .width('100%')
 
@@ -2260,7 +2295,10 @@ struct SettingsDetailPage {
             .fontSize(this.scaledFont(11))
             .fontColor(this.settingSubTextColor())
           Blank()
-          this.sliderValueText(`${Math.round(this.pickerHue)}°`)
+          Text(`${Math.round(this.pickerHue)}°`)
+            .fontSize(this.scaledFont(12))
+            .fontColor(this.primaryColor)
+            .fontWeight(FontWeight.Medium)
         }
         .width('100%')
         Slider({
@@ -4254,3 +4292,24 @@ struct SettingsDetailPage {
     }
   }
 }
+
+// 问号说明弹窗的外壳：内容由宿主页面通过 @BuilderParam 注入。
+// 弹窗背板（含沉浸式系统材质）由 CustomDialog 的 options 统一接管，外壳本身不得设底色与裁剪，
+// 否则内容层会盖住材质层，玻璃效果直接失效。
+@CustomDialog
+struct HelpDialogHost {
+  controller?: CustomDialogController
+  @BuilderParam content: () => void = this.emptyContent
+
+  @Builder
+  emptyContent(): void {
+  }
+
+  build() {
+    Column() {
+      this.content()
+    }
+    .width('100%')
+  }
+}
+
