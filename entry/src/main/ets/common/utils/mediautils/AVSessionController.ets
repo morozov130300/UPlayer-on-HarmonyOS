@@ -632,6 +632,10 @@ export class AVSessionController {
     if (loopMode === avSession.LoopMode.LOOP_MODE_SHUFFLE) {
       return MusicPlayMode.RANDOM;
     }
+    // 系统播控循环模式按钮会发出应用未实现的「列表循环」，按最接近的顺序播放处理，避免状态被弹回表现为按钮无效
+    if (loopMode === avSession.LoopMode.LOOP_MODE_LIST) {
+      return MusicPlayMode.ORDER;
+    }
     return undefined;
   }
 

@@ -216,6 +216,8 @@ struct SettingsDetailPage {
   private eqCurveCtx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.eqCurveSettings)
   private eqCanvasWidth: number = 0
   private eqCanvasHeight: number = 0
+  // 窄屏（频段列过窄）时省略 dB 单位后缀，避免数值文字被挤出列宽
+  @State eqBandNarrow: boolean = false
   // 返回按钮玻璃材质只在「Navigation 标题栏」生效区渲染；用一个空路由栈把本页套进
   private dataService: DataService = DataService.getInstance()
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
@@ -709,6 +711,24 @@ struct SettingsDetailPage {
     this.updateSetting(this.isSliderSettled(mode))
   }
 
+  // ═══ 均衡器频段布局辅助（窄屏自适应：列宽均分、数值标签按列宽省略单位）═══
+  // 频段列宽由容器宽度均分得到：Row 宽度 = Canvas 宽度，各列 layoutWeight(1) 等分
+  private eqBandWidth(canvasW: number): number {
+    const count: number = this.eqBands.length
+    if (count <= 0) {
+      return 0
+    }
+    const gap: number = this.scaledSize(4)
+    return (canvasW - gap * (count - 1)) / count
+  }
+
+  // 列宽不足以容纳「+10dB」时只显示带符号数值
+  private eqBandValueLabel(index: number): string {
+    const gain: number = this.settings.eqBands[index]
+    const text: string = (gain >= 0 ? '+' : '') + gain
+    return this.eqBandNarrow ? text : text + 'dB'
+  }
+
   // ═══ 均衡器预设（官方 9 预设一键切换，手动拖滑块后自动回到自定义态无高亮）═══
   private eqPresetCacheBands: number[] | undefined = undefined
   private eqPresetCacheIndex: number = -1
@@ -1117,7 +1137,13 @@ struct SettingsDetailPage {
     if (this.isGlassHelpDialog()) {
       // 玻璃样式：不设 backgroundColor（不透明底色会盖在材质层之上），背板由材质绘制
       this.helpDialogController = new CustomDialogController({
-        builder: HelpDialogHost({ content: this.helpDialogContent }),
+        // 方法引用会丢 this（弹窗壳里 this.scaledSize undefined 直接崩），
+        // 箭头函数把页面的 this 语法捕获进闭包
+        builder: HelpDialogHost({
+          content: (): void => {
+            this.helpDialogContent()
+          }
+        }),
         autoCancel: true,
         alignment: DialogAlignment.Center,
         width: '86%',
@@ -1128,7 +1154,11 @@ struct SettingsDetailPage {
     } else {
       // 经典样式：沿用居中卡片的实心底色
       this.helpDialogController = new CustomDialogController({
-        builder: HelpDialogHost({ content: this.helpDialogContent }),
+        builder: HelpDialogHost({
+          content: (): void => {
+            this.helpDialogContent()
+          }
+        }),
         autoCancel: true,
         alignment: DialogAlignment.Center,
         width: '86%',
@@ -1328,7 +1358,6 @@ struct SettingsDetailPage {
         .padding({ left: this.scaledSize(16), right: this.scaledSize(16), bottom: this.scaledSize(18) })
       }
       .width('100%')
-    }
   }
 
   @Builder
@@ -2394,7 +2423,7 @@ struct SettingsDetailPage {
               .fontSize(this.scaledFont(14))
               .fontColor(this.settingTextColor())
               .fontWeight(FontWeight.Medium)
-            Text('开启时：起播、恢复、暂停时音量平滑渐变；关闭时：立即播放/暂停，音量直接生效')
+            Text('开启时起播/恢复/暂停音量平滑渐变，关闭时立即生效')
               .fontSize(this.scaledFont(12))
               .fontColor(this.settingSubTextColor())
           }
@@ -2429,7 +2458,7 @@ struct SettingsDetailPage {
               .fontSize(this.scaledFont(14))
               .fontColor(this.settingTextColor())
               .fontWeight(FontWeight.Medium)
-            Text('定时关闭到期时音量平滑淡出后停止；0 秒为立即停止。按歌曲数定时会淡出最后一首的曲尾')
+            Text('到期音量平滑淡出后停止；0 秒立即停止，按歌曲数定时会淡出最后一首曲尾')
               .fontSize(this.scaledFont(12))
               .fontColor(this.settingSubTextColor())
           }
@@ -2514,7 +2543,7 @@ struct SettingsDetailPage {
             .fontSize(this.scaledFont(14))
             .fontColor(this.settingTextColor())
             .fontWeight(FontWeight.Medium)
-          Text('开启后启动恢复完成即自动开始播放；关闭则恢复为暂停状态，手动点播放继续')
+          Text('开启后恢复完成自动开播；关闭则恢复为暂停')
             .fontSize(this.scaledFont(12))
             .fontColor(this.settingSubTextColor())
         }
@@ -2549,7 +2578,7 @@ struct SettingsDetailPage {
             .fontSize(this.scaledFont(14))
             .fontColor(this.settingTextColor())
             .fontWeight(FontWeight.Medium)
-          Text('关闭时：拔出耳机/断开蓝牙会自动暂停播放并提示；开启时：系统默认切回扬声器继续播放')
+          Text('关闭时拔出耳机/断开蓝牙自动暂停并提示，开启时切回扬声器继续播放')
             .fontSize(this.scaledFont(12))
             .fontColor(this.settingSubTextColor())
         }
@@ -2583,7 +2612,7 @@ struct SettingsDetailPage {
             .fontSize(this.scaledFont(14))
             .fontColor(this.settingTextColor())
             .fontWeight(FontWeight.Medium)
-          Text('开启后与其它应用音频并发播放、互不打断；系统通知、提示音也不压低本应用音量（两种效果共用同一系统策略，无法单独关闭其一）')
+          Text('开启后与其它应用音频并发互不打断，通知/提示音也不压低本应用音量；两者共用系统策略无法单独关闭')
             .fontSize(this.scaledFont(12))
             .fontColor(this.settingSubTextColor())
         }
@@ -2661,7 +2690,7 @@ struct SettingsDetailPage {
             .fontColor(this.settingTextColor())
             .fontWeight(FontWeight.Medium)
           Text(this.lowPowerSupported ?
-            '开启后解码与渲染卸载至低功耗硬件，降低播放功耗、延长续航；期间均衡器等音效不可用，播放中切换将从当前位置重播当前曲目' :
+            '开启后解码与渲染卸载至低功耗硬件省电延长续航；期间音效不可用，切换后从当前位置重播' :
             '当前设备不支持低功耗音频链路，开关不会生效')
             .fontSize(this.scaledFont(12))
             .fontColor(this.settingSubTextColor())
@@ -2699,7 +2728,7 @@ struct SettingsDetailPage {
           .fontColor(this.settingTextColor())
           .fontWeight(FontWeight.Medium)
           .width('100%')
-        Text('首页筛选下拉列表按启用的符号把「甲,乙」等多位艺术家拆开归类，可多选；全部停用则不拆分')
+        Text('按启用的符号把「甲,乙」等多位艺术家拆开归类，可多选；全部停用则不拆分')
           .fontSize(this.scaledFont(12))
           .fontColor(this.settingSubTextColor())
           .width('100%')
@@ -2867,14 +2896,18 @@ struct SettingsDetailPage {
             Row({ space: this.scaledSize(4) }) {
               ForEach(this.eqBands, (band: EqBandInfo) => {
                 Column() {
-                  Text((this.settings.eqBands[band.index] >= 0 ? '+' : '') + this.settings.eqBands[band.index] + 'dB')
+                  Text(this.eqBandValueLabel(band.index))
                     .fontSize(this.scaledFont(9))
                     .fontColor(ColorHelper.hexWithAlpha(this.primaryColor, '88'))
+                    .maxLines(1)
+                    .textAlign(TextAlign.Center)
+                    .width('100%')
                     .margin({ bottom: this.scaledSize(4) })
                 }
-                .width(this.scaledSize(44))
+                .layoutWeight(1)
+                .constraintSize({ minWidth: 0 })
                 .alignItems(HorizontalAlign.Center)
-              }, (band: EqBandInfo) => band.freq + this.settings.eqBands[band.index])
+              }, (band: EqBandInfo) => 'eqvalue' + band.freq)
             }
             .width('100%')
             .justifyContent(FlexAlign.Center)
@@ -2887,6 +2920,7 @@ struct SettingsDetailPage {
                 .onAreaChange((_oldVal: Area, newVal: Area) => {
                   this.eqCanvasWidth = newVal.width as number
                   this.eqCanvasHeight = newVal.height as number
+                  this.eqBandNarrow = this.eqBandWidth(this.eqCanvasWidth) < this.scaledSize(30)
                   this.drawEqCurve()
                 })
                 .onReady(() => {
@@ -2905,12 +2939,12 @@ struct SettingsDetailPage {
                       direction: Axis.Vertical,
                       reverse: true
                     })
-                      .width(this.scaledSize(40))
+                      .width('100%')
                       .height(this.scaledSize(180))
                       .selectedColor(this.primaryColor)
                       .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.16))
                       .blockColor('#FFFFFF')
-                      .blockSize({ width: this.scaledSize(26), height: this.scaledSize(14) })
+                      .blockSize({ width: this.scaledSize(20), height: this.scaledSize(14) })
                       .blockBorderColor(this.primaryColor)
                       .blockBorderWidth(2)
                       .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
@@ -2919,9 +2953,10 @@ struct SettingsDetailPage {
                         this.onEqBandChange(band.index, value, mode)
                       })
                   }
-                  .width(this.scaledSize(44))
+                  .layoutWeight(1)
+                  .constraintSize({ minWidth: 0 })
                   .alignItems(HorizontalAlign.Center)
-                }, (band: EqBandInfo) => band.freq + this.settings.eqBands[band.index])
+                }, (band: EqBandInfo) => 'eqvalue' + band.freq)
               }
               .width('100%')
               .justifyContent(FlexAlign.Center)
@@ -2937,13 +2972,16 @@ struct SettingsDetailPage {
                     .fontWeight(FontWeight.Medium)
                     .margin({ top: this.scaledSize(6) })
                 }
-                .width(this.scaledSize(44))
+                .layoutWeight(1)
+                .constraintSize({ minWidth: 0 })
                 .alignItems(HorizontalAlign.Center)
               }, (band: EqBandInfo) => band.freq)
             }
             .width('100%')
             .justifyContent(FlexAlign.Center)
           }
+          .width('100%')
+          .constraintSize({ minWidth: 0, maxWidth: this.scaledSize(492) })
           .padding({
             left: this.scaledSize(8),
             right: this.scaledSize(8),
@@ -4212,19 +4250,15 @@ struct SettingsDetailPage {
     const bands: number[] = this.settings.eqBands
     const color: string = this.primaryColor
     ctx.clearRect(0, 0, ctx.width, ctx.height)
-    // Canvas 与滑轨 Row 同处内层 Stack：
-    // Canvas 从 x=0 到 x=canvasW 填充整个 Stack
-    // 滑轨 Row 使用 width('100%') + justifyContent(Center)，内容在 Stack 中居中
-    // bandW 为每个频段 Column 的宽度，Slider(40) 在 Column(44) 中居中
-    const bandW: number = this.scaledSize(44)
+    // Canvas 与滑轨 Row 同处内层 Stack，两者宽度一致（内层 Column 限宽 492 后同步收窄）
+    // 频段列使用 layoutWeight(1) 均分宽度，因此按 Canvas 宽度反推列宽，曲线点与滑块严格对齐
+    const bandCount: number = bands.length
     const bandGap: number = this.scaledSize(4)
+    const bandW: number = this.eqBandWidth(canvasW)
     const sliderH: number = canvasH
     const sliderMidY: number = sliderH / 2
-    const bandCount: number = bands.length
-    // Row 内容总宽度 = 所有 Column 宽度 + 间距总和
-    const totalRowWidth: number = bandCount * bandW + (bandCount - 1) * bandGap
-    // Row 内容在 Stack 中居中，起始 x 偏移
-    const rowOffset: number = Math.max(0, (canvasW - totalRowWidth) / 2)
+    // 均分后 Row 内容宽度等于 Canvas 宽度，起始偏移为 0
+    const rowOffset: number = 0
     // 每个频段滑块的中心 x 坐标
     const bandXs: number[] = []
     for (let i = 0; i < bandCount; i++) {
