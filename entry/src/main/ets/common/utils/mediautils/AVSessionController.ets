@@ -4,7 +4,7 @@ import { SongInfo } from '../../../model/SongInfo';
 import { AVPlayerService } from '../../../service/AVPlayerService';
 import { AlbumCoverLease, AlbumCoverSize, AudioMetadataService, CoverPriority } from '../../../service/AudioMetadataService';
 import Logger from '../Logger';
-import { MusicPlayMode } from '../../constants/PlayerConstants';
+import { MusicPlayMode, PlayModeSwitchList } from '../../constants/PlayerConstants';
 import { DataService } from '../../../service/DataService';
 import { AppStorageKeyConstants } from '../../constants/AppStorageKeyConstants';
 import { BusinessError } from '@kit.BasicServicesKit';
@@ -622,37 +622,19 @@ export class AVSessionController {
     return avSession.LoopMode.LOOP_MODE_SEQUENCE;
   }
 
-  private loopModeToPlayMode(loopMode: avSession.LoopMode): MusicPlayMode | undefined {
-    if (loopMode === avSession.LoopMode.LOOP_MODE_SINGLE) {
-      return MusicPlayMode.SINGLE_CYCLE;
-    }
-    if (loopMode === avSession.LoopMode.LOOP_MODE_SEQUENCE) {
-      return MusicPlayMode.ORDER;
-    }
-    if (loopMode === avSession.LoopMode.LOOP_MODE_SHUFFLE) {
-      return MusicPlayMode.RANDOM;
-    }
-    // 系统播控循环模式按钮会发出应用未实现的「列表循环」，按最接近的顺序播放处理，避免状态被弹回表现为按钮无效
-    if (loopMode === avSession.LoopMode.LOOP_MODE_LIST) {
-      return MusicPlayMode.ORDER;
-    }
-    return undefined;
-  }
-
   public updatePlayMode(playMode: MusicPlayMode): void {
     DataService.getInstance().setPlayMode(playMode);
     this.setLoopModeState(this.playModeToLoopMode(playMode));
   }
 
-  private onSetLoopMode: (loopMode: avSession.LoopMode) => void = (loopMode: avSession.LoopMode) => {
+  private onSetLoopMode: (loopMode: avSession.LoopMode) => void = (_loopMode: avSession.LoopMode) => {
     Logger.info(TAG, `on setLoopMode , do loopMode task`);
-    const playMode: MusicPlayMode | undefined = this.loopModeToPlayMode(loopMode);
-    if (playMode === undefined) {
-      const currentMode: MusicPlayMode = DataService.getInstance().getPlayMode();
-      this.setLoopModeState(this.playModeToLoopMode(currentMode));
-      return;
-    }
-    this.updatePlayMode(playMode);
+    // 播控中心循环模式按钮的回调参数不是目标模式（实测每次点击回写后图标不变），
+    // 按官方口径应用自行决定下一个播放模式：沿用应用内 PlayModeSwitchList 顺序（顺序→随机→单曲循环）
+    const current: MusicPlayMode = DataService.getInstance().getPlayMode();
+    const index: number = PlayModeSwitchList.indexOf(current);
+    const next: MusicPlayMode = PlayModeSwitchList[index < 0 ? 0 : (index + 1) % PlayModeSwitchList.length];
+    this.updatePlayMode(next);
   }
 
   private onToggleFavorite: (assetId: string) => void = (assetId: string) => {
