@@ -54,6 +54,10 @@
           "abilities": ["EntryAbility"],
           "when": "inuse"
         }
+      },
+      // PC(2in1) 点 X 关窗时使 onPrepareToTerminate 回调生效（system_grant，无需用户授权）
+      {
+        "name": "ohos.permission.PREPARE_APP_TERMINATE"
       }
     ],
     "abilities": [

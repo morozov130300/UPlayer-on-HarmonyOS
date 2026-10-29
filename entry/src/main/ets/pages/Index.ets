@@ -59,7 +59,7 @@ struct MainPage {
   @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) @Watch('onPlayStateChange') isPlaying: boolean = false
   @State rotationAngle: number = 0
   @State isGlowing: boolean = false
-  // 播控条「打开播放页」区域按压动效（封面/歌名/歌词块共用，同一时刻只有一处被按）
+  // 播控条非按钮区域整条按压动效（封面/歌名/歌词/空白区共用一档，点击控件被 Block 不上报）
   @State pressedBarItem: boolean = false
   @StorageLink('uplayer_press_animation') pressAnimOn: boolean = false
   // ── spike: hdsEffect.pointLight 点光源跟手光效真机验证，失败整段回滚 ──
@@ -102,6 +102,10 @@ struct MainPage {
   @StorageProp(AppStorageKeyConstants.KEY_LYRIC_REVISION) @Watch('loadCurrentLyrics') lyricRevision: number = 0
   // 主窗口可见性（EntryAbility 前后台写入）：窗口隐藏时停掉封面旋转定时器，避免持续请求 vsync
   @StorageProp(AppStorageKeyConstants.KEY_UI_ACTIVE) @Watch('onUiActiveChange') uiActive: boolean = true
+  // 「重新查看引导」请求（设置-关于入口清除标记后 +1）：切回首页 Tab，
+  // 重建的 HomeContent 会在 aboutToAppear 里重新弹出引导
+  @StorageProp(AppStorageKeyConstants.KEY_GUIDE_REPLAY_REQUEST) @Watch('onGuideReplayRequest')
+  guideReplayRequest: number = 0
   private tabsController: HdsTabsController = new HdsTabsController()
   private tabWidth: number = 72
   private indicatorInset: number = 4
@@ -126,6 +130,13 @@ struct MainPage {
       () => {
         this.greetingOpacity = 1
       })
+  }
+
+  // 「重新查看引导」：切回首页 Tab，由重建的 HomeContent 重新弹引导
+  onGuideReplayRequest(): void {
+    if (this.currentIndex !== 0) {
+      this.tabsController.changeIndex(0)
+    }
   }
 
   // 手机/平板的返回键与侧滑返回：仅 @Entry 组件可监听
@@ -462,10 +473,6 @@ struct MainPage {
           coverRadius: this.scaledSize(16)
         }).width(this.scaledSize(32)).height(this.scaledSize(32)).rotate({ angle: this.rotationAngle })
           .scale({ x: this.barItemScale(), y: this.barItemScale() })
-          .onTouch((event: TouchEvent) => { this.onBarItemTouch(event) })
-          .onClick(() => {
-          this.openPlayer()
-        })
       } else {
         Stack() {
           Image($r('app.media.ic_public_music'))
@@ -478,10 +485,6 @@ struct MainPage {
         .borderRadius(this.scaledSize(16))
         .rotate({ angle: this.rotationAngle })
         .scale({ x: this.barItemScale(), y: this.barItemScale() })
-        .onTouch((event: TouchEvent) => { this.onBarItemTouch(event) })
-        .onClick(() => {
-          this.openPlayer()
-        })
       }
 
       Column() {
@@ -528,10 +531,6 @@ struct MainPage {
       .layoutWeight(this.songInfoWeight())
       .margin({ left: this.scaledSize(8), right: this.scaledSize(8) })
       .scale({ x: this.barItemScale(), y: this.barItemScale() })
-      .onTouch((event: TouchEvent) => { this.onBarItemTouch(event) })
-      .onClick(() => {
-        this.openPlayer()
-      })
 
       // 按窗口断点而非设备类型判定：任何设备（PC/平板/折叠屏/手机）窗口宽度达到 xl 及以上
       // 都显示迷你歌词，PC 小窗口同样不显示，与「窗口大小决定布局」的断点体系保持一致
@@ -551,24 +550,20 @@ struct MainPage {
             .margin({ top: this.scaledSize(8) })
         }.layoutWeight(this.lyricInfoWeight()).alignItems(HorizontalAlign.Start)
         .scale({ x: this.barItemScale(), y: this.barItemScale() })
-        .onTouch((event: TouchEvent) => { this.onBarItemTouch(event) })
-        .onClick(() => {
-          this.openPlayer()
-        })
       }
-      ScaleButton({ pressScale: StyleConstants.PRESS_SCALE, hoverScale: StyleConstants.HOVER_SCALE, onButtonTap: () => { this.playPrevious() } }) {
+      ScaleButton({ pressScale: StyleConstants.PRESS_SCALE, hoverScale: StyleConstants.HOVER_SCALE, blockHitTest: true, onButtonTap: () => { this.playPrevious() } }) {
         Image($r('app.media.ic_public_play_last'))
           .height(this.scaledSize(18))
           .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
             $r('app.color.player_icon_inactive_color'))
       }
-      ScaleButton({ pressScale: StyleConstants.PRESS_SCALE, hoverScale: StyleConstants.HOVER_SCALE, onButtonTap: () => { this.togglePlay() } }) {
+      ScaleButton({ pressScale: StyleConstants.PRESS_SCALE, hoverScale: StyleConstants.HOVER_SCALE, blockHitTest: true, onButtonTap: () => { this.togglePlay() } }) {
         Image(this.isPlaying ? $r('app.media.ic_public_play') : $r('app.media.ic_public_pause'))
           .height(this.scaledSize(22))
           .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
             $r('app.color.player_icon_inactive_color'))
       }
-      ScaleButton({ pressScale: StyleConstants.PRESS_SCALE, hoverScale: StyleConstants.HOVER_SCALE, onButtonTap: () => { this.playNext() } }) {
+      ScaleButton({ pressScale: StyleConstants.PRESS_SCALE, hoverScale: StyleConstants.HOVER_SCALE, blockHitTest: true, onButtonTap: () => { this.playNext() } }) {
         Image($r('app.media.ic_public_play_next'))
           .height(this.scaledSize(18))
           .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
@@ -605,6 +600,9 @@ struct MainPage {
       .buildEffect())
     }
     .onTouch((event: TouchEvent) => {
+      // 整条按压反馈：触点从封面/歌名/歌词/空白区冒泡到宿主统一处理（按钮区被其按钮
+      // 包容器 HitTestMode.Block 挡在响应链外，不会触发）
+      this.onBarItemTouch(event)
       if (event.type === TouchType.Down || event.type === TouchType.Move) {
         this.spikeBarLightX = event.touches[0].x
         this.spikeBarLightY = event.touches[0].y
@@ -618,6 +616,11 @@ struct MainPage {
         }
         this.spikeBarLightOn = false
       }
+    })
+    // 整条可点开播放页：onClick 挂在触控宿主上，封面/歌名/歌词/空白区的触点经命中链
+    // 触发；三个播放控制按钮由 ScaleButton 容器 Block 命中测试，不会冒泡触发本回调
+    .onClick(() => {
+      this.openPlayer()
     })
   }
 
@@ -650,10 +653,6 @@ struct MainPage {
           coverRadius: this.scaledSize(18)
         }).width(this.scaledSize(36)).height(this.scaledSize(36)).rotate({ angle: this.rotationAngle })
           .scale({ x: this.barItemScale(), y: this.barItemScale() })
-          .onTouch((event: TouchEvent) => { this.onBarItemTouch(event) })
-          .onClick(() => {
-          this.openPlayer()
-        })
       } else {
         Stack() {
           Image($r('app.media.ic_public_music'))
@@ -666,10 +665,6 @@ struct MainPage {
         .borderRadius(this.scaledSize(18))
         .rotate({ angle: this.rotationAngle })
         .scale({ x: this.barItemScale(), y: this.barItemScale() })
-        .onTouch((event: TouchEvent) => { this.onBarItemTouch(event) })
-        .onClick(() => {
-          this.openPlayer()
-        })
       }
 
       Column() {
@@ -716,24 +711,20 @@ struct MainPage {
       .layoutWeight(this.songInfoWeight())
       .margin({ left: this.scaledSize(4), right: this.scaledSize(4) })
       .scale({ x: this.barItemScale(), y: this.barItemScale() })
-      .onTouch((event: TouchEvent) => { this.onBarItemTouch(event) })
-      .onClick(() => {
-        this.openPlayer()
-      })
 
-      ScaleButton({ pressScale: StyleConstants.PRESS_SCALE, hoverScale: StyleConstants.HOVER_SCALE, onButtonTap: () => { this.playPrevious() } }) {
+      ScaleButton({ pressScale: StyleConstants.PRESS_SCALE, hoverScale: StyleConstants.HOVER_SCALE, blockHitTest: true, onButtonTap: () => { this.playPrevious() } }) {
         Image($r('app.media.ic_public_play_last'))
           .height(this.scaledSize(24))
           .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
             $r('app.color.player_icon_inactive_color'))
       }
-      ScaleButton({ pressScale: StyleConstants.PRESS_SCALE, hoverScale: StyleConstants.HOVER_SCALE, onButtonTap: () => { this.togglePlay() } }) {
+      ScaleButton({ pressScale: StyleConstants.PRESS_SCALE, hoverScale: StyleConstants.HOVER_SCALE, blockHitTest: true, onButtonTap: () => { this.togglePlay() } }) {
         Image(this.isPlaying ? $r('app.media.ic_public_play') : $r('app.media.ic_public_pause'))
           .height(this.scaledSize(28))
           .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
             $r('app.color.player_icon_inactive_color'))
       }
-      ScaleButton({ pressScale: StyleConstants.PRESS_SCALE, hoverScale: StyleConstants.HOVER_SCALE, onButtonTap: () => { this.playNext() } }) {
+      ScaleButton({ pressScale: StyleConstants.PRESS_SCALE, hoverScale: StyleConstants.HOVER_SCALE, blockHitTest: true, onButtonTap: () => { this.playNext() } }) {
         Image($r('app.media.ic_public_play_next'))
           .height(this.scaledSize(24))
           .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
@@ -758,6 +749,8 @@ struct MainPage {
       .buildEffect())
     }
     .onTouch((event: TouchEvent) => {
+      // 同 playerControl：整条按压反馈统一冒泡到宿主处理，按钮区被 Block 挡住
+      this.onBarItemTouch(event)
       if (event.type === TouchType.Down || event.type === TouchType.Move) {
         this.spikeMiniLightX = event.touches[0].x
         this.spikeMiniLightY = event.touches[0].y
@@ -771,6 +764,10 @@ struct MainPage {
         }
         this.spikeMiniLightOn = false
       }
+    })
+    // 同 playerControl：整条可点开播放页，三个播放控制按钮由 Block 命中测试挡住不冒泡
+    .onClick(() => {
+      this.openPlayer()
     })
   }
 

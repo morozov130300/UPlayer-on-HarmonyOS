@@ -118,4 +118,11 @@ export class AppStorageKeyConstants {
   // 首页筛选下拉列表的艺术家拆分分隔符（设置页「播放」区多选 + 自定义输入，默认 , ， & ＿＆）：
   // saveSettings 写入，HomeContent @StorageLink @Watch 感知后按新分隔符重拆艺术家并重新筛选
   public static readonly KEY_ARTIST_SEPARATORS: string = BaseConstants.KEY_PREFIX + 'ArtistSeparators'
+  // ── 新手引导（聚光分步）──
+  // 「已看过」标记：存 SettingsStore（PersistenceV2），'1' = 已看完/跳过，空 = 未看过
+  public static readonly SETTING_GUIDE_HOME_DONE: string = 'uplayer_guide_home_done'
+  public static readonly SETTING_GUIDE_PLAYLIST_DONE: string = 'uplayer_guide_playlist_done'
+  // 「重新查看引导」请求（计数器）：设置-关于入口清除两个标记后 +1，
+  // Index 收到后切回首页 Tab，重建的 HomeContent 重新弹出引导
+  public static readonly KEY_GUIDE_REPLAY_REQUEST: string = BaseConstants.KEY_PREFIX + 'GuideReplayRequest'
 }

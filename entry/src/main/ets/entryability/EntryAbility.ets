@@ -358,4 +358,13 @@ export default class EntryAbility extends UIAbility {
     HoldingHandService.getInstance().suspend();
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onBackground');
   }
+
+  // PC(2in1) 点 X 关窗：系统先询问是否允许关闭，未实现此回调时系统只能强关窗口
+  // （日志表现为 PrepareTerminateAbility failed, do close window）。此处拦截并主动
+  // terminateSelf 走应用优雅退出路径；手机/平板不触发此回调，行为不变。
+  onPrepareToTerminate(): boolean {
+    Logger.info(TAG, 'onPrepareToTerminate, terminating self');
+    this.context.terminateSelf();
+    return true;
+  }
 }

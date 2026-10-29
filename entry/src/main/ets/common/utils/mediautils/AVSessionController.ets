@@ -771,7 +771,8 @@ export class AVSessionController {
       session.off('setLoopMode');
       session.off('seek');
       session.off('toggleFavorite');
-      session.off('outputDeviceChange');
+      // outputDeviceChange 不单独 off：框架 off 路径对该事件名报 eventName is invalid，
+      // session.destroy() 会统一反注册全部监听
       await session.destroy();
     } catch (err) {
       Logger.error(TAG, `unregisterSessionListener failed: ${JSON.stringify(err)}`);

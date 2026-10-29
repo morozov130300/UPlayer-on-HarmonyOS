@@ -23,6 +23,7 @@ import { StyleConstants } from '../common/constants/StyleConstants'
 import { GlassBackButton } from '../view/GlassBackButton'
 import { isDarkThemeEffective } from '../common/utils/ThemeUtil'
 import { ScaleButton } from '../component/ScaleButton'
+import { SettingsStore } from '../common/utils/SettingsStore'
 
 const TAG = 'SettingsDetailPage'
 const KEY_PRIMARY_COLOR = 'uplayer_primary_color'
@@ -3590,6 +3591,58 @@ struct SettingsDetailPage {
     }
   }
 
+  // 重新查看新手引导：清除两个「已看过」标记，计数器 +1 让 Index 切回首页 Tab，
+  // 重建的 HomeContent 在 aboutToAppear 里重新弹出引导；返回主页面让 Tab 切换可见
+  private replayGuide(): void {
+    const store: SettingsStore = SettingsStore.getInstance()
+    store.set(AppStorageKeyConstants.SETTING_GUIDE_HOME_DONE, '')
+    store.set(AppStorageKeyConstants.SETTING_GUIDE_PLAYLIST_DONE, '')
+    const current: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_GUIDE_REPLAY_REQUEST) ?? 0
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_GUIDE_REPLAY_REQUEST, current + 1)
+    try {
+      this.getUIContext().getRouter().back()
+    } catch (e) {
+      Logger.error(TAG, `guide replay back failed: ${JSON.stringify(e)}`)
+    }
+  }
+
+  @Builder
+  guideReplayRow(): void {
+    ScaleButton({
+      pressScale: StyleConstants.PRESS_SCALE,
+      hoverScale: StyleConstants.HOVER_SCALE,
+      expandWidth: true,
+      onButtonTap: () => {
+        this.replayGuide()
+      }
+    }) {
+      Row() {
+        Column() {
+          Text('重新查看引导')
+            .fontSize(this.scaledFont(14))
+            .fontColor(this.settingTextColor())
+            .fontWeight(FontWeight.Medium)
+            .width('100%')
+          Text('再次演示首页与歌单页的操作提示')
+            .fontSize(this.scaledFont(11))
+            .fontColor(this.settingTextColor())
+            .opacity(0.6)
+            .width('100%')
+            .margin({ top: this.scaledSize(2) })
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+      }
+      .width('100%')
+      .constraintSize({ minWidth: 0, maxWidth: '100%' })
+      .height(this.scaledSize(52))
+      .alignItems(VerticalAlign.Center)
+      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
+    }
+  }
+
   @Builder
   buildAboutSection(): void {
     Column({ space: this.scaledSize(6) }) {
@@ -3625,6 +3678,18 @@ struct SettingsDetailPage {
       .width('100%')
 
       this.checkUpdateRow()
+
+      // 重新查看新手引导：清除「已看过」标记并切回首页 Tab，由 HomeContent 重新弹出引导
+      Column({ space: this.scaledSize(6) }) {
+        Text('新手引导')
+          .fontSize(this.scaledFont(13))
+          .fontColor(this.settingTextColor())
+          .fontWeight(FontWeight.Bold)
+          .width('100%')
+          .padding({ left: this.scaledSize(4) })
+        this.guideReplayRow()
+      }
+      .width('100%')
 
       // 全局快捷键速查：数据来源 Index.handleKeyEvent / MusicPlayer.handleKeyEvent
       // 内容移入二级弹窗（bindSheet 半模态），正文只保留入口行
