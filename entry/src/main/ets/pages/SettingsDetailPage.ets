@@ -3591,12 +3591,11 @@ struct SettingsDetailPage {
     }
   }
 
-  // 重新查看新手引导：清除两个「已看过」标记，计数器 +1 让 Index 切回首页 Tab，
-  // 重建的 HomeContent 在 aboutToAppear 里重新弹出引导；返回主页面让 Tab 切换可见
+  // 重新查看欢迎页：清除「已看过」标记，计数器 +1 让 Index 重新挂载欢迎页浮层；
+  // 返回主页面让浮层弹出可见
   private replayGuide(): void {
     const store: SettingsStore = SettingsStore.getInstance()
-    store.set(AppStorageKeyConstants.SETTING_GUIDE_HOME_DONE, '')
-    store.set(AppStorageKeyConstants.SETTING_GUIDE_PLAYLIST_DONE, '')
+    store.set(AppStorageKeyConstants.SETTING_GUIDE_WELCOME_DONE, '')
     const current: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_GUIDE_REPLAY_REQUEST) ?? 0
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_GUIDE_REPLAY_REQUEST, current + 1)
     try {
@@ -3618,12 +3617,12 @@ struct SettingsDetailPage {
     }) {
       Row() {
         Column() {
-          Text('重新查看引导')
+          Text('重新查看欢迎页')
             .fontSize(this.scaledFont(14))
             .fontColor(this.settingTextColor())
             .fontWeight(FontWeight.Medium)
             .width('100%')
-          Text('再次演示首页与歌单页的操作提示')
+          Text('再次查看首次启动的欢迎与导入指引')
             .fontSize(this.scaledFont(11))
             .fontColor(this.settingTextColor())
             .opacity(0.6)
@@ -3679,7 +3678,7 @@ struct SettingsDetailPage {
 
       this.checkUpdateRow()
 
-      // 重新查看新手引导：清除「已看过」标记并切回首页 Tab，由 HomeContent 重新弹出引导
+      // 重新查看欢迎页：清除「已看过」标记，由 Index 重新挂载欢迎页浮层
       Column({ space: this.scaledSize(6) }) {
         Text('新手引导')
           .fontSize(this.scaledFont(13))
