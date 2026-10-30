@@ -8,14 +8,18 @@
 // 洞体、描边框、说明卡片同步平滑滑动而不是瞬移。
 import { ScaleButton } from '../component/ScaleButton'
 import { StyleConstants } from '../common/constants/StyleConstants'
+import { ColorHelper } from '../common/utils/ColorHelper'
 
 // 单步引导配置：targetId 为目标组件 .id()，maxHighlightHeight 用于把大容器
-// （整页列表等）收敛成一条水平高亮带，0 表示不收敛
+// （整页列表等）收敛成一条水平高亮带，0 表示不收敛；
+// demoSong = true 时不依赖宿主锚点（targetId 留空走默认高亮带），改为在高亮带内
+// 渲染一条「示例歌曲」模拟行，让用户在空库时也能真实体验左滑/长按手势
 export class CoachStep {
   targetId: string = ''
   title: string = ''
   description: string = ''
   maxHighlightHeight: number = 0
+  demoSong: boolean = false
 }
 
 const HIGHLIGHT_PAD: number = 10
@@ -30,6 +34,11 @@ const CORNER_RADIUS: number = 16
 const MOVE_DURATION_MS: number = 240
 // 插值动画帧间隔（约 60fps）
 const ANIM_FRAME_MS: number = 16
+// 模拟歌曲行：行高 / 左滑露出删除按钮的宽度
+const DEMO_ROW_HEIGHT: number = 56
+const DEMO_SWIPE_WIDTH: number = 80
+// 长按演示气泡自动消失时长
+const DEMO_BUBBLE_MS: number = 1500
 
 @Component
 export struct CoachMarkOverlay {
@@ -73,6 +82,14 @@ export struct CoachMarkOverlay {
   private animToH: number = 0
   private animStartMs: number = 0
   private animTimer: number = -1
+  // 模拟歌曲行状态：左滑位移（px 由 translate 直接用 vp 值）、是否处于吸附动画、长按气泡
+  @State private demoOffsetX: number = 0
+  @State private demoBubble: boolean = false
+  private demoBubbleTimer: number = -1
+  private demoSnapAnimating: boolean = false
+  // 本轮拖拽起点位移：PanGesture 的 offsetX 是相对手势起点的累计值，
+  // 必须叠加手势开始时的已有位移（例如已吸附在露出删除位再拖）
+  private demoPanBaseX: number = 0
 
   aboutToAppear(): void {
     this.busyRetries = 0
@@ -81,10 +98,45 @@ export struct CoachMarkOverlay {
 
   aboutToDisappear(): void {
     this.stopAnim()
+    this.clearDemoBubbleTimer()
     if (this.measureTimer >= 0) {
       clearTimeout(this.measureTimer)
       this.measureTimer = -1
     }
+  }
+
+  // 步骤切换时复位模拟歌曲行：位移归零、收起长按气泡
+  private resetDemoRow(): void {
+    this.demoOffsetX = 0
+    this.demoSnapAnimating = false
+    this.demoBubble = false
+    this.clearDemoBubbleTimer()
+  }
+
+  private clearDemoBubbleTimer(): void {
+    if (this.demoBubbleTimer >= 0) {
+      clearTimeout(this.demoBubbleTimer)
+      this.demoBubbleTimer = -1
+    }
+  }
+
+  // 左滑松手：过半吸附到露出删除按钮位，否则弹回；带 150ms 吸附动画
+  private onDemoPanEnd(): void {
+    this.demoSnapAnimating = true
+    this.demoOffsetX = this.demoOffsetX < -DEMO_SWIPE_WIDTH / 2 ? -DEMO_SWIPE_WIDTH : 0
+    setTimeout((): void => {
+      this.demoSnapAnimating = false
+    }, 150)
+  }
+
+  // 长按演示：行上方弹气泡，1.5s 自动消失
+  private onDemoLongPress(): void {
+    this.demoBubble = true
+    this.clearDemoBubbleTimer()
+    this.demoBubbleTimer = setTimeout((): void => {
+      this.demoBubbleTimer = -1
+      this.demoBubble = false
+    }, DEMO_BUBBLE_MS)
   }
 
   onStepIndexChanged(): void {
@@ -93,6 +145,7 @@ export struct CoachMarkOverlay {
     }
     this.busyRetries = 0
     this.skipTapped = false
+    this.resetDemoRow()
     // 后续步骤：目标组件已布局完成，同步测量并走插值动画平滑滑到新位置，
     // 避免「文字先刷新、挖孔延迟 100ms 才跳过去」的割裂感；仅首次挂载才延迟测量
     if (this.overlayW > 0 && this.overlayH > 0) {
@@ -146,14 +199,17 @@ export struct CoachMarkOverlay {
     let y: number = this.overlayH * 0.3
     let w: number = this.overlayW - 48
     let h: number = 160
-    try {
-      const info = ui.getComponentUtils().getRectangleById(step.targetId)
-      x = ui.px2vp(info.windowOffset.x)
-      y = ui.px2vp(info.windowOffset.y)
-      w = ui.px2vp(info.size.width)
-      h = ui.px2vp(info.size.height)
-    } catch (e) {
-      // 容器未挂载（如歌单页文件夹区为空）：保留默认高亮带
+    if (!step.demoSong) {
+      // 模拟演示步骤不依赖宿主锚点：直接用屏幕中部默认高亮带
+      try {
+        const info = ui.getComponentUtils().getRectangleById(step.targetId)
+        x = ui.px2vp(info.windowOffset.x)
+        y = ui.px2vp(info.windowOffset.y)
+        w = ui.px2vp(info.size.width)
+        h = ui.px2vp(info.size.height)
+      } catch (e) {
+        // 容器未挂载（如歌单页文件夹区为空）：保留默认高亮带
+      }
     }
     if (step.maxHighlightHeight > 0 && h > step.maxHighlightHeight) {
       // 大容器收敛成水平高亮带：在容器内垂直居中
@@ -289,6 +345,95 @@ export struct CoachMarkOverlay {
         .border({ width: 2, color: this.primaryColor })
         .backgroundColor('rgba(255,255,255,0.04)')
         .hitTestBehavior(HitTestMode.Transparent)
+
+      // ── 模拟歌曲行（demoSong 步骤）：高亮带内垂直居中，可真实左滑露删除、长按弹气泡 ──
+      if (this.currentStep().demoSong) {
+        Stack({ alignContent: Alignment.End }) {
+          // 底层：右端红色删除按钮（被前景行遮挡，左滑露出）
+          Row({ space: 4 }) {
+            Image($r('app.media.ic_public_delete'))
+              .width(20)
+              .height(20)
+              .fillColor(Color.White)
+            Text('删除')
+              .fontSize(13)
+              .fontColor(Color.White)
+          }
+          .justifyContent(FlexAlign.Center)
+          .width(DEMO_SWIPE_WIDTH)
+          .height(DEMO_ROW_HEIGHT)
+          .borderRadius({ topRight: 12, bottomRight: 12 })
+          .backgroundColor('rgba(226,61,49,0.95)')
+          .hitTestBehavior(HitTestMode.Transparent)
+
+          // 前景：示例歌曲行，PanGesture 左滑 / LongPressGesture 长按
+          Row({ space: 12 }) {
+            Column() {
+              Image($r('app.media.ic_public_music'))
+                .width(22)
+                .height(22)
+                .fillColor(this.primaryColor)
+            }
+            .width(40)
+            .height(40)
+            .justifyContent(FlexAlign.Center)
+            .borderRadius(10)
+            .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+
+            Column({ space: 3 }) {
+              Text('示例歌曲')
+                .fontSize(15)
+                .fontWeight(FontWeight.Medium)
+                .fontColor('#FFFFFF')
+              Text('演示用，不会真的删除')
+                .fontSize(11)
+                .fontColor('rgba(255,255,255,0.5)')
+            }
+            .alignItems(HorizontalAlign.Start)
+            .layoutWeight(1)
+          }
+          .width('100%')
+          .height(DEMO_ROW_HEIGHT)
+          .padding({ left: 12, right: 12 })
+          .borderRadius(12)
+          .backgroundColor('rgba(48,48,52,0.98)')
+          .translate({ x: this.demoOffsetX })
+          .animation(this.demoSnapAnimating ? { duration: 150, curve: Curve.EaseOut } : undefined)
+          .gesture(PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 5 })
+            .onActionStart(() => {
+              this.demoPanBaseX = this.demoOffsetX
+            })
+            .onActionUpdate((event: GestureEvent) => {
+              this.demoOffsetX = Math.max(Math.min(this.demoPanBaseX + event.offsetX, 0), -DEMO_SWIPE_WIDTH)
+            })
+            .onActionEnd(() => {
+              this.onDemoPanEnd()
+            }))
+
+          // 长按气泡
+          if (this.demoBubble) {
+            Text('长按后松手即可进入批量管理（演示）')
+              .fontSize(12)
+              .fontColor('#FFFFFF')
+              .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+              .borderRadius(10)
+              .backgroundColor('rgba(30,30,32,0.95)')
+              .position({ x: 8, y: -40 })
+              .transition(TransitionEffect.OPACITY)
+          }
+        }
+        .width(this.rectW)
+        .height(DEMO_ROW_HEIGHT)
+        .alignSelf(ItemAlign.Center)
+        .position({
+          x: this.rectX,
+          y: this.rectY + (this.rectH - DEMO_ROW_HEIGHT) / 2
+        })
+        .parallelGesture(LongPressGesture({ repeat: false })
+          .onAction(() => {
+            this.onDemoLongPress()
+          }))
+      }
 
       // ── 说明卡片：步骤序号 + 跳过 / 标题 / 描述 / 底部提示 ──
       Column({ space: 10 }) {

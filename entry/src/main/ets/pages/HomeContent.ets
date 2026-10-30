@@ -164,8 +164,9 @@ export struct HomeContent {
   guideReplayRequest: number = 0
 
   // 首页引导步骤（目标组件 id 见 build() 中对应 .id()）。
-  // 曲库为空（新用户/未导入）时左滑删除与长按管理无对象，改为指向「暂无歌曲，点击添加」
-  // 空态入口的导入引导，排序/平铺两枚胶囊保留（导入后即可使用）
+  // 曲库为空（新用户/未导入）时左滑删除与长按管理没有真实歌曲可操作，
+  // 改用 demoSong 模拟歌曲行：浮层在高亮带内渲染一条「示例歌曲」，
+  // 用户可真实左滑/长按体验手势，导入后对真实歌曲同样操作
   private buildHomeCoachSteps(): CoachStep[] {
     const sortStep: CoachStep = new CoachStep()
     sortStep.targetId = 'coach_home_sort_pill'
@@ -176,11 +177,15 @@ export struct HomeContent {
     viewStep.title = '切换平铺方式'
     viewStep.description = '点击胶囊循环切换：平铺 / 文件夹 / 专辑 / 歌手。'
     if (this.songs.length === 0) {
-      const importStep: CoachStep = new CoachStep()
-      importStep.targetId = 'coach_home_empty_hint'
-      importStep.title = '添加本地歌曲'
-      importStep.description = '点击这里导入本地歌曲；导入后即可左滑删除、长按批量管理歌曲。'
-      return [importStep, sortStep, viewStep]
+      const swipeDemo: CoachStep = new CoachStep()
+      swipeDemo.demoSong = true
+      swipeDemo.title = '左滑删除歌曲'
+      swipeDemo.description = '向左滑动下方示例歌曲试试；导入歌曲后，同样左滑任意歌曲即可删除。'
+      const longPressDemo: CoachStep = new CoachStep()
+      longPressDemo.demoSong = true
+      longPressDemo.title = '长按管理歌曲'
+      longPressDemo.description = '长按下方示例歌曲试试；导入歌曲后，长按任意歌曲进入批量管理。'
+      return [swipeDemo, longPressDemo, sortStep, viewStep]
     }
     const s1: CoachStep = new CoachStep()
     s1.targetId = 'coach_home_list_area'

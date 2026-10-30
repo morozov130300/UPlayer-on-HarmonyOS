@@ -781,20 +781,27 @@ export struct PlaylistContent {
               // 新手引导步骤 2 的高亮锚点：文件夹卡片区
               .id('coach_folder_grid')
             } else {
-              ScaleButton({
-                pressScale: StyleConstants.PRESS_SCALE,
-                hoverScale: StyleConstants.HOVER_SCALE,
-                onButtonTap: () => {
-                  this.onPlusClick()
+              // Column 包裹：ScaleButton 是自定义组件不能链 .id，
+              // 锚点挂外层容器，空文件夹时引导框指向这片空态区
+              Column() {
+                ScaleButton({
+                  pressScale: StyleConstants.PRESS_SCALE,
+                  hoverScale: StyleConstants.HOVER_SCALE,
+                  onButtonTap: () => {
+                    this.onPlusClick()
+                  }
+                }) {
+                  Text('暂无歌单，点击添加歌曲')
+                    .fontSize(Math.round(14 * this.fontSizeScale))
+                    .fontColor($r('app.color.text_twenty_color'))
+                    .width('100%')
+                    .height(200)
+                    .textAlign(TextAlign.Center)
                 }
-              }) {
-                Text('暂无歌单，点击添加歌曲')
-                  .fontSize(Math.round(14 * this.fontSizeScale))
-                  .fontColor($r('app.color.text_twenty_color'))
-                  .width('100%')
-                  .height(200)
-                  .textAlign(TextAlign.Center)
               }
+              .width('100%')
+              // 新手引导步骤 2 的高亮锚点：无文件夹时的空态区（否则引导框掉到屏幕中部兜底）
+              .id('coach_folder_grid')
             }
             Blank()
               .width('100%')
