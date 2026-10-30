@@ -1001,10 +1001,11 @@ export struct PlaylistContent {
   @Builder
   playlistMultiSelectBar(): void {
     Row() {
-      // 返回按钮：与首页/设置页/播放页共用同一组件，圆形玻璃材质与底部 Tab 栏同源
+      // 返回按钮：与首页/设置页/播放页共用同一组件，圆形玻璃材质与底部 Tab 栏同源；
+      // 多选栏比其它页面放大一档（56/18），与首页多选栏一致
       GlassBackButton({
-        clickSize: this.scaledSize(48),
-        iconSize: this.scaledSize(15),
+        clickSize: this.scaledSize(56),
+        iconSize: this.scaledSize(18),
         iconColor: $r('app.color.text_primary'),
         iconOpacity: 0.9,
         onBack: () => { this.exitSelectMode() }

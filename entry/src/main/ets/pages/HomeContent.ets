@@ -1788,10 +1788,11 @@ export struct HomeContent {
       // 入场/退场由 transition 驱动，入场延迟让问候语先上滑隐藏
       if (this.isMultiSelectMode) {
         Row() {
-          // 返回按钮：与设置页/播放页共用同一组件，圆形玻璃材质与底部 Tab 栏同源
+          // 返回按钮：与设置页/播放页共用同一组件，圆形玻璃材质与底部 Tab 栏同源；
+          // 多选栏比其它页面放大一档（56/18），图标太小不易点中
           GlassBackButton({
-            clickSize: this.scaledSize(48),
-            iconSize: this.scaledSize(15),
+            clickSize: this.scaledSize(56),
+            iconSize: this.scaledSize(18),
             iconColor: $r('app.color.text_primary'),
             iconOpacity: 0.9,
             onBack: () => { this.exitMultiSelect() }
