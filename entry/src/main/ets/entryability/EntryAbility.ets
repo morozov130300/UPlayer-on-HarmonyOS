@@ -46,7 +46,19 @@ export default class EntryAbility extends UIAbility {
     this.pendingCardAction = this.extractCardAction(want);
   }
 
+  // 两段首帧后初始化的 setTimeout 句柄：Ability 若在宏任务触发前销毁，onDestroy 里统一清除
+  private initAfterFirstFrameTimer: number = -1
+  private initDeferredServicesTimer: number = -1
+
   onDestroy(): void {
+    if (this.initAfterFirstFrameTimer >= 0) {
+      clearTimeout(this.initAfterFirstFrameTimer);
+      this.initAfterFirstFrameTimer = -1;
+    }
+    if (this.initDeferredServicesTimer >= 0) {
+      clearTimeout(this.initDeferredServicesTimer);
+      this.initDeferredServicesTimer = -1;
+    }
     try {
       DataService.getInstance().flushPendingSongWrites();
     } catch (err) {
@@ -200,7 +212,7 @@ export default class EntryAbility extends UIAbility {
         // 表现为「一直停在启动页、完全不能操作」。
         // 因此回调体内只做一件事：把全部初始化丢到下一个宏任务后立刻返回，
         // 让出 UI 线程提交首帧。try/catch 对「不返回」无效，只有离开这条路径才是兜底。
-        setTimeout(() => {
+        this.initAfterFirstFrameTimer = setTimeout(() => {
           this.initAfterFirstFrame(windowStage);
         }, 0);
       });
@@ -267,7 +279,7 @@ export default class EntryAbility extends UIAbility {
 
     // 第二段再推迟一个宏任务：系统服务订阅与音效状态都涉及系统 IPC，
     // 与首帧渲染错开，任何一项卡住都不再作用于开屏
-    setTimeout(() => {
+    this.initDeferredServicesTimer = setTimeout(() => {
       this.initDeferredServices(settings);
     }, 0);
   }

@@ -4,6 +4,7 @@ import { common } from '@kit.AbilityKit'
 import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 import { AVSessionController } from '../common/utils/mediautils/AVSessionController'
+import { MediaTools } from '../common/utils/mediautils/MediaTools'
 import { BackgroundUtil } from '../common/utils/BackgroundUtil'
 import { LiveViewService } from '../service/LiveViewService'
 import nativeAudio from 'libuplayer.so'
@@ -241,7 +242,7 @@ export class AVPlayerService {
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_TIME, '00:00')
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TOTAL_MS_TIME, song.duration)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PROGRESS_MAX, song.duration)
-    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TOTAL_TIME, this.formatTime(song.duration))
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TOTAL_TIME, MediaTools.msToMmss(song.duration))
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_SELECT_INDEX, index)
     // 断点续播（P0-2）：切歌即记录新歌曲为「上次播放」，位置从 0（或续播起点）开始；
     // 防抖中的旧位置落盘会被本次覆盖为最新值，不会写入新歌配旧位置
@@ -719,7 +720,7 @@ export class AVPlayerService {
       AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PROGRESS, timeMs)
       const totalMs: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_TOTAL_MS_TIME) ?? 0
       if (totalMs > 0) {
-        AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_TIME, this.formatTime(timeMs))
+        AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_TIME, MediaTools.msToMmss(timeMs))
       }
     }
     if (this.backendState === BackendState.STARTING) {
@@ -783,15 +784,6 @@ export class AVPlayerService {
       return
     }
     AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, nativeAudio.isPlaying())
-  }
-
-  private formatTime(ms: number): string {
-    const totalSec: number = Math.floor(ms / 1000)
-    const min: number = Math.floor(totalSec / 60)
-    const sec: number = totalSec % 60
-    const minStr: string = min < 10 ? '0' + min : '' + min
-    const secStr: string = sec < 10 ? '0' + sec : '' + sec
-    return minStr + ':' + secStr
   }
 
   private notifyPlaybackFailed(message: string): void {
@@ -1124,7 +1116,7 @@ export class AVPlayerService {
       }
       AppStorage.setOrCreate<number>(AppStorageKeyConstants.KEY_TOTAL_MS_TIME, nativeAudio.getDuration())
       AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PROGRESS_MAX, nativeAudio.getDuration())
-      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TOTAL_TIME, this.formatTime(nativeAudio.getDuration()))
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TOTAL_TIME, MediaTools.msToMmss(nativeAudio.getDuration()))
       this.sessionController.setPlayState(!startPaused)
       this.sessionController.setAVMetadata()
       if (!startPaused) {
@@ -1198,7 +1190,7 @@ export class AVPlayerService {
         AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PROGRESS, position)
       }
       if (this.isUiActive()) {
-        AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_TIME, this.formatTime(position))
+        AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_TIME, MediaTools.msToMmss(position))
       }
       this.sessionController.setProgressState(position)
       // seek 已实际生效（位置离开 seek 前的基准）则提前解除进度抑制，不等 2s 兜底

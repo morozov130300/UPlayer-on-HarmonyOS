@@ -2,7 +2,6 @@ import { SongInfo } from '../model/SongInfo'
 import { AlbumCover } from '../component/AlbumCover'
 import { DataService } from '../service/DataService'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
-import { audioQualityBadgeDetail, audioQualityBadgeText, audioQualityTier } from '../common/utils/AudioQualityUtil'
 import { AudioQualityBadge } from '../component/AudioQualityBadge'
 
 // 大封面圆角（与 MusicInfoComponent.CoverInfo 内 AlbumCover 保持一致）
@@ -122,10 +121,9 @@ export struct PlayerFlyingCover {
         })
 
       // 音质标签随封面一起搬运：浮层盖在页面内封面之上，若标签仍留在页面里会被浮层遮住
-      if (this.badgeOpacity() > 0.01 && audioQualityBadgeText(this.currentSong()).length > 0) {
+      if (this.badgeOpacity() > 0.01) {
         AudioQualityBadge({
-          tier: audioQualityTier(this.currentSong()),
-          detail: audioQualityBadgeDetail(this.currentSong()),
+          song: this.currentSong(),
           fontSizeScale: this.fontSizeScale
         })
           .opacity(this.badgeOpacity())

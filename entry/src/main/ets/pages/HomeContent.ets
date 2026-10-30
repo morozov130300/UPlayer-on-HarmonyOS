@@ -16,11 +16,12 @@ import { AlbumCover } from '../component/AlbumCover'
 import { PlaylistCreateDialog } from '../component/PlaylistCreateDialog'
 import { AlbumCoverSize, AudioMetadataService, CoverPriority } from '../service/AudioMetadataService'
 import { curves, uiMaterial } from '@kit.ArkUI'
-import { createBarGlassMaterial, createStyleGlassMaterial, DEFAULT_GLASS_STYLE, showToastGlassMaterial, topBlurRadiusFromStrength } from '../common/utils/GlassUtil'
+import { createBarGlassMaterial, DEFAULT_GLASS_STYLE, pageStyleGlassMaterial, showToastGlassMaterial, topBlurRadiusFromStrength } from '../common/utils/GlassUtil'
 import { GlassBackButton } from '../view/GlassBackButton'
 import { ScaleButton } from '../component/ScaleButton'
 import { StyleConstants } from '../common/constants/StyleConstants'
 import { SettingsStore } from '../common/utils/SettingsStore'
+import { CoachGuideScheduler } from '../common/utils/CoachGuideScheduler'
 import { CoachMarkOverlay, CoachStep } from '../view/CoachMarkOverlay'
 
 const TAG = 'HomeContent'
@@ -156,8 +157,8 @@ export struct HomeContent {
   // stepIndex = -1 时浮层不挂载；「已看过」标记存 SettingsStore，各自首次进入弹
   @State coachStepIndex: number = -1
   private coachSteps: CoachStep[] = []
-  private coachStartTimer: number = -1
-  private coachStartRetries: number = 0
+  // 引导弹出编排（延迟/忙碌重试/完成标记检查）收口到公共调度器
+  private coachScheduler: CoachGuideScheduler = new CoachGuideScheduler()
   // 「重新查看引导」请求（设置-关于清标记后 +1）：HomeContent 常驻不重建，
   // aboutToAppear 不会再跑，必须监听计数器才能在当前会话里立即重弹
   @StorageProp(AppStorageKeyConstants.KEY_GUIDE_REPLAY_REQUEST) @Watch('onGuideReplayRequest')
@@ -200,40 +201,29 @@ export struct HomeContent {
     return [s1, s2, sortStep, viewStep]
   }
 
-  // 首次进入首页自动弹引导（冷启动延迟 600ms 等首屏布局落位）
+  // 首次进入首页自动弹引导（冷启动延迟 600ms 等首屏布局落位）；
+  // 搜索态/多选态/筛选面板打开时不弹，由调度器重试几次直到空闲
   private maybeStartHomeGuide(): void {
-    this.startHomeGuide(600)
+    this.coachScheduler.schedule(AppStorageKeyConstants.SETTING_GUIDE_HOME_DONE, 600,
+      (): boolean => this.isSearchActive || this.isMultiSelectMode || this.isFilterPanelVisible,
+      (): void => {
+        this.coachSteps = this.buildHomeCoachSteps()
+        // 正在显示时先卸载再挂载，保证从第 1 步重新开始并重新测量
+        this.coachStepIndex = -1
+        this.coachStepIndex = 0
+      })
   }
 
   // 设置-关于「重新查看引导」：清标记已完成，本轮会话内立即重弹（不等下次冷启动）
   private onGuideReplayRequest(): void {
-    this.coachStartRetries = 0
-    this.startHomeGuide(200)
-  }
-
-  // 延迟 delayMs 后开弹：搜索态/多选态/筛选面板打开时不弹，重试几次直到空闲
-  private startHomeGuide(delayMs: number): void {
-    if (SettingsStore.getInstance().get(AppStorageKeyConstants.SETTING_GUIDE_HOME_DONE, '') === '1') {
-      return
-    }
-    if (this.coachStartTimer >= 0) {
-      clearTimeout(this.coachStartTimer)
-      this.coachStartTimer = -1
-    }
-    this.coachStartTimer = setTimeout((): void => {
-      this.coachStartTimer = -1
-      if (this.isSearchActive || this.isMultiSelectMode || this.isFilterPanelVisible) {
-        if (this.coachStartRetries < 6) {
-          this.coachStartRetries++
-          this.startHomeGuide(delayMs)
-        }
-        return
-      }
-      this.coachSteps = this.buildHomeCoachSteps()
-      // 正在显示时先卸载再挂载，保证从第 1 步重新开始并重新测量
-      this.coachStepIndex = -1
-      this.coachStepIndex = 0
-    }, delayMs)
+    this.coachScheduler.resetRetries()
+    this.coachScheduler.schedule(AppStorageKeyConstants.SETTING_GUIDE_HOME_DONE, 200,
+      (): boolean => this.isSearchActive || this.isMultiSelectMode || this.isFilterPanelVisible,
+      (): void => {
+        this.coachSteps = this.buildHomeCoachSteps()
+        this.coachStepIndex = -1
+        this.coachStepIndex = 0
+      })
   }
 
   // 引导结束（走完/跳过/中途切页）：落「已看过」标记并关浮层
@@ -342,10 +332,7 @@ export struct HomeContent {
       clearTimeout(this.searchDebounceId)
       this.searchDebounceId = -1
     }
-    if (this.coachStartTimer >= 0) {
-      clearTimeout(this.coachStartTimer)
-      this.coachStartTimer = -1
-    }
+    this.coachScheduler.cancel()
     // 引导中途切页视同看过：不再补弹
     if (this.coachStepIndex >= 0) {
       this.finishHomeGuide()
@@ -477,10 +464,6 @@ export struct HomeContent {
 
   // 组件风格（tabStyle）驱动的弹窗材质（bindSheet options 的 systemMaterial 字段）：
   // 玻璃风格 → 液态玻璃；经典风格 → Material.empty 显式关闭；设备不支持 → undefined
-  private styleGlassMaterial(): uiMaterial.Material | undefined {
-    return createStyleGlassMaterial(this.tabStyle, DEFAULT_GLASS_STYLE)
-  }
-
   // 新建歌单半模态弹层标题（bindSheet 官方标题栏）
   @Builder
   playlistCreateSheetTitle(): void {
@@ -2165,7 +2148,7 @@ export struct HomeContent {
       title: this.playlistCreateSheetTitle(),
       showClose: true,
       preferType: SheetType.CENTER,
-      systemMaterial: this.styleGlassMaterial()
+      systemMaterial: pageStyleGlassMaterial(this.tabStyle)
     })
   }
 

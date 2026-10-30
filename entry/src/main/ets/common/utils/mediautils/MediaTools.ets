@@ -53,4 +53,32 @@ export class MediaTools {
     return `${(days ? MediaTools.fill(days) + ':' : '')}${(hours ? MediaTools.fill(hours) + ':' : '')}
       ${MediaTools.fill(minutes)}:${MediaTools.fill(seconds)} `.trim();
   }
+
+  /**
+   * 播放进度 mm:ss（不进位到小时，分钟超过 59 原样显示，如 75:30）；
+   * AVPlayerService 进度/总时长显示用
+   */
+  static msToMmss(ms: number): string {
+    const totalSec: number = Math.floor(ms / 1000)
+    const min: number = Math.floor(totalSec / 60)
+    const sec: number = totalSec % 60
+    const minStr: string = min < 10 ? '0' + min : '' + min
+    const secStr: string = sec < 10 ? '0' + sec : '' + sec
+    return minStr + ':' + secStr
+  }
+
+  /**
+   * 定时器倒计时：超过 1 小时 h:mm:ss，否则 mm:ss；ControlAreaComponent 定时剩余显示用
+   */
+  static secondsToHms(totalSeconds: number): string {
+    const h: number = Math.floor(totalSeconds / 3600)
+    const m: number = Math.floor((totalSeconds % 3600) / 60)
+    const s: number = totalSeconds % 60
+    const mm: string = m < 10 ? '0' + m : '' + m
+    const ss: string = s < 10 ? '0' + s : '' + s
+    if (h > 0) {
+      return `${h}:${mm}:${ss}`
+    }
+    return `${mm}:${ss}`
+  }
 }

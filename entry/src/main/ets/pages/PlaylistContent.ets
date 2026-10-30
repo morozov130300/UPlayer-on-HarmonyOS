@@ -17,11 +17,12 @@ import { deviceInfo } from '@kit.BasicServicesKit'
 import { AlbumCover } from '../component/AlbumCover'
 import { PlaylistCreateDialog } from '../component/PlaylistCreateDialog'
 import { AlbumCoverSize } from '../service/AudioMetadataService'
-import { createBarGlassMaterial, createStyleGlassMaterial, DEFAULT_GLASS_STYLE } from '../common/utils/GlassUtil'
+import { createBarGlassMaterial, DEFAULT_GLASS_STYLE, pageStyleGlassMaterial } from '../common/utils/GlassUtil'
 import { GlassBackButton } from '../view/GlassBackButton'
 import { ScaleButton } from '../component/ScaleButton'
 import { PressScaleHost } from '../component/PressScaleHost'
 import { SettingsStore } from '../common/utils/SettingsStore'
+import { CoachGuideScheduler } from '../common/utils/CoachGuideScheduler'
 import { CoachMarkOverlay, CoachStep } from '../view/CoachMarkOverlay'
 
 const TAG = 'PlaylistContent'
@@ -76,8 +77,8 @@ export struct PlaylistContent {
   // 与首页引导同构：stepIndex = -1 不挂载，「已看过」标记存 SettingsStore
   @State coachStepIndex: number = -1
   private coachSteps: CoachStep[] = []
-  private coachStartTimer: number = -1
-  private coachStartRetries: number = 0
+  // 引导弹出编排（延迟/忙碌重试/完成标记检查）收口到公共调度器
+  private coachScheduler: CoachGuideScheduler = new CoachGuideScheduler()
   // 「重新查看引导」请求（设置-关于清标记后 +1）：PlaylistContent 常驻不重建，
   // 必须监听计数器才能在当前会话里重弹，而不是等下次冷启动
   @StorageProp(AppStorageKeyConstants.KEY_GUIDE_REPLAY_REQUEST) @Watch('onGuideReplayRequest')
@@ -98,40 +99,29 @@ export struct PlaylistContent {
     return [s1, s2]
   }
 
-  // 首次进入歌单页自动弹引导（冷启动延迟 600ms 等首屏布局落位）
+  // 首次进入歌单页自动弹引导（冷启动延迟 600ms 等首屏布局落位）；
+  // 多选/文件夹编辑态不弹，由调度器重试几次直到空闲
   private maybeStartPlaylistGuide(): void {
-    this.startPlaylistGuide(600)
+    this.coachScheduler.schedule(AppStorageKeyConstants.SETTING_GUIDE_PLAYLIST_DONE, 600,
+      (): boolean => this.isAnySelectMode(),
+      (): void => {
+        this.coachSteps = this.buildPlaylistCoachSteps()
+        // 正在显示时先卸载再挂载，保证从第 1 步重新开始并重新测量
+        this.coachStepIndex = -1
+        this.coachStepIndex = 0
+      })
   }
 
   // 设置-关于「重新查看引导」：本轮会话内重弹歌单页引导
   private onGuideReplayRequest(): void {
-    this.coachStartRetries = 0
-    this.startPlaylistGuide(200)
-  }
-
-  // 延迟 delayMs 后开弹：多选/文件夹编辑态不弹，重试几次直到空闲
-  private startPlaylistGuide(delayMs: number): void {
-    if (SettingsStore.getInstance().get(AppStorageKeyConstants.SETTING_GUIDE_PLAYLIST_DONE, '') === '1') {
-      return
-    }
-    if (this.coachStartTimer >= 0) {
-      clearTimeout(this.coachStartTimer)
-      this.coachStartTimer = -1
-    }
-    this.coachStartTimer = setTimeout((): void => {
-      this.coachStartTimer = -1
-      if (this.isAnySelectMode()) {
-        if (this.coachStartRetries < 6) {
-          this.coachStartRetries++
-          this.startPlaylistGuide(delayMs)
-        }
-        return
-      }
-      this.coachSteps = this.buildPlaylistCoachSteps()
-      // 正在显示时先卸载再挂载，保证从第 1 步重新开始并重新测量
-      this.coachStepIndex = -1
-      this.coachStepIndex = 0
-    }, delayMs)
+    this.coachScheduler.resetRetries()
+    this.coachScheduler.schedule(AppStorageKeyConstants.SETTING_GUIDE_PLAYLIST_DONE, 200,
+      (): boolean => this.isAnySelectMode(),
+      (): void => {
+        this.coachSteps = this.buildPlaylistCoachSteps()
+        this.coachStepIndex = -1
+        this.coachStepIndex = 0
+      })
   }
 
   // 引导结束（走完/跳过/中途切页）：落「已看过」标记并关浮层
@@ -179,10 +169,7 @@ export struct PlaylistContent {
     // 切页/页面销毁时收起多选：否则下次进入仍是多选态且带着旧选中项
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PLAYLIST_MULTI_SELECT, false)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PLAYLIST_FOLDER_EDIT, false)
-    if (this.coachStartTimer >= 0) {
-      clearTimeout(this.coachStartTimer)
-      this.coachStartTimer = -1
-    }
+    this.coachScheduler.cancel()
     // 引导中途切页视同看过：不再补弹
     if (this.coachStepIndex >= 0) {
       this.finishPlaylistGuide()
@@ -556,10 +543,6 @@ export struct PlaylistContent {
 
   // 组件风格（tabStyle）驱动的弹窗材质（bindSheet options 的 systemMaterial 字段）：
   // 玻璃风格 → 液态玻璃；经典风格 → Material.empty 显式关闭；设备不支持 → undefined
-  private styleGlassMaterial(): uiMaterial.Material | undefined {
-    return createStyleGlassMaterial(this.tabStyle, DEFAULT_GLASS_STYLE)
-  }
-
   // 新建歌单半模态弹层标题（bindSheet 官方标题栏）
   @Builder
   playlistCreateSheetTitle(): void {
@@ -841,7 +824,7 @@ export struct PlaylistContent {
         title: this.playlistEditSheetTitle(),
         showClose: true,
         preferType: SheetType.CENTER,
-        systemMaterial: this.styleGlassMaterial(),
+        systemMaterial: pageStyleGlassMaterial(this.tabStyle),
         onWillDisappear: () => {
           this.isPlaylistEditVisible = false
           this.buildPlaylistCards()
@@ -888,7 +871,7 @@ export struct PlaylistContent {
       title: this.playlistCreateSheetTitle(),
       showClose: true,
       preferType: SheetType.CENTER,
-      systemMaterial: this.styleGlassMaterial()
+      systemMaterial: pageStyleGlassMaterial(this.tabStyle)
     })
   }
 
@@ -1225,7 +1208,7 @@ export struct PlaylistContent {
       popupColor: this.tabStyle === 'immersive' ? Color.Transparent : $r('app.color.page_background_sm'),
       backgroundBlurStyle: this.tabStyle === 'immersive' ? BlurStyle.COMPONENT_THICK : BlurStyle.NONE,
       radius: this.scaledSize(14),
-      systemMaterial: this.styleGlassMaterial(),
+      systemMaterial: pageStyleGlassMaterial(this.tabStyle),
       onStateChange: (e) => {
         if (!e.isVisible) {
           this.playlistActionCardId = ''

@@ -17,8 +17,8 @@ import { HoldingHandService, HOLDING_HAND_CONFIRM_WINDOW_MAX_MS, HOLDING_HAND_CO
   HOLDING_HAND_SOFT_FALLBACK_STEP_MS, KEY_HOLDING_HAND_CONFIRM_WINDOW_MS, KEY_HOLDING_HAND_ENABLED,
   KEY_HOLDING_HAND_LEFT, KEY_HOLDING_HAND_SOFT_FALLBACK_MS } from '../service/HoldingHandService'
 import { ColorConversion } from '../common/utils/ColorConversion'
-import { createStyleGlassMaterial, DEFAULT_GLASS_STYLE, isLiquidGlassAvailable,
-  showToastGlassMaterial, topBlurRadiusFromStrength } from '../common/utils/GlassUtil'
+import { isLiquidGlassAvailable,
+  pageStyleGlassMaterial, showToastGlassMaterial, topBlurRadiusFromStrength } from '../common/utils/GlassUtil'
 import { StyleConstants } from '../common/constants/StyleConstants'
 import { GlassBackButton } from '../view/GlassBackButton'
 import { isDarkThemeEffective } from '../common/utils/ThemeUtil'
@@ -1150,7 +1150,7 @@ struct SettingsDetailPage {
         width: '86%',
         cornerRadius: this.scaledSize(24),
         maskColor: 'rgba(0,0,0,0.45)',
-        systemMaterial: this.styleGlassMaterial()
+        systemMaterial: pageStyleGlassMaterial(this.settings.tabStyle)
       })
     } else {
       // 经典样式：沿用居中卡片的实心底色
@@ -1177,7 +1177,7 @@ struct SettingsDetailPage {
 
   // 玻璃是否真的会渲染（沉浸式材质才走玻璃背板；Material.empty/undefined 都按实心底色处理）
   private isGlassHelpDialog(): boolean {
-    return this.styleGlassMaterial() instanceof uiMaterial.ImmersiveMaterial
+    return pageStyleGlassMaterial(this.settings.tabStyle) instanceof uiMaterial.ImmersiveMaterial
   }
 
   private helpSheetTitleText(): string {
@@ -1400,10 +1400,6 @@ struct SettingsDetailPage {
   // 组件风格（tabStyle）驱动的弹窗与选择类组件材质（bindSheet options 的 systemMaterial
   // 字段、Toggle/Slider 通用属性）：玻璃风格 → 液态玻璃；经典风格 → Material.empty
   // 显式关闭（undefined 只会恢复系统默认，关不干净）；设备不支持 → undefined
-  private styleGlassMaterial(): uiMaterial.Material | undefined {
-    return createStyleGlassMaterial(this.settings.tabStyle, DEFAULT_GLASS_STYLE)
-  }
-
   @Builder
   buildCustomizeSection(): void {
     Column({ space: this.scaledSize(10) }) {
@@ -1509,7 +1505,7 @@ struct SettingsDetailPage {
             .blockBorderColor(this.primaryColor)
             .blockBorderWidth(3)
             .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
-            .systemMaterial(this.styleGlassMaterial())
+            .systemMaterial(pageStyleGlassMaterial(this.settings.tabStyle))
             .onChange((value: number, mode: SliderChangeMode) => {
               this.settings.homeTopBlurStrength = value
               this.homeTopBlurStrength = value
@@ -1584,7 +1580,7 @@ struct SettingsDetailPage {
 
           Toggle({ type: ToggleType.Switch, isOn: this.settings.holdingHandEnabled })
             .selectedColor(this.primaryColor)
-            .systemMaterial(this.styleGlassMaterial())
+            .systemMaterial(pageStyleGlassMaterial(this.settings.tabStyle))
             .alignSelf(ItemAlign.Center)
             .margin({ left: this.scaledSize(10) })
             .onChange((isOn: boolean) => {
@@ -1641,7 +1637,7 @@ struct SettingsDetailPage {
                 .blockBorderColor(this.primaryColor)
                 .blockBorderWidth(3)
                 .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
-                .systemMaterial(this.styleGlassMaterial())
+                .systemMaterial(pageStyleGlassMaterial(this.settings.tabStyle))
                 .onChange((value: number, mode: SliderChangeMode) => {
                   this.settings.holdingHandConfirmWindowMs = value
                   AppStorage.setOrCreate(KEY_HOLDING_HAND_CONFIRM_WINDOW_MS, value)
@@ -1703,7 +1699,7 @@ struct SettingsDetailPage {
                 .blockBorderColor(this.primaryColor)
                 .blockBorderWidth(3)
                 .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
-                .systemMaterial(this.styleGlassMaterial())
+                .systemMaterial(pageStyleGlassMaterial(this.settings.tabStyle))
                 .onChange((value: number, mode: SliderChangeMode) => {
                   this.settings.holdingHandSoftFallbackMs = value
                   AppStorage.setOrCreate(KEY_HOLDING_HAND_SOFT_FALLBACK_MS, value)
@@ -1861,7 +1857,7 @@ struct SettingsDetailPage {
               .blockBorderColor(this.primaryColor)
               .blockBorderWidth(3)
               .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
-              .systemMaterial(this.styleGlassMaterial())
+              .systemMaterial(pageStyleGlassMaterial(this.settings.tabStyle))
               .onChange((value: number, mode: SliderChangeMode) => {
                 this.settings.fontSizeScale = value / 100
                 this.fontSizeScale = this.settings.fontSizeScale
@@ -1919,7 +1915,7 @@ struct SettingsDetailPage {
               .blockBorderColor(this.primaryColor)
               .blockBorderWidth(3)
               .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
-              .systemMaterial(this.styleGlassMaterial())
+              .systemMaterial(pageStyleGlassMaterial(this.settings.tabStyle))
               .onChange((value: number, mode: SliderChangeMode) => {
                 this.settings.displaySizeScale = value / 100
                 this.displaySizeScale = this.settings.displaySizeScale
@@ -2160,7 +2156,7 @@ struct SettingsDetailPage {
                 .blockBorderColor(this.primaryColor)
                 .blockBorderWidth(3)
                 .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
-                .systemMaterial(this.styleGlassMaterial())
+                .systemMaterial(pageStyleGlassMaterial(this.settings.tabStyle))
                 .onChange((value: number, mode: SliderChangeMode) => {
                   this.settings.glassBlurStrength = value
                   this.glassBlurStrength = value
@@ -2217,7 +2213,7 @@ struct SettingsDetailPage {
               .blockBorderColor(this.primaryColor)
               .blockBorderWidth(3)
               .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
-              .systemMaterial(this.styleGlassMaterial())
+              .systemMaterial(pageStyleGlassMaterial(this.settings.tabStyle))
               .onChange((value: number, mode: SliderChangeMode) => {
                 this.settings.tabIndicatorOpacity = value
                 this.tabIndicatorOpacity = value
@@ -2434,7 +2430,7 @@ struct SettingsDetailPage {
 
           Toggle({ type: ToggleType.Switch, isOn: this.settings.fadeInOut })
             .selectedColor(this.primaryColor)
-            .systemMaterial(this.styleGlassMaterial())
+            .systemMaterial(pageStyleGlassMaterial(this.settings.tabStyle))
             .alignSelf(ItemAlign.Center)
             .margin({ left: this.scaledSize(10) })
             .onChange((val: boolean) => {
@@ -2493,7 +2489,7 @@ struct SettingsDetailPage {
           .blockBorderColor(this.primaryColor)
           .blockBorderWidth(3)
           .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
-          .systemMaterial(this.styleGlassMaterial())
+          .systemMaterial(pageStyleGlassMaterial(this.settings.tabStyle))
           .onChange((value: number, mode: SliderChangeMode) => {
             this.onTimerFadeSecondsChange(value, mode)
           })
@@ -2520,7 +2516,7 @@ struct SettingsDetailPage {
 
         Toggle({ type: ToggleType.Switch, isOn: this.settings.resumePlaybackOnStart })
           .selectedColor(this.primaryColor)
-          .systemMaterial(this.styleGlassMaterial())
+          .systemMaterial(pageStyleGlassMaterial(this.settings.tabStyle))
           .alignSelf(ItemAlign.Center)
           .margin({ left: this.scaledSize(10) })
           .onChange((isOn: boolean) => {
@@ -2554,7 +2550,7 @@ struct SettingsDetailPage {
 
         Toggle({ type: ToggleType.Switch, isOn: this.settings.autoPlayAfterResume })
           .selectedColor(this.primaryColor)
-          .systemMaterial(this.styleGlassMaterial())
+          .systemMaterial(pageStyleGlassMaterial(this.settings.tabStyle))
           .alignSelf(ItemAlign.Center)
           .margin({ left: this.scaledSize(10) })
           .enabled(this.settings.resumePlaybackOnStart)
@@ -2589,7 +2585,7 @@ struct SettingsDetailPage {
 
         Toggle({ type: ToggleType.Switch, isOn: this.settings.continuePlayOnHeadsetUnplug })
           .selectedColor(this.primaryColor)
-          .systemMaterial(this.styleGlassMaterial())
+          .systemMaterial(pageStyleGlassMaterial(this.settings.tabStyle))
           .alignSelf(ItemAlign.Center)
           .margin({ left: this.scaledSize(10) })
           .onChange((isOn: boolean) => {
@@ -2623,7 +2619,7 @@ struct SettingsDetailPage {
 
         Toggle({ type: ToggleType.Switch, isOn: this.settings.ignoreNotificationDuck })
           .selectedColor(this.primaryColor)
-          .systemMaterial(this.styleGlassMaterial())
+          .systemMaterial(pageStyleGlassMaterial(this.settings.tabStyle))
           .alignSelf(ItemAlign.Center)
           .margin({ left: this.scaledSize(10) })
           .onChange((isOn: boolean) => {
@@ -2673,7 +2669,7 @@ struct SettingsDetailPage {
           .blockBorderColor(this.primaryColor)
           .blockBorderWidth(3)
           .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
-          .systemMaterial(this.styleGlassMaterial())
+          .systemMaterial(pageStyleGlassMaterial(this.settings.tabStyle))
           .onChange((value: number, mode: SliderChangeMode) => {
             this.onSpeedChange(value, mode)
           })
@@ -2702,7 +2698,7 @@ struct SettingsDetailPage {
 
         Toggle({ type: ToggleType.Switch, isOn: this.settings.lowPowerPlayback })
           .selectedColor(this.primaryColor)
-          .systemMaterial(this.styleGlassMaterial())
+          .systemMaterial(pageStyleGlassMaterial(this.settings.tabStyle))
           .alignSelf(ItemAlign.Center)
           .margin({ left: this.scaledSize(10) })
           .enabled(this.lowPowerSupported)
@@ -2949,7 +2945,7 @@ struct SettingsDetailPage {
                       .blockBorderColor(this.primaryColor)
                       .blockBorderWidth(2)
                       .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
-                      .systemMaterial(this.styleGlassMaterial())
+                      .systemMaterial(pageStyleGlassMaterial(this.settings.tabStyle))
                       .onChange((value: number, mode: SliderChangeMode) => {
                         this.onEqBandChange(band.index, value, mode)
                       })
@@ -3393,7 +3389,7 @@ struct SettingsDetailPage {
               .blockBorderColor(this.primaryColor)
               .blockBorderWidth(2)
               .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
-              .systemMaterial(this.styleGlassMaterial())
+              .systemMaterial(pageStyleGlassMaterial(this.settings.tabStyle))
               .onChange((value: number, mode: SliderChangeMode) => {
                 this.onPureVoicePitchChange(value, mode)
               })
@@ -4004,7 +4000,7 @@ struct SettingsDetailPage {
         .blockBorderColor(this.primaryColor)
         .blockBorderWidth(2)
         .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
-        .systemMaterial(this.styleGlassMaterial())
+        .systemMaterial(pageStyleGlassMaterial(this.settings.tabStyle))
         .onChange((v: number, mode: SliderChangeMode) => {
           onChange(v, mode)
         })
@@ -4044,7 +4040,7 @@ struct SettingsDetailPage {
         .blockBorderColor(this.primaryColor)
         .blockBorderWidth(2)
         .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
-        .systemMaterial(this.styleGlassMaterial())
+        .systemMaterial(pageStyleGlassMaterial(this.settings.tabStyle))
         .onChange((value: number, mode: SliderChangeMode) => {
           this.onSpaceValueChange(index, value, mode)
         })
@@ -4072,7 +4068,7 @@ struct SettingsDetailPage {
       Blank()
       Toggle({ type: ToggleType.Switch, isOn: cfg.isOn })
         .selectedColor(this.primaryColor)
-        .systemMaterial(this.styleGlassMaterial())
+        .systemMaterial(pageStyleGlassMaterial(this.settings.tabStyle))
         .onChange((isOn: boolean) => {
           cfg.onChange(isOn)
         })

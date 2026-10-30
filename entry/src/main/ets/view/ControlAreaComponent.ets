@@ -22,7 +22,7 @@ import { BusinessError, SuppressWarnings, SuppressWarningsType } from '@kit.Basi
 import { AlbumCover } from '../component/AlbumCover';
 import { AVSessionController } from '../common/utils/mediautils/AVSessionController';
 import { DataService } from '../service/DataService';
-import { createStyleGlassMaterial, createToastGlassMaterial, DEFAULT_GLASS_STYLE, showToastGlassMaterial } from '../common/utils/GlassUtil';
+import { createToastGlassMaterial, DEFAULT_GLASS_STYLE, pageStyleGlassMaterial, showToastGlassMaterial } from '../common/utils/GlassUtil';
 import { isDarkThemeEffective } from '../common/utils/ThemeUtil';
 import { applyMetadataToSong, extractSongMetadata, saveSongTagsToFile, TagsWriteResult } from '../service/MetadataTask';
 import { ScaleButton } from '../component/ScaleButton';
@@ -188,10 +188,6 @@ export struct ControlAreaComponent {
 
   // 组件风格驱动的弹窗与滑块材质：玻璃风格 → 液态玻璃；经典风格 → Material.empty 显式关闭；
   // 设备不支持 → undefined（低版本不得触碰 uiMaterial.Material.empty 符号）
-  private styleGlassMaterial(): uiMaterial.Material | undefined {
-    return createStyleGlassMaterial(this.tabStyle, DEFAULT_GLASS_STYLE)
-  }
-
   aboutToAppear(): void {
     this.songDataSource.reloadData(this.songList);
     this.syncPlayModeIndex();
@@ -322,7 +318,6 @@ export struct ControlAreaComponent {
     }
     this.playMode = PlayModeSwitchList[this.playModeIndex];
     AVSessionController.getInstance().updatePlayMode(this.playMode);
-    Logger.info(TAG, 'playModeIndex is' + this.playModeIndex);
     try {
       // openToast 返回 Promise，失败走异步 reject：必须用 .catch 兜底，try/catch 只能拦同步抛出
       this.promptAction.openToast({
@@ -459,18 +454,6 @@ export struct ControlAreaComponent {
 
   private customSongCountValue(): number {
     return parseInt(this.customSongCountText)
-  }
-
-  private formatTimerCountdown(totalSeconds: number): string {
-    const h: number = Math.floor(totalSeconds / 3600)
-    const m: number = Math.floor((totalSeconds % 3600) / 60)
-    const s: number = totalSeconds % 60
-    const mm: string = m < 10 ? '0' + m : '' + m
-    const ss: string = s < 10 ? '0' + s : '' + s
-    if (h > 0) {
-      return `${h}:${mm}:${ss}`
-    }
-    return `${mm}:${ss}`
   }
 
   private startEditField(index: number, currentValue: string): void {
@@ -882,7 +865,7 @@ export struct ControlAreaComponent {
               title: this.playListTitle(),
               showClose: true,
               preferType: SheetType.CENTER,
-              systemMaterial: this.styleGlassMaterial(),
+              systemMaterial: pageStyleGlassMaterial(this.tabStyle),
               onWillAppear: () => {
                 Logger.info(TAG, 'musicListBuilder');
                 this.scroller.scrollToIndex(this.selectIndex, false, ScrollAlign.CENTER);
@@ -904,7 +887,7 @@ export struct ControlAreaComponent {
               builder: this.speedPopupBuilder,
               placement: Placement.Top,
               showInSubWindow: false,
-              systemMaterial: this.styleGlassMaterial(),
+              systemMaterial: pageStyleGlassMaterial(this.tabStyle),
               onStateChange: (e) => {
                 if (!e.isVisible) {
                   this.isShowSpeedBuild = false;
@@ -928,7 +911,7 @@ export struct ControlAreaComponent {
               builder: this.volumePopupBuilder,
               placement: Placement.Top,
               showInSubWindow: false,
-              systemMaterial: this.styleGlassMaterial(),
+              systemMaterial: pageStyleGlassMaterial(this.tabStyle),
               onStateChange: (e) => {
                 if (!e.isVisible) {
                   this.isShowVolumeBuild = false;
@@ -956,7 +939,7 @@ export struct ControlAreaComponent {
               title: this.morePanelTitle(),
               showClose: true,
               preferType: SheetType.CENTER,
-              systemMaterial: this.styleGlassMaterial(),
+              systemMaterial: pageStyleGlassMaterial(this.tabStyle),
               onWillDisappear: () => {
                 this.isShowMorePanel = false;
                 // 关闭后回到主列表，下次打开不从二级页恢复
@@ -1061,7 +1044,7 @@ export struct ControlAreaComponent {
             .fontWeight(FontWeight.Medium)
             .fontColor(this.settingTextColor())
           if (this.timerRemainingSeconds > 0) {
-            Text(`剩余 ${this.formatTimerCountdown(this.timerRemainingSeconds)}`)
+            Text(`剩余 ${MediaTools.secondsToHms(this.timerRemainingSeconds)}`)
               .fontSize(this.scaledFont(12))
               .fontColor(this.primaryColor)
           } else if (this.timerSongsRemaining > 0) {
@@ -1466,7 +1449,7 @@ export struct ControlAreaComponent {
               Blank()
 
               if (this.isTimerPresetActive(min)) {
-                Text(this.formatTimerCountdown(this.timerRemainingSeconds))
+                Text(MediaTools.secondsToHms(this.timerRemainingSeconds))
                   .fontSize(this.scaledFont(14))
                   .fontWeight(FontWeight.Bold)
                   .fontColor('#FFFFFF')
@@ -1500,7 +1483,7 @@ export struct ControlAreaComponent {
             Blank()
 
             if (this.timerRemainingSeconds > 0 && this.activePresetMinutes < 0) {
-              Text(this.formatTimerCountdown(this.timerRemainingSeconds))
+              Text(MediaTools.secondsToHms(this.timerRemainingSeconds))
                 .fontSize(this.scaledFont(14))
                 .fontWeight(FontWeight.Bold)
                 .fontColor(this.isEffectiveDarkMode() ? '#FFFFFF' : this.primaryColor)
@@ -1712,7 +1695,7 @@ export struct ControlAreaComponent {
         .blockSize({ width: 20, height: 20 })
         .blockBorderColor(this.primaryColor)
         .blockBorderWidth(3)
-        .systemMaterial(this.styleGlassMaterial())
+        .systemMaterial(pageStyleGlassMaterial(this.tabStyle))
         .onChange((value: number, mode: SliderChangeMode) => {
           this.speed = Math.round(value * 4) / 4
           AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_SPEED, this.speed)
@@ -1771,7 +1754,7 @@ export struct ControlAreaComponent {
         .blockSize({ width: 20, height: 20 })
         .blockBorderColor(this.primaryColor)
         .blockBorderWidth(3)
-        .systemMaterial(this.styleGlassMaterial())
+        .systemMaterial(pageStyleGlassMaterial(this.tabStyle))
         .onChange((value: number, mode: SliderChangeMode) => {
           const level: number = Math.round(value);
           this.volume = this.maxVolumeLevel > 0 ? level / this.maxVolumeLevel : 0;

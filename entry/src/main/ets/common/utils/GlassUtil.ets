@@ -6,7 +6,7 @@ import { deviceInfo } from '@kit.BasicServicesKit'
 export const DEFAULT_GLASS_STYLE: number = 50
 
 // 0=完全关闭玻璃（不挂 systemMaterial，无兜底模糊）
-export function isGlassOff(value: number): boolean {
+function isGlassOff(value: number): boolean {
   return value <= 0
 }
 
@@ -17,8 +17,8 @@ export function isGlassOff(value: number): boolean {
 // 常数段必须取正比例段在临界强度处的同一取值（60 × 1.6 = 96），两段在 strength = 60 处
 // 严丝合缝相接（两侧都是 96），临界处强度不变、无断口；常数段不得写死第二个数值。
 // 曲线从下往上读即「先正比例升到满，再恒定不变」。
-export const TOP_BLUR_SLOPE: number = 1.6
-export const TOP_BLUR_CAP_STRENGTH: number = 60
+const TOP_BLUR_SLOPE: number = 1.6
+const TOP_BLUR_CAP_STRENGTH: number = 60
 
 export function topBlurRadiusFromStrength(strength: number): number {
   if (strength <= 0) {
@@ -78,7 +78,7 @@ export function getDeviceMaterialLevel(): uiMaterial.MaterialLevel | undefined {
 
 // 低算力设备（SMOOTH）：ImmersiveStyle 档位不生效，材质面退化为纯色/边框/阴影，
 // 此时组件侧必须保留 backgroundEffect 兜底模糊维持可读性
-export function isLowPowerGlassDevice(): boolean {
+function isLowPowerGlassDevice(): boolean {
   return getDeviceMaterialLevel() === uiMaterial.MaterialLevel.SMOOTH
 }
 
@@ -140,6 +140,11 @@ export function createToastGlassMaterial(strength: number): uiMaterial.Material 
 //   默认材质关不干净；Material.empty 才是真正的关闭，让组件回到原有自定义样式
 // - 设备不支持（API<26 / 未声明 ImmersiveMaterial）→ undefined：材质挂什么都无法渲染，
 //   且此时不得触碰 uiMaterial.Material.empty（该符号 API 26 才存在，低版本访问会抛异常）
+// 页面级样式玻璃统一入口：首页/歌单/播控/设置四处同参调用收口于此
+export function pageStyleGlassMaterial(tabStyle: string): uiMaterial.Material | undefined {
+  return createStyleGlassMaterial(tabStyle, DEFAULT_GLASS_STYLE)
+}
+
 export function createStyleGlassMaterial(tabStyle: string, strength: number): uiMaterial.Material | undefined {
   if (!isLiquidGlassAvailable()) {
     return undefined

@@ -35,12 +35,6 @@ export class StyleConstants {
   static readonly HOVER_SCALE: number = 1.05;
 
   static readonly ANIMATION_PRESS_DELAY_SHORT: number = 100;
-  static readonly ANIMATION_PRESS_DELAY_MEDIUM: number = 120;
-  static readonly ANIMATION_PRESS_DELAY_LONG: number = 150;
-  static readonly ANIMATION_PRESS_DURATION_SHORT: number = 150;
-  static readonly ANIMATION_PRESS_DURATION_MEDIUM: number = 200;
-  static readonly ANIMATION_RELEASE_DURATION_SHORT: number = 250;
-  static readonly ANIMATION_RELEASE_DURATION_MEDIUM: number = 300;
   static readonly ANIMATION_SWIPER_DURATION: number = 260;
   static readonly ANIMATION_PAGE_ENTER_DURATION: number = 500;
   static readonly ANIMATION_PAGE_EXIT_DURATION: number = 400;

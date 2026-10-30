@@ -13,7 +13,6 @@ import { ControlAreaComponent } from './ControlAreaComponent';
 import { AlbumCover } from '../component/AlbumCover';
 import { ScaleButton } from '../component/ScaleButton';
 import { AudioQualityBadge } from '../component/AudioQualityBadge';
-import { audioQualityBadgeDetail, audioQualityBadgeText, audioQualityTier } from '../common/utils/AudioQualityUtil';
 
 const TAG = 'MusicInfoComponent';
 
@@ -141,12 +140,11 @@ export struct MusicInfoComponent {
             .aspectRatio(1)
             .opacity(this.isCoverFloating ? 0 : 1)
 
-          // 封面左下角音质标签（黑金配色）：无数据时不渲染；
+          // 封面左下角音质标签（黑金配色）：无徽章数据时组件自渲染为空；
           // 浮层模式下标签随封面一起搬到 PlayerFlyingCover，本页不再渲染，避免被浮层遮挡或双份
-          if (!this.isCoverFloating && audioQualityBadgeText(this.currentSong()).length > 0) {
+          if (!this.isCoverFloating) {
             AudioQualityBadge({
-              tier: audioQualityTier(this.currentSong()),
-              detail: audioQualityBadgeDetail(this.currentSong()),
+              song: this.currentSong(),
               fontSizeScale: this.fontSizeScale
             })
               .hitTestBehavior(HitTestMode.None)

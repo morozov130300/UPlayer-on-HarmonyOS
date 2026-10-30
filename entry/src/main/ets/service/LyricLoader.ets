@@ -39,7 +39,7 @@ function addCandidate(list: string[], value: string): void {
  *
  * lyricUri 优先（picker 授权可持久化的 URI 形式），失败再退回 lyricPath（percent 解码形式）。
  */
-export function buildLyricCandidates(song: SongInfo): string[] {
+function buildLyricCandidates(song: SongInfo): string[] {
   const candidates: string[] = []
   addCandidate(candidates, song.lyricUri)
   addCandidate(candidates, song.lyricPath)
