@@ -1661,7 +1661,9 @@ export struct HomeContent {
                 TextInput({ text: this.searchText, placeholder: '搜索歌曲 / 歌手 / 专辑 / 拼音' })
                   .id('home_search_input')
                   .layoutWeight(1)
-                  .height('100%')
+                  // 定高小于胶囊（原 height('100%') 会让光标撑满 32vp 满高、
+                  // 上下顶到胶囊边缘像被圆角裁掉），由行 alignItems 居中
+                  .height(this.scaledSize(20))
                   .fontSize(Math.round(14 * this.fontSizeScale))
                   .placeholderFont({ size: Math.round(14 * this.fontSizeScale) })
                   .placeholderColor($r('app.color.text_twenty_color'))
