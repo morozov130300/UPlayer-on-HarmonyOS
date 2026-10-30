@@ -1662,8 +1662,9 @@ export struct HomeContent {
                   .id('home_search_input')
                   .layoutWeight(1)
                   // 定高小于胶囊（原 height('100%') 会让光标撑满 32vp 满高、
-                  // 上下顶到胶囊边缘像被圆角裁掉），由行 alignItems 居中
-                  .height(this.scaledSize(20))
+                  // 上下顶到胶囊边缘像被圆角裁掉）；20vp 装不下 14 号字会裁文本，
+                  // 取 24vp：光标上下留边，文字完整，由行 alignItems 居中
+                  .height(this.scaledSize(24))
                   .fontSize(Math.round(14 * this.fontSizeScale))
                   .placeholderFont({ size: Math.round(14 * this.fontSizeScale) })
                   .placeholderColor($r('app.color.text_twenty_color'))
