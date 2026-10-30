@@ -1770,7 +1770,10 @@ export struct HomeContent {
         }
         .width('100%')
         .padding({ left: 16, right: 16, top: 6 })
-        .position({ top: this.headerTopPadding() - this.scaledSize(8) })
+        // PC 上移 8vp 收紧；手机端不再上移，问候语与胶囊行之间留出呼吸距离
+        .position({
+          top: this.headerTopPadding() - (this.isPC ? this.scaledSize(8) : 0)
+        })
         .onAreaChange((oldValue: Area, newValue: Area) => {
           this.onHeaderRowAreaChange(newValue)
         })
