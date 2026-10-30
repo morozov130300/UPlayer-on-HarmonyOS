@@ -20,6 +20,8 @@ import { createBarGlassMaterial, createStyleGlassMaterial, DEFAULT_GLASS_STYLE, 
 import { GlassBackButton } from '../view/GlassBackButton'
 import { ScaleButton } from '../component/ScaleButton'
 import { StyleConstants } from '../common/constants/StyleConstants'
+import { SettingsStore } from '../common/utils/SettingsStore'
+import { CoachMarkOverlay, CoachStep } from '../view/CoachMarkOverlay'
 
 const TAG = 'HomeContent'
 const PREFETCH_COUNT: number = 64
@@ -150,6 +152,90 @@ export struct HomeContent {
   private dataService: DataService = DataService.getInstance()
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance()
   private scroller: Scroller = new Scroller()
+  // ── 新手引导（聚光分步）：首页 4 步（左滑删除 / 长按管理 / 排序 / 平铺）──
+  // stepIndex = -1 时浮层不挂载；「已看过」标记存 SettingsStore，各自首次进入弹
+  @State coachStepIndex: number = -1
+  private coachSteps: CoachStep[] = []
+  private coachStartTimer: number = -1
+  private coachStartRetries: number = 0
+  // 「重新查看引导」请求（设置-关于清标记后 +1）：HomeContent 常驻不重建，
+  // aboutToAppear 不会再跑，必须监听计数器才能在当前会话里立即重弹
+  @StorageProp(AppStorageKeyConstants.KEY_GUIDE_REPLAY_REQUEST) @Watch('onGuideReplayRequest')
+  guideReplayRequest: number = 0
+
+  // 首页引导步骤（目标组件 id 见 build() 中对应 .id()）。
+  // 曲库为空（新用户/未导入）时左滑删除与长按管理无对象，改为指向「暂无歌曲，点击添加」
+  // 空态入口的导入引导，排序/平铺两枚胶囊保留（导入后即可使用）
+  private buildHomeCoachSteps(): CoachStep[] {
+    const sortStep: CoachStep = new CoachStep()
+    sortStep.targetId = 'coach_home_sort_pill'
+    sortStep.title = '切换排序方式'
+    sortStep.description = '点击胶囊循环切换：歌名 / 添加时间 / 自定义 / 最近播放。'
+    const viewStep: CoachStep = new CoachStep()
+    viewStep.targetId = 'coach_home_view_pill'
+    viewStep.title = '切换平铺方式'
+    viewStep.description = '点击胶囊循环切换：平铺 / 文件夹 / 专辑 / 歌手。'
+    if (this.songs.length === 0) {
+      const importStep: CoachStep = new CoachStep()
+      importStep.targetId = 'coach_home_empty_hint'
+      importStep.title = '添加本地歌曲'
+      importStep.description = '点击这里导入本地歌曲；导入后即可左滑删除、长按批量管理歌曲。'
+      return [importStep, sortStep, viewStep]
+    }
+    const s1: CoachStep = new CoachStep()
+    s1.targetId = 'coach_home_list_area'
+    s1.maxHighlightHeight = 200
+    s1.title = '左滑删除歌曲'
+    s1.description = '向左滑动任意歌曲，点击红色按钮即可将其删除。'
+    const s2: CoachStep = new CoachStep()
+    s2.targetId = 'coach_home_list_area'
+    s2.maxHighlightHeight = 200
+    s2.title = '长按管理歌曲'
+    s2.description = '长按任意歌曲进入批量管理，可全选、加入歌单或删除。'
+    return [s1, s2, sortStep, viewStep]
+  }
+
+  // 首次进入首页自动弹引导（冷启动延迟 600ms 等首屏布局落位）
+  private maybeStartHomeGuide(): void {
+    this.startHomeGuide(600)
+  }
+
+  // 设置-关于「重新查看引导」：清标记已完成，本轮会话内立即重弹（不等下次冷启动）
+  private onGuideReplayRequest(): void {
+    this.coachStartRetries = 0
+    this.startHomeGuide(200)
+  }
+
+  // 延迟 delayMs 后开弹：搜索态/多选态/筛选面板打开时不弹，重试几次直到空闲
+  private startHomeGuide(delayMs: number): void {
+    if (SettingsStore.getInstance().get(AppStorageKeyConstants.SETTING_GUIDE_HOME_DONE, '') === '1') {
+      return
+    }
+    if (this.coachStartTimer >= 0) {
+      clearTimeout(this.coachStartTimer)
+      this.coachStartTimer = -1
+    }
+    this.coachStartTimer = setTimeout((): void => {
+      this.coachStartTimer = -1
+      if (this.isSearchActive || this.isMultiSelectMode || this.isFilterPanelVisible) {
+        if (this.coachStartRetries < 6) {
+          this.coachStartRetries++
+          this.startHomeGuide(delayMs)
+        }
+        return
+      }
+      this.coachSteps = this.buildHomeCoachSteps()
+      // 正在显示时先卸载再挂载，保证从第 1 步重新开始并重新测量
+      this.coachStepIndex = -1
+      this.coachStepIndex = 0
+    }, delayMs)
+  }
+
+  // 引导结束（走完/跳过/中途切页）：落「已看过」标记并关浮层
+  private finishHomeGuide(): void {
+    this.coachStepIndex = -1
+    SettingsStore.getInstance().set(AppStorageKeyConstants.SETTING_GUIDE_HOME_DONE, '1')
+  }
 
   private scaledSize(size: number): number {
     return Math.round(size * this.displaySizeScale)
@@ -243,6 +329,7 @@ export struct HomeContent {
     this.refreshFilterLabel()
     this.publishPlusVisible()
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_HOME_MULTI_SELECT, false)
+    this.maybeStartHomeGuide()
   }
 
   aboutToDisappear(): void {
@@ -250,6 +337,14 @@ export struct HomeContent {
     if (this.searchDebounceId >= 0) {
       clearTimeout(this.searchDebounceId)
       this.searchDebounceId = -1
+    }
+    if (this.coachStartTimer >= 0) {
+      clearTimeout(this.coachStartTimer)
+      this.coachStartTimer = -1
+    }
+    // 引导中途切页视同看过：不再补弹
+    if (this.coachStepIndex >= 0) {
+      this.finishHomeGuide()
     }
   }
 
@@ -1465,6 +1560,8 @@ export struct HomeContent {
                   .textAlign(TextAlign.Center)
               }
             }
+            // 新手引导（曲库为空）的高亮锚点：空态导入入口
+            .id('coach_home_empty_hint')
           }
 
           ScrollBar({
@@ -1476,6 +1573,8 @@ export struct HomeContent {
           .height(this.scrollBarHeight())
           .position({ top: this.listTopPadding(), right: 0 })
         }
+        // 新手引导步骤 1/2 的高亮锚点：整个歌曲列表容器
+        .id('coach_home_list_area')
         .width('100%')
         .layoutWeight(1)
       }
@@ -1635,6 +1734,8 @@ export struct HomeContent {
                   .margin({ left: 8 })
                   .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
                   .borderRadius(16)
+                  // 新手引导步骤 3 的高亮锚点：排序胶囊
+                  .id('coach_home_sort_pill')
                 }
 
                 ScaleButton({
@@ -1653,6 +1754,8 @@ export struct HomeContent {
                   .margin({ left: 8 })
                   .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
                   .borderRadius(16)
+                  // 新手引导步骤 4 的高亮锚点：平铺方式胶囊
+                  .id('coach_home_view_pill')
                 }
               }
               .alignItems(VerticalAlign.Center)
@@ -2014,6 +2117,26 @@ export struct HomeContent {
         .transition(TransitionEffect.OPACITY)
       }
 
+      // 新手引导浮层（聚光分步）：首次进入首页自动弹出，走完/跳过后不再出现
+      // （设置-关于提供「重新查看引导」入口），遮罩拦截全部点击，点任意处进入下一步
+      if (this.coachStepIndex >= 0) {
+        Column() {
+          CoachMarkOverlay({
+            steps: this.coachSteps,
+            stepIndex: this.coachStepIndex,
+            primaryColor: this.primaryColor,
+            isHostBusy: (): boolean => {
+              return this.isSearchActive || this.isMultiSelectMode || this.isFilterPanelVisible
+            },
+            onFinish: (): void => {
+              this.finishHomeGuide()
+            }
+          })
+        }
+        .width('100%')
+        .height('100%')
+        .zIndex(40)
+      }
 
       // 全局悬浮加号由 Index 统一渲染（首页/歌单共用，切页不位移，设置页隐藏），
       // 可见性由 publishPlusVisible 上报，本页不再挂按钮

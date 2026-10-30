@@ -21,6 +21,8 @@ import { createBarGlassMaterial, createStyleGlassMaterial, DEFAULT_GLASS_STYLE }
 import { GlassBackButton } from '../view/GlassBackButton'
 import { ScaleButton } from '../component/ScaleButton'
 import { PressScaleHost } from '../component/PressScaleHost'
+import { SettingsStore } from '../common/utils/SettingsStore'
+import { CoachMarkOverlay, CoachStep } from '../view/CoachMarkOverlay'
 
 const TAG = 'PlaylistContent'
 const FAVORITES_FOLDER_ID: string = '__favorites__'
@@ -70,6 +72,73 @@ export struct PlaylistContent {
   private scroller: Scroller = new Scroller()
   private previousFolderPaths: string[] = []
   private isPC: boolean = deviceInfo.deviceType === '2in1'
+  // ── 新手引导（聚光分步）：歌单页 2 步（点击选中歌单 / 歌单与文件夹二选一）──
+  // 与首页引导同构：stepIndex = -1 不挂载，「已看过」标记存 SettingsStore
+  @State coachStepIndex: number = -1
+  private coachSteps: CoachStep[] = []
+  private coachStartTimer: number = -1
+  private coachStartRetries: number = 0
+  // 「重新查看引导」请求（设置-关于清标记后 +1）：PlaylistContent 常驻不重建，
+  // 必须监听计数器才能在当前会话里重弹，而不是等下次冷启动
+  @StorageProp(AppStorageKeyConstants.KEY_GUIDE_REPLAY_REQUEST) @Watch('onGuideReplayRequest')
+  guideReplayRequest: number = 0
+
+  // 歌单页引导步骤（目标组件 id 见 build() 中对应 .id()）
+  private buildPlaylistCoachSteps(): CoachStep[] {
+    const s1: CoachStep = new CoachStep()
+    s1.targetId = 'coach_playlist_grid'
+    s1.maxHighlightHeight = 220
+    s1.title = '点击选中歌单'
+    s1.description = '点击歌单卡即可选中，选中的歌单会展示在首页；再次点击取消选中。'
+    const s2: CoachStep = new CoachStep()
+    s2.targetId = 'coach_folder_grid'
+    s2.maxHighlightHeight = 220
+    s2.title = '歌单与文件夹二选一'
+    s2.description = '选中的歌单或文件夹会展示在首页，两者互斥；全部取消选中时，首页展示所有已导入歌曲。'
+    return [s1, s2]
+  }
+
+  // 首次进入歌单页自动弹引导（冷启动延迟 600ms 等首屏布局落位）
+  private maybeStartPlaylistGuide(): void {
+    this.startPlaylistGuide(600)
+  }
+
+  // 设置-关于「重新查看引导」：本轮会话内重弹歌单页引导
+  private onGuideReplayRequest(): void {
+    this.coachStartRetries = 0
+    this.startPlaylistGuide(200)
+  }
+
+  // 延迟 delayMs 后开弹：多选/文件夹编辑态不弹，重试几次直到空闲
+  private startPlaylistGuide(delayMs: number): void {
+    if (SettingsStore.getInstance().get(AppStorageKeyConstants.SETTING_GUIDE_PLAYLIST_DONE, '') === '1') {
+      return
+    }
+    if (this.coachStartTimer >= 0) {
+      clearTimeout(this.coachStartTimer)
+      this.coachStartTimer = -1
+    }
+    this.coachStartTimer = setTimeout((): void => {
+      this.coachStartTimer = -1
+      if (this.isAnySelectMode()) {
+        if (this.coachStartRetries < 6) {
+          this.coachStartRetries++
+          this.startPlaylistGuide(delayMs)
+        }
+        return
+      }
+      this.coachSteps = this.buildPlaylistCoachSteps()
+      // 正在显示时先卸载再挂载，保证从第 1 步重新开始并重新测量
+      this.coachStepIndex = -1
+      this.coachStepIndex = 0
+    }, delayMs)
+  }
+
+  // 引导结束（走完/跳过/中途切页）：落「已看过」标记并关浮层
+  private finishPlaylistGuide(): void {
+    this.coachStepIndex = -1
+    SettingsStore.getInstance().set(AppStorageKeyConstants.SETTING_GUIDE_PLAYLIST_DONE, '1')
+  }
   // 文件夹编辑态（多选删除歌曲）：与歌单多选同构，状态上提 AppStorage 供返回键/ESC 收回
   @StorageLink(AppStorageKeyConstants.KEY_PLAYLIST_FOLDER_EDIT) @Watch('onFolderEditModeChange')
   isEditMode: boolean = false
@@ -103,12 +172,21 @@ export struct PlaylistContent {
     // 与首页一致：进入页面时复位多选状态，避免上次残留把工具栏带进来
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PLAYLIST_MULTI_SELECT, false)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PLAYLIST_FOLDER_EDIT, false)
+    this.maybeStartPlaylistGuide()
   }
 
   aboutToDisappear(): void {
     // 切页/页面销毁时收起多选：否则下次进入仍是多选态且带着旧选中项
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PLAYLIST_MULTI_SELECT, false)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PLAYLIST_FOLDER_EDIT, false)
+    if (this.coachStartTimer >= 0) {
+      clearTimeout(this.coachStartTimer)
+      this.coachStartTimer = -1
+    }
+    // 引导中途切页视同看过：不再补弹
+    if (this.coachStepIndex >= 0) {
+      this.finishPlaylistGuide()
+    }
   }
 
   private scaledSize(size: number): number {
@@ -700,6 +778,8 @@ export struct PlaylistContent {
               .rowsGap(10)
               .padding({ left: 16, right: 16, top: 12 })
               .width('100%')
+              // 新手引导步骤 2 的高亮锚点：文件夹卡片区
+              .id('coach_folder_grid')
             } else {
               ScaleButton({
                 pressScale: StyleConstants.PRESS_SCALE,
@@ -767,6 +847,27 @@ export struct PlaylistContent {
       // 自定义歌单弹层（P2-3）：长按冒泡菜单由卡片 bindPopup 挂载 / 删除二次确认
       if (this.playlistDeleteConfirmId.length > 0) {
         this.playlistDeleteConfirm()
+      }
+
+      // 新手引导浮层（聚光分步）：首次进入歌单页自动弹出，走完/跳过后不再出现
+      // （设置-关于提供「重新查看引导」入口），遮罩拦截全部点击，点任意处进入下一步
+      if (this.coachStepIndex >= 0) {
+        Column() {
+          CoachMarkOverlay({
+            steps: this.coachSteps,
+            stepIndex: this.coachStepIndex,
+            primaryColor: this.primaryColor,
+            isHostBusy: (): boolean => {
+              return this.isAnySelectMode()
+            },
+            onFinish: (): void => {
+              this.finishPlaylistGuide()
+            }
+          })
+        }
+        .width('100%')
+        .height('100%')
+        .zIndex(40)
       }
     }
     .width('100%')
@@ -1025,6 +1126,8 @@ export struct PlaylistContent {
       .rowsGap(10)
       .padding({ left: 16, right: 16, top: 12 })
       .width('100%')
+      // 新手引导步骤 1 的高亮锚点：歌单卡片区
+      .id('coach_playlist_grid')
     }
     .width('100%')
     .margin({ top: 4 })

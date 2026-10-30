@@ -27,8 +27,6 @@ import { AlbumCover } from '../component/AlbumCover'
 import { ColorConversion } from '../common/utils/ColorConversion'
 import { isDarkThemeEffective } from '../common/utils/ThemeUtil'
 import { StyleConstants } from '../common/constants/StyleConstants'
-import { SettingsStore } from '../common/utils/SettingsStore'
-import { WelcomeGuideOverlay } from '../view/WelcomeGuideOverlay'
 import { ImportProgressOverlay } from '../view/ImportProgressOverlay'
 import { ScaleButton } from '../component/ScaleButton'
 import { PressScaleHost } from '../component/PressScaleHost'
@@ -104,12 +102,10 @@ struct MainPage {
   @StorageProp(AppStorageKeyConstants.KEY_LYRIC_REVISION) @Watch('loadCurrentLyrics') lyricRevision: number = 0
   // 主窗口可见性（EntryAbility 前后台写入）：窗口隐藏时停掉封面旋转定时器，避免持续请求 vsync
   @StorageProp(AppStorageKeyConstants.KEY_UI_ACTIVE) @Watch('onUiActiveChange') uiActive: boolean = true
-  // 「重新查看欢迎页」请求（设置-关于入口清除标记后 +1）：
-  // 在主界面上重新挂载欢迎页浮层（浮层挂在 Index 根 Stack，无需切 Tab）
+  // 「重新查看引导」请求（设置-关于入口清除标记后 +1）：切回首页 Tab，
+  // 重建的 HomeContent 会在 aboutToAppear 里重新弹出引导
   @StorageProp(AppStorageKeyConstants.KEY_GUIDE_REPLAY_REQUEST) @Watch('onGuideReplayRequest')
   guideReplayRequest: number = 0
-  // 首次启动欢迎页浮层：aboutToAppear 同步读标记定初值，首帧即确定显隐，无闪烁
-  @State showWelcomeGuide: boolean = false
   private tabsController: HdsTabsController = new HdsTabsController()
   private tabWidth: number = 72
   private indicatorInset: number = 4
@@ -122,8 +118,6 @@ struct MainPage {
 
   aboutToAppear(): void { // AppStorage 已由 EntryAbility 在 loadContent 之前完成初始化（initToAppStorage 幂等）， // 此处不再重复调用，避免重复执行可访问性检查与授权激活竞态
     Logger.info(TAG, 'aboutToAppear begin')
-    this.showWelcomeGuide =
-      SettingsStore.getInstance().get(AppStorageKeyConstants.SETTING_GUIDE_WELCOME_DONE, '') !== '1'
     ColorConversion.setSysBarLightBackground(this.isDarkTheme())
     Logger.info(TAG, 'aboutToAppear after isDarkTheme')
     this.updateGreeting()
@@ -138,10 +132,10 @@ struct MainPage {
       })
   }
 
-  // 「重新查看欢迎页」：设置页清除标记后计数器 +1，这里直接重新挂载浮层
+  // 「重新查看引导」：切回首页 Tab，由重建的 HomeContent 重新弹引导
   onGuideReplayRequest(): void {
-    if (!this.showWelcomeGuide) {
-      this.showWelcomeGuide = true
+    if (this.currentIndex !== 0) {
+      this.tabsController.changeIndex(0)
     }
   }
 
@@ -1057,17 +1051,6 @@ struct MainPage {
 
       // 导入进度浮层：置顶显示，未导入时不拦截触摸
       ImportProgressOverlay()
-
-      // 首次启动欢迎页浮层：全屏盖在主界面之上，走完/跳过写标记并卸载
-      if (this.showWelcomeGuide) {
-        WelcomeGuideOverlay({
-          primaryColor: this.primaryColor,
-          onFinish: (): void => {
-            this.showWelcomeGuide = false
-            SettingsStore.getInstance().set(AppStorageKeyConstants.SETTING_GUIDE_WELCOME_DONE, '1')
-          }
-        })
-      }
     }
     .alignContent(Alignment.Bottom)
     .width('100%')
