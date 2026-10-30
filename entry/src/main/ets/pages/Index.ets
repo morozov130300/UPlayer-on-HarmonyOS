@@ -1094,15 +1094,14 @@ struct MainPage {
     return this.isPC ? Math.max(this.topSafeHeight, this.titleButtonHeight) : this.topSafeHeight
   }
 
-  // 问候语内容带高度：随「字体大小」缩放，避免放大后标题行盒超出带高、压到筛选行
+  // 问候语内容带高度：随「字体大小」缩放，避免放大后标题行盒超出带高、压到筛选行；PC 与手机统一 32vp 基准
   private greetingBandHeight(): number {
-    const base: number = this.isPC ? 32 : 40
+    const base: number = 32
     return Math.max(base, Math.round(base * this.fontSizeScale))
   }
 
   private homeHeaderHeight(): number {
-    return this.isPC ? Math.max(64, this.topContentInset() + this.greetingBandHeight())
-      : this.topContentInset() + this.greetingBandHeight()
+    return Math.max(64, this.topContentInset() + this.greetingBandHeight())
   }
 
   private scaledSize(size: number): number {

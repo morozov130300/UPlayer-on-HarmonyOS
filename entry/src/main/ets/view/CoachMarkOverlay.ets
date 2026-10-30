@@ -2,9 +2,10 @@
 // 目标控件在宿主页面上以 .id() 标记，浮层用 componentUtils 取窗口坐标定位高亮区，
 // 点击遮罩/卡片任意处进入下一步，卡片右上角「跳过」直接结束（都回调宿主 onFinish）。
 //
-// 挖洞实现：上/下/左/右四块半透明矩形拼出方形洞，再用四块 1/4 圆角「补角」
-// （Path 弯月形，同遮罩色）把方角填成与描边框一致的圆角，消除圆角处的亮缝；
-// 高亮区位置/尺寸变化走隐式动画，步骤切换时框体平滑滑动而不是瞬移。
+// 挖洞实现：整块遮罩画在一张 Canvas 上——先整屏填遮罩色，再以 destination-out
+// 合成模式填一个圆角矩形把洞抠掉，抗锯齿圆角一次成型，不存在多块拼图接缝；
+// 高亮区位置/尺寸变化由本组件自驱动插值动画（每帧重绘 Canvas），步骤切换时
+// 洞体、描边框、说明卡片同步平滑滑动而不是瞬移。
 import { ScaleButton } from '../component/ScaleButton'
 import { StyleConstants } from '../common/constants/StyleConstants'
 
@@ -23,10 +24,12 @@ const CARD_WIDTH_MAX: number = 340
 const CARD_EST_HEIGHT: number = 118
 const MEASURE_DELAY_MS: number = 100
 const MASK_COLOR: string = 'rgba(0,0,0,0.5)'
-// 高亮框圆角；补角弯月形与描边框共用该半径
+// 高亮框圆角；挖孔与描边框共用该半径
 const CORNER_RADIUS: number = 16
-// 高亮区滑动/尺寸变化的隐式动画时长
+// 高亮区滑动/尺寸变化的插值动画时长
 const MOVE_DURATION_MS: number = 240
+// 插值动画帧间隔（约 60fps）
+const ANIM_FRAME_MS: number = 16
 
 @Component
 export struct CoachMarkOverlay {
@@ -56,38 +59,28 @@ export struct CoachMarkOverlay {
   private busyRetries: number = 0
   // 「跳过」在卡片内部：点击事件会冒泡到卡片层的 advance，用标记让 advance 放行
   private skipTapped: boolean = false
-  // 四块补角弯月形的路径命令。Path.commands 的单位是 px（官方文档：单位为px），
-  // 而路径盒是按 vp 布局的，必须用 vp2px(圆角) 生成命令，否则命令只画到盒子的
-  // 1/density（16 只等于约 5vp），补角几乎看不见、圆角处照样漏亮缝。
-  private cornerRadiusPx: number = 0
-  private cornerPaths: string[] = ['', '', '', '']
+  // 遮罩画布：整屏遮罩 + destination-out 挖圆角孔（见 drawMask）
+  private canvasContext: CanvasRenderingContext2D =
+    new CanvasRenderingContext2D(new RenderingContextSettings(true))
+  // 插值动画：起止高亮区与时间戳，每帧重算 rect* 并重绘 Canvas
+  private animFromX: number = 0
+  private animFromY: number = 0
+  private animFromW: number = 0
+  private animFromH: number = 0
+  private animToX: number = 0
+  private animToY: number = 0
+  private animToW: number = 0
+  private animToH: number = 0
+  private animStartMs: number = 0
+  private animTimer: number = -1
 
   aboutToAppear(): void {
     this.busyRetries = 0
-    this.buildCornerPaths()
     this.scheduleMeasure()
   }
 
-  // 按当前屏幕密度换算 px，生成 TL / TR / BL / BR 四块弯月形（方角内、圆角弧外，
-  // 弧线与描边框圆角同心同径）；密度未就绪时留空，由 onAreaChange 兜底重建
-  private buildCornerPaths(): void {
-    let r: number = 0
-    try {
-      r = this.getUIContext().vp2px(CORNER_RADIUS)
-    } catch (e) {
-      r = 0
-    }
-    if (r <= 0 || Math.abs(r - this.cornerRadiusPx) < 0.01) {
-      return
-    }
-    this.cornerRadiusPx = r
-    this.cornerPaths[0] = `M0 0 L${r} 0 A${r} ${r} 0 0 0 0 ${r} Z`
-    this.cornerPaths[1] = `M${r} 0 L0 0 A${r} ${r} 0 0 1 ${r} ${r} Z`
-    this.cornerPaths[2] = `M0 ${r} L0 0 A${r} ${r} 0 0 0 ${r} ${r} Z`
-    this.cornerPaths[3] = `M${r} ${r} L${r} 0 A${r} ${r} 0 0 1 0 ${r} Z`
-  }
-
   aboutToDisappear(): void {
+    this.stopAnim()
     if (this.measureTimer >= 0) {
       clearTimeout(this.measureTimer)
       this.measureTimer = -1
@@ -100,7 +93,7 @@ export struct CoachMarkOverlay {
     }
     this.busyRetries = 0
     this.skipTapped = false
-    // 后续步骤：目标组件已布局完成，同步测量并借隐式动画平滑滑到新位置，
+    // 后续步骤：目标组件已布局完成，同步测量并走插值动画平滑滑到新位置，
     // 避免「文字先刷新、挖孔延迟 100ms 才跳过去」的割裂感；仅首次挂载才延迟测量
     if (this.overlayW > 0 && this.overlayH > 0) {
       this.measureTarget()
@@ -127,7 +120,7 @@ export struct CoachMarkOverlay {
     }, MEASURE_DELAY_MS)
   }
 
-  // 取目标组件窗口坐标（px）换算 vp，换算出四块遮罩、补角与卡片位置；
+  // 取目标组件窗口坐标（px）换算 vp，确定挖孔位置并启动插值动画；
   // 目标未挂载（id 不存在）时退回屏幕中部默认高亮带
   private measureTarget(): void {
     if (this.stepIndex < 0 || this.stepIndex >= this.steps.length) {
@@ -173,11 +166,79 @@ export struct CoachMarkOverlay {
     y = Math.max(y - HIGHLIGHT_PAD, 0)
     w = Math.min(w + HIGHLIGHT_PAD * 2, this.overlayW - x)
     h = Math.min(h + HIGHLIGHT_PAD * 2, this.overlayH - y)
-    this.rectX = x
-    this.rectY = y
-    this.rectW = w
-    this.rectH = h
+    this.startRectAnim(x, y, w, h)
     this.updateCardPosition()
+  }
+
+  // 高亮区插值动画：从当前位置缓动到目标位置，逐帧重绘 Canvas 与描边框
+  private startRectAnim(x: number, y: number, w: number, h: number): void {
+    this.animFromX = this.rectX
+    this.animFromY = this.rectY
+    this.animFromW = this.rectW
+    this.animFromH = this.rectH
+    this.animToX = x
+    this.animToY = y
+    this.animToW = w
+    this.animToH = h
+    this.animStartMs = Date.now()
+    this.stopAnim()
+    this.animTimer = setInterval((): void => {
+      const t: number = Math.min((Date.now() - this.animStartMs) / MOVE_DURATION_MS, 1)
+      // easeInOutCubic：起步与收尾平滑，与原先隐式动画观感一致
+      const eased: number = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
+      this.rectX = this.animFromX + (this.animToX - this.animFromX) * eased
+      this.rectY = this.animFromY + (this.animToY - this.animFromY) * eased
+      this.rectW = this.animFromW + (this.animToW - this.animFromW) * eased
+      this.rectH = this.animFromH + (this.animToH - this.animFromH) * eased
+      this.updateCardPosition()
+      this.drawMask()
+      if (t >= 1) {
+        this.stopAnim()
+      }
+    }, ANIM_FRAME_MS)
+  }
+
+  private stopAnim(): void {
+    if (this.animTimer >= 0) {
+      clearInterval(this.animTimer)
+      this.animTimer = -1
+    }
+  }
+
+  // 遮罩绘制：整屏遮罩色 + destination-out 抠圆角孔（抗锯齿一次成型，无拼缝）
+  private drawMask(): void {
+    const w: number = this.overlayW
+    const h: number = this.overlayH
+    if (w <= 0 || h <= 0) {
+      return
+    }
+    const ctx: CanvasRenderingContext2D = this.canvasContext
+    ctx.clearRect(0, 0, w, h)
+    ctx.fillStyle = MASK_COLOR
+    ctx.fillRect(0, 0, w, h)
+    const x: number = this.rectX
+    const y: number = this.rectY
+    const rw: number = Math.max(this.rectW, 0)
+    const rh: number = Math.max(this.rectH, 0)
+    if (rw <= 0 || rh <= 0) {
+      return
+    }
+    const r: number = Math.min(CORNER_RADIUS, rw / 2, rh / 2)
+    ctx.globalCompositeOperation = 'destination-out'
+    ctx.fillStyle = '#000000'
+    ctx.beginPath()
+    ctx.moveTo(x + r, y)
+    ctx.lineTo(x + rw - r, y)
+    ctx.arc(x + rw - r, y + r, r, -Math.PI / 2, 0)
+    ctx.lineTo(x + rw, y + rh - r)
+    ctx.arc(x + rw - r, y + rh - r, r, 0, Math.PI / 2)
+    ctx.lineTo(x + r, y + rh)
+    ctx.arc(x + r, y + rh - r, r, Math.PI / 2, Math.PI)
+    ctx.lineTo(x, y + r)
+    ctx.arc(x + r, y + r, r, Math.PI, Math.PI * 1.5)
+    ctx.closePath()
+    ctx.fill()
+    ctx.globalCompositeOperation = 'source-over'
   }
 
   // 卡片放置：优先放高亮下方，放不下翻到上方；水平跟随高亮左缘并整体夹在浮层内
@@ -206,87 +267,20 @@ export struct CoachMarkOverlay {
     return Math.max(Math.min(CARD_WIDTH_MAX, this.overlayW - 32), 0)
   }
 
-  // 四块补角弯月形的水平/垂直位置（与描边框同一圆角半径）
-  private cornerX(right: boolean): number {
-    return right ? Math.max(this.rectX + this.rectW - CORNER_RADIUS, 0) : this.rectX
-  }
-
-  private cornerY(bottom: boolean): number {
-    return bottom ? Math.max(this.rectY + this.rectH - CORNER_RADIUS, 0) : this.rectY
-  }
-
   build() {
     Stack() {
-      // ── 挖洞遮罩：上 / 下 / 左 / 右四块拼合 ──
-      Column()
+      // ── 挖洞遮罩：单张 Canvas，整屏遮罩 + destination-out 抠圆角孔 ──
+      Canvas(this.canvasContext)
         .width('100%')
-        .height(Math.max(this.rectY, 0))
-        .position({ x: 0, y: 0 })
-        .backgroundColor(MASK_COLOR)
+        .height('100%')
+        .onReady((): void => {
+          this.drawMask()
+        })
         .onClick(() => {
           this.advance()
         })
-        .animation({ duration: MOVE_DURATION_MS, curve: Curve.EaseInOut })
-      Column()
-        .width('100%')
-        .height(Math.max(this.overlayH - this.rectY - this.rectH, 0))
-        .position({ x: 0, y: this.rectY + this.rectH })
-        .backgroundColor(MASK_COLOR)
-        .onClick(() => {
-          this.advance()
-        })
-        .animation({ duration: MOVE_DURATION_MS, curve: Curve.EaseInOut })
-      Column()
-        .width(Math.max(this.rectX, 0))
-        .height(this.rectH)
-        .position({ x: 0, y: this.rectY })
-        .backgroundColor(MASK_COLOR)
-        .onClick(() => {
-          this.advance()
-        })
-        .animation({ duration: MOVE_DURATION_MS, curve: Curve.EaseInOut })
-      Column()
-        .width(Math.max(this.overlayW - this.rectX - this.rectW, 0))
-        .height(this.rectH)
-        .position({ x: this.rectX + this.rectW, y: this.rectY })
-        .backgroundColor(MASK_COLOR)
-        .onClick(() => {
-          this.advance()
-        })
-        .animation({ duration: MOVE_DURATION_MS, curve: Curve.EaseInOut })
 
-      // ── 四块补角：命令按 px 生成（见 buildCornerPaths），盒尺寸按 vp，
-      //    与描边框 16vp 圆角同心同径，圆角处不再漏亮缝 ──
-      Path()
-        .width(CORNER_RADIUS)
-        .height(CORNER_RADIUS)
-        .commands(this.cornerPaths[0])
-        .fill(MASK_COLOR)
-        .position({ x: this.cornerX(false), y: this.cornerY(false) })
-        .animation({ duration: MOVE_DURATION_MS, curve: Curve.EaseInOut })
-      Path()
-        .width(CORNER_RADIUS)
-        .height(CORNER_RADIUS)
-        .commands(this.cornerPaths[1])
-        .fill(MASK_COLOR)
-        .position({ x: this.cornerX(true), y: this.cornerY(false) })
-        .animation({ duration: MOVE_DURATION_MS, curve: Curve.EaseInOut })
-      Path()
-        .width(CORNER_RADIUS)
-        .height(CORNER_RADIUS)
-        .commands(this.cornerPaths[2])
-        .fill(MASK_COLOR)
-        .position({ x: this.cornerX(false), y: this.cornerY(true) })
-        .animation({ duration: MOVE_DURATION_MS, curve: Curve.EaseInOut })
-      Path()
-        .width(CORNER_RADIUS)
-        .height(CORNER_RADIUS)
-        .commands(this.cornerPaths[3])
-        .fill(MASK_COLOR)
-        .position({ x: this.cornerX(true), y: this.cornerY(true) })
-        .animation({ duration: MOVE_DURATION_MS, curve: Curve.EaseInOut })
-
-      // ── 高亮框：主题色描边 + 轻微提亮，浮在挖洞中央 ──
+      // ── 高亮框：主题色描边 + 轻微提亮，浮在挖孔中央（逐帧跟随插值位置）──
       Column()
         .width(this.rectW)
         .height(this.rectH)
@@ -294,7 +288,7 @@ export struct CoachMarkOverlay {
         .borderRadius(CORNER_RADIUS)
         .border({ width: 2, color: this.primaryColor })
         .backgroundColor('rgba(255,255,255,0.04)')
-        .animation({ duration: MOVE_DURATION_MS, curve: Curve.EaseInOut })
+        .hitTestBehavior(HitTestMode.Transparent)
 
       // ── 说明卡片：步骤序号 + 跳过 / 标题 / 描述 / 底部提示 ──
       Column({ space: 10 }) {
@@ -364,7 +358,6 @@ export struct CoachMarkOverlay {
           this.updateCardPosition()
         }
       })
-      .animation({ duration: MOVE_DURATION_MS, curve: Curve.EaseInOut })
     }
     .width('100%')
     .height('100%')
@@ -374,11 +367,8 @@ export struct CoachMarkOverlay {
       if (w > 0 && h > 0 && (w !== this.overlayW || h !== this.overlayH)) {
         this.overlayW = w
         this.overlayH = h
-        // 兜底重建补角路径：aboutToAppear 时 UIContext 可能还没就绪，
-        // 且窗口换屏/缩放后 px 换算是另一套值
-        this.buildCornerPaths()
         if (this.rectW <= 0) {
-          // 首帧先给中部默认高亮带，测量完成后由隐式动画滑到真实目标
+          // 首帧先给中部默认高亮带，测量完成后由插值动画滑到真实目标
           this.rectX = 24
           this.rectY = h * 0.3
           this.rectW = Math.max(w - 48, 0)
@@ -386,7 +376,8 @@ export struct CoachMarkOverlay {
           this.cardX = 16
           this.cardY = this.rectY + this.rectH + 12
         }
-        // 窗口尺寸变化（旋转/分栏/字体缩放）后重算高亮位置
+        // 窗口尺寸变化（旋转/分栏/字体缩放）后重算高亮位置并重绘
+        this.drawMask()
         this.scheduleMeasure()
       }
     })
