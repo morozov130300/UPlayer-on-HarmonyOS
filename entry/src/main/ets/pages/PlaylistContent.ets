@@ -78,6 +78,10 @@ export struct PlaylistContent {
   private coachSteps: CoachStep[] = []
   private coachStartTimer: number = -1
   private coachStartRetries: number = 0
+  // 「重新查看引导」请求（设置-关于清标记后 +1）：PlaylistContent 常驻不重建，
+  // 必须监听计数器才能在当前会话里重弹，而不是等下次冷启动
+  @StorageProp(AppStorageKeyConstants.KEY_GUIDE_REPLAY_REQUEST) @Watch('onGuideReplayRequest')
+  guideReplayRequest: number = 0
 
   // 歌单页引导步骤（目标组件 id 见 build() 中对应 .id()）
   private buildPlaylistCoachSteps(): CoachStep[] {
@@ -94,8 +98,19 @@ export struct PlaylistContent {
     return [s1, s2]
   }
 
-  // 首次进入歌单页自动弹引导：多选/文件夹编辑态不弹，重试几次直到空闲
+  // 首次进入歌单页自动弹引导（冷启动延迟 600ms 等首屏布局落位）
   private maybeStartPlaylistGuide(): void {
+    this.startPlaylistGuide(600)
+  }
+
+  // 设置-关于「重新查看引导」：本轮会话内重弹歌单页引导
+  private onGuideReplayRequest(): void {
+    this.coachStartRetries = 0
+    this.startPlaylistGuide(200)
+  }
+
+  // 延迟 delayMs 后开弹：多选/文件夹编辑态不弹，重试几次直到空闲
+  private startPlaylistGuide(delayMs: number): void {
     if (SettingsStore.getInstance().get(AppStorageKeyConstants.SETTING_GUIDE_PLAYLIST_DONE, '') === '1') {
       return
     }
@@ -108,13 +123,15 @@ export struct PlaylistContent {
       if (this.isAnySelectMode()) {
         if (this.coachStartRetries < 6) {
           this.coachStartRetries++
-          this.maybeStartPlaylistGuide()
+          this.startPlaylistGuide(delayMs)
         }
         return
       }
       this.coachSteps = this.buildPlaylistCoachSteps()
+      // 正在显示时先卸载再挂载，保证从第 1 步重新开始并重新测量
+      this.coachStepIndex = -1
       this.coachStepIndex = 0
-    }, 600)
+    }, delayMs)
   }
 
   // 引导结束（走完/跳过/中途切页）：落「已看过」标记并关浮层

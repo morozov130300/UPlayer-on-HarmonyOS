@@ -158,9 +158,30 @@ export struct HomeContent {
   private coachSteps: CoachStep[] = []
   private coachStartTimer: number = -1
   private coachStartRetries: number = 0
+  // 「重新查看引导」请求（设置-关于清标记后 +1）：HomeContent 常驻不重建，
+  // aboutToAppear 不会再跑，必须监听计数器才能在当前会话里立即重弹
+  @StorageProp(AppStorageKeyConstants.KEY_GUIDE_REPLAY_REQUEST) @Watch('onGuideReplayRequest')
+  guideReplayRequest: number = 0
 
-  // 首页引导步骤（目标组件 id 见 build() 中对应 .id()）
+  // 首页引导步骤（目标组件 id 见 build() 中对应 .id()）。
+  // 曲库为空（新用户/未导入）时左滑删除与长按管理无对象，改为指向「暂无歌曲，点击添加」
+  // 空态入口的导入引导，排序/平铺两枚胶囊保留（导入后即可使用）
   private buildHomeCoachSteps(): CoachStep[] {
+    const sortStep: CoachStep = new CoachStep()
+    sortStep.targetId = 'coach_home_sort_pill'
+    sortStep.title = '切换排序方式'
+    sortStep.description = '点击胶囊循环切换：歌名 / 添加时间 / 自定义 / 最近播放。'
+    const viewStep: CoachStep = new CoachStep()
+    viewStep.targetId = 'coach_home_view_pill'
+    viewStep.title = '切换平铺方式'
+    viewStep.description = '点击胶囊循环切换：平铺 / 文件夹 / 专辑 / 歌手。'
+    if (this.songs.length === 0) {
+      const importStep: CoachStep = new CoachStep()
+      importStep.targetId = 'coach_home_empty_hint'
+      importStep.title = '添加本地歌曲'
+      importStep.description = '点击这里导入本地歌曲；导入后即可左滑删除、长按批量管理歌曲。'
+      return [importStep, sortStep, viewStep]
+    }
     const s1: CoachStep = new CoachStep()
     s1.targetId = 'coach_home_list_area'
     s1.maxHighlightHeight = 200
@@ -171,19 +192,22 @@ export struct HomeContent {
     s2.maxHighlightHeight = 200
     s2.title = '长按管理歌曲'
     s2.description = '长按任意歌曲进入批量管理，可全选、加入歌单或删除。'
-    const s3: CoachStep = new CoachStep()
-    s3.targetId = 'coach_home_sort_pill'
-    s3.title = '切换排序方式'
-    s3.description = '点击胶囊循环切换：歌名 / 添加时间 / 自定义 / 最近播放。'
-    const s4: CoachStep = new CoachStep()
-    s4.targetId = 'coach_home_view_pill'
-    s4.title = '切换平铺方式'
-    s4.description = '点击胶囊循环切换：平铺 / 文件夹 / 专辑 / 歌手。'
-    return [s1, s2, s3, s4]
+    return [s1, s2, sortStep, viewStep]
   }
 
-  // 首次进入首页自动弹引导：搜索态/多选态/筛选面板打开时不弹，重试几次直到空闲
+  // 首次进入首页自动弹引导（冷启动延迟 600ms 等首屏布局落位）
   private maybeStartHomeGuide(): void {
+    this.startHomeGuide(600)
+  }
+
+  // 设置-关于「重新查看引导」：清标记已完成，本轮会话内立即重弹（不等下次冷启动）
+  private onGuideReplayRequest(): void {
+    this.coachStartRetries = 0
+    this.startHomeGuide(200)
+  }
+
+  // 延迟 delayMs 后开弹：搜索态/多选态/筛选面板打开时不弹，重试几次直到空闲
+  private startHomeGuide(delayMs: number): void {
     if (SettingsStore.getInstance().get(AppStorageKeyConstants.SETTING_GUIDE_HOME_DONE, '') === '1') {
       return
     }
@@ -196,13 +220,15 @@ export struct HomeContent {
       if (this.isSearchActive || this.isMultiSelectMode || this.isFilterPanelVisible) {
         if (this.coachStartRetries < 6) {
           this.coachStartRetries++
-          this.maybeStartHomeGuide()
+          this.startHomeGuide(delayMs)
         }
         return
       }
       this.coachSteps = this.buildHomeCoachSteps()
+      // 正在显示时先卸载再挂载，保证从第 1 步重新开始并重新测量
+      this.coachStepIndex = -1
       this.coachStepIndex = 0
-    }, 600)
+    }, delayMs)
   }
 
   // 引导结束（走完/跳过/中途切页）：落「已看过」标记并关浮层
@@ -1518,20 +1544,24 @@ export struct HomeContent {
           })
 
           if (this.displayItems.length === 0) {
-            ScaleButton({
-              pressScale: StyleConstants.PRESS_SCALE,
-              hoverScale: StyleConstants.HOVER_SCALE,
-              onButtonTap: () => {
-                if (this.searchText.trim().length === 0) {
-                  this.onPlusClick()
+            Column() {
+              ScaleButton({
+                pressScale: StyleConstants.PRESS_SCALE,
+                hoverScale: StyleConstants.HOVER_SCALE,
+                onButtonTap: () => {
+                  if (this.searchText.trim().length === 0) {
+                    this.onPlusClick()
+                  }
                 }
+              }) {
+                Text(this.searchText.trim().length > 0 ? '未找到匹配的歌曲' : '暂无歌曲，点击添加')
+                  .fontSize(Math.round(14 * this.fontSizeScale))
+                  .fontColor($r('app.color.text_twenty_color'))
+                  .textAlign(TextAlign.Center)
               }
-            }) {
-              Text(this.searchText.trim().length > 0 ? '未找到匹配的歌曲' : '暂无歌曲，点击添加')
-                .fontSize(Math.round(14 * this.fontSizeScale))
-                .fontColor($r('app.color.text_twenty_color'))
-                .textAlign(TextAlign.Center)
             }
+            // 新手引导（曲库为空）的高亮锚点：空态导入入口
+            .id('coach_home_empty_hint')
           }
 
           ScrollBar({
