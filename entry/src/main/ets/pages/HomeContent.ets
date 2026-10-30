@@ -1661,16 +1661,16 @@ export struct HomeContent {
                 TextInput({ text: this.searchText, placeholder: '搜索歌曲 / 歌手 / 专辑 / 拼音' })
                   .id('home_search_input')
                   .layoutWeight(1)
-                  .height('100%')
+                  // 光标高度跟随组件高度：不设 height（否则光标撑满 32vp 顶到胶囊圆角），
+                  // 用 lineHeight 撑起输入框自然高度，由行 alignItems 居中
+                  .lineHeight(Math.round(20 * this.fontSizeScale))
                   .fontSize(Math.round(14 * this.fontSizeScale))
                   .placeholderFont({ size: Math.round(14 * this.fontSizeScale) })
                   .placeholderColor($r('app.color.text_twenty_color'))
                   .fontColor($r('app.color.text_primary'))
                   .caretColor(this.primaryColor)
                   .backgroundColor(Color.Transparent)
-                  // 上下内边距压缩内容区：光标随内容区高度绘制（不再撑满 32vp
-                  // 顶到胶囊圆角边缘），文字在内容区内居中不受影响
-                  .padding({ left: 0, right: 0, top: 6, bottom: 6 })
+                  .padding({ left: 0, right: 0 })
                   .onChange((value: string) => {
                     this.onSearchTextChanged(value)
                   })
