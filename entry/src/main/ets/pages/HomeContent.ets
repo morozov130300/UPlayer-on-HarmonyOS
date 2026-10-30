@@ -1670,6 +1670,9 @@ export struct HomeContent {
                   .fontColor($r('app.color.text_primary'))
                   .caretColor(this.primaryColor)
                   .backgroundColor(Color.Transparent)
+                  // TextInput 自带内部圆角会按圆角裁切光标/文字（外层胶囊圆角无关），
+                  // 置 0 关闭内部裁切，圆角只保留在外层胶囊上
+                  .borderRadius(0)
                   .padding({ left: 0, right: 0 })
                   .onChange((value: string) => {
                     this.onSearchTextChanged(value)
