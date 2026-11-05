@@ -404,6 +404,7 @@ public:
         renderChunkSlowCount_.store(0, std::memory_order_relaxed);
         lastUnderrunSteadyMs_.store(0, std::memory_order_relaxed);
         converterShortCount_.store(0, std::memory_order_relaxed);
+        decodedFrames_.store(0, std::memory_order_relaxed);
         queueDryCount_.store(0, std::memory_order_relaxed);
         holdStartCount_.store(0, std::memory_order_relaxed);
         holdReleaseCount_.store(0, std::memory_order_relaxed);
@@ -1420,6 +1421,10 @@ public:
             return;
         }
         const float speed = std::clamp(playbackSpeed_.load(std::memory_order_relaxed), 0.25f, 4.0f);
+        // 1.0 且本流从未下发过非 1.0 → 变速通道本就关闭，绝不再调 SetSpeed
+        if (std::fabs(speed - 1.0f) < 0.01f && !rendererSpeedNonUnity_.load(std::memory_order_relaxed)) {
+            return;
+        }
         const OH_AudioStream_Result result = OH_AudioRenderer_SetSpeed(renderer_, speed);
         float actual = 1.0f;
         const bool readOk = OH_AudioRenderer_GetSpeed(renderer_, &actual) == AUDIOSTREAM_SUCCESS;
@@ -1467,6 +1472,14 @@ public:
             return true;
         }
         // 倍速完全交给渲染器（NORMAL 模式支持 OH_AudioRenderer_SetSpeed）。
+        // 但 1.0 是默认态：若本流从未下发过非 1.0，直接视为已生效，绝不调用 SetSpeed——
+        // 实测部分 ROM 上该调用会打开变速/时间伸缩通道，出现「帧率正常、内容超前、音调不变」的假倍速。
+        if (std::fabs(clamped - 1.0f) < 0.01f &&
+            !rendererSpeedNonUnity_.load(std::memory_order_relaxed)) {
+            playbackSpeed_.store(1.0f, std::memory_order_relaxed);
+            effectiveSpeed_.store(1.0f, std::memory_order_relaxed);
+            return true;
+        }
         // 这里不做进度基线重锚：我们喂给渲染器的是 1:1 的内容 PCM，渲染器按 s 倍速率消费，
         // 所以「累计已消费内容帧 / 采样率」本身就是内容时间，公式与速率无关、天然线性。
         // 重锚反而会把「已提交帧」当成「已呈现帧」，每次调速都永久少算一个回调深度。
@@ -1481,6 +1494,7 @@ public:
         }
         playbackSpeed_.store(clamped, std::memory_order_relaxed);
         effectiveSpeed_.store(clamped, std::memory_order_relaxed);
+        rendererSpeedNonUnity_.store(std::fabs(clamped - 1.0f) >= 0.01f, std::memory_order_relaxed);
         // WARN 级：hilog 默认级别会过滤 INFO，关键链路必须能在常规抓取里看到
         OH_LOG_Print(LOG_APP, LOG_WARN, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "speed applied via renderer speed=%{public}.3f", clamped);
@@ -2937,6 +2951,9 @@ private:
                     speedOk ? 1 : 0);
             }
             rendererSpeedApplied_.store(speedOk, std::memory_order_relaxed);
+            // 新流未被下发过非 1.0 速率：变速通道保持关闭状态
+            rendererSpeedNonUnity_.store(std::fabs(reqSpeed - 1.0f) >= 0.01f &&
+                speedOk, std::memory_order_relaxed);
             OH_AudioRenderer_SetVolume(renderer_, volume_);
             int32_t actualRate = 0;
             int32_t actualChannels = 0;
@@ -3058,6 +3075,7 @@ private:
         healthPrevReqBytes_ = pipelineRenderReqBytes_.load(std::memory_order_relaxed);
         healthPrevRespBytes_ = pipelineRenderRespBytes_.load(std::memory_order_relaxed);
         healthPrevInBytes_ = pipelineInputBytes_.load(std::memory_order_relaxed);
+        healthPrevDecodedFrames_ = decodedFrames_.load(std::memory_order_relaxed);
         decoderGapCount_ = 0;
         decoderGapMaxMs_ = 0;
         decoderGapLastOutputMs_ = 0;
@@ -3176,6 +3194,12 @@ private:
                                 }
                             }
                             decoderGapLastOutputMs_ = nowSteadyMs;
+                            // 内容源帧计数（立体声 int16 → 每帧 4 字节）：健康行据此算出
+                            // 每秒推进了多少「源帧」，与 consFps 对比可判定内容是否被跳过
+                            if (attr.size > 0) {
+                                decodedFrames_.fetch_add(static_cast<uint64_t>(attr.size) / 4,
+                                    std::memory_order_relaxed);
+                            }
                             pcmQueue_.insert(pcmQueue_.end(), begin, begin + attr.size);
                             currentPositionMs_ = attr.pts / 1000;
                             firstPcmReady_ = true;
@@ -4556,6 +4580,17 @@ private:
         healthPrevReqBytes_ = reqBytes;
         healthPrevRespBytes_ = respBytes;
         healthPrevInBytes_ = inBytes;
+        // 内容推进速率取证：解码侧每秒吐出多少「源帧」。srcX = 每秒推进的内容秒数，
+        // 1.0 表示内容按实时推进；明显偏离 1.0 说明内容被跳过（快进）或被重复（变慢），
+        // 与 consFps/expFps（渲染器每秒拉走的帧数）相互独立，可唯一定位「倍速」发生在哪一侧。
+        const uint64_t decodedNow = decodedFrames_.load(std::memory_order_relaxed);
+        const uint64_t decodedDelta = decodedNow >= healthPrevDecodedFrames_ ?
+            decodedNow - healthPrevDecodedFrames_ : 0;
+        healthPrevDecodedFrames_ = decodedNow;
+        const double srcFps = static_cast<double>(decodedDelta) * 1000.0 /
+            static_cast<double>(reportWinMs);
+        const int32_t srcRateForRatio = resampleInputRate_ > 0 ? resampleInputRate_ : 48000;
+        const double srcX = srcFps / static_cast<double>(srcRateForRatio);
         const int64_t lastUnderrunSteady = lastUnderrunSteadyMs_.load(std::memory_order_relaxed);
         const int64_t lastUnderrunAgoMs = lastUnderrunSteady > 0 ? nowMs - lastUnderrunSteady : -1;
         // 倍速取证：呈递帧率（渲染器每秒真实拉走多少帧）对比理论值 48000×倍速
@@ -4574,7 +4609,8 @@ private:
             "short=%{public}llu(+%{public}llu) dry=%{public}llu(+%{public}llu) "
             "gap=%{public}llu(+%{public}llu maxGap=%{public}lld) "
             "hold=%{public}llu/%{public}llu flow=%{public}llu/%{public}llu/%{public}llukBps "
-            "speed=%{public}.3f consFps=%{public}.0f expFps=%{public}.0f winMs=%{public}lld",
+            "speed=%{public}.3f consFps=%{public}.0f expFps=%{public}.0f "
+            "srcFps=%{public}.0f srcX=%{public}.3f winMs=%{public}lld",
             activeEqEnabled_.load() ? 1 : 0,
             levelPeakSnapshot_.load(std::memory_order_relaxed),
             static_cast<double>(levelRmsTenfoldSnapshot_.load(std::memory_order_relaxed)) / 10.0,
@@ -4607,6 +4643,8 @@ private:
             healthSpeed,
             consumeFps,
             static_cast<double>(48000.0f * healthSpeed),
+            srcFps,
+            srcX,
             static_cast<long long>(reportWinMs));
         decoderGapMaxMs_ = 0;
     }
@@ -4756,6 +4794,10 @@ private:
     std::atomic<float> effectiveSpeed_ = 1.0f;
     // 回退路线（渲染器 SetSpeed）是否在起播时下发成功
     std::atomic<bool> rendererSpeedApplied_{false};
+    // 当前渲染器是否被下发过非 1.0 速率：仅当为真时才允许再调 SetSpeed，
+    // 避免在 1.0 时也去触碰 NORMAL 流的变速通道（部分 ROM 上该调用会打开时间伸缩处理，
+    // 造成「帧率正常、内容超前、音调不变」的假倍速）
+    std::atomic<bool> rendererSpeedNonUnity_{false};
     // 变速节点能力探测缓存（仅缓存「查询成功」的结论）。mutable+atomic：渲染线程/JS 线程都可能调用
     mutable std::atomic<bool> tempoSupportProbed_{false};
     mutable std::atomic<bool> tempoSupported_{false};
@@ -4794,6 +4836,7 @@ private:
     // （届时各线程未启动，无竞争），播放中由解码线程本地基线 healthPrev* 算差值，绝不跨线程清零。
     std::atomic<int64_t> lastUnderrunSteadyMs_ = 0;      // 最近一次 RT 欠载时刻（steady 毫秒）
     std::atomic<uint64_t> converterShortCount_ = 0;      // 转换器短读次数（源供数断流）
+    std::atomic<uint64_t> decodedFrames_ = 0;            // 解码输出的内容帧累计（源采样率）
     std::atomic<uint64_t> queueDryCount_ = 0;            // 转换器输入回调 8ms 等待仍不足 4 字节次数
     std::atomic<uint64_t> holdStartCount_ = 0;           // 直通保持期进入/释放计数（健康行汇总）
     std::atomic<uint64_t> holdReleaseCount_ = 0;
@@ -4828,6 +4871,7 @@ private:
     uint64_t healthPrevReqBytes_ = 0;
     uint64_t healthPrevRespBytes_ = 0;
     uint64_t healthPrevInBytes_ = 0;
+    uint64_t healthPrevDecodedFrames_ = 0;
     uint64_t decoderGapCount_ = 0;
     int64_t decoderGapMaxMs_ = 0;
     int64_t decoderGapLastOutputMs_ = 0;
