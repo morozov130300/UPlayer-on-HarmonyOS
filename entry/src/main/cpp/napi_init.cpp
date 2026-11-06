@@ -541,6 +541,9 @@ public:
         // 只有真正下发成功才算生效；否则钉在 1.0，进度绝不按未生效的速率推进。
         effectiveSpeed_.store(rendererSpeedApplied_.load() ?
             playbackSpeed_.load(std::memory_order_relaxed) : 1.0f, std::memory_order_relaxed);
+        // 起播 1s 后复核渲染器实际速率（见 VerifyRendererSpeedOnce）：确认「界面 1.00x =
+        // 音频 1x」，捕捉从倍速回落/系统侧改写留下的速率残留
+        speedVerifyPending_.store(true, std::memory_order_relaxed);
         converterInputFinished_.store(false);
         inputWindowFrames_ = 0;
         inputWindowStartMs_ = 0;
@@ -1432,6 +1435,56 @@ public:
             UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "speed after start speed=%{public}.3f set=%{public}d read=%{public}d actual=%{public}.3f",
             speed, static_cast<int>(result), readOk ? 1 : 0, actual);
+    }
+
+    // 起播约 1s 后一次性复核渲染器实际速率（解码线程 1Hz 健康行内调用）：
+    // 起播时按请求值下发速率（请求 1.0 走默认态，不触碰变速通道），但「下发正确」不等于
+    // 「运行时仍是该值」——从倍速回落、以及部分 ROM 的速率改写，都会让实际速率与请求值脱节，
+    // 听感就是「开播一秒之后突然倍速」。这里回读一次实际速率取证，必要时纠正。
+    // 只在复核期内动作一次：不参与播放路径，不阻塞，拿不到锁（正在换曲/停止）就放弃本次复核。
+    void VerifyRendererSpeedOnce()
+    {
+        if (!speedVerifyPending_.exchange(false, std::memory_order_acq_rel)) {
+            return;
+        }
+        std::unique_lock<std::mutex> lock(playerOperationMutex, std::try_to_lock);
+        if (!lock.owns_lock() || renderer_ == nullptr || lpActive_.load()) {
+            return;
+        }
+        float actual = 1.0f;
+        if (OH_AudioRenderer_GetSpeed(renderer_, &actual) != AUDIOSTREAM_SUCCESS) {
+            OH_LOG_Print(LOG_APP, LOG_WARN, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "speed verify skipped: get speed failed");
+            return;
+        }
+        const float requested =
+            std::clamp(playbackSpeed_.load(std::memory_order_relaxed), 0.25f, 4.0f);
+        if (std::fabs(actual - requested) < 0.01f) {
+            // 一致也必须留一条 WARN：hilog 默认过滤 INFO，这条是「起播后渲染器真实速率」的
+            // 唯一取证点——听感变快而这里仍是 1.000，即可排除渲染器倍速，转向其他链路定位
+            OH_LOG_Print(LOG_APP, LOG_WARN, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "speed verify ok requested=%{public}.3f actual=%{public}.3f", requested, actual);
+            return;
+        }
+        // 请求 1.0 且本流从未下发过非 1.0：绝不为了「纠正」去调 SetSpeed(1.0)。
+        // 该调用本身在部分 ROM 上就会打开时间伸缩通道（造成「音调不变」的假倍速），
+        // 而 1.0 是流的默认态、无需纠正，故这里只取证不动手。
+        if (std::fabs(requested - 1.0f) < 0.01f &&
+            !rendererSpeedNonUnity_.load(std::memory_order_relaxed)) {
+            OH_LOG_Print(LOG_APP, LOG_WARN, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                "speed verify mismatch ignored (speed channel untouched) requested=%{public}.3f "
+                "actual=%{public}.3f", requested, actual);
+            return;
+        }
+        const OH_AudioStream_Result setResult = OH_AudioRenderer_SetSpeed(renderer_, requested);
+        OH_LOG_Print(LOG_APP, LOG_WARN, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "speed drift corrected requested=%{public}.3f actual=%{public}.3f set=%{public}d",
+            requested, actual, static_cast<int>(setResult));
+        if (setResult == AUDIOSTREAM_SUCCESS) {
+            effectiveSpeed_.store(requested, std::memory_order_relaxed);
+            rendererSpeedNonUnity_.store(std::fabs(requested - 1.0f) >= 0.01f,
+                std::memory_order_relaxed);
+        }
     }
 
     bool SetSpeed(float speed)
@@ -4552,6 +4605,8 @@ private:
         if (nowMs - healthLastReportMs_ < HEALTH_LOG_INTERVAL_MS) {
             return;
         }
+        // 起播约 1s 的速率复核挂在这里（1Hz，天然是「开播后一秒」这个时间点）
+        VerifyRendererSpeedOnce();
         // 真实窗口毫秒：健康行只在渲染块里被调用，实际间隔是 1000ms + 若干毫秒抖动。
         // 用常量 1000 作分母会让 consFps 系统性偏高几个百分点，无法据此判断倍速是否真落地，
         // 故这里记录真实间隔并把分母换成它（日志里输出 winMs 便于核对）。
@@ -4794,6 +4849,8 @@ private:
     std::atomic<float> effectiveSpeed_ = 1.0f;
     // 回退路线（渲染器 SetSpeed）是否在起播时下发成功
     std::atomic<bool> rendererSpeedApplied_{false};
+    // 起播约 1s 后的一次性渲染器速率复核（Play 置位，解码线程消费）
+    std::atomic<bool> speedVerifyPending_{false};
     // 当前渲染器是否被下发过非 1.0 速率：仅当为真时才允许再调 SetSpeed，
     // 避免在 1.0 时也去触碰 NORMAL 流的变速通道（部分 ROM 上该调用会打开时间伸缩处理，
     // 造成「帧率正常、内容超前、音调不变」的假倍速）
