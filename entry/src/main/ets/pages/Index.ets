@@ -51,6 +51,9 @@ struct MainPage {
   @StorageLink(AppStorageKeyConstants.KEY_PLAYLIST_MULTI_SELECT) playlistMultiSelect: boolean = false
   // 歌单页文件夹编辑态：同属歌单页的批量操作，返回键/ESC 也要能收回
   @StorageLink(AppStorageKeyConstants.KEY_PLAYLIST_FOLDER_EDIT) playlistFolderEdit: boolean = false
+  // 新手引导浮层激活计数（CoachMarkOverlay 挂载 +1/卸载 -1）：>0 时关闭 Tabs 滑动切页、
+  // 并拦截点击切页，避免模拟歌曲行的横向左滑手势被 Tabs 内置切页手势抢走
+  @StorageLink(AppStorageKeyConstants.KEY_GUIDE_ACTIVE) guideActive: number = 0
   // 全局悬浮加号可见性（由各内容页上报）：滚动隐藏、多选/编辑态变化时写入，
   // 首页/歌单共用 Index 上的一颗加号，切页不重建不位移，设置页隐藏
   @StorageLink(AppStorageKeyConstants.KEY_HOME_PLUS_VISIBLE) homePlusVisible: boolean = true
@@ -458,9 +461,10 @@ struct MainPage {
           .pointLight({
             options: {
               color: this.followLightColor(),
-              intensity: this.spikeBarLightOn && this.tabLightColor !== 'none' ? 1.0 : 0,
-              height: 75,
-              bloom: 0.9
+              // 跟手光效加浓：光斑更亮、光柱更高、辉光更散，按压时的光晕更厚重
+              intensity: this.spikeBarLightOn && this.tabLightColor !== 'none' ? 1.6 : 0,
+              height: 110,
+              bloom: 1.4
             }
           })
           .buildEffect())
@@ -999,7 +1003,9 @@ struct MainPage {
         ? this.getBarBackgroundBlur() : BlurStyle.NONE)
       // PC 禁滑动切页：系统把鼠标滚轮转换成横向滑动事件，scrollable(true) 下滚一轮就切一次页签；
       // PC 上切页本就走 TabBar 点击，关掉滑动切页后滚轮回归列表滚动。触屏设备保留滑动切页。
-      .scrollable(!this.isPC)
+      // 引导浮层在场时同样关闭：模拟歌曲行用横向 PanGesture 演示左滑删除，若 Tabs 仍可滑动切页，
+      // 两个手势竞争会把首页直接划到歌单页（onContentWillChange 同时兜住点击切页）
+      .scrollable(!this.isPC && this.guideActive <= 0)
       .animationDuration(StyleConstants.ANIMATION_SWIPER_DURATION)
       .onChange((index: number) => {
         // tab 切换：弹簧曲线驱动指示器光晕从旧 tab 滑向新 tab，图标缩放/变色同帧过渡
@@ -1014,6 +1020,11 @@ struct MainPage {
         this.updatePlusTabMounted(index)
       })
       .onContentWillChange((current: number, coming: number) => {
+        // 引导浮层在场时拦截一切切页（滑动/点击 TabBar/键盘方向键/控制器 changeIndex），
+        // 与遮罩「拦截全部交互」语义一致；返回 false 不触发切换
+        if (this.guideActive > 0) {
+          return false
+        }
         this.updatePlusTabMounted(coming)
         return true
       })

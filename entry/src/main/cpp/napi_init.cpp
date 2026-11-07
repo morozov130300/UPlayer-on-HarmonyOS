@@ -69,6 +69,10 @@ constexpr double DENSITY_SWITCH_BAND = 0.15;             // 密度因子滞回�
 constexpr int32_t DENSITY_PLAYBACK_CONFIRM_WINDOWS = 3;  // 播放中漂移确认窗口数（保守，防误触发）
 constexpr int32_t DENSITY_HOLD_CONFIRM_WINDOWS = 2;      // 保持期内确认窗口数（300ms 内完成收敛）
 constexpr int64_t DENSITY_HOLD_COOLDOWN_MS = 2000;       // 播放中自动保护切换冷却（防频繁直通闪断）
+// 密度审计兜底（解码线程健康行）：连续 2 个 1 秒窗口比值一致才触发保持；
+// 启动后前 3 个健康行（≈3 秒）不审计（预拉/预热污染比值）
+constexpr int32_t PIPELINE_DENSITY_AUDIT_WINDOWS = 2;
+constexpr uint64_t PIPELINE_DENSITY_AUDIT_SKIP_REPORTS = 3;
 // 管线短响应补块：声场/环境音/美声/空间渲染经系统效果服务异步 IPC 分块交付，RenderFrame
 // 请求整帧时服务块偶发未就绪 → responseSize 短于请求 → 帧内数据空洞即随机「沙沙」声
 // （均衡器为内联同步 DSP 永不短响应，与「除均衡器外开任何音效都有沙声」现象吻合）。
@@ -404,6 +408,7 @@ public:
         renderChunkSlowCount_.store(0, std::memory_order_relaxed);
         lastUnderrunSteadyMs_.store(0, std::memory_order_relaxed);
         converterShortCount_.store(0, std::memory_order_relaxed);
+        ringDropSamples_.store(0, std::memory_order_relaxed);
         decodedFrames_.store(0, std::memory_order_relaxed);
         queueDryCount_.store(0, std::memory_order_relaxed);
         holdStartCount_.store(0, std::memory_order_relaxed);
@@ -423,8 +428,11 @@ public:
         holdCarrySamples_ = 0;
         densityPendingCandidate_ = 0;
         densityPendingCount_ = 0;
-        densityRetarget_ = 0;
+        densityRetarget_.store(0, std::memory_order_relaxed);
+        densityRetargetSeed_.store(0, std::memory_order_relaxed);
         densityHoldLastMs_ = 0;
+        densityAuditStreak_ = 0;
+        densityAuditCandidate_ = 0;
         // 每次 Play 强制经历一次「激活翻转 → 直通保持」，首帧不直接用旧因子喂管线
         lastUsePipeline_ = false;
         if (holdScratch_.size() < static_cast<size_t>(PIPELINE_HOLD_SCRATCH_SAMPLES)) {
@@ -536,14 +544,21 @@ public:
             startBaseMs = targetPositionMs;
         }
         resampleInputRate_ = sampleRate_;
-        inputDensityFactor_.store(1);
+        // 密度因子初值：跨曲/跨会话记忆的上次收敛值（同机同引擎形态恒定）。
+        // 消除起播前几秒因子=1 而引擎 2× 拉取的变调变速窗口；保持期重测与
+        // 解码线程审计仍会在初值失准时自行纠正（纠正机制与此前完全一致）。
+        int32_t densityHint = persistedDensityHint_.load(std::memory_order_relaxed);
+        if (densityHint != 1 && densityHint != 2) {
+            densityHint = 1;
+        }
+        inputDensityFactor_.store(densityHint);
+        OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+            "input density initial=%{public}d (hint=%{public}d)",
+            inputDensityFactor_.load(), persistedDensityHint_.load(std::memory_order_relaxed));
         // 起播时的生效速率：ConfigureRenderer 已把当前倍速下发到 NORMAL 渲染器并校验了结果，
         // 只有真正下发成功才算生效；否则钉在 1.0，进度绝不按未生效的速率推进。
         effectiveSpeed_.store(rendererSpeedApplied_.load() ?
             playbackSpeed_.load(std::memory_order_relaxed) : 1.0f, std::memory_order_relaxed);
-        // 起播 1s 后复核渲染器实际速率（见 VerifyRendererSpeedOnce）：确认「界面 1.00x =
-        // 音频 1x」，捕捉从倍速回落/系统侧改写留下的速率残留
-        speedVerifyPending_.store(true, std::memory_order_relaxed);
         converterInputFinished_.store(false);
         inputWindowFrames_ = 0;
         inputWindowStartMs_ = 0;
@@ -1435,56 +1450,6 @@ public:
             UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "speed after start speed=%{public}.3f set=%{public}d read=%{public}d actual=%{public}.3f",
             speed, static_cast<int>(result), readOk ? 1 : 0, actual);
-    }
-
-    // 起播约 1s 后一次性复核渲染器实际速率（解码线程 1Hz 健康行内调用）：
-    // 起播时按请求值下发速率（请求 1.0 走默认态，不触碰变速通道），但「下发正确」不等于
-    // 「运行时仍是该值」——从倍速回落、以及部分 ROM 的速率改写，都会让实际速率与请求值脱节，
-    // 听感就是「开播一秒之后突然倍速」。这里回读一次实际速率取证，必要时纠正。
-    // 只在复核期内动作一次：不参与播放路径，不阻塞，拿不到锁（正在换曲/停止）就放弃本次复核。
-    void VerifyRendererSpeedOnce()
-    {
-        if (!speedVerifyPending_.exchange(false, std::memory_order_acq_rel)) {
-            return;
-        }
-        std::unique_lock<std::mutex> lock(playerOperationMutex, std::try_to_lock);
-        if (!lock.owns_lock() || renderer_ == nullptr || lpActive_.load()) {
-            return;
-        }
-        float actual = 1.0f;
-        if (OH_AudioRenderer_GetSpeed(renderer_, &actual) != AUDIOSTREAM_SUCCESS) {
-            OH_LOG_Print(LOG_APP, LOG_WARN, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                "speed verify skipped: get speed failed");
-            return;
-        }
-        const float requested =
-            std::clamp(playbackSpeed_.load(std::memory_order_relaxed), 0.25f, 4.0f);
-        if (std::fabs(actual - requested) < 0.01f) {
-            // 一致也必须留一条 WARN：hilog 默认过滤 INFO，这条是「起播后渲染器真实速率」的
-            // 唯一取证点——听感变快而这里仍是 1.000，即可排除渲染器倍速，转向其他链路定位
-            OH_LOG_Print(LOG_APP, LOG_WARN, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                "speed verify ok requested=%{public}.3f actual=%{public}.3f", requested, actual);
-            return;
-        }
-        // 请求 1.0 且本流从未下发过非 1.0：绝不为了「纠正」去调 SetSpeed(1.0)。
-        // 该调用本身在部分 ROM 上就会打开时间伸缩通道（造成「音调不变」的假倍速），
-        // 而 1.0 是流的默认态、无需纠正，故这里只取证不动手。
-        if (std::fabs(requested - 1.0f) < 0.01f &&
-            !rendererSpeedNonUnity_.load(std::memory_order_relaxed)) {
-            OH_LOG_Print(LOG_APP, LOG_WARN, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                "speed verify mismatch ignored (speed channel untouched) requested=%{public}.3f "
-                "actual=%{public}.3f", requested, actual);
-            return;
-        }
-        const OH_AudioStream_Result setResult = OH_AudioRenderer_SetSpeed(renderer_, requested);
-        OH_LOG_Print(LOG_APP, LOG_WARN, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-            "speed drift corrected requested=%{public}.3f actual=%{public}.3f set=%{public}d",
-            requested, actual, static_cast<int>(setResult));
-        if (setResult == AUDIOSTREAM_SUCCESS) {
-            effectiveSpeed_.store(requested, std::memory_order_relaxed);
-            rendererSpeedNonUnity_.store(std::fabs(requested - 1.0f) >= 0.01f,
-                std::memory_order_relaxed);
-        }
     }
 
     bool SetSpeed(float speed)
@@ -3119,6 +3084,7 @@ private:
         // Phase 4：单调计数器播放中绝不跨线程清零，此处仅复位本线程差值基线与私有指标，
         // 首条健康行在 1 秒后输出，差值从本基线起算
         healthLastReportMs_ = 0;
+        healthReportCount_ = 0;
         healthPrevFrames_ = rtSubmittedFrames_.load(std::memory_order_relaxed);
         healthPrevUnderruns_ = ringUnderrunCount_.load(std::memory_order_relaxed);
         healthPrevSlowChunks_ = renderChunkSlowCount_.load(std::memory_order_relaxed);
@@ -3603,12 +3569,18 @@ private:
                 densityPendingCandidate_ = 0;
                 densityPendingCount_ = 0;
                 if (inHold) {
-                    densityRetarget_ = candidate;
+                    densityRetarget_.store(candidate, std::memory_order_relaxed);
                     OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                         "input density retarget=%{public}d confirmed in hold (measuredFps=%{public}.1f)",
                         candidate, measuredFps);
                 } else if (densityHoldLastMs_ == 0 ||
                     SteadyNowMs() - densityHoldLastMs_ >= DENSITY_HOLD_COOLDOWN_MS) {
+                    // 播放中确认的目标档随保持请求播种：保持期起点直接预应用。
+                    // 本机实测过保持期内密度测量确认失效（预热只拉单帧，引擎预拉
+                    // 缓存使窗口测值长期低于真实密度），若在此丢弃已确认档，因子
+                    // 收敛将整曲失败（表现为 2 倍速高音调持续到曲终）。种子应用
+                    // 仍发生在静音预热后、释放渲染前，可听端全程直通保护，无感。
+                    densityRetargetSeed_.store(candidate, std::memory_order_relaxed);
                     pipelineHoldRequested_.store(true);
                     OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                         "input density drift -> hold requested (candidate=%{public}d "
@@ -3775,6 +3747,12 @@ private:
             return;
         }
         const size_t writable = std::min(samples, capacity - ringFilled_);
+        // 静默截断曾经是「内容被跳过」的元凶：写不满即丢弃，源侧却已推进。
+        // 保留计数并上报 health 行，任何一次非零都说明生产侧越过消费侧，必须查。
+        if (writable < samples) {
+            ringDropSamples_.fetch_add(static_cast<uint64_t>(samples - writable),
+                std::memory_order_relaxed);
+        }
         for (size_t i = 0; i < writable; i++) {
             ringBuffer_[ringWritePos_] = data[i];
             ringWritePos_ = (ringWritePos_ + 1) % capacity;
@@ -3825,6 +3803,12 @@ private:
                     wasPaused = true;
                     continue;
                 }
+                // 环余量不足（wait_for 20ms 超时兜底路径会走到这里）：绝不进入渲染。
+                // 否则 RenderAudio 已经推进了源（转换器消费 pcmQueue），而 RingWrite 只能
+                // 部分写入、剩余被静默丢弃 → 内容时间轴被跳过，听感就是「音调不变的倍速」。
+                if (ringBuffer_.size() - ringFilled_ < chunkSamples) {
+                    continue;
+                }
             }
             if (wasPaused) {
                 // 暂停期冻结后恢复：密度窗口/保持期/响度补偿参考全部过时，恢复生产前重置
@@ -3837,7 +3821,8 @@ private:
                 }
                 pipelineHoldActive_.store(false);
                 holdCarrySamples_ = 0;
-                densityRetarget_ = 0;
+                densityRetarget_.store(0, std::memory_order_relaxed);
+                densityRetargetSeed_.store(0, std::memory_order_relaxed);
                 ResetLoudnessCompensation();
             }
             const auto chunkStart = std::chrono::steady_clock::now();
@@ -4222,7 +4207,8 @@ private:
             // 直通无拉取音调问题，保持态作废（carry 已过时，不再参与后续交叉淡化）
             pipelineHoldActive_.store(false);
             holdCarrySamples_ = 0;
-            densityRetarget_ = 0;
+            densityRetarget_.store(0, std::memory_order_relaxed);
+            densityRetargetSeed_.store(0, std::memory_order_relaxed);
             bool finished = false;
             int32_t readSize = ReadPcmDirect(audioData, audioDataSize, &finished);
             if (readSize < audioDataSize) {
@@ -4274,9 +4260,18 @@ private:
                 holdStartCount_.fetch_add(1, std::memory_order_relaxed);
             }
             holdStartMs_ = SteadyNowMs();
-            // 保持期起点重测密度：丢弃陈旧窗口、滞回暂存与上一次保持的未应用目标档
+            // 保持期起点重测密度：丢弃陈旧窗口、滞回暂存与上一次保持的未应用目标档。
+            // 播放路径确认过的种子档（densityRetargetSeed_）不丢弃——保持期预热只拉
+            // 单帧、引擎预拉缓存会让窗口测值长期偏低，确认可能永远不达成；种子在此
+            // 直接应用（本帧尚处静音预热，可听端无感），保持期测量确认仍可再覆盖。
             densityWindowResetRequested_.store(true);
-            densityRetarget_ = 0;
+            densityRetarget_.store(0, std::memory_order_relaxed);
+            const int32_t seed = densityRetargetSeed_.exchange(0, std::memory_order_acq_rel);
+            if (holdRequested && seed != 0) {
+                inputDensityFactor_.store(seed);
+                OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                    "input density factor -> %{public}d (hold seed applied)", seed);
+            }
         }
         if (pipelineHoldActive_.load()) {
             if (SteadyNowMs() - holdStartMs_ < PIPELINE_HOLD_MS) {
@@ -4350,12 +4345,14 @@ private:
             ResetLoudnessCompensation();
             // 应用保持期确认的密度目标档：切换发生在静音预热之后、释放渲染之前，
             // 可听端（直通）全程无感，可闻路径上不存在因子切换
-            if (densityRetarget_ != 0) {
-                inputDensityFactor_.store(densityRetarget_);
+            const int32_t retarget = densityRetarget_.exchange(0, std::memory_order_acq_rel);
+            if (retarget != 0) {
+                inputDensityFactor_.store(retarget);
+                // 收敛结果写入跨曲/跨会话记忆：下次起播直接以正确档位开始，
+                // 消除起播窗口的变调变速
+                persistedDensityHint_.store(retarget, std::memory_order_relaxed);
                 OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                    "input density factor -> %{public}d (hold retarget applied)",
-                    densityRetarget_);
-                densityRetarget_ = 0;
+                    "input density factor -> %{public}d (hold retarget applied)", retarget);
             }
             densityHoldLastMs_ = SteadyNowMs();
             if (!RenderPipelineFrame(audioData, audioDataSize)) {
@@ -4595,6 +4592,9 @@ private:
     void ReportPipelineHealth()
     {
         if (paused_.load()) {
+            // 暂停期重置节流基线：恢复播放后首个窗口从新基线起算，
+            // 防止横跨暂停的陈旧差值（req/in 字节比）被密度审计误读为异常窗口
+            healthLastReportMs_ = 0;
             return;
         }
         const int64_t nowMs = SteadyNowMs();
@@ -4605,13 +4605,12 @@ private:
         if (nowMs - healthLastReportMs_ < HEALTH_LOG_INTERVAL_MS) {
             return;
         }
-        // 起播约 1s 的速率复核挂在这里（1Hz，天然是「开播后一秒」这个时间点）
-        VerifyRendererSpeedOnce();
         // 真实窗口毫秒：健康行只在渲染块里被调用，实际间隔是 1000ms + 若干毫秒抖动。
         // 用常量 1000 作分母会让 consFps 系统性偏高几个百分点，无法据此判断倍速是否真落地，
         // 故这里记录真实间隔并把分母换成它（日志里输出 winMs 便于核对）。
         const int64_t reportWinMs = std::max<int64_t>(1, nowMs - healthLastReportMs_);
         healthLastReportMs_ = nowMs;
+        healthReportCount_++;
         const uint64_t underruns = ringUnderrunCount_.load(std::memory_order_relaxed);
         const uint64_t slowChunks = renderChunkSlowCount_.load(std::memory_order_relaxed);
         const uint64_t shorts = converterShortCount_.load(std::memory_order_relaxed);
@@ -4665,7 +4664,7 @@ private:
             "gap=%{public}llu(+%{public}llu maxGap=%{public}lld) "
             "hold=%{public}llu/%{public}llu flow=%{public}llu/%{public}llu/%{public}llukBps "
             "speed=%{public}.3f consFps=%{public}.0f expFps=%{public}.0f "
-            "srcFps=%{public}.0f srcX=%{public}.3f winMs=%{public}lld",
+            "srcFps=%{public}.0f srcX=%{public}.3f drop=%{public}llu winMs=%{public}lld",
             activeEqEnabled_.load() ? 1 : 0,
             levelPeakSnapshot_.load(std::memory_order_relaxed),
             static_cast<double>(levelRmsTenfoldSnapshot_.load(std::memory_order_relaxed)) / 10.0,
@@ -4700,7 +4699,47 @@ private:
             static_cast<double>(48000.0f * healthSpeed),
             srcFps,
             srcX,
+            static_cast<unsigned long long>(ringDropSamples_.load(std::memory_order_relaxed)),
             static_cast<long long>(reportWinMs));
+        // 密度因子兜底取证（解码线程，与 MeasureInputDensity 的渲染侧检测独立）：
+        // 引擎拉取密度 = 管线输入字节 / 管线渲染请求字节。渲染侧 120ms 短窗拉取抖动
+        // 过大（实测 54k~139k fps 摆动），3 连窗滞回确认可能整曲无法达成，表现为
+        // 因子停在 1 而引擎恒 2× 拉取（整曲 2 倍速高音调）。健康行 1 秒大窗口的
+        // inDelta/reqDelta 是大数统计，实测精确反映倍率（426/213=2.0），在此用它
+        // 请求直通保持——种子/重测/应用全部复用既有保持期机制，可听端无感。
+        // 排除启动窗口：前 PIPELINE_DENSITY_AUDIT_SKIP_REPORTS 个健康行（≈秒）不计审计，
+        // 预拉/预热会污染比值。
+        if (IsPipelineActive() && !pipelineHoldActive_.load() &&
+            healthPrevReqBytes_ > 0 && reqDelta > 0 &&
+            healthReportCount_ > PIPELINE_DENSITY_AUDIT_SKIP_REPORTS) {
+            const double inputRatio = static_cast<double>(inDelta) /
+                static_cast<double>(reqDelta);
+            const int32_t densityNow = inputDensityFactor_.load();
+            // 容差 ±10%：够区分 1×/2×（比值 1.0/2.0），又不吃拉取抖动
+            const int32_t candidate = inputRatio > 1.1 && inputRatio < 2.9 ? 2 :
+                (inputRatio >= 2.9 && inputRatio < 3.1 ? 3 : 1);
+            if (candidate != densityNow &&
+                (densityAuditStreak_ == 0 || densityAuditCandidate_ == candidate)) {
+                densityAuditStreak_++;
+                densityAuditCandidate_ = candidate;
+                if (densityAuditStreak_ >= PIPELINE_DENSITY_AUDIT_WINDOWS) {
+                    densityAuditStreak_ = 0;
+                    densityAuditCandidate_ = 0;
+                    if (densityHoldLastMs_ == 0 ||
+                        SteadyNowMs() - densityHoldLastMs_ >= DENSITY_HOLD_COOLDOWN_MS) {
+                        // 复用播放路径种子机制：hold 起点直接应用，保内测量仍可覆盖
+                        densityRetargetSeed_.store(candidate, std::memory_order_relaxed);
+                        pipelineHoldRequested_.store(true);
+                        OH_LOG_Print(LOG_APP, LOG_WARN, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                            "density audit -> hold requested (inBytes/reqBytes=%.3f candidate=%d "
+                            "factor=%d)", inputRatio, candidate, densityNow);
+                    }
+                }
+            } else {
+                densityAuditStreak_ = 0;
+                densityAuditCandidate_ = 0;
+            }
+        }
         decoderGapMaxMs_ = 0;
     }
 
@@ -4849,8 +4888,6 @@ private:
     std::atomic<float> effectiveSpeed_ = 1.0f;
     // 回退路线（渲染器 SetSpeed）是否在起播时下发成功
     std::atomic<bool> rendererSpeedApplied_{false};
-    // 起播约 1s 后的一次性渲染器速率复核（Play 置位，解码线程消费）
-    std::atomic<bool> speedVerifyPending_{false};
     // 当前渲染器是否被下发过非 1.0 速率：仅当为真时才允许再调 SetSpeed，
     // 避免在 1.0 时也去触碰 NORMAL 流的变速通道（部分 ROM 上该调用会打开时间伸缩处理，
     // 造成「帧率正常、内容超前、音调不变」的假倍速）
@@ -4893,6 +4930,7 @@ private:
     // （届时各线程未启动，无竞争），播放中由解码线程本地基线 healthPrev* 算差值，绝不跨线程清零。
     std::atomic<int64_t> lastUnderrunSteadyMs_ = 0;      // 最近一次 RT 欠载时刻（steady 毫秒）
     std::atomic<uint64_t> converterShortCount_ = 0;      // 转换器短读次数（源供数断流）
+    std::atomic<uint64_t> ringDropSamples_ = 0;          // 环满被丢弃的采样数（>0 = 内容被跳过）
     std::atomic<uint64_t> decodedFrames_ = 0;            // 解码输出的内容帧累计（源采样率）
     std::atomic<uint64_t> queueDryCount_ = 0;            // 转换器输入回调 8ms 等待仍不足 4 字节次数
     std::atomic<uint64_t> holdStartCount_ = 0;           // 直通保持期进入/释放计数（健康行汇总）
@@ -4917,6 +4955,8 @@ private:
     int64_t chunkWinMaxMs_ = 0;
     // 解码线程私有：健康行节流与差值基线；decoderGap* 追踪解码输出入队间隔
     int64_t healthLastReportMs_ = 0;
+    // 健康行累计条数（本线程私有）：密度审计跳过启动窗口用
+    uint64_t healthReportCount_ = 0;
     // 倍速取证：健康行同时上报「渲染器实际拉取帧率」与「理论帧率（48000×倍速）」，
     // 两者不等即说明倍速没有被渲染器落到实处
     uint64_t healthPrevFrames_ = 0;
@@ -4987,10 +5027,34 @@ private:
     std::vector<int16_t> holdCarry_;
     int32_t densityPendingCandidate_ = 0;
     int32_t densityPendingCount_ = 0;
-    // 密度目标档与自动保护冷却：retarget 仅在保持期内确认记录、释放帧应用（渲染线程私有）；
-    // densityHoldLastMs_ 记录上次释放时刻，播放中漂移触发的自动保护受冷却限制防频繁闪断
-    int32_t densityRetarget_ = 0;
+    // 密度目标档与自动保护冷却：retarget 仅在保持期内确认记录、释放帧应用；
+    // densityHoldLastMs_ 记录上次释放时刻，播放中漂移触发的自动保护受冷却限制防频繁闪断。
+    // densityRetargetSeed_ 携带已确认的目标档到保持期起点直接应用：
+    // 保持期内测量确认可能因引擎预拉缓存永远不达成（实测整曲 2 倍速高音调），种子兜底。
+    // 三者跨线程访问（引擎输入回调线程 / 解码线程 / 渲染线程），必须原子
+    std::atomic<int32_t> densityRetarget_ = 0;
+    std::atomic<int32_t> densityRetargetSeed_ = 0;
     int64_t densityHoldLastMs_ = 0;
+    // 密度审计兜底状态（仅解码线程健康行访问，无需锁）
+    int32_t densityAuditStreak_ = 0;
+    int32_t densityAuditCandidate_ = 0;
+    // 跨曲/跨会话密度记忆：上次保持期收敛的结果（进程内原子 + NAPI 暴露给 ArkTS 持久化）。
+    // 引擎拉取密度是设备/ROM 形态属性，跨曲恒定；初值失准时保持期重测与审计仍会纠正
+    std::atomic<int32_t> persistedDensityHint_ = 1;
+
+public:
+    int32_t GetPersistedDensityHint() const
+    {
+        return persistedDensityHint_.load(std::memory_order_relaxed);
+    }
+
+    void SetPersistedDensityHint(int32_t hint)
+    {
+        // 只接受合法档位；越界值忽略（引擎密度恒为 1 或 2）
+        if (hint == 1 || hint == 2) {
+            persistedDensityHint_.store(hint, std::memory_order_relaxed);
+        }
+    }
     // 官方 OH_AudioConverter 句柄（libohaudiosuite.so，API 26）：替代自写线性插值重采样。
     // 只在渲染线程 / 管线输入回调线程内由 ReadPcm 与 EnsureConverter 独占访问。
     OH_AudioConverter* converter_ = nullptr;
@@ -5449,6 +5513,27 @@ napi_value IsSupported(napi_env env, napi_callback_info)
 napi_value IsPlaying(napi_env env, napi_callback_info)
 {
     return BooleanValue(env, NativeAudioPlayer::Instance().IsPlaying());
+}
+
+// 密度档位记忆桥：原生保持期收敛后写 persistedDensityHint_，ArkTS 读取并持久化到
+// preferences；下次进程启动时 SetDensityHint 回灌，起播首帧即用正确档位
+napi_value GetDensityHint(napi_env env, napi_callback_info)
+{
+    return NumberValue(env,
+        NativeAudioPlayer::Instance().GetPersistedDensityHint());
+}
+
+napi_value SetDensityHint(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1] = { nullptr };
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    int32_t hint = 0;
+    if (argc < 1 || napi_get_value_int32(env, args[0], &hint) != napi_ok) {
+        return BooleanValue(env, false);
+    }
+    NativeAudioPlayer::Instance().SetPersistedDensityHint(hint);
+    return BooleanValue(env, true);
 }
 
 napi_value IsCompleted(napi_env env, napi_callback_info)
@@ -7111,6 +7196,8 @@ napi_value Init(napi_env env, napi_value exports)
         { "consumeLowPowerRuntimeError", nullptr, ConsumeLowPowerRuntimeError, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "isEqualizerSupported", nullptr, IsSupported, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "isPlaying", nullptr, IsPlaying, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "getDensityHint", nullptr, GetDensityHint, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "setDensityHint", nullptr, SetDensityHint, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "isCompleted", nullptr, IsCompleted, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "isReady", nullptr, IsReady, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "hasFailed", nullptr, HasFailed, nullptr, nullptr, nullptr, napi_default, nullptr },

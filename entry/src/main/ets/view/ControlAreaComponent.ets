@@ -21,7 +21,7 @@ import { BluetoothAudioService } from '../service/BluetoothAudioService';
 import { BusinessError, SuppressWarnings, SuppressWarningsType } from '@kit.BasicServicesKit';
 import { AlbumCover } from '../component/AlbumCover';
 import { AVSessionController } from '../common/utils/mediautils/AVSessionController';
-import { DataService } from '../service/DataService';
+import { DataService, AppSettingsData } from '../service/DataService';
 import { createToastGlassMaterial, DEFAULT_GLASS_STYLE, pageStyleGlassMaterial, showToastGlassMaterial } from '../common/utils/GlassUtil';
 import { isDarkThemeEffective } from '../common/utils/ThemeUtil';
 import { applyMetadataToSong, extractSongMetadata, saveSongTagsToFile, TagsWriteResult } from '../service/MetadataTask';
@@ -793,7 +793,6 @@ export struct ControlAreaComponent {
               .controlImageBuilder()
               .width(60)
               .fillColor(Color.White)
-              .shadow({ radius: 10, color: ColorHelper.hexWithAlpha(this.primaryColor, '22') })
           }
         }
         .layoutWeight(1)
@@ -1702,6 +1701,12 @@ export struct ControlAreaComponent {
           // 松手帧才下发：倍速会触发管线切换与节点 IPC，拖动中连续下发会造成进度抖动
           if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
             this.avPlayerService.setSpeed(this.speed)
+            // 倍速持久化：启动时 syncEffectsFromDisk 会用磁盘 playSpeed 覆盖当前值，
+            // 播放器界面调整不落盘的话「设 1x 重启跳回旧值」。设置页滑杆与这里共用
+            // playSpeed 单一事实源。
+            const settings: AppSettingsData = DataService.getInstance().getSettings()
+            settings.playSpeed = this.speed
+            DataService.getInstance().saveSettings(settings)
           }
         })
 

@@ -13,9 +13,8 @@ import { ColorHelper } from '../common/utils/ColorHelper'
 import Logger from '../common/utils/Logger'
 import { BusinessError, deviceInfo, pasteboard, SuppressWarnings, SuppressWarningsType } from '@kit.BasicServicesKit'
 import { HoldingHandService, HOLDING_HAND_CONFIRM_WINDOW_MAX_MS, HOLDING_HAND_CONFIRM_WINDOW_MIN_MS,
-  HOLDING_HAND_CONFIRM_WINDOW_STEP_MS, HOLDING_HAND_SOFT_FALLBACK_MAX_MS, HOLDING_HAND_SOFT_FALLBACK_MIN_MS,
-  HOLDING_HAND_SOFT_FALLBACK_STEP_MS, KEY_HOLDING_HAND_CONFIRM_WINDOW_MS, KEY_HOLDING_HAND_ENABLED,
-  KEY_HOLDING_HAND_LEFT, KEY_HOLDING_HAND_SOFT_FALLBACK_MS } from '../service/HoldingHandService'
+  HOLDING_HAND_CONFIRM_WINDOW_STEP_MS, KEY_HOLDING_HAND_CONFIRM_WINDOW_MS, KEY_HOLDING_HAND_ENABLED,
+  KEY_HOLDING_HAND_LEFT } from '../service/HoldingHandService'
 import { ColorConversion } from '../common/utils/ColorConversion'
 import { isLiquidGlassAvailable,
   pageStyleGlassMaterial, showToastGlassMaterial, topBlurRadiusFromStrength } from '../common/utils/GlassUtil'
@@ -33,7 +32,6 @@ const HELP_SHEET_GLASS: number = 1
 const HELP_SHEET_SHORTCUT: number = 2
 const HELP_SHEET_HOLDING_HAND: number = 3
 const HELP_SHEET_CONFIRM_WINDOW: number = 4
-const HELP_SHEET_FALLBACK_WINDOW: number = 5
 const HELP_SHEET_REPLAY_GAIN: number = 6
 
 class EqBandInfo {
@@ -1193,9 +1191,6 @@ struct SettingsDetailPage {
     if (this.helpSheetKind === HELP_SHEET_CONFIRM_WINDOW) {
       return '切换确认窗'
     }
-    if (this.helpSheetKind === HELP_SHEET_FALLBACK_WINDOW) {
-      return '不确定回落窗'
-    }
     if (this.helpSheetKind === HELP_SHEET_REPLAY_GAIN) {
       return '自动音量均衡'
     }
@@ -1251,9 +1246,8 @@ struct SettingsDetailPage {
       ]
     }
     return [
-      '不确定状态（未握持/双手/未识别）的回落时间：已贴左后握姿变模糊，持续该时长无左手复确认才回落默认右侧。',
-      '值越小：回退越快。',
-      '值越大：对短暂识别抖动越不敏感。'
+      '只有确认换手（左/右手）时才切换贴边。',
+      '未握持 / 双手握持 / 无法识别时，保持当前一侧不动。'
     ]
   }
 
@@ -1664,54 +1658,15 @@ struct SettingsDetailPage {
 
           Column({ space: this.scaledSize(6) }) {
             Row() {
-              this.subTitleRow('不确定回落窗')
-              this.helpIcon(HELP_SHEET_FALLBACK_WINDOW)
+              this.subTitleRow('握姿识别')
               Blank()
-              Text(`${this.settings.holdingHandSoftFallbackMs} ms`)
-                .fontSize(this.scaledFont(12))
-                .fontColor(this.primaryColor)
-                .fontWeight(FontWeight.Medium)
             }
             .width('100%')
 
-            Text('握姿无法识别时，持续该时长后回落默认右侧。')
+            Text('只有确认换手（左/右手）时才切换贴边；未握持、双手握持、无法识别时保持当前一侧不动。')
               .fontSize(this.scaledFont(12))
               .fontColor(this.settingSubTextColor())
               .width('100%')
-
-            Row({ space: this.scaledSize(8) }) {
-              Text('快')
-                .fontSize(this.scaledFont(11))
-                .fontColor(this.settingTextColor())
-                .margin({ right: this.scaledSize(4) })
-              Slider({
-                value: this.settings.holdingHandSoftFallbackMs,
-                min: HOLDING_HAND_SOFT_FALLBACK_MIN_MS,
-                max: HOLDING_HAND_SOFT_FALLBACK_MAX_MS,
-                step: HOLDING_HAND_SOFT_FALLBACK_STEP_MS,
-                style: SliderStyle.OutSet
-              })
-                .layoutWeight(1)
-                .selectedColor(this.primaryColor)
-                .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
-                .blockColor('#FFFFFF')
-                .blockSize({ width: this.scaledSize(20), height: this.scaledSize(20) })
-                .blockBorderColor(this.primaryColor)
-                .blockBorderWidth(3)
-                .sliderInteractionMode(SliderInteraction.SLIDE_AND_CLICK)
-                .systemMaterial(pageStyleGlassMaterial(this.settings.tabStyle))
-                .onChange((value: number, mode: SliderChangeMode) => {
-                  this.settings.holdingHandSoftFallbackMs = value
-                  AppStorage.setOrCreate(KEY_HOLDING_HAND_SOFT_FALLBACK_MS, value)
-                  this.updateSetting(this.isSliderSettled(mode))
-                })
-              Text('钝')
-                .fontSize(this.scaledFont(11))
-                .fontColor(this.settingTextColor())
-                .margin({ left: this.scaledSize(4) })
-            }
-            .width('100%')
-            .alignItems(VerticalAlign.Center)
           }
           .width('100%')
           .padding({

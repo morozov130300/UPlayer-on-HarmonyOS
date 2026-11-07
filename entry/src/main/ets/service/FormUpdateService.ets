@@ -15,7 +15,6 @@ const TAG = 'FormUpdateService'
 // 卡片快照跨进程共享偏好名（PlayerFormAbility 进程同名单读）
 export const FORM_STORE_NAME: string = 'uplayer_form_store'
 export const FORM_COVER_FILE_NAME: string = 'form_cover.jpg'
-export const KEY_SNAP_SONG_ID: string = 'snap_song_id'
 export const KEY_SNAP_TITLE: string = 'snap_title'
 export const KEY_SNAP_ARTIST: string = 'snap_artist'
 export const KEY_SNAP_IS_PLAYING: string = 'snap_is_playing'
@@ -249,7 +248,6 @@ export class FormUpdateService {
     }
     this.lastPersistedCore = core
     try {
-      this.store.putSync(KEY_SNAP_SONG_ID, songId)
       this.store.putSync(KEY_SNAP_TITLE, title)
       this.store.putSync(KEY_SNAP_ARTIST, artist)
       this.store.putSync(KEY_SNAP_IS_PLAYING, isPlaying)

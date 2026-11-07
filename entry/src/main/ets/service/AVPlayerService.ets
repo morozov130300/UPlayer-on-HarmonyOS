@@ -22,6 +22,12 @@ const TAG = 'AVPlayerService'
 // 断点续播（P0-2）：上次播放歌曲/位置持久化键
 const KEY_LAST_SONG_ID: string = 'uplayer_last_song_id'
 const KEY_LAST_POSITION_MS: string = 'uplayer_last_position_ms'
+// 密度档位记忆键：原生保持期收敛出的引擎拉取密度（1 或 2），跨会话持久化，
+// 下次启动回灌原生层，起播首帧即用正确档位（消除起播窗口变调变速）
+const KEY_DENSITY_HINT: string = 'uplayer_density_hint'
+// 密度收敛轮询周期：收敛通常发生在起播后 0.3~5 秒，轮询 40 次覆盖 20 秒余量
+const DENSITY_HINT_POLL_INTERVAL_MS: number = 500
+const DENSITY_HINT_POLL_MAX_TIMES: number = 40
 
 enum BackendState {
   IDLE = 'idle',
@@ -864,6 +870,53 @@ export class AVPlayerService {
     this.tempoPitch = settings.tempoPitch
     this.separationEnabled = settings.separationEnabled
     this.separationOutput = settings.separationOutput
+    // 播放速度：设置页滑杆是持久化的，重启后必须恢复，否则「设了 2x、重启变 1x」。
+    // 未起播时 setSpeed 只记录意图，起播由原生按该值统一下发；同时回填界面显示的倍速值
+    this.setSpeed(settings.playSpeed)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_SPEED, settings.playSpeed)
+    // 密度档位记忆回灌：上次会话收敛出的引擎拉取密度（1/2），起播前写入原生层
+    const hintStr: string = SettingsStore.getInstance().get(KEY_DENSITY_HINT, '')
+    if (hintStr.length > 0) {
+      const hint: number = parseInt(hintStr)
+      if (hint === 1 || hint === 2) {
+        nativeAudio.setDensityHint(hint)
+        Logger.info(TAG, `density hint restored: ${hint}`)
+      }
+    }
+    this.startDensityHintWatch()
+  }
+
+  // 密度收敛监听：播放中周期读取原生密度记忆，变化即持久化。
+  // 原生收敛发生在起播后 0.3~5 秒（保持期重测或审计触发），无回调接口，轮询落盘。
+  private densityHintTimer: number = -1
+  private densityHintLastPersisted: number = 0
+
+  private startDensityHintWatch(): void {
+    if (this.densityHintTimer !== -1) {
+      return
+    }
+    this.densityHintLastPersisted = this.readDensityHint()
+    this.densityHintTimer = setInterval((): void => {
+      const isPlay: boolean = AppStorage.get<boolean>(AppStorageKeyConstants.KEY_IS_PLAY) ?? false
+      if (!isPlay) {
+        return
+      }
+      const hint: number = this.readDensityHint()
+      if (hint !== this.densityHintLastPersisted && (hint === 1 || hint === 2)) {
+        this.densityHintLastPersisted = hint
+        SettingsStore.getInstance().set(KEY_DENSITY_HINT, hint.toString(), true)
+        Logger.info(TAG, `density hint persisted: ${hint}`)
+      }
+    }, DENSITY_HINT_POLL_INTERVAL_MS)
+  }
+
+  private readDensityHint(): number {
+    try {
+      const v: number = nativeAudio.getDensityHint()
+      return Number.isFinite(v) ? v : 0
+    } catch (e) {
+      return 0
+    }
   }
 
   // 设备音效节点能力：首次调用才打 native（同步系统 IPC，9 个节点类型 9 次调用），

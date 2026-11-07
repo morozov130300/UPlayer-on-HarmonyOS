@@ -14,7 +14,6 @@ const TAG = '[MusicPlayer]';
 @Entry
 @Component
 struct MusicPlayer {
-  @State isShowPlay: boolean = false;
   @StorageLink(AppStorageKeyConstants.KEY_WINDOW_UTIL) windowUtil: WindowUtil | undefined = undefined;
   @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) isPlaying: boolean = false;
   @StorageLink(AppStorageKeyConstants.KEY_TOP_HEIGHT) topHeight: number = 0;
@@ -102,7 +101,6 @@ struct MusicPlayer {
     Navigation(this.navStack) {
       Stack() {
         PlayerInfoComponent({
-          isShowPlay: this.isShowPlay,
           mainWindowInfo: this.windowUtil?.mainWindowInfo,
           showBackButton: false
         })

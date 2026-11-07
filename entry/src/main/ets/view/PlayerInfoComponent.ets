@@ -78,7 +78,6 @@ export struct PlayerInfoComponent {
   // AVVolumePanel 常驻挂载，不做显隐切换
   @StorageProp(AppStorageKeyConstants.KEY_VOL_PANEL_MAX) volPanelMax: number = 15;
   @StorageProp(AppStorageKeyConstants.KEY_CURRENT_VOLUME) volPanelNorm: number = 0;
-  @Link isShowPlay: boolean;
   @StorageLink(AppStorageKeyConstants.KEY_IS_PLAY) isPlay: boolean = false;
   // 返回按钮玻璃材质只在「Navigation 标题栏」生效区渲染；播放器页把返回键交给
   // MusicPlayer 的 Navigation 标题栏（见 MusicPlayer.playerGlassTitleBar），

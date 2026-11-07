@@ -8,7 +8,7 @@
 // 洞体、描边框、说明卡片同步平滑滑动而不是瞬移。
 import { ScaleButton } from '../component/ScaleButton'
 import { StyleConstants } from '../common/constants/StyleConstants'
-import { ColorHelper } from '../common/utils/ColorHelper'
+import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 
 // 单步引导配置：targetId 为目标组件 .id()，maxHighlightHeight 用于把大容器
 // （整页列表等）收敛成一条水平高亮带，0 表示不收敛；
@@ -34,11 +34,10 @@ const CORNER_RADIUS: number = 16
 const MOVE_DURATION_MS: number = 240
 // 插值动画帧间隔（约 60fps）
 const ANIM_FRAME_MS: number = 16
-// 模拟歌曲行：行高 / 左滑露出删除按钮的宽度
-const DEMO_ROW_HEIGHT: number = 56
-const DEMO_SWIPE_WIDTH: number = 80
-// 长按演示气泡自动消失时长
+// 演示提示气泡自动消失时长
 const DEMO_BUBBLE_MS: number = 1500
+// 模拟歌曲行的行高与左滑删除区宽度改为跟随显示缩放的方法（见 struct 内
+// demoRowHeight / demoSwipeWidth），与首页 songItemRow / songSwipeDeleteButton 严格对齐
 
 @Component
 export struct CoachMarkOverlay {
@@ -53,6 +52,9 @@ export struct CoachMarkOverlay {
   isHostBusy: () => boolean = (): boolean => {
     return false
   }
+  // 模拟歌曲行要跟真实 songItemRow 一起缩放：显示尺寸/字号两个全局档位都订阅
+  @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
+  @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
   @State private rectX: number = 0
   @State private rectY: number = 0
   @State private rectW: number = 0
@@ -82,21 +84,55 @@ export struct CoachMarkOverlay {
   private animToH: number = 0
   private animStartMs: number = 0
   private animTimer: number = -1
-  // 模拟歌曲行状态：左滑位移（px 由 translate 直接用 vp 值）、是否处于吸附动画、长按气泡
+  // 模拟歌曲行状态：左滑位移（px 由 translate 直接用 vp 值）、是否处于吸附动画、演示气泡文案
   @State private demoOffsetX: number = 0
-  @State private demoBubble: boolean = false
+  // 气泡文案为空串表示不显示；长按与右侧按钮点击复用同一气泡，文案不同
+  @State private demoBubbleText: string = ''
   private demoBubbleTimer: number = -1
   private demoSnapAnimating: boolean = false
   // 本轮拖拽起点位移：PanGesture 的 offsetX 是相对手势起点的累计值，
   // 必须叠加手势开始时的已有位移（例如已吸附在露出删除位再拖）
   private demoPanBaseX: number = 0
 
+  // 显示尺寸缩放（与首页 songItemRow 的 scaledSize 完全一致）
+  private scaledSize(size: number): number {
+    return Math.round(size * this.displaySizeScale)
+  }
+
+  // 模拟歌曲行行高：真实行 padding 上下 10 + 36 封面 = 56（最小约束 52）
+  private demoRowHeight(): number {
+    return this.scaledSize(56)
+  }
+
+  // 左滑露出宽度：与 songSwipeDeleteButton 的容器宽度一致（48vp）
+  private demoSwipeWidth(): number {
+    return this.scaledSize(48)
+  }
+
+  // 弹演示气泡（长按 / 右侧按钮点击共用），1.5s 自动消失
+  private showDemoBubble(text: string): void {
+    this.demoBubbleText = text
+    this.clearDemoBubbleTimer()
+    this.demoBubbleTimer = setTimeout((): void => {
+      this.demoBubbleTimer = -1
+      this.demoBubbleText = ''
+    }, DEMO_BUBBLE_MS)
+  }
+
   aboutToAppear(): void {
     this.busyRetries = 0
+    // 浮层挂载即接管切页：Index 的 HdsTabs 订阅此计数关闭滑动切页并拦截点击切页，
+    // 否则模拟歌曲行的横向左滑会被 Tabs 内置切页手势抢走，直接划到歌单页。
+    // 用 +1/-1 计数：两个 TabContent 的浮层可能并存，避免先卸载者误放开
+    const active: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_GUIDE_ACTIVE) ?? 0
+    AppStorage.setOrCreate<number>(AppStorageKeyConstants.KEY_GUIDE_ACTIVE, active + 1)
     this.scheduleMeasure()
   }
 
   aboutToDisappear(): void {
+    // 浮层卸载恢复切页（走完/跳过/中途切页都会走到这里）
+    const active: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_GUIDE_ACTIVE) ?? 0
+    AppStorage.setOrCreate<number>(AppStorageKeyConstants.KEY_GUIDE_ACTIVE, Math.max(active - 1, 0))
     this.stopAnim()
     this.clearDemoBubbleTimer()
     if (this.measureTimer >= 0) {
@@ -105,11 +141,11 @@ export struct CoachMarkOverlay {
     }
   }
 
-  // 步骤切换时复位模拟歌曲行：位移归零、收起长按气泡
+  // 步骤切换时复位模拟歌曲行：位移归零、收起气泡
   private resetDemoRow(): void {
     this.demoOffsetX = 0
     this.demoSnapAnimating = false
-    this.demoBubble = false
+    this.demoBubbleText = ''
     this.clearDemoBubbleTimer()
   }
 
@@ -122,21 +158,17 @@ export struct CoachMarkOverlay {
 
   // 左滑松手：过半吸附到露出删除按钮位，否则弹回；带 150ms 吸附动画
   private onDemoPanEnd(): void {
+    const swipeWidth: number = this.demoSwipeWidth()
     this.demoSnapAnimating = true
-    this.demoOffsetX = this.demoOffsetX < -DEMO_SWIPE_WIDTH / 2 ? -DEMO_SWIPE_WIDTH : 0
+    this.demoOffsetX = this.demoOffsetX < -swipeWidth / 2 ? -swipeWidth : 0
     setTimeout((): void => {
       this.demoSnapAnimating = false
     }, 150)
   }
 
-  // 长按演示：行上方弹气泡，1.5s 自动消失
+  // 长按演示：行上方弹气泡
   private onDemoLongPress(): void {
-    this.demoBubble = true
-    this.clearDemoBubbleTimer()
-    this.demoBubbleTimer = setTimeout((): void => {
-      this.demoBubbleTimer = -1
-      this.demoBubble = false
-    }, DEMO_BUBBLE_MS)
+    this.showDemoBubble('长按后松手即可进入批量管理（演示）')
   }
 
   onStepIndexChanged(): void {
@@ -346,56 +378,110 @@ export struct CoachMarkOverlay {
         .backgroundColor('rgba(255,255,255,0.04)')
         .hitTestBehavior(HitTestMode.Transparent)
 
-      // ── 模拟歌曲行（demoSong 步骤）：高亮带内垂直居中，可真实左滑露删除、长按弹气泡 ──
+      // ── 模拟歌曲行（demoSong 步骤）：几何/图标对齐首页 songItemRow 与 songSwipeDeleteButton，
+      //    保留深色演示底；左滑露删除圆钮，长按/右侧按钮弹演示气泡 ──
       if (this.currentStep().demoSong) {
         Stack({ alignContent: Alignment.End }) {
-          // 底层：右端红色删除按钮（被前景行遮挡，左滑露出）
-          Row({ space: 4 }) {
-            Image($r('app.media.ic_public_delete'))
-              .width(20)
-              .height(20)
-              .fillColor(Color.White)
-            Text('删除')
-              .fontSize(13)
-              .fontColor(Color.White)
+          // 底层：左滑露出的删除区，48vp 容器 + 36vp 红圆钮 + 16vp 图标 + 右距 12vp，
+          // 尺寸与 songSwipeDeleteButton 逐项对齐；仅作视觉演示，不可点击
+          Row() {
+            Row() {
+              Image($r('app.media.ic_public_delete'))
+                .width(this.scaledSize(16))
+                .height(this.scaledSize(16))
+                .fillColor(Color.White)
+            }
+            .width(this.scaledSize(36))
+            .height(this.scaledSize(36))
+            .borderRadius(this.scaledSize(18))
+            .backgroundColor(StyleConstants.COLOR_DANGER_RED)
+            .justifyContent(FlexAlign.Center)
+            .alignItems(VerticalAlign.Center)
+            .margin({ right: this.scaledSize(12) })
           }
-          .justifyContent(FlexAlign.Center)
-          .width(DEMO_SWIPE_WIDTH)
-          .height(DEMO_ROW_HEIGHT)
-          .borderRadius({ topRight: 12, bottomRight: 12 })
-          .backgroundColor('rgba(226,61,49,0.95)')
+          .width(this.demoSwipeWidth())
+          .height('100%')
+          .justifyContent(FlexAlign.End)
+          .alignItems(VerticalAlign.Center)
           .hitTestBehavior(HitTestMode.Transparent)
 
-          // 前景：示例歌曲行，PanGesture 左滑 / LongPressGesture 长按
-          Row({ space: 12 }) {
-            Column() {
+          // 前景：示例歌曲行。padding 20/10、36vp 封面、15/12vp 主副标题、右侧两枚按钮，
+          // 全部跟随 displaySizeScale / fontSizeScale，与 songItemRow 一致
+          Row() {
+            // 静态封面占位：对齐 AlbumCover 无封面时的 36vp 圆角块 + 42% music 图标
+            Stack() {
               Image($r('app.media.ic_public_music'))
-                .width(22)
-                .height(22)
+                .width('42%')
+                .height('42%')
+                .objectFit(ImageFit.Contain)
                 .fillColor(this.primaryColor)
             }
-            .width(40)
-            .height(40)
-            .justifyContent(FlexAlign.Center)
-            .borderRadius(10)
-            .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
+            .width(this.scaledSize(36))
+            .height(this.scaledSize(36))
+            .borderRadius(this.scaledSize(6))
+            .clip(true)
+            .backgroundColor('rgba(255,255,255,0.08)')
+            .margin({ right: this.scaledSize(10) })
 
-            Column({ space: 3 }) {
+            Column({ space: this.scaledSize(3) }) {
               Text('示例歌曲')
-                .fontSize(15)
+                .fontSize(Math.round(15 * this.fontSizeScale))
                 .fontWeight(FontWeight.Medium)
                 .fontColor('#FFFFFF')
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .width('100%')
               Text('演示用，不会真的删除')
-                .fontSize(11)
+                .fontSize(Math.round(12 * this.fontSizeScale))
                 .fontColor('rgba(255,255,255,0.5)')
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .width('100%')
             }
             .alignItems(HorizontalAlign.Start)
             .layoutWeight(1)
+
+            // 下一首播放（演示）：点击只弹提示，不触发真实播放
+            Row() {
+              ScaleButton({
+                pressScale: StyleConstants.PRESS_SCALE,
+                hoverScale: StyleConstants.HOVER_SCALE,
+                blockHitTest: true,
+                onButtonTap: () => {
+                  this.showDemoBubble('「下一首播放」是演示按钮，不会加入播放队列')
+                }
+              }) {
+                SymbolGlyph($r('sys.symbol.list_bullet'))
+                  .fontSize(Math.round(22 * this.fontSizeScale))
+                  .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+                  .fontColor(['rgba(255,255,255,0.6)'])
+              }
+            }
+            .margin({ right: this.scaledSize(16) })
+
+            // 收藏（演示）：点击只弹提示，不触发真实收藏
+            ScaleButton({
+              pressScale: StyleConstants.PRESS_SCALE,
+              hoverScale: StyleConstants.HOVER_SCALE,
+              blockHitTest: true,
+              onButtonTap: () => {
+                this.showDemoBubble('「收藏」是演示按钮，不会真的收藏')
+              }
+            }) {
+              Image($r('app.media.ic_public_favor'))
+                .width(this.scaledSize(22))
+                .height(this.scaledSize(22))
+                .fillColor('rgba(255,255,255,0.6)')
+            }
           }
           .width('100%')
-          .height(DEMO_ROW_HEIGHT)
-          .padding({ left: 12, right: 12 })
-          .borderRadius(12)
+          .height(this.demoRowHeight())
+          .padding({
+            left: this.scaledSize(20), right: this.scaledSize(20),
+            top: this.scaledSize(10), bottom: this.scaledSize(10)
+          })
+          .alignItems(VerticalAlign.Center)
+          .borderRadius(this.scaledSize(12))
           .backgroundColor('rgba(48,48,52,0.98)')
           .translate({ x: this.demoOffsetX })
           .animation(this.demoSnapAnimating ? { duration: 150, curve: Curve.EaseOut } : undefined)
@@ -404,30 +490,30 @@ export struct CoachMarkOverlay {
               this.demoPanBaseX = this.demoOffsetX
             })
             .onActionUpdate((event: GestureEvent) => {
-              this.demoOffsetX = Math.max(Math.min(this.demoPanBaseX + event.offsetX, 0), -DEMO_SWIPE_WIDTH)
+              this.demoOffsetX = Math.max(Math.min(this.demoPanBaseX + event.offsetX, 0), -this.demoSwipeWidth())
             })
             .onActionEnd(() => {
               this.onDemoPanEnd()
             }))
 
-          // 长按气泡
-          if (this.demoBubble) {
-            Text('长按后松手即可进入批量管理（演示）')
-              .fontSize(12)
+          // 演示气泡：长按 / 右侧按钮点击共用，文案由 showDemoBubble 决定
+          if (this.demoBubbleText.length > 0) {
+            Text(this.demoBubbleText)
+              .fontSize(Math.round(12 * this.fontSizeScale))
               .fontColor('#FFFFFF')
               .padding({ left: 12, right: 12, top: 8, bottom: 8 })
               .borderRadius(10)
               .backgroundColor('rgba(30,30,32,0.95)')
-              .position({ x: 8, y: -40 })
+              .position({ x: this.scaledSize(8), y: -this.scaledSize(40) })
               .transition(TransitionEffect.OPACITY)
           }
         }
         .width(this.rectW)
-        .height(DEMO_ROW_HEIGHT)
+        .height(this.demoRowHeight())
         .alignSelf(ItemAlign.Center)
         .position({
           x: this.rectX,
-          y: this.rectY + (this.rectH - DEMO_ROW_HEIGHT) / 2
+          y: this.rectY + (this.rectH - this.demoRowHeight()) / 2
         })
         .parallelGesture(LongPressGesture({ repeat: false })
           .onAction(() => {

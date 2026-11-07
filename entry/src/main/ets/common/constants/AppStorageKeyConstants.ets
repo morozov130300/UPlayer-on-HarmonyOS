@@ -125,4 +125,10 @@ export class AppStorageKeyConstants {
   // 「重新查看引导」请求（计数器）：设置-关于入口清除两个标记后 +1，
   // Index 收到后切回首页 Tab，重建的 HomeContent 重新弹出引导
   public static readonly KEY_GUIDE_REPLAY_REQUEST: string = BaseConstants.KEY_PREFIX + 'GuideReplayRequest'
+  // 新手引导浮层激活计数：CoachMarkOverlay 挂载 +1、卸载 -1（>0 表示有引导浮层在场）。
+  // 用计数而非布尔：首页/歌单页浮层是各自 TabContent 的常驻实例，可能并存，
+  // 先卸载的那个若直接置 false 会误放开切页。
+  // Index 的 HdsTabs 订阅它，在引导期间关闭滑动切页并拦截点击切页——
+  // 否则模拟歌曲行的横向左滑手势会与 Tabs 内置切页手势竞争，把首页划到歌单页
+  public static readonly KEY_GUIDE_ACTIVE: string = BaseConstants.KEY_PREFIX + 'GuideActive'
 }
