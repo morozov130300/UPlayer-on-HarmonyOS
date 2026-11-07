@@ -4269,6 +4269,9 @@ private:
             const int32_t seed = densityRetargetSeed_.exchange(0, std::memory_order_acq_rel);
             if (holdRequested && seed != 0) {
                 inputDensityFactor_.store(seed);
+                // 种子应用同样写入跨曲/跨会话记忆：审计触发的种子是本机唯一
+                // 能达成的收敛路径，不写记忆则每次起播/换歌都要重错一遍
+                persistedDensityHint_.store(seed, std::memory_order_relaxed);
                 OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                     "input density factor -> %{public}d (hold seed applied)", seed);
             }
@@ -4731,8 +4734,8 @@ private:
                         densityRetargetSeed_.store(candidate, std::memory_order_relaxed);
                         pipelineHoldRequested_.store(true);
                         OH_LOG_Print(LOG_APP, LOG_WARN, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
-                            "density audit -> hold requested (inBytes/reqBytes=%.3f candidate=%d "
-                            "factor=%d)", inputRatio, candidate, densityNow);
+                            "density audit -> hold requested (ratio=%{public}.3f candidate=%{public}d "
+                            "factor=%{public}d)", inputRatio, candidate, densityNow);
                     }
                 }
             } else {
