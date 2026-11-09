@@ -22,6 +22,7 @@ import { preferences } from '@kit.ArkData';
 import { SettingsStore } from '../common/utils/SettingsStore';
 import { PoetryService } from '../service/PoetryService';
 import { FormUpdateService } from '../service/FormUpdateService';
+import { LogFileService } from '../common/utils/LogFileService';
 
 const DOMAIN = 0x0000;
 const TAG = '[EntryAbility]';
@@ -231,6 +232,15 @@ export default class EntryAbility extends UIAbility {
   // 首帧之后的启动初始化（第一段：依赖持久化设置、必须尽早生效的部分）
   private initAfterFirstFrame(windowStage: window.WindowStage): void {
     Logger.info(TAG, 'post-frame init begin');
+
+    // 日志写盘：PersistenceV2 必须在 loadContent 之后访问，故放在首帧后初始化。
+    // 注册 sink 后，Logger.warn/error 才会在开关开启时把 warn 及以上写入沙箱日志文件。
+    this.safeRun('initLogFileService', () => {
+      LogFileService.getInstance().init(this.context);
+      Logger.setFileSink((level: string, prefix: string, message: string): void => {
+        LogFileService.getInstance().append(level, prefix, message);
+      });
+    });
 
     let settings: AppSettingsData = new AppSettingsData();
     this.safeRun('initToAppStorage', () => {

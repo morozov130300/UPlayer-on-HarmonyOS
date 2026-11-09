@@ -23,6 +23,7 @@ import { GlassBackButton } from '../view/GlassBackButton'
 import { isDarkThemeEffective } from '../common/utils/ThemeUtil'
 import { ScaleButton } from '../component/ScaleButton'
 import { SettingsStore } from '../common/utils/SettingsStore'
+import { LogFileService } from '../common/utils/LogFileService'
 
 const TAG = 'SettingsDetailPage'
 const KEY_PRIMARY_COLOR = 'uplayer_primary_color'
@@ -278,6 +279,9 @@ struct SettingsDetailPage {
   private aboutQq: string = '3500873394'
   @State aboutVersionName: string = ''
   @State checkingUpdate: boolean = false
+  // 关于页「开启日志」开关：默认关，持久化由 LogFileService/SettingsStore 负责
+  @State logFileEnabled: boolean = false
+  @State exportingLog: boolean = false
 
   aboutToAppear(): void {
     this.settings = this.dataService.getSettings()
@@ -288,6 +292,7 @@ struct SettingsDetailPage {
       .getParams() as Record<string, string>
     const route: string = params?.category ?? 'customize'
     this.pageTitle = this.titleMap[route] ?? '设置'
+    this.logFileEnabled = LogFileService.getInstance().isEnabled()
     // 版本号动态读取 app.json5 的 versionName，避免每次升版本手动同步
     bundleManager.getBundleInfoForSelf(bundleManager.BundleFlag.GET_BUNDLE_INFO_DEFAULT)
       .then((info: bundleManager.BundleInfo) => {
@@ -3630,6 +3635,10 @@ struct SettingsDetailPage {
 
       this.checkUpdateRow()
 
+      // 日志：warn 及以上写盘开关 + 导出（并入现有分组，沿用设置页统一卡片样式）
+      this.logFileToggleRow()
+      this.logExportRow()
+
       // 重新查看新手引导：清除「已看过」标记并切回首页 Tab，由 HomeContent 重新弹出引导
       Column({ space: this.scaledSize(6) }) {
         Text('新手引导')
@@ -3821,6 +3830,98 @@ struct SettingsDetailPage {
       .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
       .borderRadius(this.scaledSize(10))
     }
+  }
+
+  // 「开启日志」开关：复用设置页统一 toggleRow 卡片，开启后 warn/error 追加写入沙箱日志文件
+  @Builder
+  logFileToggleRow(): void {
+    Column() {
+      this.toggleRow({
+        label: '开启日志',
+        isOn: this.logFileEnabled,
+        onChange: (val: boolean): void => {
+          this.logFileEnabled = val
+          LogFileService.getInstance().setEnabled(val)
+        }
+      })
+    }
+    .width('100%')
+    .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+    .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+    .borderRadius(this.scaledSize(10))
+  }
+
+  // 导出日志：与「检查更新/快捷键」同款行卡片（标题 + 说明 + 右侧箭头），
+  // 点击拉起系统文件管理器（DocumentViewPicker.save）由用户选择保存位置
+  @Builder
+  logExportRow(): void {
+    ScaleButton({
+      pressScale: StyleConstants.PRESS_SCALE,
+      hoverScale: StyleConstants.HOVER_SCALE,
+      expandWidth: true,
+      onButtonTap: () => {
+        this.exportLogFile()
+      }
+    }) {
+      Row() {
+        Text('导出日志')
+          .fontSize(this.scaledFont(14))
+          .fontColor(this.settingTextColor())
+          .fontWeight(FontWeight.Medium)
+          .maxLines(1)
+          .flexShrink(0)
+        Blank()
+        Text(this.exportingLog ? '正在导出…' : '导出到文件')
+          .fontSize(this.scaledFont(14))
+          .fontColor(this.exportingLog ? this.settingInactiveTextColor() : this.primaryColor)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .flexShrink(1)
+          .textAlign(TextAlign.End)
+        Image($r('app.media.ic_public_arrow_right'))
+          .width(this.scaledSize(18))
+          .height(this.scaledSize(18))
+          .fillColor(this.settingSubTextColor())
+          .margin({ left: this.scaledSize(6) })
+      }
+      .width('100%')
+      .constraintSize({ minWidth: 0, maxWidth: '100%' })
+      .height(this.scaledSize(44))
+      .alignItems(VerticalAlign.Center)
+      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+      .borderRadius(this.scaledSize(10))
+    }
+  }
+
+  // 读出沙箱全量日志 → 系统文件管理器选位置 → 写入用户选定文件
+  private exportLogFile(): void {
+    if (this.exportingLog) {
+      return
+    }
+    const content: string = LogFileService.getInstance().readAll()
+    if (content.length === 0) {
+      showToastGlassMaterial(this.getUIContext()?.getPromptAction(), '暂无日志可导出')
+      return
+    }
+    const context: common.UIAbilityContext | undefined =
+      AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
+    if (context === undefined) {
+      showToastGlassMaterial(this.getUIContext()?.getPromptAction(), '导出失败，请稍后重试')
+      Logger.error(TAG, 'exportLogFile: UIAbilityContext unavailable')
+      return
+    }
+    this.exportingLog = true
+    LogFileService.getInstance()
+      .exportToUser(context, content, LogFileService.getInstance().defaultExportFileName())
+      .then((result: string): void => {
+        this.exportingLog = false
+        if (result === 'ok') {
+          showToastGlassMaterial(this.getUIContext()?.getPromptAction(), '日志已导出')
+        } else if (result === 'error') {
+          showToastGlassMaterial(this.getUIContext()?.getPromptAction(), '导出失败，请重试')
+        }
+      })
   }
 
   // 调用应用市场更新服务：有新版本弹系统升级框，无新版本 toast 提示
