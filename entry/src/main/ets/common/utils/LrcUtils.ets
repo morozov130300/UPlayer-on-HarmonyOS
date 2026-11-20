@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-import { LrcEntry, Word } from '../../viewmodel/LrcEntry';
+import { LrcEntry } from '../../viewmodel/LrcEntry';
 
 /**
  * LRC format lyrics.
@@ -105,8 +105,7 @@ export function parseLrcLyric(text: string): Array<LrcEntry> {
       lrc.push({
         lineStartTime: timeInMs,
         lineDuration: 0,
-        lineWords: lineText,
-        words: []
+        lineWords: lineText
       });
     }
   }
@@ -142,22 +141,14 @@ export function parseKrcLyric(lyricText: string): LrcEntry[] {
       const lineStartTime = Number.parseInt(matches[1]);
       const lineDuration = Number.parseInt(matches[2]);
       const lineWordsText = matches[3];
-      const words: Word[] = [];
-      const wordsMatches = lineWordsText.match(krcWordRegex1);
+      const wordsMatches: RegExpMatchArray | null = lineWordsText.match(krcWordRegex1);
       let lineWords: string = '';
       if (wordsMatches) {
         for (const wordMatch of wordsMatches) {
           const wordMatches = wordMatch.match(krcWordRegex2);
           if (wordMatches) {
-            const wordStartTime = Number.parseInt(wordMatches[1]);
-            const wordDuration = Number.parseInt(wordMatches[2]);
             const wordText = wordMatches[4];
             lineWords += wordText;
-            words.push({
-              text: wordText,
-              wordStartTime: wordStartTime,
-              duration: wordDuration
-            });
           }
         }
       }
@@ -169,8 +160,7 @@ export function parseKrcLyric(lyricText: string): LrcEntry[] {
       lyricLines.push({
         lineStartTime: lineStartTime,
         lineDuration: lineDuration,
-        lineWords: lineWords,
-        words: words
+        lineWords: lineWords
       });
     }
   }

@@ -17,12 +17,12 @@ import { deviceInfo } from '@kit.BasicServicesKit'
 import { AlbumCover } from '../component/AlbumCover'
 import { PlaylistCreateDialog } from '../component/PlaylistCreateDialog'
 import { AlbumCoverSize } from '../service/AudioMetadataService'
-import { createBarGlassMaterial, DEFAULT_GLASS_STYLE, pageStyleGlassMaterial } from '../common/utils/GlassUtil'
+import { createBarGlassMaterial, DEFAULT_GLASS_STYLE, pageStyleGlassMaterial, showToastGlassMaterial } from '../common/utils/GlassUtil'
 import { GlassBackButton } from '../view/GlassBackButton'
 import { ScaleButton } from '../component/ScaleButton'
 import { PressScaleHost } from '../component/PressScaleHost'
 import { SettingsStore } from '../common/utils/SettingsStore'
-import { CoachGuideScheduler } from '../common/utils/CoachGuideScheduler'
+import { CoachGuideScheduler, GUIDE_REPLAY_TIP } from '../common/utils/CoachGuideScheduler'
 import { CoachMarkOverlay, CoachStep } from '../view/CoachMarkOverlay'
 
 const TAG = 'PlaylistContent'
@@ -84,18 +84,106 @@ export struct PlaylistContent {
   @StorageProp(AppStorageKeyConstants.KEY_GUIDE_REPLAY_REQUEST) @Watch('onGuideReplayRequest')
   guideReplayRequest: number = 0
 
-  // 歌单页引导步骤（目标组件 id 见 build() 中对应 .id()）
+  // 「引导上一步」请求（计数器）：Index 的返回键/侧滑在引导在场时 +1，
+  // 本页 @Watch 收到后回退一步；第 0 步已是第一步，回退无效果但仍吞掉该次返回
+  @StorageProp(AppStorageKeyConstants.KEY_GUIDE_STEP_BACK_REQUEST) @Watch('onGuideStepBackRequest')
+  guideStepBackRequest: number = 0
+
+  // ── 新手引导演示卡片状态：数据独立于真实曲库/筛选（不触碰 DataService 筛选态），
+  // 交互反馈与真实卡片一致（选中高亮、歌单↔文件夹互斥、取消歌单恢复文件夹快照）──
+  @State demoPlaylistSelected: boolean = false
+  @State demoFolderASelected: boolean = false
+  @State demoFolderBSelected: boolean = false
+  private demoSavedFolderA: boolean = false
+  private demoSavedFolderB: boolean = false
+
+  // 演示歌单数据：真实 PlaylistInfo 结构的独立实例，不入库
+  private demoPlaylistInfo: PlaylistInfo = new PlaylistInfo()
+  private demoFolderA: FolderInfo = new FolderInfo()
+  private demoFolderB: FolderInfo = new FolderInfo()
+
+  // 初始化演示数据（复看引导时也保持干净选中态）
+  private ensureDemoData(): void {
+    this.demoPlaylistSelected = false
+    this.demoFolderASelected = false
+    this.demoFolderBSelected = false
+    this.demoSavedFolderA = false
+    this.demoSavedFolderB = false
+    if (this.demoPlaylistInfo.id.length === 0) {
+      this.demoPlaylistInfo.id = 'demo_playlist_guide'
+      this.demoPlaylistInfo.name = '示例歌单'
+    }
+    if (this.demoFolderA.id.length === 0) {
+      this.demoFolderA.id = 'demo_folder_a_guide'
+      this.demoFolderA.name = '轻音乐'
+      this.demoFolderA.path = '/demo/light-music'
+      this.demoFolderA.songCount = 1
+    }
+    if (this.demoFolderB.id.length === 0) {
+      this.demoFolderB.id = 'demo_folder_b_guide'
+      this.demoFolderB.name = '流行乐'
+      this.demoFolderB.path = '/demo/pop'
+      this.demoFolderB.songCount = 1
+    }
+  }
+
+  // 演示：点击歌单卡。互斥与快照恢复逻辑与真实 onPlaylistToggle 一致
+  private toggleDemoPlaylist(): void {
+    if (this.demoPlaylistSelected) {
+      this.demoPlaylistSelected = false
+      this.demoFolderASelected = this.demoSavedFolderA
+      this.demoFolderBSelected = this.demoSavedFolderB
+    } else {
+      this.demoSavedFolderA = this.demoFolderASelected
+      this.demoSavedFolderB = this.demoFolderBSelected
+      this.demoPlaylistSelected = true
+      this.demoFolderASelected = false
+      this.demoFolderBSelected = false
+    }
+  }
+
+  // 演示：点击文件夹卡（多选、与歌单互斥，与真实 onFolderToggle 一致）
+  private toggleDemoFolder(first: boolean): void {
+    this.demoPlaylistSelected = false
+    this.demoSavedFolderA = false
+    this.demoSavedFolderB = false
+    if (first) {
+      this.demoFolderASelected = !this.demoFolderASelected
+    } else {
+      this.demoFolderBSelected = !this.demoFolderBSelected
+    }
+  }
+
+  // 演示首页预览文案：随选中态变化（与真实筛选语义一致），仅文字不渲染假列表
+  private demoPreviewLabel(): string {
+    if (this.demoPlaylistSelected) {
+      return '首页预览 · 仅显示「示例歌单」的歌曲'
+    }
+    if (this.demoFolderASelected && this.demoFolderBSelected) {
+      return '首页预览 · 合并显示「轻音乐」「流行乐」的歌曲'
+    }
+    if (this.demoFolderASelected) {
+      return '首页预览 · 仅显示「轻音乐」的歌曲'
+    }
+    if (this.demoFolderBSelected) {
+      return '首页预览 · 仅显示「流行乐」的歌曲'
+    }
+    return '首页预览 · 显示全部歌曲'
+  }
+
+  // 歌单页引导步骤（目标组件 id 见 build() 中对应 .id()）。
+  // 两步均为演示步骤：卡片内容复用真实 playlistCard / folderCard 组件
+  // （真实几何 80vp 高 / 16vp 圆角 / 2×2 封面拼贴占位 / 真实图标与字号链），
+  // 选中态走真实互斥逻辑（选歌单清文件夹、取消恢复快照），数据独立于真实曲库
   private buildPlaylistCoachSteps(): CoachStep[] {
     const s1: CoachStep = new CoachStep()
-    s1.targetId = 'coach_playlist_grid'
-    s1.maxHighlightHeight = 220
-    s1.title = '点击选中歌单'
-    s1.description = '点击歌单卡即可选中，选中的歌单会展示在首页；再次点击取消选中。'
+    s1.demoPlaylist = true
+    s1.title = '点卡片，体验首页显隐'
+    s1.description = '试着点击下方歌单卡：首页只显示该歌单的歌曲；再次点击取消，恢复全部歌曲。无需导入内容即可体验。'
     const s2: CoachStep = new CoachStep()
-    s2.targetId = 'coach_folder_grid'
-    s2.maxHighlightHeight = 220
-    s2.title = '歌单与文件夹二选一'
-    s2.description = '选中的歌单或文件夹会展示在首页，两者互斥；全部取消选中时，首页展示所有已导入歌曲。'
+    s2.demoPlaylist = true
+    s2.title = '试试文件夹与歌单切换'
+    s2.description = '文件夹可以多选，首页合并显示其中的歌曲；选择歌单会取消文件夹选择。取消歌单会恢复之前的文件夹选择，全部取消则显示全部歌曲。'
     return [s1, s2]
   }
 
@@ -105,10 +193,12 @@ export struct PlaylistContent {
     this.coachScheduler.schedule(AppStorageKeyConstants.SETTING_GUIDE_PLAYLIST_DONE, 600,
       (): boolean => this.isAnySelectMode(),
       (): void => {
+        this.ensureDemoData()
         this.coachSteps = this.buildPlaylistCoachSteps()
         // 正在显示时先卸载再挂载，保证从第 1 步重新开始并重新测量
         this.coachStepIndex = -1
         this.coachStepIndex = 0
+        this.syncGuideActive()
       })
   }
 
@@ -118,16 +208,36 @@ export struct PlaylistContent {
     this.coachScheduler.schedule(AppStorageKeyConstants.SETTING_GUIDE_PLAYLIST_DONE, 200,
       (): boolean => this.isAnySelectMode(),
       (): void => {
+        this.ensureDemoData()
         this.coachSteps = this.buildPlaylistCoachSteps()
         this.coachStepIndex = -1
         this.coachStepIndex = 0
+        this.syncGuideActive()
       })
   }
 
-  // 引导结束（走完/跳过/中途切页）：落「已看过」标记并关浮层
-  private finishPlaylistGuide(): void {
+  // 返回键/侧滑触发的「上一步」：引导在场时回退一步（第 0 步保持原地）
+  private onGuideStepBackRequest(): void {
+    if (this.coachStepIndex > 0) {
+      this.coachStepIndex = this.coachStepIndex - 1
+    }
+  }
+
+  // 引导结束（走完/跳过/中途切页）：落「已看过」标记并关浮层。
+  // showTip：走完或跳过时提示「可重看」路径；页面销毁导致的结束不提示（页面已离开，弹了也看不到）
+  private finishPlaylistGuide(showTip: boolean = true): void {
     this.coachStepIndex = -1
+    this.syncGuideActive()
     SettingsStore.getInstance().set(AppStorageKeyConstants.SETTING_GUIDE_PLAYLIST_DONE, '1')
+    if (showTip) {
+      showToastGlassMaterial(this.getUIContext()?.getPromptAction(), GUIDE_REPLAY_TIP)
+    }
+  }
+
+  // 把「歌单页引导是否在场」同步给 Index：由本页显式写入而不依赖浮层生命周期计数，
+  // 否则跳过之后计数泄漏会让 Index 永久拦截切页，整页点不动
+  private syncGuideActive(): void {
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_GUIDE_ACTIVE_PLAYLIST, this.coachStepIndex >= 0)
   }
   // 文件夹编辑态（多选删除歌曲）：与歌单多选同构，状态上提 AppStorage 供返回键/ESC 收回
   @StorageLink(AppStorageKeyConstants.KEY_PLAYLIST_FOLDER_EDIT) @Watch('onFolderEditModeChange')
@@ -170,10 +280,12 @@ export struct PlaylistContent {
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PLAYLIST_MULTI_SELECT, false)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PLAYLIST_FOLDER_EDIT, false)
     this.coachScheduler.cancel()
-    // 引导中途切页视同看过：不再补弹
+    // 引导中途切页视同看过：不再补弹（页面已在销毁，弹提示看不到，且会挂到下一页上）
     if (this.coachStepIndex >= 0) {
-      this.finishPlaylistGuide()
+      this.finishPlaylistGuide(false)
     }
+    // 兜底：无论走哪条路径离开本页，都不把「引导在场」的锁切页标记留在 AppStorage 里
+    this.syncGuideActive()
   }
 
   private scaledSize(size: number): number {
@@ -840,18 +952,24 @@ export struct PlaylistContent {
       }
 
       // 新手引导浮层（聚光分步）：首次进入歌单页自动弹出，走完/跳过后不再出现
-      // （设置-关于提供「重新查看引导」入口），遮罩拦截全部点击，点任意处进入下一步
+      // （设置-关于提供「重新查看引导」入口），遮罩拦截全部点击，演示步骤走卡片内按钮推进
       if (this.coachStepIndex >= 0) {
         Column() {
           CoachMarkOverlay({
             steps: this.coachSteps,
             stepIndex: this.coachStepIndex,
             primaryColor: this.primaryColor,
+            demoPlaylistContent: (): void => {
+              this.demoPlaylistArea()
+            },
             isHostBusy: (): boolean => {
               return this.isAnySelectMode()
             },
             onFinish: (): void => {
               this.finishPlaylistGuide()
+            },
+            stepBack: (): void => {
+              this.onGuideStepBackRequest()
             }
           })
         }
@@ -1122,6 +1240,157 @@ export struct PlaylistContent {
     }
     .width('100%')
     .margin({ top: 4 })
+  }
+
+  // ── 新手引导演示卡片：复用真实卡片组件与真实 Grid 几何 ──
+  // 演示歌单卡：playlistCard 同款结构（44vp 2×2 封面拼贴、80vp 高、16vp 圆角、
+  // 选中主题色底/描边），封面拼贴用真实占位格（无封面 → 占位底色，与真实空歌单卡一致）
+  @Builder
+  demoPlaylistCardCell(): void {
+    Column() {
+      Row() {
+        Column()
+          .layoutWeight(1)
+          .height('100%')
+          .backgroundColor('rgba(0,0,0,0.04)')
+        Column()
+          .layoutWeight(1)
+          .height('100%')
+          .backgroundColor('rgba(0,0,0,0.04)')
+      }
+      .width('100%')
+      .layoutWeight(1)
+
+      Row() {
+        Column()
+          .layoutWeight(1)
+          .height('100%')
+          .backgroundColor('rgba(0,0,0,0.04)')
+        Column()
+          .layoutWeight(1)
+          .height('100%')
+          .backgroundColor('rgba(0,0,0,0.04)')
+      }
+      .width('100%')
+      .layoutWeight(1)
+    }
+    .width(this.scaledSize(44))
+    .height(this.scaledSize(44))
+    .borderRadius(10)
+    .clip(true)
+  }
+
+  @Builder
+  demoPlaylistCard(): void {
+    Row() {
+      this.demoPlaylistCardCell()
+      Column({ space: 2 }) {
+        Text(this.demoPlaylistInfo.name)
+          .fontSize(Math.round(12 * this.fontSizeScale))
+          .fontColor($r('app.color.text_primary'))
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+        Text('0 首 · 演示卡')
+          .fontSize(10)
+          .fontColor($r('app.color.text_sixty_color'))
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+      .margin({ left: 12 })
+    }
+    .width('100%')
+    .height(80)
+    .padding({ left: 16, right: 16 })
+    .alignItems(VerticalAlign.Center)
+    .borderRadius(16)
+    .backgroundColor(this.demoPlaylistSelected ?
+      ColorHelper.hexWithAlpha(this.primaryColor, '22') : 'rgba(0,0,0,0.03)')
+    .border({ width: this.demoPlaylistSelected ? 2 : 1,
+      color: this.demoPlaylistSelected ? this.primaryColor : $r('app.color.list_divider') })
+    .onClick(() => {
+      this.toggleDemoPlaylist()
+    })
+  }
+
+  // 演示文件夹卡：folderCard 同款结构（28vp 图标、80vp 高、16vp 圆角、选中高亮）
+  @Builder
+  demoFolderCard(first: boolean): void {
+    Row() {
+      Image($r('app.media.ic_public_folder'))
+        .width(28)
+        .height(28)
+        .fillColor($r('app.color.text_sixty_color'))
+      Column({ space: 2 }) {
+        Text(first ? this.demoFolderA.name : this.demoFolderB.name)
+          .fontSize(Math.round(12 * this.fontSizeScale))
+          .fontColor($r('app.color.text_primary'))
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+        Text((first ? this.demoFolderA.songCount : this.demoFolderB.songCount) + ' 首歌曲')
+          .fontSize(10)
+          .fontColor($r('app.color.text_sixty_color'))
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+      .margin({ left: 12 })
+    }
+    .width('100%')
+    .height(80)
+    .padding({ left: 16, right: 16 })
+    .alignItems(VerticalAlign.Center)
+    .backgroundColor((first ? this.demoFolderASelected : this.demoFolderBSelected) ?
+      ColorHelper.hexWithAlpha(this.primaryColor, '22') : 'rgba(0,0,0,0.03)')
+    .borderRadius(16)
+    .border({ width: (first ? this.demoFolderASelected : this.demoFolderBSelected) ? 2 : 1,
+      color: (first ? this.demoFolderASelected : this.demoFolderBSelected) ?
+        this.primaryColor : $r('app.color.list_divider') })
+    .onClick(() => {
+      this.toggleDemoFolder(first)
+    })
+  }
+
+  // 引导演示卡片区：真实 Grid 几何（2 列 / 间距 10 / 左右 padding 16）摆放演示卡片，
+  // 下方一行随选中态实时刷新的首页预览说明 + 演示声明
+  @Builder
+  demoPlaylistArea(): void {
+    Column() {
+      Grid() {
+        GridItem() {
+          this.demoPlaylistCard()
+        }
+        if (this.coachStepIndex > 0) {
+          GridItem() {
+            this.demoFolderCard(true)
+          }
+          GridItem() {
+            this.demoFolderCard(false)
+          }
+        }
+      }
+      .columnsTemplate('1fr 1fr')
+      .columnsGap(10)
+      .rowsGap(10)
+      // Grid 在无约束高度容器内会塌缩为 0 高，浮层实测高度随之归零、挖孔定位全错：
+      // 按行数给固定高（卡高 80 + 行间距 10），与真实歌单 Grid 单元几何一致
+      .height(this.coachStepIndex > 0 ? 170 : 80)
+      .width('100%')
+
+      Text(this.demoPreviewLabel())
+        .fontSize(Math.round(12 * this.fontSizeScale))
+        .fontColor($r('app.color.text_sixty_color'))
+        .width('100%')
+        .margin({ top: 12 })
+
+      Text('仅为演示，不会修改你的曲库或筛选')
+        .fontSize(10)
+        .fontColor($r('app.color.text_sixty_color'))
+        .width('100%')
+        .margin({ top: 4 })
+    }
+    .width('100%')
+    .padding({ left: 16, right: 16 })
   }
 
   @Builder

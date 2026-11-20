@@ -26,6 +26,8 @@ export class AudioFocusService {
   private static instance: AudioFocusService = new AudioFocusService()
   private sessionManager: audio.AudioSessionManager | undefined = undefined
   private listenersRegistered: boolean = false
+  private requestedMixSession: boolean = false
+  private mixActivationPending: boolean = false
 
   public static getInstance(): AudioFocusService {
     return AudioFocusService.instance
@@ -82,18 +84,39 @@ export class AudioFocusService {
       return
     }
     if (enabled) {
+      if (this.mixActivationPending) {
+        return
+      }
+      this.mixActivationPending = true
       const strategy: audio.AudioSessionStrategy = {
         concurrencyMode: audio.AudioConcurrencyMode.CONCURRENCY_MIX_WITH_OTHERS
       }
       manager.activateAudioSession(strategy).then((): void => {
+        this.requestedMixSession = true
+        this.mixActivationPending = false
         Logger.info(TAG, 'audio session activated: MIX_WITH_OTHERS')
       }).catch((err: BusinessError): void => {
+        this.mixActivationPending = false
         Logger.error(TAG, `activateAudioSession failed: code=${err.code}, message=${err.message}`)
       })
     } else {
+      let activated: boolean = false
+      try {
+        activated = manager.isAudioSessionActivated()
+      } catch (err) {
+        Logger.warn(TAG, `isAudioSessionActivated failed before deactivate: ${JSON.stringify(err)}`)
+      }
+      if (!this.requestedMixSession && !activated) {
+        return
+      }
+      if (this.mixActivationPending) {
+        return
+      }
       manager.deactivateAudioSession().then((): void => {
+        this.requestedMixSession = false
         Logger.info(TAG, 'audio session deactivated')
       }).catch((err: BusinessError): void => {
+        this.requestedMixSession = false
         Logger.error(TAG, `deactivateAudioSession failed: code=${err.code}, message=${err.message}`)
       })
     }

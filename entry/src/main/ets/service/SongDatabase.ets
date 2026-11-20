@@ -407,21 +407,6 @@ export class SongDatabase {
     Logger.info(TAG, `updateSongs: ${songs.length} rows updated`)
   }
 
-  // WAL 收敛：写事务只会让 wal 文件增长（自动 checkpoint 阈值约 1000 页），
-  // 主动 TRUNCATE 把 wal 收缩到最小体积，避免「本地数据」被 wal 撑大。
-  // 失败（例如存在未关闭的结果集导致 BUSY）只记日志，绝不影响业务流程。
-  public async checkpoint(): Promise<void> {
-    if (this.store === undefined) {
-      return
-    }
-    try {
-      await this.store.executeSql('PRAGMA wal_checkpoint(TRUNCATE)')
-      Logger.info(TAG, 'wal checkpoint done')
-    } catch (err) {
-      Logger.warn(TAG, `wal checkpoint failed: ${JSON.stringify(err)}`)
-    }
-  }
-
   // ═══════════ folders 表：文件夹列表持久化（替代 JSON-in-Preferences） ═══════════
 
   // 按持久化时的数组顺序（orderIndex）读回，保证与写入前的列表顺序一致

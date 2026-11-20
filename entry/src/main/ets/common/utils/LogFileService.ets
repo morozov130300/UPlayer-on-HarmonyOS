@@ -39,9 +39,13 @@ export class LogFileService {
     return this.enabled
   }
 
-  // 开关落盘持久化；开启后只记录开启之后产生的日志，关闭期间不补录
+  // 开关落盘持久化；开启后只记录开启之后产生的日志，关闭期间不补录。
+  // 关闭时删除本地日志残留，下次开启从空文件重新记录。
   public setEnabled(on: boolean): void {
     this.enabled = on
+    if (!on) {
+      this.clearLogFile()
+    }
     try {
       SettingsStore.getInstance().set(AppStorageKeyConstants.SETTING_LOG_FILE_ENABLED, on ? '1' : '0')
     } catch (e) {
@@ -88,6 +92,20 @@ export class LogFileService {
     }
   }
 
+  // 删除整个日志文件；导出成功后调用，后续 warn/error 由 append 的 CREATE 重新建文件继续写。
+  public clearLogFile(): void {
+    if (!this.initialized || this.logPath.length === 0) {
+      return
+    }
+    try {
+      if (fs.accessSync(this.logPath, fs.AccessModeType.EXIST)) {
+        fs.unlinkSync(this.logPath)
+      }
+    } catch (e) {
+      hilog.error(LOG_DOMAIN, LOG_TAG, 'clearLogFile failed: %{public}s', JSON.stringify(e))
+    }
+  }
+
   // 导出默认文件名：UPlayer_yyyyMMdd_HHmmss.log（用户仍可在系统文件管理器里改名）
   public defaultExportFileName(): string {
     const d: Date = new Date()
@@ -96,10 +114,11 @@ export class LogFileService {
       `${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.log`
   }
 
-  // 拉起系统文件管理器（DocumentViewPicker.save）由用户选择保存位置，再把内容写入该 URI。
+  // 拉起系统文件管理器（DocumentViewPicker.save）由用户选择保存位置，直接把沙箱日志文件
+  // 复制到该 URI。不预先快照：期间新产生的 warn/error 仍写入同一个 uplayer.log，
+  // 写入用户文件那一刻读到什么就导出什么；导出成功后删除整个文件，后续日志由 append 重建。
   // 保存用户文件无需申请权限。返回 'ok' 成功 / 'cancel' 用户取消 / 'error' 写入失败。
-  public exportToUser(context: common.UIAbilityContext, content: string,
-    fileName: string): Promise<string> {
+  public exportToUser(context: common.UIAbilityContext, fileName: string): Promise<string> {
     return new Promise<string>((resolve: (result: string) => void): void => {
       try {
         const options: picker.DocumentSaveOptions = new picker.DocumentSaveOptions()
@@ -113,8 +132,11 @@ export class LogFileService {
           }
           let file: fs.File | undefined = undefined
           try {
+            const content: string = this.readAll()
             file = fs.openSync(uris[0], fs.OpenMode.READ_WRITE)
             fs.writeSync(file.fd, content)
+            // 仅成功后删除整个文件；取消/失败原文件不动，无需写回
+            this.clearLogFile()
             resolve('ok')
           } catch (e) {
             hilog.error(LOG_DOMAIN, LOG_TAG, 'write export failed: %{public}s', JSON.stringify(e))

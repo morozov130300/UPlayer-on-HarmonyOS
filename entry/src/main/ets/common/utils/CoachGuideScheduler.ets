@@ -3,6 +3,9 @@
 // 页面只提供完成标记 key、忙碌守卫与 begin 回调（buildSteps + 挂载浮层）。
 import { SettingsStore } from './SettingsStore'
 
+// 引导走完/跳过后的提示文案：告知重看路径。两页共用同一句，避免文案分叉
+export const GUIDE_REPLAY_TIP: string = '您可在「设置 - 关于 - 重新查看引导」中再次查看本引导'
+
 export class CoachGuideScheduler {
   private timer: number = -1
   private retries: number = 0

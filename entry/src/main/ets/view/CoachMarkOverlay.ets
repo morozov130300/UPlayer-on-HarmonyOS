@@ -6,20 +6,29 @@
 // 合成模式填一个圆角矩形把洞抠掉，抗锯齿圆角一次成型，不存在多块拼图接缝；
 // 高亮区位置/尺寸变化由本组件自驱动插值动画（每帧重绘 Canvas），步骤切换时
 // 洞体、描边框、说明卡片同步平滑滑动而不是瞬移。
+//
+// 演示内容一律由宿主以 @BuilderParam 注入（真实组件/真实几何/真实手势/真实交互反馈），
+// 浮层只负责遮罩、挖洞、描边与说明卡片，内部不渲染任何模拟组件：
+// - demoSong 步骤：高亮带锚定宿主 targetId（真实列表容器），宿主 builder 渲染的
+//   演示歌曲行摆进高亮带垂直居中，与真实列表容器严格对齐；
+// - demoPlaylist 步骤：宿主 builder 渲染演示卡片，浮层实测内容高度后把高亮带
+//   调整为内容尺寸并垂直居中，挖洞框住真实几何的演示卡片。
 import { ScaleButton } from '../component/ScaleButton'
 import { StyleConstants } from '../common/constants/StyleConstants'
-import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
 
 // 单步引导配置：targetId 为目标组件 .id()，maxHighlightHeight 用于把大容器
 // （整页列表等）收敛成一条水平高亮带，0 表示不收敛；
-// demoSong = true 时不依赖宿主锚点（targetId 留空走默认高亮带），改为在高亮带内
-// 渲染一条「示例歌曲」模拟行，让用户在空库时也能真实体验左滑/长按手势
+// demoSong / demoPlaylist 标记演示步骤：内容由宿主 builder 注入，渲染进高亮带内
 export class CoachStep {
   targetId: string = ''
   title: string = ''
   description: string = ''
   maxHighlightHeight: number = 0
   demoSong: boolean = false
+  demoPlaylist: boolean = false
+  // 大容器收敛成水平高亮带时，带中心在容器高度中的比例（默认垂直居中 0.5）；
+  // demoSong 步骤用 0.35 把演示带放到容器上部，避开空态提示文字（容器 50% 处）
+  bandCenterRatio: number = 0.5
 }
 
 const HIGHLIGHT_PAD: number = 10
@@ -34,10 +43,8 @@ const CORNER_RADIUS: number = 16
 const MOVE_DURATION_MS: number = 240
 // 插值动画帧间隔（约 60fps）
 const ANIM_FRAME_MS: number = 16
-// 演示提示气泡自动消失时长
-const DEMO_BUBBLE_MS: number = 1500
-// 模拟歌曲行的行高与左滑删除区宽度改为跟随显示缩放的方法（见 struct 内
-// demoRowHeight / demoSwipeWidth），与首页 songItemRow / songSwipeDeleteButton 严格对齐
+// demoPlaylist 内容高度未实测前的兜底值（首帧先按它居中，实测后动画滑到准确位置）
+const DEMO_PLAYLIST_EST_HEIGHT: number = 240
 
 @Component
 export struct CoachMarkOverlay {
@@ -48,13 +55,22 @@ export struct CoachMarkOverlay {
   // 走完最后一步或跳过时回调：宿主负责落「已看过」标记并置 stepIndex = -1
   onFinish: () => void = () => {
   }
+  // 返回键/侧滑触发的「上一步」请求由宿主 @Watch 转发到本方法；
+  // 第 0 步回退无效果，由宿主决定是否吞掉该次返回
+  stepBack: () => void = () => {
+  }
   // 宿主判定「当前不便弹引导」（如搜索态/多选态），首次触发前重试，全部重试耗尽则放弃
   isHostBusy: () => boolean = (): boolean => {
     return false
   }
-  // 模拟歌曲行要跟真实 songItemRow 一起缩放：显示尺寸/字号两个全局档位都订阅
-  @StorageLink('uplayer_display_size_scale') displaySizeScale: number = 1.0
-  @StorageLink('uplayer_font_size_scale') fontSizeScale: number = 1.0
+  // ── 宿主注入的演示内容（真实组件 + 真实几何 + 真实交互），状态绑定宿主 ──
+  @Builder
+  emptyContent() {
+  }
+  @BuilderParam demoSongContent: () => void = this.emptyContent
+  @BuilderParam demoPlaylistContent: () => void = this.emptyContent
+  // 演示歌曲行行高（宿主按 displaySizeScale 算好传入）：用于把行垂直居中进高亮带
+  @Prop demoRowHeight: number = 56
   @State private rectX: number = 0
   @State private rectY: number = 0
   @State private rectW: number = 0
@@ -64,6 +80,11 @@ export struct CoachMarkOverlay {
   // 卡片实际高度（onAreaChange 实测）：步骤描述行数不同会导致高度变化，
   // 放置位置按实测高度重算，避免卡片压住高亮区或越出屏幕
   @State private cardH: number = CARD_EST_HEIGHT
+  // demoPlaylist 演示内容实测高度（宿主 builder 容器 onAreaChange 上报）
+  @State private demoPlaylistH: number = 0
+  // 演示卡片首帧兜底高度：首帧用它与 Grid 固定行高撑出真实内容尺寸，
+  // 避免高度未实测时 onAreaChange 上报 0 把挖孔/卡片定位推错
+  @State private demoPlaylistMeasured: boolean = false
   @State private overlayW: number = 0
   @State private overlayH: number = 0
   private measureTimer: number = -1
@@ -84,91 +105,20 @@ export struct CoachMarkOverlay {
   private animToH: number = 0
   private animStartMs: number = 0
   private animTimer: number = -1
-  // 模拟歌曲行状态：左滑位移（px 由 translate 直接用 vp 值）、是否处于吸附动画、演示气泡文案
-  @State private demoOffsetX: number = 0
-  // 气泡文案为空串表示不显示；长按与右侧按钮点击复用同一气泡，文案不同
-  @State private demoBubbleText: string = ''
-  private demoBubbleTimer: number = -1
-  private demoSnapAnimating: boolean = false
-  // 本轮拖拽起点位移：PanGesture 的 offsetX 是相对手势起点的累计值，
-  // 必须叠加手势开始时的已有位移（例如已吸附在露出删除位再拖）
-  private demoPanBaseX: number = 0
-
-  // 显示尺寸缩放（与首页 songItemRow 的 scaledSize 完全一致）
-  private scaledSize(size: number): number {
-    return Math.round(size * this.displaySizeScale)
-  }
-
-  // 模拟歌曲行行高：真实行 padding 上下 10 + 36 封面 = 56（最小约束 52）
-  private demoRowHeight(): number {
-    return this.scaledSize(56)
-  }
-
-  // 左滑露出宽度：与 songSwipeDeleteButton 的容器宽度一致（48vp）
-  private demoSwipeWidth(): number {
-    return this.scaledSize(48)
-  }
-
-  // 弹演示气泡（长按 / 右侧按钮点击共用），1.5s 自动消失
-  private showDemoBubble(text: string): void {
-    this.demoBubbleText = text
-    this.clearDemoBubbleTimer()
-    this.demoBubbleTimer = setTimeout((): void => {
-      this.demoBubbleTimer = -1
-      this.demoBubbleText = ''
-    }, DEMO_BUBBLE_MS)
-  }
 
   aboutToAppear(): void {
     this.busyRetries = 0
-    // 浮层挂载即接管切页：Index 的 HdsTabs 订阅此计数关闭滑动切页并拦截点击切页，
-    // 否则模拟歌曲行的横向左滑会被 Tabs 内置切页手势抢走，直接划到歌单页。
-    // 用 +1/-1 计数：两个 TabContent 的浮层可能并存，避免先卸载者误放开
-    const active: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_GUIDE_ACTIVE) ?? 0
-    AppStorage.setOrCreate<number>(AppStorageKeyConstants.KEY_GUIDE_ACTIVE, active + 1)
+    // 引导期间接管切页的开关由宿主页在开始/结束时显式写入（不再依赖本组件的生命周期计数：
+    // 计数在「先卸再挂」或两页浮层并存时会泄漏，导致跳过之后整页永久点不动）
     this.scheduleMeasure()
   }
 
   aboutToDisappear(): void {
-    // 浮层卸载恢复切页（走完/跳过/中途切页都会走到这里）
-    const active: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_GUIDE_ACTIVE) ?? 0
-    AppStorage.setOrCreate<number>(AppStorageKeyConstants.KEY_GUIDE_ACTIVE, Math.max(active - 1, 0))
     this.stopAnim()
-    this.clearDemoBubbleTimer()
     if (this.measureTimer >= 0) {
       clearTimeout(this.measureTimer)
       this.measureTimer = -1
     }
-  }
-
-  // 步骤切换时复位模拟歌曲行：位移归零、收起气泡
-  private resetDemoRow(): void {
-    this.demoOffsetX = 0
-    this.demoSnapAnimating = false
-    this.demoBubbleText = ''
-    this.clearDemoBubbleTimer()
-  }
-
-  private clearDemoBubbleTimer(): void {
-    if (this.demoBubbleTimer >= 0) {
-      clearTimeout(this.demoBubbleTimer)
-      this.demoBubbleTimer = -1
-    }
-  }
-
-  // 左滑松手：过半吸附到露出删除按钮位，否则弹回；带 150ms 吸附动画
-  private onDemoPanEnd(): void {
-    const swipeWidth: number = this.demoSwipeWidth()
-    this.demoSnapAnimating = true
-    this.demoOffsetX = this.demoOffsetX < -swipeWidth / 2 ? -swipeWidth : 0
-    setTimeout((): void => {
-      this.demoSnapAnimating = false
-    }, 150)
-  }
-
-  // 长按演示：行上方弹气泡
-  private onDemoLongPress(): void {
-    this.showDemoBubble('长按后松手即可进入批量管理（演示）')
   }
 
   onStepIndexChanged(): void {
@@ -177,7 +127,12 @@ export struct CoachMarkOverlay {
     }
     this.busyRetries = 0
     this.skipTapped = false
-    this.resetDemoRow()
+    // 非演示卡片步骤挂载期间清测量标记：回退到演示卡片步骤时重新首测，
+    // 避免沿用上一轮的实测高度把挖孔定位在旧内容尺寸上
+    if (!this.currentStep().demoPlaylist && this.demoPlaylistMeasured) {
+      this.demoPlaylistMeasured = false
+      this.demoPlaylistH = 0
+    }
     // 后续步骤：目标组件已布局完成，同步测量并走插值动画平滑滑到新位置，
     // 避免「文字先刷新、挖孔延迟 100ms 才跳过去」的割裂感；仅首次挂载才延迟测量
     if (this.overlayW > 0 && this.overlayH > 0) {
@@ -205,8 +160,7 @@ export struct CoachMarkOverlay {
     }, MEASURE_DELAY_MS)
   }
 
-  // 取目标组件窗口坐标（px）换算 vp，确定挖孔位置并启动插值动画；
-  // 目标未挂载（id 不存在）时退回屏幕中部默认高亮带
+  // 确定挖孔位置并启动插值动画；目标未挂载（id 不存在）时退回屏幕中部默认高亮带
   private measureTarget(): void {
     if (this.stepIndex < 0 || this.stepIndex >= this.steps.length) {
       return
@@ -231,8 +185,22 @@ export struct CoachMarkOverlay {
     let y: number = this.overlayH * 0.3
     let w: number = this.overlayW - 48
     let h: number = 160
-    if (!step.demoSong) {
-      // 模拟演示步骤不依赖宿主锚点：直接用屏幕中部默认高亮带
+    if (step.demoPlaylist) {
+      // 演示卡片步骤：不依赖宿主锚点，高亮带 = 宿主 builder 内容区
+      // （内容容器 x=16、宽=overlayW-32，与真实页面左右 padding 16 对齐）。
+      // 内容未实测（首帧/刚切步骤）时先按估算值占位，onAreaChange 上报后重测滑正
+      const contentH: number = this.demoPlaylistMeasured && this.demoPlaylistH > 0 ?
+        this.demoPlaylistH : DEMO_PLAYLIST_EST_HEIGHT
+      x = 16
+      w = Math.max(this.overlayW - 32, 0)
+      h = Math.min(contentH, Math.max(this.overlayH - 32, 100))
+      y = Math.max((this.overlayH - h) / 2, 16)
+      // 首次进入演示卡片步骤：标记已测量并按估算值先行测量
+      if (!this.demoPlaylistMeasured) {
+        this.demoPlaylistMeasured = true
+        this.demoPlaylistH = DEMO_PLAYLIST_EST_HEIGHT
+      }
+    } else if (step.targetId.length > 0) {
       try {
         const info = ui.getComponentUtils().getRectangleById(step.targetId)
         x = ui.px2vp(info.windowOffset.x)
@@ -244,8 +212,8 @@ export struct CoachMarkOverlay {
       }
     }
     if (step.maxHighlightHeight > 0 && h > step.maxHighlightHeight) {
-      // 大容器收敛成水平高亮带：在容器内垂直居中
-      const bandTop: number = y + (h - step.maxHighlightHeight) / 2
+      // 大容器收敛成水平高亮带：按 bandCenterRatio 在容器内定位带中心
+      const bandTop: number = y + (h - step.maxHighlightHeight) * step.bandCenterRatio
       y = Math.max(bandTop, 0)
       h = step.maxHighlightHeight
     }
@@ -339,6 +307,10 @@ export struct CoachMarkOverlay {
   }
 
   private advance(): void {
+    // 已关闭（走完/跳过）后迟到的点击事件一律忽略：把 -1 推成 0 会让引导重新弹出
+    if (this.stepIndex < 0) {
+      return
+    }
     // 「跳过」的点击会先于卡片层触发，此处识别后放行，避免跳过又推进一步
     if (this.skipTapped) {
       this.skipTapped = false
@@ -365,160 +337,54 @@ export struct CoachMarkOverlay {
           this.drawMask()
         })
         .onClick(() => {
-          this.advance()
+          // 演示卡片步骤只能走卡片内「下一步/完成体验」按钮，点遮罩不推进
+          if (!this.currentStep().demoPlaylist) {
+            this.advance()
+          }
         })
 
       // ── 高亮框：主题色描边 + 轻微提亮，浮在挖孔中央（逐帧跟随插值位置）──
       Column()
-        .width(this.rectW)
-        .height(this.rectH)
-        .position({ x: this.rectX, y: this.rectY })
-        .borderRadius(CORNER_RADIUS)
-        .border({ width: 2, color: this.primaryColor })
-        .backgroundColor('rgba(255,255,255,0.04)')
-        .hitTestBehavior(HitTestMode.Transparent)
+      .width(this.rectW)
+      .height(this.rectH)
+      .position({ x: this.rectX, y: this.rectY })
+      .borderRadius(CORNER_RADIUS)
+      .border({ width: 2, color: this.primaryColor })
+      .backgroundColor('rgba(255,255,255,0.04)')
+      .hitTestBehavior(HitTestMode.Transparent)
 
-      // ── 模拟歌曲行（demoSong 步骤）：几何/图标对齐首页 songItemRow 与 songSwipeDeleteButton，
-      //    保留深色演示底；左滑露删除圆钮，长按/右侧按钮弹演示气泡 ──
+      // ── 演示歌曲行：宿主 builder 注入（真实组件几何与手势），
+      //    摆进高亮带垂直居中，与真实列表容器对齐 ──
       if (this.currentStep().demoSong) {
-        Stack({ alignContent: Alignment.End }) {
-          // 底层：左滑露出的删除区，48vp 容器 + 36vp 红圆钮 + 16vp 图标 + 右距 12vp，
-          // 尺寸与 songSwipeDeleteButton 逐项对齐；仅作视觉演示，不可点击
-          Row() {
-            Row() {
-              Image($r('app.media.ic_public_delete'))
-                .width(this.scaledSize(16))
-                .height(this.scaledSize(16))
-                .fillColor(Color.White)
-            }
-            .width(this.scaledSize(36))
-            .height(this.scaledSize(36))
-            .borderRadius(this.scaledSize(18))
-            .backgroundColor(StyleConstants.COLOR_DANGER_RED)
-            .justifyContent(FlexAlign.Center)
-            .alignItems(VerticalAlign.Center)
-            .margin({ right: this.scaledSize(12) })
-          }
-          .width(this.demoSwipeWidth())
-          .height('100%')
-          .justifyContent(FlexAlign.End)
-          .alignItems(VerticalAlign.Center)
-          .hitTestBehavior(HitTestMode.Transparent)
-
-          // 前景：示例歌曲行。padding 20/10、36vp 封面、15/12vp 主副标题、右侧两枚按钮，
-          // 全部跟随 displaySizeScale / fontSizeScale，与 songItemRow 一致
-          Row() {
-            // 静态封面占位：对齐 AlbumCover 无封面时的 36vp 圆角块 + 42% music 图标
-            Stack() {
-              Image($r('app.media.ic_public_music'))
-                .width('42%')
-                .height('42%')
-                .objectFit(ImageFit.Contain)
-                .fillColor(this.primaryColor)
-            }
-            .width(this.scaledSize(36))
-            .height(this.scaledSize(36))
-            .borderRadius(this.scaledSize(6))
-            .clip(true)
-            .backgroundColor('rgba(255,255,255,0.08)')
-            .margin({ right: this.scaledSize(10) })
-
-            Column({ space: this.scaledSize(3) }) {
-              Text('示例歌曲')
-                .fontSize(Math.round(15 * this.fontSizeScale))
-                .fontWeight(FontWeight.Medium)
-                .fontColor('#FFFFFF')
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-                .width('100%')
-              Text('演示用，不会真的删除')
-                .fontSize(Math.round(12 * this.fontSizeScale))
-                .fontColor('rgba(255,255,255,0.5)')
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-                .width('100%')
-            }
-            .alignItems(HorizontalAlign.Start)
-            .layoutWeight(1)
-
-            // 下一首播放（演示）：点击只弹提示，不触发真实播放
-            Row() {
-              ScaleButton({
-                pressScale: StyleConstants.PRESS_SCALE,
-                hoverScale: StyleConstants.HOVER_SCALE,
-                blockHitTest: true,
-                onButtonTap: () => {
-                  this.showDemoBubble('「下一首播放」是演示按钮，不会加入播放队列')
-                }
-              }) {
-                SymbolGlyph($r('sys.symbol.list_bullet'))
-                  .fontSize(Math.round(22 * this.fontSizeScale))
-                  .renderingStrategy(SymbolRenderingStrategy.SINGLE)
-                  .fontColor(['rgba(255,255,255,0.6)'])
-              }
-            }
-            .margin({ right: this.scaledSize(16) })
-
-            // 收藏（演示）：点击只弹提示，不触发真实收藏
-            ScaleButton({
-              pressScale: StyleConstants.PRESS_SCALE,
-              hoverScale: StyleConstants.HOVER_SCALE,
-              blockHitTest: true,
-              onButtonTap: () => {
-                this.showDemoBubble('「收藏」是演示按钮，不会真的收藏')
-              }
-            }) {
-              Image($r('app.media.ic_public_favor'))
-                .width(this.scaledSize(22))
-                .height(this.scaledSize(22))
-                .fillColor('rgba(255,255,255,0.6)')
-            }
-          }
-          .width('100%')
-          .height(this.demoRowHeight())
-          .padding({
-            left: this.scaledSize(20), right: this.scaledSize(20),
-            top: this.scaledSize(10), bottom: this.scaledSize(10)
-          })
-          .alignItems(VerticalAlign.Center)
-          .borderRadius(this.scaledSize(12))
-          .backgroundColor('rgba(48,48,52,0.98)')
-          .translate({ x: this.demoOffsetX })
-          .animation(this.demoSnapAnimating ? { duration: 150, curve: Curve.EaseOut } : undefined)
-          .gesture(PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 5 })
-            .onActionStart(() => {
-              this.demoPanBaseX = this.demoOffsetX
-            })
-            .onActionUpdate((event: GestureEvent) => {
-              this.demoOffsetX = Math.max(Math.min(this.demoPanBaseX + event.offsetX, 0), -this.demoSwipeWidth())
-            })
-            .onActionEnd(() => {
-              this.onDemoPanEnd()
-            }))
-
-          // 演示气泡：长按 / 右侧按钮点击共用，文案由 showDemoBubble 决定
-          if (this.demoBubbleText.length > 0) {
-            Text(this.demoBubbleText)
-              .fontSize(Math.round(12 * this.fontSizeScale))
-              .fontColor('#FFFFFF')
-              .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-              .borderRadius(10)
-              .backgroundColor('rgba(30,30,32,0.95)')
-              .position({ x: this.scaledSize(8), y: -this.scaledSize(40) })
-              .transition(TransitionEffect.OPACITY)
-          }
+        Column() {
+          this.demoSongContent()
         }
         .width(this.rectW)
-        .height(this.demoRowHeight())
-        .alignSelf(ItemAlign.Center)
         .position({
           x: this.rectX,
-          y: this.rectY + (this.rectH - this.demoRowHeight()) / 2
+          y: this.rectY + (this.rectH - this.demoRowHeight) / 2
         })
-        .parallelGesture(LongPressGesture({ repeat: false })
-          .onAction(() => {
-            this.onDemoLongPress()
-          }))
+      }
+
+      // ── 演示卡片：宿主 builder 注入（真实歌单卡/文件夹卡组件与真实 Grid 几何），
+      //    实测内容高度后垂直居中摆放，挖洞框住内容；
+      //    高度未实测前不渲染（避免内容以错误位置首帧闪现，实测后挂载并测挖孔）──
+      if (this.currentStep().demoPlaylist && this.demoPlaylistMeasured) {
+        Column() {
+          this.demoPlaylistContent()
+        }
+        .width(this.overlayW > 0 ? Math.max(this.overlayW - 32, 0) : 320)
+        .position({
+          x: 16,
+          y: Math.max((this.overlayH - this.demoPlaylistH) / 2, 16)
+        })
+        .onAreaChange((_oldArea: Area, newArea: Area) => {
+          const h: number = newArea.height as number
+          if (h > 0 && Math.abs(h - this.demoPlaylistH) > 1) {
+            this.demoPlaylistH = h
+            this.scheduleMeasure()
+          }
+        })
       }
 
       // ── 说明卡片：步骤序号 + 跳过 / 标题 / 描述 / 底部提示 ──
@@ -561,11 +427,48 @@ export struct CoachMarkOverlay {
           .fontColor('rgba(255,255,255,0.75)')
           .width('100%')
 
-        Text('点击任意处继续')
-          .fontSize(11)
-          .fontColor('rgba(255,255,255,0.45)')
+        if (this.currentStep().demoPlaylist) {
+          Row({ space: 10 }) {
+            // 上一步：第 1 步不可回退，占位保持「下一步」按钮不跳动
+            if (this.stepIndex > 0) {
+              Text('上一步')
+                .fontSize(13)
+                .fontColor('rgba(255,255,255,0.75)')
+                .layoutWeight(1)
+                .height(44)
+                .borderRadius(12)
+                .backgroundColor('rgba(255,255,255,0.12)')
+                .textAlign(TextAlign.Center)
+                .onClick((): void => {
+                  this.skipTapped = true
+                  if (this.stepIndex > 0) {
+                    this.stepIndex = this.stepIndex - 1
+                  }
+                })
+            } else {
+              Column()
+                .layoutWeight(1)
+            }
+            Text(this.stepIndex >= this.steps.length - 1 ? '完成体验' : '下一步')
+              .fontSize(13)
+              .fontColor('#FFFFFF')
+              .layoutWeight(1)
+              .height(44)
+              .borderRadius(12)
+              .backgroundColor(this.primaryColor)
+              .textAlign(TextAlign.Center)
+              .onClick((): void => {
+                this.advance()
+              })
+          }
           .width('100%')
-          .textAlign(TextAlign.End)
+        } else {
+          Text('点击任意处继续 · 返回键可回退上一步')
+            .fontSize(11)
+            .fontColor('rgba(255,255,255,0.45)')
+            .width('100%')
+            .textAlign(TextAlign.End)
+        }
       }
       .width(this.cardWidth())
       .padding(16)
@@ -579,7 +482,10 @@ export struct CoachMarkOverlay {
       })
       .position({ x: this.cardX, y: this.cardY })
       .onClick(() => {
-        this.advance()
+        // 演示卡片步骤的说明卡片不响应点击推进（卡片内按钮负责推进）
+        if (!this.currentStep().demoPlaylist) {
+          this.advance()
+        }
       })
       .onAreaChange((_oldArea: Area, newArea: Area) => {
         const h: number = newArea.height as number

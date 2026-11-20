@@ -172,7 +172,12 @@ export class AVPlayerService {
     if (!this.forcePipelineRebuild && this.isEngineLoaded() && this.currentFilePath === fileUri &&
       !nativeAudio.isCompleted() && !nativeAudio.hasFailed()) {
       if (startPositionMs > 0) {
-        nativeAudio.seek(startPositionMs)
+        const durationMs: number = nativeAudio.getDuration()
+        const targetMs: number = Math.max(0, Math.min(Math.floor(startPositionMs), durationMs > 0 ? durationMs : startPositionMs))
+        const seekOk: boolean = nativeAudio.seek(targetMs)
+        if (!seekOk) {
+          this.pendingSeekMs = targetMs
+        }
       }
       const fadeInOutOnStart: boolean = !startPaused && (AppStorage.get<boolean>('uplayer_fade_in_out') ?? false)
       if (fadeInOutOnStart) {
@@ -696,13 +701,16 @@ export class AVPlayerService {
     this.pendingSeekMs = undefined
     const seekOk: boolean = nativeAudio.seek(target)
     if (!seekOk) {
-      Logger.error(TAG, `pending native seek rejected pos=${target}`)
+      this.pendingSeekMs = target
+      Logger.warn(TAG, `pending native seek deferred state=${this.backendState} pos=${target}`)
     }
   }
 
   async seek(timeMs: number): Promise<void> {
     Logger.info(TAG, `seek to ${timeMs} state=${this.backendState} from=${this.getCurrentPositionMs()}`)
-    this.sessionController.setProgressState(timeMs)
+    const durationMs: number = nativeAudio.getDuration()
+    const targetMs: number = Math.max(0, Math.min(Math.floor(timeMs), durationMs > 0 ? durationMs : Math.max(0, timeMs)))
+    this.sessionController.setProgressState(targetMs)
     this.isSeeking = true
     this.seekFromMs = this.getCurrentPositionMs()
     // 按歌曲数定时曲尾淡出被 seek 打断：中止淡出并恢复音量，复位标志后窗口再次命中可重新淡出
@@ -723,19 +731,20 @@ export class AVPlayerService {
     }, AVPlayerService.SEEK_SETTLE_MS)
     // 乐观更新进度：seek 生效期间进度回调被抑制，先让 UI/歌词立即跳到目标位置
     if (this.isUiActive()) {
-      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PROGRESS, timeMs)
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PROGRESS, targetMs)
       const totalMs: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_TOTAL_MS_TIME) ?? 0
       if (totalMs > 0) {
-        AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_TIME, MediaTools.msToMmss(timeMs))
+        AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_TIME, MediaTools.msToMmss(targetMs))
       }
     }
     if (this.backendState === BackendState.STARTING) {
-      this.pendingSeekMs = timeMs
+      this.pendingSeekMs = targetMs
       return
     }
-    const seekOk: boolean = nativeAudio.seek(timeMs)
+    const seekOk: boolean = nativeAudio.seek(targetMs)
     if (!seekOk) {
-      Logger.error(TAG, `native seek rejected pos=${timeMs}`)
+      this.pendingSeekMs = targetMs
+      Logger.warn(TAG, `native seek deferred state=${this.backendState} pos=${targetMs}`)
     }
   }
 
@@ -1238,6 +1247,13 @@ export class AVPlayerService {
       if (this.lastPlaybackPersistTickCount >= 20) {
         this.lastPlaybackPersistTickCount = 0
         this.persistLastPlayback(false)
+      }
+      if (this.pendingSeekMs !== undefined && this.backendState === BackendState.PLAYING &&
+        !nativeAudio.isCompleted() && !nativeAudio.hasFailed()) {
+        const pendingTarget: number = this.pendingSeekMs
+        if (nativeAudio.seek(pendingTarget)) {
+          this.pendingSeekMs = undefined
+        }
       }
       if (!this.isSeeking && this.isUiActive()) {
         AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PROGRESS, position)

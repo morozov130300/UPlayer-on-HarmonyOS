@@ -276,7 +276,7 @@ struct SettingsDetailPage {
   // 仓库地址由 SSH 地址 git@github.com:morozov130300/UPlayer-on-HarmonyOS.git 转出的 HTTPS 网址
   private aboutRepoUrl: string = 'https://github.com/morozov130300/UPlayer-on-HarmonyOS'
   private aboutEmail: string = 'jhy130300@126.com'
-  private aboutQq: string = '3500873394'
+  private aboutQq: string = '1072387175'
   @State aboutVersionName: string = ''
   @State checkingUpdate: boolean = false
   // 关于页「开启日志」开关：默认关，持久化由 LogFileService/SettingsStore 负责
@@ -3628,7 +3628,7 @@ struct SettingsDetailPage {
           .width('100%')
           .padding({ left: this.scaledSize(4) })
         this.aboutInfoRow('邮箱', this.aboutEmail)
-        this.aboutInfoRow('QQ', this.aboutQq)
+        this.aboutInfoRow('QQ群组', this.aboutQq)
         this.aboutInfoRow('仓库地址', this.aboutRepoUrl)
       }
       .width('100%')
@@ -3894,13 +3894,15 @@ struct SettingsDetailPage {
     }
   }
 
-  // 读出沙箱全量日志 → 系统文件管理器选位置 → 写入用户选定文件
+  // 系统文件管理器选位置 → 直接把沙箱日志文件复制到用户选定 URI。
+  // 不做快照、点击瞬间不删：期间新日志继续写进同一文件，写入用户文件那一刻读到什么就导出什么；
+  // 导出成功后由服务删除整个文件，后续日志继续重建写入。取消/失败原文件不动。
   private exportLogFile(): void {
     if (this.exportingLog) {
       return
     }
-    const content: string = LogFileService.getInstance().readAll()
-    if (content.length === 0) {
+    const service: LogFileService = LogFileService.getInstance()
+    if (service.readAll().length === 0) {
       showToastGlassMaterial(this.getUIContext()?.getPromptAction(), '暂无日志可导出')
       return
     }
@@ -3912,8 +3914,7 @@ struct SettingsDetailPage {
       return
     }
     this.exportingLog = true
-    LogFileService.getInstance()
-      .exportToUser(context, content, LogFileService.getInstance().defaultExportFileName())
+    service.exportToUser(context, service.defaultExportFileName())
       .then((result: string): void => {
         this.exportingLog = false
         if (result === 'ok') {

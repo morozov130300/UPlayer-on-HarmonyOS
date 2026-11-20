@@ -127,10 +127,22 @@ export class AppStorageKeyConstants {
   public static readonly KEY_GUIDE_REPLAY_REQUEST: string = BaseConstants.KEY_PREFIX + 'GuideReplayRequest'
   // 关于页「开启日志」开关：'1' = WARN/ERROR 写盘，'0' = 关闭（默认）。
   public static readonly SETTING_LOG_FILE_ENABLED: string = 'uplayer_log_file_enabled'
-  // 新手引导浮层激活计数：CoachMarkOverlay 挂载 +1、卸载 -1（>0 表示有引导浮层在场）。
-  // 用计数而非布尔：首页/歌单页浮层是各自 TabContent 的常驻实例，可能并存，
-  // 先卸载的那个若直接置 false 会误放开切页。
-  // Index 的 HdsTabs 订阅它，在引导期间关闭滑动切页并拦截点击切页——
+  // 新手引导浮层激活标记：按页分开（首页 / 歌单页各一枚布尔）。
+  // 不能用「挂载 +1、卸载 -1」的共享计数：两页浮层可能并存，跳过当前页后计数仍 >0，
+  // Index 会永久拦截切页（表现为 Tab 有按压光效但切不动、整页点不动）。
+  // 由各页在引导开始/结束（走完、跳过、页面销毁）时显式写入，不依赖组件生命周期。
+  // Index 的 HdsTabs 只在「当前所在页」引导激活时关闭滑动切页并拦截点击切页——
   // 否则模拟歌曲行的横向左滑手势会与 Tabs 内置切页手势竞争，把首页划到歌单页
-  public static readonly KEY_GUIDE_ACTIVE: string = BaseConstants.KEY_PREFIX + 'GuideActive'
+  public static readonly KEY_GUIDE_ACTIVE_HOME: string = BaseConstants.KEY_PREFIX + 'GuideActiveHome'
+  public static readonly KEY_GUIDE_ACTIVE_PLAYLIST: string = BaseConstants.KEY_PREFIX + 'GuideActivePlaylist'
+  // 引导「上一步」请求（计数器）：返回键/侧滑在引导在场时回退一步。
+  // Index 的 onBackPress 无法直接调内容页方法，经 AppStorage 计数器转发，
+  // 各内容页 @Watch 收到后把 coachStepIndex 减 1（第 0 步时回退无效果仍吞掉返回）
+  public static readonly KEY_GUIDE_STEP_BACK_REQUEST: string = BaseConstants.KEY_PREFIX + 'GuideStepBackRequest'
+  // 启动期主窗口宽度（vp）：EntryAbility 在 loadContent 之前经 getMainWindowSync
+  // 取窗口属性换算写入（分屏/折叠态均为窗口口径，非物理屏宽）。Index 在
+  // aboutToAppear 预填 mainWidthVp/breakpoint，使首帧即按真实断点渲染，
+  // 消除「首帧小屏布局→onAreaChange 回填后切大屏布局」的开屏双布局跳动。
+  // 仅作首帧初值，运行中以 Index onAreaChange 为唯一权威来源
+  public static readonly KEY_STARTUP_WINDOW_WIDTH_VP: string = BaseConstants.KEY_PREFIX + 'StartupWindowWidthVp'
 }

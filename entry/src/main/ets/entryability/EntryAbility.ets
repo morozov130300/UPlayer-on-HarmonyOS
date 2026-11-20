@@ -1,5 +1,5 @@
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
-import { window } from '@kit.ArkUI';
+import { window, display } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { deviceInfo, BusinessError } from '@kit.BasicServicesKit';
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
@@ -15,7 +15,6 @@ import { HoldingHandService } from '../service/HoldingHandService';
 import { AudioRoutingService } from '../service/AudioRoutingService';
 import { AudioSpatialService } from '../service/AudioSpatialService';
 import { AudioFocusService } from '../service/AudioFocusService';
-import { SongDatabase } from '../service/SongDatabase';
 import { ShareService } from '../service/ShareService';
 import { ColorConversion } from '../common/utils/ColorConversion';
 import { preferences } from '@kit.ArkData';
@@ -198,6 +197,26 @@ export default class EntryAbility extends UIAbility {
       this.safeRun('presetSettingsDefaults', () => {
         DataService.getInstance().presetAppStorageDefaults();
       });
+      // 启动期窗口宽度（vp）：必须早于 loadContent 写入，Index 首帧渲染前要在
+      // aboutToAppear 预填断点（消除「首帧小屏→第二帧大屏」的开屏双布局跳动）。
+      // getMainWindowSync 为同步 API，此时窗口已创建；宽度取窗口属性 windowRect
+      // （分屏/折叠态均为窗口口径，非物理屏宽）。此时窗口 UIContext 尚未就绪
+      // （实测 getUIContext 抛 Uicontent is nullptr），px→vp 改用 display 物理
+      // 密度换算：vp = px / (densityDPI / 基准160)，与 UIContext.px2vp 同口径。
+      // 失败不阻断启动：键缺省时 Index 按 0 跳过预填，由 onAreaChange 兜底
+      // （行为回到现状）
+      this.safeRun('presetStartupWindowWidth', () => {
+        const mainWindow: window.Window = windowStage.getMainWindowSync();
+        const rect: window.Rect = mainWindow.getWindowProperties().windowRect;
+        const displayInfo: display.Display = display.getDefaultDisplaySync();
+        const density: number = displayInfo.densityPixels;
+        if (density <= 0) {
+          throw new Error(`invalid densityPixels: ${density}`);
+        }
+        const widthVp: number = rect.width / density;
+        AppStorage.setOrCreate<number>(AppStorageKeyConstants.KEY_STARTUP_WINDOW_WIDTH_VP, widthVp);
+        hilog.info(DOMAIN, 'testTag', 'startup window width: %{public}d vp', Math.round(widthVp));
+      });
 
       // loadContent 不置于任何 try 内：任何初始化故障都不再阻止主界面加载
       hilog.info(DOMAIN, 'testTag', 'startup before loadContent');
@@ -373,8 +392,6 @@ export default class EntryAbility extends UIAbility {
     }
     DataService.getInstance().flushPendingSongWrites();
     SettingsStore.getInstance().flushPendingSaves();
-    // 退到后台时收敛一次数据库 WAL，避免 wal 文件长期只增不减撑大本地数据
-    void SongDatabase.getInstance().checkpoint();
     // 退到后台即退订握姿监听，避免后台持续占用传感器；回到前台由 onForeground 重新订阅。
     // 用 suspend 而非 stop：保留当前贴边结果，避免回前台时「先跳右再滑回左」抽动
     HoldingHandService.getInstance().suspend();

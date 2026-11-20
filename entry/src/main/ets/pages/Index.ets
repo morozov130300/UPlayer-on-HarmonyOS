@@ -51,9 +51,11 @@ struct MainPage {
   @StorageLink(AppStorageKeyConstants.KEY_PLAYLIST_MULTI_SELECT) playlistMultiSelect: boolean = false
   // 歌单页文件夹编辑态：同属歌单页的批量操作，返回键/ESC 也要能收回
   @StorageLink(AppStorageKeyConstants.KEY_PLAYLIST_FOLDER_EDIT) playlistFolderEdit: boolean = false
-  // 新手引导浮层激活计数（CoachMarkOverlay 挂载 +1/卸载 -1）：>0 时关闭 Tabs 滑动切页、
-  // 并拦截点击切页，避免模拟歌曲行的横向左滑手势被 Tabs 内置切页手势抢走
-  @StorageLink(AppStorageKeyConstants.KEY_GUIDE_ACTIVE) guideActive: number = 0
+  // 新手引导浮层激活标记（按页分开，由各内容页显式写入）：当前所在页引导在场时关闭 Tabs
+  // 滑动切页并拦截点击切页，避免模拟歌曲行的横向左滑手势被 Tabs 内置切页手势抢走。
+  // 不能用共享计数：两页浮层并存或「先卸再挂」会让计数泄漏，跳过之后整页永久切不动
+  @StorageLink(AppStorageKeyConstants.KEY_GUIDE_ACTIVE_HOME) guideActiveHome: boolean = false
+  @StorageLink(AppStorageKeyConstants.KEY_GUIDE_ACTIVE_PLAYLIST) guideActivePlaylist: boolean = false
   // 全局悬浮加号可见性（由各内容页上报）：滚动隐藏、多选/编辑态变化时写入，
   // 首页/歌单共用 Index 上的一颗加号，切页不重建不位移，设置页隐藏
   @StorageLink(AppStorageKeyConstants.KEY_HOME_PLUS_VISIBLE) homePlusVisible: boolean = true
@@ -119,8 +121,30 @@ struct MainPage {
   private isPC: boolean = deviceInfo.deviceType === '2in1'
   private lyricLoadRequestId: number = 0
 
+  // 首帧前预填主容器宽度与断点：消除「首帧按初值 md/宽0 渲染小屏布局，
+  // onAreaChange 回填后第二帧才切大屏布局」的开屏双布局跳动（宽屏上表现为
+  // Tab 栏从右往左挪一次）。宽度由 EntryAbility 在 loadContent 前经
+  // getMainWindowSync 取窗口属性（分屏/折叠态窗口口径正确，不能用物理屏宽）
+  // 写入 KEY_STARTUP_WINDOW_WIDTH_VP，本方法只读值并复用 updateBreakpointByVp
+  // 的既有区间划分（不引入第二套阈值）；此处只填初值，onAreaChange 仍是
+  // 运行中唯一权威来源（窗口缩放/折叠/旋转照旧实时响应）
+  private prefillStartupWindowSize(): void {
+    try {
+      const w: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_STARTUP_WINDOW_WIDTH_VP) ?? 0
+      if (w <= 0) {
+        return
+      }
+      this.mainWidthVp = Math.round(w)
+      this.updateBreakpointByVp(this.mainWidthVp)
+      Logger.info(TAG, `prefill startup size: bp=${this.breakpoint} width=${this.mainWidthVp}vp`)
+    } catch (e) {
+      Logger.warn(TAG, `prefill startup size failed: ${JSON.stringify(e)}`)
+    }
+  }
+
   aboutToAppear(): void { // AppStorage 已由 EntryAbility 在 loadContent 之前完成初始化（initToAppStorage 幂等）， // 此处不再重复调用，避免重复执行可访问性检查与授权激活竞态
     Logger.info(TAG, 'aboutToAppear begin')
+    this.prefillStartupWindowSize()
     ColorConversion.setSysBarLightBackground(this.isDarkTheme())
     Logger.info(TAG, 'aboutToAppear after isDarkTheme')
     this.updateGreeting()
@@ -144,6 +168,12 @@ struct MainPage {
 
   // 手机/平板的返回键与侧滑返回：仅 @Entry 组件可监听
   onBackPress(): boolean {
+    // 引导浮层在场：返回键回退引导一步（内容页 @Watch 处理），并吞掉本次返回
+    if (this.isGuideBlockingTabs()) {
+      const current: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_GUIDE_STEP_BACK_REQUEST) ?? 0
+      AppStorage.setOrCreate(AppStorageKeyConstants.KEY_GUIDE_STEP_BACK_REQUEST, current + 1)
+      return true
+    }
     return this.tryExitMultiSelect()
   }
 
@@ -1005,7 +1035,7 @@ struct MainPage {
       // PC 上切页本就走 TabBar 点击，关掉滑动切页后滚轮回归列表滚动。触屏设备保留滑动切页。
       // 引导浮层在场时同样关闭：模拟歌曲行用横向 PanGesture 演示左滑删除，若 Tabs 仍可滑动切页，
       // 两个手势竞争会把首页直接划到歌单页（onContentWillChange 同时兜住点击切页）
-      .scrollable(!this.isPC && this.guideActive <= 0)
+      .scrollable(!this.isPC && !this.isGuideBlockingTabs())
       .animationDuration(StyleConstants.ANIMATION_SWIPER_DURATION)
       .onChange((index: number) => {
         // tab 切换：弹簧曲线驱动指示器光晕从旧 tab 滑向新 tab，图标缩放/变色同帧过渡
@@ -1021,8 +1051,9 @@ struct MainPage {
       })
       .onContentWillChange((current: number, coming: number) => {
         // 引导浮层在场时拦截一切切页（滑动/点击 TabBar/键盘方向键/控制器 changeIndex），
-        // 与遮罩「拦截全部交互」语义一致；返回 false 不触发切换
-        if (this.guideActive > 0) {
+        // 与遮罩「拦截全部交互」语义一致；返回 false 不触发切换。
+        // 只看「当前所在页」是否在引导：另一页的浮层不该锁死本页切页
+        if (this.isGuideBlockingTabs()) {
           return false
         }
         this.updatePlusTabMounted(coming)
@@ -1149,6 +1180,18 @@ struct MainPage {
     })
   }
 
+  // 当前所在页是否处于新手引导：只有该页引导在场才锁切页。
+  // 索引 0=首页、1=歌单页、2=设置页（设置页无引导，恒 false）
+  private isGuideBlockingTabs(): boolean {
+    if (this.currentIndex === 0) {
+      return this.guideActiveHome
+    }
+    if (this.currentIndex === 1) {
+      return this.guideActivePlaylist
+    }
+    return false
+  }
+
   // 全局加号可见性：首页/歌单读对应页上报的状态，设置页恒为隐藏
   private plusVisibleOnActiveTab(): boolean {
     if (this.currentIndex === 0) {
@@ -1227,6 +1270,12 @@ struct MainPage {
       return false
     }
     if (event.keyCode === KeyCode.KEYCODE_ESCAPE) {
+      // 引导浮层在场：ESC 回退引导一步，与返回键/侧滑同一请求通道
+      if (this.isGuideBlockingTabs()) {
+        const current: number = AppStorage.get<number>(AppStorageKeyConstants.KEY_GUIDE_STEP_BACK_REQUEST) ?? 0
+        AppStorage.setOrCreate(AppStorageKeyConstants.KEY_GUIDE_STEP_BACK_REQUEST, current + 1)
+        return true
+      }
       return this.tryExitMultiSelect()
     }
     // 左右方向键：外接键盘切页（首页↔歌单↔设置）。方向键事件只能来自物理键盘，未连键盘时

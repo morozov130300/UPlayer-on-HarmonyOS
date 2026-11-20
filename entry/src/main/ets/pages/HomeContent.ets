@@ -21,7 +21,7 @@ import { GlassBackButton } from '../view/GlassBackButton'
 import { ScaleButton } from '../component/ScaleButton'
 import { StyleConstants } from '../common/constants/StyleConstants'
 import { SettingsStore } from '../common/utils/SettingsStore'
-import { CoachGuideScheduler } from '../common/utils/CoachGuideScheduler'
+import { CoachGuideScheduler, GUIDE_REPLAY_TIP } from '../common/utils/CoachGuideScheduler'
 import { CoachMarkOverlay, CoachStep } from '../view/CoachMarkOverlay'
 
 const TAG = 'HomeContent'
@@ -163,12 +163,50 @@ export struct HomeContent {
   // aboutToAppear 不会再跑，必须监听计数器才能在当前会话里立即重弹
   @StorageProp(AppStorageKeyConstants.KEY_GUIDE_REPLAY_REQUEST) @Watch('onGuideReplayRequest')
   guideReplayRequest: number = 0
+  // 「引导上一步」请求（计数器）：Index 的返回键/侧滑在引导在场时 +1，
+  // 本页 @Watch 收到后回退一步；第 0 步已是第一步，回退无效果但仍吞掉该次返回
+  @StorageProp(AppStorageKeyConstants.KEY_GUIDE_STEP_BACK_REQUEST) @Watch('onGuideStepBackRequest')
+  guideStepBackRequest: number = 0
+
+  // ── 新手引导演示歌曲行：复用 songItemRow 的真实几何、真实手势与真实交互反馈 ──
+  // 数据独立于真实曲库（demoSongInfo 不入库不入队列），点收藏只切红心、点下一首播放
+  // 弹同款 toast、左滑露删除圆钮、长按进入演示多选高亮——反馈与真实完全一致，零数据写入
+  @State demoSongInfo: SongInfo = new SongInfo()
+  @State demoFavorited: boolean = false
+  // 演示多选态：长按后行为真实多选（行高亮表示选中），点击行切换选中
+  @State demoSongMultiSelect: boolean = false
+  @State demoSongSelected: boolean = false
+  // 演示行左滑位移（vp）：与真实行 swipeAction 的露出宽度一致（scaledSize(48)）
+  @State demoOffsetX: number = 0
+
+  // 演示气泡文案：空串 = 不显示；长按松手 / 说明共用，1.5s 自动消失
+  @State demoBubbleText: string = ''
+  private demoBubbleTimer: number = -1
+  // 本轮拖拽起点位移：PanGesture 的 offsetX 是相对手势起点的累计值，
+  // 必须叠加手势开始时的已有位移（例如已吸附在露出删除位再拖）
+  private demoPanBaseX: number = 0
 
   // 首页引导步骤（目标组件 id 见 build() 中对应 .id()）。
-  // 曲库为空（新用户/未导入）时左滑删除与长按管理没有真实歌曲可操作，
-  // 改用 demoSong 模拟歌曲行：浮层在高亮带内渲染一条「示例歌曲」，
-  // 用户可真实左滑/长按体验手势，导入后对真实歌曲同样操作
+  // 左滑删除与长按管理固定用演示歌曲行：行内复用 songItemRow 的真实几何与手势
+  // （AlbumCover 封面占位、下一首播放/收藏按钮、左滑露删除、长按多选高亮），
+  // 与曲库是否已导入完全无关——引导体验恒定一致，导入后对真实歌曲同样操作
   private buildHomeCoachSteps(): CoachStep[] {
+    const swipeDemo: CoachStep = new CoachStep()
+    swipeDemo.demoSong = true
+    swipeDemo.targetId = 'coach_home_list_area'
+    // 高亮带收敛到一行高（scaledSize(56)），置容器 35% 高度处：
+    // 避开列表容器 50% 处的「暂无歌曲」空态文字，也不被顶部胶囊行遮挡
+    swipeDemo.maxHighlightHeight = 76
+    swipeDemo.bandCenterRatio = 0.35
+    swipeDemo.title = '左滑删除歌曲'
+    swipeDemo.description = '向左滑动下方示例歌曲试试；导入歌曲后，同样左滑任意歌曲即可删除。'
+    const longPressDemo: CoachStep = new CoachStep()
+    longPressDemo.demoSong = true
+    longPressDemo.targetId = 'coach_home_list_area'
+    longPressDemo.maxHighlightHeight = 76
+    longPressDemo.bandCenterRatio = 0.35
+    longPressDemo.title = '长按管理歌曲'
+    longPressDemo.description = '长按下方示例歌曲进入批量管理（演示选中效果）；导入歌曲后，长按任意歌曲即可全选、加入歌单或删除。'
     const sortStep: CoachStep = new CoachStep()
     sortStep.targetId = 'coach_home_sort_pill'
     sortStep.title = '切换排序方式'
@@ -177,28 +215,7 @@ export struct HomeContent {
     viewStep.targetId = 'coach_home_view_pill'
     viewStep.title = '切换平铺方式'
     viewStep.description = '点击胶囊循环切换：平铺 / 文件夹 / 专辑 / 歌手。'
-    if (this.songs.length === 0) {
-      const swipeDemo: CoachStep = new CoachStep()
-      swipeDemo.demoSong = true
-      swipeDemo.title = '左滑删除歌曲'
-      swipeDemo.description = '向左滑动下方示例歌曲试试；导入歌曲后，同样左滑任意歌曲即可删除。'
-      const longPressDemo: CoachStep = new CoachStep()
-      longPressDemo.demoSong = true
-      longPressDemo.title = '长按管理歌曲'
-      longPressDemo.description = '长按下方示例歌曲试试；导入歌曲后，长按任意歌曲进入批量管理。'
-      return [swipeDemo, longPressDemo, sortStep, viewStep]
-    }
-    const s1: CoachStep = new CoachStep()
-    s1.targetId = 'coach_home_list_area'
-    s1.maxHighlightHeight = 200
-    s1.title = '左滑删除歌曲'
-    s1.description = '向左滑动任意歌曲，点击红色按钮即可将其删除。'
-    const s2: CoachStep = new CoachStep()
-    s2.targetId = 'coach_home_list_area'
-    s2.maxHighlightHeight = 200
-    s2.title = '长按管理歌曲'
-    s2.description = '长按任意歌曲进入批量管理，可全选、加入歌单或删除。'
-    return [s1, s2, sortStep, viewStep]
+    return [swipeDemo, longPressDemo, sortStep, viewStep]
   }
 
   // 首次进入首页自动弹引导（冷启动延迟 600ms 等首屏布局落位）；
@@ -207,10 +224,13 @@ export struct HomeContent {
     this.coachScheduler.schedule(AppStorageKeyConstants.SETTING_GUIDE_HOME_DONE, 600,
       (): boolean => this.isSearchActive || this.isMultiSelectMode || this.isFilterPanelVisible,
       (): void => {
+        this.ensureDemoSong()
+        this.resetDemoSongState()
         this.coachSteps = this.buildHomeCoachSteps()
         // 正在显示时先卸载再挂载，保证从第 1 步重新开始并重新测量
         this.coachStepIndex = -1
         this.coachStepIndex = 0
+        this.syncGuideActive()
       })
   }
 
@@ -220,16 +240,121 @@ export struct HomeContent {
     this.coachScheduler.schedule(AppStorageKeyConstants.SETTING_GUIDE_HOME_DONE, 200,
       (): boolean => this.isSearchActive || this.isMultiSelectMode || this.isFilterPanelVisible,
       (): void => {
+        this.ensureDemoSong()
+        this.resetDemoSongState()
         this.coachSteps = this.buildHomeCoachSteps()
         this.coachStepIndex = -1
         this.coachStepIndex = 0
+        this.syncGuideActive()
       })
   }
 
-  // 引导结束（走完/跳过/中途切页）：落「已看过」标记并关浮层
-  private finishHomeGuide(): void {
+  // 返回键/侧滑触发的「上一步」：引导在场时回退一步（第 0 步保持原地）
+  private onGuideStepBackRequest(): void {
+    if (this.coachStepIndex > 0) {
+      this.coachStepIndex = this.coachStepIndex - 1
+    }
+  }
+
+  // 引导结束（走完/跳过/中途切页）：落「已看过」标记并关浮层。
+  // showTip：走完或跳过时提示「可重看」路径；页面销毁导致的结束不提示（页面已离开，弹了也看不到）
+  private finishHomeGuide(showTip: boolean = true): void {
     this.coachStepIndex = -1
+    this.syncGuideActive()
+    this.resetDemoSongState()
     SettingsStore.getInstance().set(AppStorageKeyConstants.SETTING_GUIDE_HOME_DONE, '1')
+    if (showTip) {
+      showToastGlassMaterial(this.getUIContext()?.getPromptAction(), GUIDE_REPLAY_TIP)
+    }
+  }
+
+  // 引导开始前复位演示行状态（重看引导也要从干净状态开始）
+  private resetDemoSongState(): void {
+    this.demoFavorited = false
+    this.demoSongMultiSelect = false
+    this.demoSongSelected = false
+    this.demoOffsetX = 0
+    this.demoBubbleText = ''
+    if (this.demoBubbleTimer >= 0) {
+      clearTimeout(this.demoBubbleTimer)
+      this.demoBubbleTimer = -1
+    }
+  }
+
+  // 初始化演示歌曲数据：仅存在于引导浮层内的独立 SongInfo，
+  // 不写入 DataService / 播放队列 / 数据库，展示字段与真实导入歌曲同源
+  private ensureDemoSong(): void {
+    if (this.demoSongInfo.id.length > 0) {
+      return
+    }
+    const song: SongInfo = new SongInfo()
+    song.id = 'demo_song_guide'
+    song.title = '示例歌曲'
+    song.name = '示例歌曲'
+    song.artist = '演示歌手'
+    song.album = '演示专辑'
+    song.isAvailable = true
+    song.isFavorite = false
+    this.demoSongInfo = song
+  }
+
+  // 弹演示气泡（长按 / 演示删除按钮共用），1.5s 自动消失
+  private showDemoBubble(text: string): void {
+    this.demoBubbleText = text
+    if (this.demoBubbleTimer >= 0) {
+      clearTimeout(this.demoBubbleTimer)
+    }
+    this.demoBubbleTimer = setTimeout((): void => {
+      this.demoBubbleTimer = -1
+      this.demoBubbleText = ''
+    }, 1500)
+  }
+
+  // 演示行左滑松手：过半吸附到露出删除按钮位（scaledSize(48)），否则弹回；
+  // 吸附/回弹由 springMotion 隐式动画驱动（与真实 swipeAction 手感一致）
+  private demoSwipeWidth(): number {
+    return this.scaledSize(48)
+  }
+
+  private onDemoPanEnd(): void {
+    this.demoOffsetX = this.demoOffsetX < -this.demoSwipeWidth() / 2 ? -this.demoSwipeWidth() : 0
+  }
+
+  // 演示行「下一首播放」：反馈与真实一致（同款 toast），但不触碰真实播放队列
+  private onDemoPlayNext(): void {
+    try {
+      showToastGlassMaterial(this.getUIContext()?.getPromptAction(), '已添加到下一首播放')
+    } catch (e) {
+      Logger.error(TAG, 'demo play next toast failed')
+    }
+  }
+
+  // 演示行「收藏」：红心真实切换（与真实行同款反馈），不写 DataService
+  private onDemoToggleFavorite(): void {
+    this.demoFavorited = !this.demoFavorited
+  }
+
+  // 演示行长按：行为与真实行一致——进入批量管理并把目标置为选中；
+  // 选中态作用于演示行自身（demoSongSelected），不影响真实曲库
+  private onDemoLongPress(): void {
+    this.demoSongMultiSelect = true
+    this.demoSongSelected = true
+    this.showDemoBubble('松手后进入批量管理（演示）：可全选、加入歌单或删除')
+  }
+
+  // 演示行点击：多选态下与真实行为一致（切换选中）；非多选态提示需要真实歌曲才能播放
+  private onDemoSongTap(): void {
+    if (this.demoSongMultiSelect) {
+      this.demoSongSelected = !this.demoSongSelected
+      return
+    }
+    this.showDemoBubble('点击播放需要真实歌曲：导入后点击任意歌曲即可播放')
+  }
+
+  // 把「首页引导是否在场」同步给 Index：只有本页引导激活时才需要关闭 Tabs 滑动切页，
+  // 由本页显式写入而不依赖浮层生命周期计数，避免跳过之后计数泄漏、整页永久切不动
+  private syncGuideActive(): void {
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_GUIDE_ACTIVE_HOME, this.coachStepIndex >= 0)
   }
 
   private scaledSize(size: number): number {
@@ -333,10 +458,12 @@ export struct HomeContent {
       this.searchDebounceId = -1
     }
     this.coachScheduler.cancel()
-    // 引导中途切页视同看过：不再补弹
+    // 引导中途切页视同看过：不再补弹（页面已在销毁，弹提示看不到，且会挂到下一页上）
     if (this.coachStepIndex >= 0) {
-      this.finishHomeGuide()
+      this.finishHomeGuide(false)
     }
+    // 兜底：无论走哪条路径离开本页，都不把「引导在场」的锁切页标记留在 AppStorage 里
+    this.syncGuideActive()
   }
 
   // 多选状态变化统一收口在这里。isMultiSelectMode 已改为 @StorageLink，
@@ -2121,11 +2248,18 @@ export struct HomeContent {
             steps: this.coachSteps,
             stepIndex: this.coachStepIndex,
             primaryColor: this.primaryColor,
+            demoSongContent: (): void => {
+              this.demoSongRow()
+            },
+            demoRowHeight: this.scaledSize(56),
             isHostBusy: (): boolean => {
               return this.isSearchActive || this.isMultiSelectMode || this.isFilterPanelVisible
             },
             onFinish: (): void => {
               this.finishHomeGuide()
+            },
+            stepBack: (): void => {
+              this.onGuideStepBackRequest()
             }
           })
         }
@@ -2395,6 +2529,159 @@ export struct HomeContent {
           })
       )
     )
+  }
+
+  // ── 新手引导演示歌曲行：逐项复用 songItemRow 的真实几何（20/10 padding、36vp 封面、
+  // 15/12vp 主副标题、22vp 右侧按钮、左滑露 48vp 删除区）与真实交互反馈
+  // （收藏切红心、下一首播放弹同款 toast、长按进演示多选、左滑过半吸附）；
+  // 数据与真实曲库完全独立（demoSongInfo 不入库），演示删除按钮只弹说明不触发真实删除 ──
+  @Builder
+  demoSongRow(): void {
+    Stack({ alignContent: Alignment.End }) {
+      // 底层：左滑露出的删除区，几何与 songSwipeDeleteButton 完全一致；
+      // 点击弹说明（真实行为是删除，演示不删任何数据）
+      Row() {
+        ScaleButton({
+          pressScale: StyleConstants.PRESS_SCALE,
+          hoverScale: StyleConstants.HOVER_SCALE,
+          onButtonTap: () => {
+            this.showDemoBubble('真实场景点击此处删除歌曲（演示不删除）')
+          }
+        }) {
+          Row() {
+            Image($r('app.media.ic_public_delete'))
+              .width(this.scaledSize(16))
+              .height(this.scaledSize(16))
+              .fillColor(Color.White)
+          }
+          .height(this.scaledSize(36))
+          .width(this.scaledSize(36))
+          .borderRadius(this.scaledSize(18))
+          .backgroundColor(StyleConstants.COLOR_DANGER_RED)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(VerticalAlign.Center)
+          .margin({ right: this.scaledSize(12) })
+        }
+      }
+      .width(this.demoSwipeWidth())
+      .height('100%')
+      .justifyContent(FlexAlign.End)
+      .alignItems(VerticalAlign.Center)
+
+      // 前景：真实 songItemRow 的内容结构（复用 AlbumCover 组件与同款尺寸/颜色链），
+      // 交互回调接演示状态：收藏切红心、下一首播放弹同款 toast、多选态点击切换选中
+      Row() {
+        AlbumCover({ song: this.demoSongInfo, coverWidth: this.scaledSize(36), coverHeight: this.scaledSize(36),
+          coverRadius: this.scaledSize(6), decodeSize: AlbumCoverSize.SMALL })
+          .margin({ right: this.scaledSize(10) })
+
+        Column() {
+          Text(this.demoSongInfo.title)
+            .fontSize(Math.round(15 * this.fontSizeScale))
+            .fontColor($r('app.color.text_primary'))
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .width('100%')
+          Row() {
+            Text(this.demoSongInfo.artist)
+              .fontSize(Math.round(12 * this.fontSizeScale))
+              .fontColor($r('app.color.text_sixty_color'))
+            Text(' · ' + this.demoSongInfo.album)
+              .fontSize(Math.round(12 * this.fontSizeScale))
+              .fontColor($r('app.color.text_twenty_color'))
+          }
+          .width('100%')
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+
+        Row() {
+          ScaleButton({
+            pressScale: StyleConstants.PRESS_SCALE,
+            hoverScale: StyleConstants.HOVER_SCALE,
+            blockHitTest: true,
+            onButtonTap: () => {
+              this.onDemoPlayNext()
+            }
+          }) {
+            SymbolGlyph($r('sys.symbol.list_bullet'))
+              .fontSize(Math.round(22 * this.fontSizeScale))
+              .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+              .fontColor([$r('app.color.text_sixty_color')])
+          }
+        }
+        .margin({ right: this.scaledSize(16) })
+
+        ScaleButton({
+          pressScale: StyleConstants.PRESS_SCALE,
+          hoverScale: StyleConstants.HOVER_SCALE,
+          blockHitTest: true,
+          onButtonTap: () => {
+            this.onDemoToggleFavorite()
+          }
+        }) {
+          Image(this.demoFavorited ? $r('app.media.ic_public_favor_filled') : $r('app.media.ic_public_favor'))
+            .width(this.scaledSize(22)).height(this.scaledSize(22))
+            .fillColor(this.demoFavorited ? StyleConstants.COLOR_DANGER_RED : $r('app.color.text_sixty_color'))
+        }
+      }
+      .width('100%')
+      .padding({
+        left: this.scaledSize(20), right: this.scaledSize(20),
+        top: this.scaledSize(10), bottom: this.scaledSize(10)
+      })
+      .constraintSize({ minHeight: this.scaledSize(52), maxHeight: this.scaledSize(96) })
+      .alignItems(VerticalAlign.Center)
+      // 不透明背景：未滑动时完全遮住底层红色删除区（露出部分才可见），
+      // 颜色取页面背景（page_background_sm 在亮色下近似白，暗色下深灰），
+      // 用 $r 资源保持明暗自适应；选中高亮再叠加主题色淡底
+      .backgroundColor(this.demoSongMultiSelect && this.demoSongSelected ?
+        ColorHelper.hexToRgba(this.primaryColor, 0.12) : $r('app.color.page_background_sm'))
+      .borderRadius(this.scaledSize(12))
+      .border({ width: this.demoSongMultiSelect && this.demoSongSelected ? 1 : 0,
+        color: ColorHelper.hexToRgba(this.primaryColor, 0.4) })
+      .translate({ x: this.demoOffsetX })
+      // 吸附动画与真实 swipeAction 的回弹手感同源：springMotion 弹簧曲线
+      // （真实行由系统 swipeAction 内建弹簧驱动，演示行用同款曲线复现）
+      .animation({ curve: curves.springMotion(0.34, 0.99) })
+      .parallelGesture(
+        // 与真实行同构：单击与长按组成互斥手势组，避免长按松手补发单击
+        GestureGroup(GestureMode.Exclusive,
+          TapGesture({ count: 1, fingers: 1 })
+            .onAction(() => {
+              this.onDemoSongTap()
+            }),
+          LongPressGesture({ repeat: false })
+            .onAction(() => {
+              this.onDemoLongPress()
+            })
+        )
+      )
+      .gesture(PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 5 })
+        .onActionStart(() => {
+          this.demoPanBaseX = this.demoOffsetX
+        })
+        .onActionUpdate((event: GestureEvent) => {
+          this.demoOffsetX = Math.max(Math.min(this.demoPanBaseX + event.offsetX, 0), -this.demoSwipeWidth())
+        })
+        .onActionEnd(() => {
+          this.onDemoPanEnd()
+        }))
+
+      // 演示气泡：长按 / 删除按钮点击共用，文案由 showDemoBubble 决定
+      if (this.demoBubbleText.length > 0) {
+        Text(this.demoBubbleText)
+          .fontSize(Math.round(12 * this.fontSizeScale))
+          .fontColor('#FFFFFF')
+          .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+          .borderRadius(10)
+          .backgroundColor('rgba(30,30,32,0.95)')
+          .position({ x: this.scaledSize(8), y: -this.scaledSize(40) })
+          .transition(TransitionEffect.OPACITY)
+      }
+    }
+    .width('100%')
+    .height(this.scaledSize(56))
   }
 
   @Builder
