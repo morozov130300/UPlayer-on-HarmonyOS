@@ -8,7 +8,7 @@ const POETRY_RANDOM_URL: string = 'https://poetry.palemoky.com/api/poems/random?
 const REQUEST_TIMEOUT_MS: number = 8000
 // 过长的词句不适合作为问候语小字展示，优先挑选短句
 const PREFERRED_LINE_MAX_LEN: number = 24
-// 只保留：唐诗、宋词、元曲，以及所有五言/七言诗，其余类型重新获取
+// 只保留：唐朝五言/七言诗、宋词；元曲及其余类型重新获取
 const MAX_FETCH_ATTEMPTS: number = 6
 const PUNCTUATION_REGEX: RegExp = /[，。、；：？！“”‘’《》（）…—·\s]/g
 
@@ -57,7 +57,7 @@ export class PoetryService {
       return ''
     }
     try {
-      // 随机接口无法指定类型，取到不满足“唐诗/宋词/元曲/五言/七言”的篇目时重试
+      // 随机接口无法指定类型，取到不满足“唐朝五言/七言/宋词”的篇目时重试
       for (let attempt = 0; attempt < MAX_FETCH_ATTEMPTS; attempt++) {
         const resp: rcp.Response = await session.get(POETRY_RANDOM_URL)
         if (resp.statusCode !== 200 || resp.body === undefined) {
@@ -86,18 +86,20 @@ export class PoetryService {
     return nameRaw === undefined ? '' : String(nameRaw)
   }
 
-  // 判断篇目是否满足展示条件：唐诗、宋词、元曲，或全部诗句为五言/七言
+  // 判断篇目是否满足展示条件：唐朝五言/七言诗，或宋词；元曲及其余类型排除
   private isWantedPoem(poem: Record<string, Object>, rawLines: string[]): boolean {
     // 接口返回的 dynasty/type 为对象，如 {"id":8,"name":"宋"}、{"id":20,"name":"宋词"}
     const dynasty: string = this.readNestedName(poem['dynasty'])
     const kind: string = this.readNestedName(poem['type'])
-    if (dynasty === '唐') {
+    // 宋词直接保留
+    if (kind === '宋词') {
       return true
     }
-    if (kind === '宋词' || kind === '元曲') {
-      return true
+    // 元曲及其余非唐朝类型直接排除
+    if (dynasty !== '唐') {
+      return false
     }
-    // 其余篇目：仅当所有诗句都是五言或七言时保留
+    // 唐朝篇目：仅当所有诗句都是五言或七言时保留
     if (rawLines.length === 0) {
       return false
     }
