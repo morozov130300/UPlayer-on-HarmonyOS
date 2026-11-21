@@ -118,12 +118,11 @@ constexpr int32_t RING_SEAM_FADE_SAMPLES = 240;
 // underrun 风暴、恢复后 ~4× 爆发追赶），恢复瞬间系统重新握手 offload 即痊愈（00:14:03
 // SET_OFFLOAD_ENABLE 后风暴戛然而止，hilog 取证）。应用无 offload 开关 API（SDK 头文件/
 // libohaudio.so 符号表/ArkTS d.ts 三处核查），无法从源头禁用，故做停摆检测 + 整管重建自愈：
-// 单窗口 underrun 与冻结双条件触发（避免孤立欠载误报），带冷却与次数上限（防重建循环）。
+// 单窗口 underrun、缓冲打穿、消费爆发三条件触发；保留冷却，避免孤立欠载与重建循环。
 constexpr uint64_t OFFLOAD_STALL_UNDERRUN_THRESHOLD = 24;   // 单健康窗口 underrun 次数阈值（~20ms/次，24 次 ≈ 480ms 断流）
 constexpr int32_t OFFLOAD_STALL_MIN_FILL_MS = 40;           // 单窗口 fill 最低水位上限（真实断流才计）
 constexpr double OFFLOAD_STALL_CONS_SPEED = 1.8;            // 单窗口消费速率下限（expFps 的倍数，爆发追赶特征）
 constexpr int32_t OFFLOAD_REBUILD_COOLDOWN_MS = 10000;      // 自愈重建最小间隔（一次重建覆盖风暴全程）
-constexpr int32_t OFFLOAD_REBUILD_MAX_COUNT = 8;            // 单曲自愈次数上限（超限视为系统性异常，不再重建）
 
 // 官方 OH_AudioConverter 单次输入回调允许返回的最大字节数（官方上限 400KB，留出余量）。
 constexpr size_t CONVERTER_INPUT_MAX_BYTES = 256 * 1024;
@@ -425,8 +424,9 @@ public:
         renderChunkSlowCount_.store(0, std::memory_order_relaxed);
         lastUnderrunSteadyMs_.store(0, std::memory_order_relaxed);
         offloadRebuildLastMs_ = 0;
-        offloadRebuildCount_ = 0;
         converterShortCount_.store(0, std::memory_order_relaxed);
+        converterShortMissingSamples_.store(0, std::memory_order_relaxed);
+        converterShortMaxQueueWatermark_.store(0, std::memory_order_relaxed);
         ringDropSamples_.store(0, std::memory_order_relaxed);
         decodedFrames_.store(0, std::memory_order_relaxed);
         queueDryCount_.store(0, std::memory_order_relaxed);
@@ -3101,8 +3101,32 @@ private:
             }
             if (!stopRequested_.load(std::memory_order_relaxed) && !paused_.load(std::memory_order_relaxed) &&
                 renderer_ != nullptr) {
-                const OH_AudioStream_Result startResult = OH_AudioRenderer_Start(renderer_);
-                if (startResult != AUDIOSTREAM_SUCCESS) {
+                // seek 风暴恢复：连点进度条时上一轮 Pause 可能被流拒绝（pause returned=2，
+                // 流仍在 RUNNING）或仍在状态机过渡中，此时 Start 返回 ILLEGAL_STATE(2)。
+                // 重试期间先查流真实状态：已 RUNNING 即恢复成功（流从未真正停下）；
+                // 否则短等待重试，状态机落定后 Start 即可成功。重试耗尽才判死
+                // （旧实现一次失败即 decoderFailed_ →「播放错误」且无法继续播放）。
+                OH_AudioStream_Result startResult = AUDIOSTREAM_SUCCESS;
+                bool started = false;
+                for (int32_t attempt = 0; attempt < 10 && !stopRequested_.load(std::memory_order_relaxed);
+                    attempt++) {
+                    OH_AudioStream_State state = AUDIOSTREAM_STATE_INVALID;
+                    if (OH_AudioRenderer_GetCurrentState(renderer_, &state) == AUDIOSTREAM_SUCCESS &&
+                        state == AUDIOSTREAM_STATE_RUNNING) {
+                        started = true; // 流已在播放（Pause 被拒绝的典型结果），无需 Start
+                        break;
+                    }
+                    startResult = OH_AudioRenderer_Start(renderer_);
+                    if (startResult == AUDIOSTREAM_SUCCESS) {
+                        started = true;
+                        break;
+                    }
+                    if (startResult != AUDIOSTREAM_ERROR_ILLEGAL_STATE) {
+                        break; // 非状态机冲突的真实故障，不重试
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+                }
+                if (!started) {
                     bool expected = false;
                     if (decoderFailureLogged_.compare_exchange_strong(expected, true)) {
                         OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
@@ -3149,6 +3173,7 @@ private:
         healthPrevUnderruns_ = ringUnderrunCount_.load(std::memory_order_relaxed);
         healthPrevSlowChunks_ = renderChunkSlowCount_.load(std::memory_order_relaxed);
         healthPrevShorts_ = converterShortCount_.load(std::memory_order_relaxed);
+        healthPrevShortMissing_ = converterShortMissingSamples_.load(std::memory_order_relaxed);
         healthPrevDrys_ = queueDryCount_.load(std::memory_order_relaxed);
         healthPrevGaps_ = 0;
         healthPrevReqBytes_ = pipelineRenderReqBytes_.load(std::memory_order_relaxed);
@@ -3527,12 +3552,41 @@ private:
     {
         const int32_t density = inputDensityFactor_.load();
         if (density <= 1) {
-            // 目标率与直通一致，无需抽取；短读（源供数断流）计入健康行 short 计数
-            const int32_t direct = ReadPcm(audioData, audioDataSize, finished, true);
-            if (direct < audioDataSize) {
-                converterShortCount_.fetch_add(1, std::memory_order_relaxed);
+            // 目标率与直通一致，无需抽取。转换器短输出 ≠ 源断流：NO_AVAILABLE_DATA 是官方
+            // 契约允许的瞬时状态（解码节奏快慢/健康行 IO 抖动都会造成）。对齐管线路径
+            // SHORTFALL_RETRY：块内微等待重试补满，重试耗尽仍缺才计数+补零（淡出由调用方做）。
+            // 重试耗尽时记录缺口采样数与队列水位，健康行量化真实断供规模。
+            int32_t total = 0;
+            for (int32_t attempt = 0; attempt <= PIPELINE_SHORTFALL_RETRY_MAX && total < audioDataSize;
+                attempt++) {
+                bool partFinished = false;
+                const int32_t got = ReadPcm(static_cast<uint8_t*>(audioData) + total,
+                    audioDataSize - total, &partFinished, true);
+                if (got > 0) {
+                    total += got;
+                }
+                *finished = *finished || partFinished;
+                if (total >= audioDataSize || *finished) {
+                    break;
+                }
+                if (got == 0) {
+                    std::this_thread::sleep_for(
+                        std::chrono::milliseconds(PIPELINE_SHORTFALL_RETRY_WAIT_MS));
+                }
             }
-            return direct;
+            if (total < audioDataSize) {
+                converterShortCount_.fetch_add(1, std::memory_order_relaxed);
+                converterShortMissingSamples_.fetch_add(
+                    static_cast<uint64_t>((audioDataSize - total) / 4), std::memory_order_relaxed);
+                std::lock_guard<std::mutex> lock(queueMutex_);
+                const uint64_t watermark = static_cast<uint64_t>(pcmQueue_.size() / 4);
+                if (watermark > converterShortMaxQueueWatermark_.load(std::memory_order_relaxed)) {
+                    converterShortMaxQueueWatermark_.store(watermark, std::memory_order_relaxed);
+                }
+                std::memset(static_cast<uint8_t*>(audioData) + total, 0,
+                    static_cast<size_t>(audioDataSize - total));
+            }
+            return total;
         }
         const int32_t need = audioDataSize * density;
         if (static_cast<int32_t>(convertScratch_.size()) < need) {
@@ -4677,6 +4731,8 @@ private:
         const uint64_t underruns = ringUnderrunCount_.load(std::memory_order_relaxed);
         const uint64_t slowChunks = renderChunkSlowCount_.load(std::memory_order_relaxed);
         const uint64_t shorts = converterShortCount_.load(std::memory_order_relaxed);
+        const uint64_t shortMissing = converterShortMissingSamples_.load(std::memory_order_relaxed);
+        const uint64_t shortWatermark = converterShortMaxQueueWatermark_.load(std::memory_order_relaxed);
         const uint64_t drys = queueDryCount_.load(std::memory_order_relaxed);
         const uint64_t reqBytes = pipelineRenderReqBytes_.load(std::memory_order_relaxed);
         const uint64_t respBytes = pipelineRenderRespBytes_.load(std::memory_order_relaxed);
@@ -4684,6 +4740,7 @@ private:
         const uint64_t underrunDelta = underruns - healthPrevUnderruns_;
         const uint64_t slowDelta = slowChunks - healthPrevSlowChunks_;
         const uint64_t shortDelta = shorts - healthPrevShorts_;
+        const uint64_t shortMissingDelta = shortMissing - healthPrevShortMissing_;
         const uint64_t dryDelta = drys - healthPrevDrys_;
         const uint64_t gapDelta = decoderGapCount_ - healthPrevGaps_;
         const uint64_t reqDelta = reqBytes - healthPrevReqBytes_;
@@ -4692,6 +4749,7 @@ private:
         healthPrevUnderruns_ = underruns;
         healthPrevSlowChunks_ = slowChunks;
         healthPrevShorts_ = shorts;
+        healthPrevShortMissing_ = shortMissing;
         healthPrevDrys_ = drys;
         healthPrevGaps_ = decoderGapCount_;
         healthPrevReqBytes_ = reqBytes;
@@ -4723,7 +4781,7 @@ private:
             "gain=%{public}.3f fill[avg=%{public}lld min=%{public}lld low=%{public}llu]ms "
             "underrun=%{public}llu(+%{public}llu lastAgo=%{public}lld) "
             "slow=%{public}llu(+%{public}llu maxChunk=%{public}lld) "
-            "short=%{public}llu(+%{public}llu) dry=%{public}llu(+%{public}llu) "
+            "short=%{public}llu(+%{public}llu miss=%{public}llu wm=%{public}llu) dry=%{public}llu(+%{public}llu) "
             "gap=%{public}llu(+%{public}llu maxGap=%{public}lld) "
             "hold=%{public}llu/%{public}llu flow=%{public}llu/%{public}llu/%{public}llukBps "
             "speed=%{public}.3f consFps=%{public}.0f expFps=%{public}.0f "
@@ -4747,6 +4805,8 @@ private:
             static_cast<long long>(workerMaxChunkMsSnapshot_.load(std::memory_order_relaxed)),
             static_cast<unsigned long long>(shorts),
             static_cast<unsigned long long>(shortDelta),
+            static_cast<unsigned long long>(shortMissingDelta),
+            static_cast<unsigned long long>(shortWatermark),
             static_cast<unsigned long long>(drys),
             static_cast<unsigned long long>(dryDelta),
             static_cast<unsigned long long>(decoderGapCount_),
@@ -4812,16 +4872,15 @@ private:
             const int64_t nowForStall = SteadyNowMs();
             const bool cooldownOk = offloadRebuildLastMs_ == 0 ||
                 nowForStall - offloadRebuildLastMs_ >= OFFLOAD_REBUILD_COOLDOWN_MS;
-            if (cooldownOk && offloadRebuildCount_ < OFFLOAD_REBUILD_MAX_COUNT) {
+            if (cooldownOk) {
                 offloadRebuildLastMs_ = nowForStall;
-                offloadRebuildCount_++;
                 lpRuntimeError_.store(true);
                 OH_LOG_Print(LOG_APP, LOG_WARN, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
                     "offload stall detected -> rebuild requested (underrun+%{public}llu fillMin=%{public}lld "
-                    "consFps=%{public}.0f rebuild=%{public}d/%{public}d)",
+                    "consFps=%{public}.0f)",
                     static_cast<unsigned long long>(underrunDelta),
                     static_cast<long long>(ringFillMinMsSnapshot_.load(std::memory_order_relaxed)),
-                    consumeFps, offloadRebuildCount_, OFFLOAD_REBUILD_MAX_COUNT);
+                    consumeFps);
             }
         }
         decoderGapMaxMs_ = 0;
@@ -5018,6 +5077,8 @@ private:
     // （届时各线程未启动，无竞争），播放中由解码线程本地基线 healthPrev* 算差值，绝不跨线程清零。
     std::atomic<int64_t> lastUnderrunSteadyMs_ = 0;      // 最近一次 RT 欠载时刻（steady 毫秒）
     std::atomic<uint64_t> converterShortCount_ = 0;      // 转换器短读次数（源供数断流）
+    std::atomic<uint64_t> converterShortMissingSamples_ = 0;   // 短读累计缺口帧数（帧=立体声采样对）
+    std::atomic<uint64_t> converterShortMaxQueueWatermark_ = 0; // 短读瞬间 pcmQueue_ 水位峰值（帧）
     std::atomic<uint64_t> ringDropSamples_ = 0;          // 环满被丢弃的采样数（>0 = 内容被跳过）
     std::atomic<uint64_t> decodedFrames_ = 0;            // 解码输出的内容帧累计（源采样率）
     std::atomic<uint64_t> queueDryCount_ = 0;            // 转换器输入回调 8ms 等待仍不足 4 字节次数
@@ -5049,12 +5110,11 @@ private:
     // 两者不等即说明倍速没有被渲染器落到实处
     uint64_t healthPrevFrames_ = 0;
     uint64_t healthPrevUnderruns_ = 0;
-    // offload 停摆自愈状态（解码线程健康行内判定）：
-    // offloadRebuildLastMs_ 0=从未重建；offloadRebuildCount_ 单曲计数（Play 复位）
+    // offload 停摆自愈冷却基线（解码线程健康行内判定）。
     int64_t offloadRebuildLastMs_ = 0;
-    int32_t offloadRebuildCount_ = 0;
     uint64_t healthPrevSlowChunks_ = 0;
     uint64_t healthPrevShorts_ = 0;
+    uint64_t healthPrevShortMissing_ = 0;
     uint64_t healthPrevDrys_ = 0;
     uint64_t healthPrevGaps_ = 0;
     uint64_t healthPrevReqBytes_ = 0;

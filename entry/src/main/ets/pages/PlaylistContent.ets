@@ -7,7 +7,6 @@ import { DataService, AppSettingsData, LibraryDeleteResult } from '../service/Da
 import { importSongsWithToast } from '../service/SongScanner'
 import { AVPlayerService } from '../service/AVPlayerService'
 import { AVSessionController } from '../common/utils/mediautils/AVSessionController'
-import { LiveViewService } from '../service/LiveViewService'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import Logger from '../common/utils/Logger'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
@@ -529,7 +528,6 @@ export struct PlaylistContent {
       if (deleteResult.currentSongRemoved) {
         await AVPlayerService.getInstance().stop()
         AVSessionController.getInstance().clearCurrentMedia()
-        await LiveViewService.getInstance().stopLiveView()
       }
       await AVSessionController.getInstance().setAVQueueItems()
     }

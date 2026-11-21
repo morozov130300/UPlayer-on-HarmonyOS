@@ -8,7 +8,6 @@ import { AVPlayerService } from '../service/AVPlayerService';
 import { AppSettingsData, DataService } from '../service/DataService';
 import { AVSessionController } from '../common/utils/mediautils/AVSessionController';
 import { BackgroundUtil } from '../common/utils/BackgroundUtil';
-import { LiveViewService } from '../service/LiveViewService';
 import Logger from '../common/utils/Logger';
 import { AudioMetadataService } from '../service/AudioMetadataService';
 import { HoldingHandService } from '../service/HoldingHandService';
@@ -42,7 +41,6 @@ export default class EntryAbility extends UIAbility {
     }
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate');
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT, this.context);
-    LiveViewService.getInstance().setContext(this.context);
     this.pendingCardAction = this.extractCardAction(want);
   }
 
@@ -93,11 +91,6 @@ export default class EntryAbility extends UIAbility {
       BackgroundUtil.stopContinuousTask(this.context);
     } catch (err) {
       hilog.error(DOMAIN, 'testTag', 'stopContinuousTask failed: %{public}s', JSON.stringify(err));
-    }
-    try {
-      LiveViewService.getInstance().stopLiveView();
-    } catch (err) {
-      hilog.error(DOMAIN, 'testTag', 'stopLiveView failed: %{public}s', JSON.stringify(err));
     }
     try {
       FormUpdateService.getInstance().shutdown();

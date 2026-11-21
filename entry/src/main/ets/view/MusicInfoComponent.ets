@@ -41,8 +41,9 @@ export struct MusicInfoComponent {
   @StorageLink(AppStorageKeyConstants.KEY_LYRIC_OFFSET_MS) @Watch('updateInlineLyricLine') lyricOffsetMs: number = 0;
   // 歌词引用集合级变化（重新导入覆盖）时重读行内歌词
   @StorageProp(AppStorageKeyConstants.KEY_LYRIC_REVISION) @Watch('loadInlineLyric') lyricRevision: number = 0;
-  // 行内歌词当前行文本与加载态：切歌/进度推进时按「进度+每歌偏移」二分定位刷新
+  // 行内歌词当前行与下一行文本：切歌/进度推进时按「进度+每歌偏移」二分定位刷新
   @State inlineLyricText: string = '';
+  @State inlineLyricNextText: string = '';
   @State inlineLyricLoading: boolean = false;
   // 行内歌词数据缓存（当前歌曲的完整歌词行），供逐帧进度定位
   private inlineLrcEntries: LrcEntry[] = [];
@@ -172,12 +173,13 @@ export struct MusicInfoComponent {
     })
   }
 
-  // 进度推进：按「进度 + 每歌偏移」二分定位当前行（与 LrcListView.findShowLine 同算法），
+  // 进度推进：按「进度 + 每歌偏移」二分定位当前行与下一行（与 LrcListView.findShowLine 同算法），
   // 行文本不变时不写 @State，避免逐帧重渲染
   private updateInlineLyricLine(): void {
     if (this.inlineLrcEntries.length === 0) {
-      if (this.inlineLyricText.length > 0) {
+      if (this.inlineLyricText.length > 0 || this.inlineLyricNextText.length > 0) {
         this.inlineLyricText = ''
+        this.inlineLyricNextText = ''
       }
       return
     }
@@ -195,9 +197,15 @@ export struct MusicInfoComponent {
         high = middle - 1
       }
     }
-    const text: string = candidate >= 0 ? this.inlineLrcEntries[candidate].lineWords : ''
-    if (text !== this.inlineLyricText) {
-      this.inlineLyricText = text
+    // candidate = -1 表示进度早于首行：当前句留空、下一句即首行
+    const currentText: string = candidate >= 0 ? this.inlineLrcEntries[candidate].lineWords : ''
+    const nextText: string = candidate + 1 < this.inlineLrcEntries.length ?
+      this.inlineLrcEntries[candidate + 1].lineWords : ''
+    if (currentText !== this.inlineLyricText) {
+      this.inlineLyricText = currentText
+    }
+    if (nextText !== this.inlineLyricNextText) {
+      this.inlineLyricNextText = nextText
     }
   }
 
@@ -216,39 +224,49 @@ export struct MusicInfoComponent {
       this.CoverInfo()
       this.MusicInfo()
       if (this.isNarrowWidth() && this.narrowInlineLyric) {
-        this.InlineLyric()
+        // 歌词块垂直居中于歌名与控制区之间的空挡：上下 Blank 等权平分剩余空间
+        Column() {
+          Blank()
+          this.InlineLyric()
+          Blank()
+        }
+        .width('100%')
+        .layoutWeight(1)
+      } else {
+        Blank()
       }
-      Blank()
       ControlAreaComponent({ isNarrow: this.isNarrowWidth() })
     }
     .height(StyleConstants.FULL_HEIGHT)
     .width(StyleConstants.FULL_HEIGHT)
   }
 
-  // 窄屏行内歌词（「更多」面板开关，默认开）：单行歌词紧贴歌名下方，
-  // 占据歌名与控制区之间空挡的上沿，其余空间仍由 Blank 吸收、控制区贴底不位移
+  // 行内歌词（「更多」面板开关，默认开）：当前句 + 下一句两行，垂直居中于
+  // 歌名与控制区之间的空挡（由外层上下 Blank 平分剩余空间实现）
   @Builder
   InlineLyric() {
-    Row() {
-      if (this.inlineLyricLoading) {
-        Blank()
-      } else if (this.inlineLyricText.length > 0) {
-        Text(this.inlineLyricText)
-          .fontSize(Math.round(14 * this.fontSizeScale))
-          .fontColor(Color.White).opacity(0.86)
-          .fontWeight(FontWeight.Bold)
-          .fontFamily(PlayerConstants.FONT_FAMILY_BOLD)
+    Column() {
+      Text(this.inlineLyricText.length > 0 ? this.inlineLyricText :
+        (this.inlineLyricLoading ? '' : ' '))
+        .fontSize(Math.round(14 * this.fontSizeScale))
+        .fontColor(Color.White).opacity(0.86)
+        .fontWeight(FontWeight.Bold)
+        .fontFamily(PlayerConstants.FONT_FAMILY_BOLD)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+      if (this.inlineLyricNextText.length > 0) {
+        Text(this.inlineLyricNextText)
+          .fontSize(Math.round(13 * this.fontSizeScale))
+          .fontColor(Color.White).opacity(0.5)
+          .fontWeight(FontWeight.Medium)
+          .fontFamily(PlayerConstants.FONT_FAMILY_MEDIUM)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-      } else {
-        // 无歌词：与空挡同构，不显示占位文案
-        Blank()
+          .margin({ top: 2 })
       }
     }
     .width('100%')
-    .alignItems(VerticalAlign.Center)
-    .height(28)
-    .margin({ bottom: 8 })
+    .alignItems(HorizontalAlign.Start)
   }
 
   @Builder

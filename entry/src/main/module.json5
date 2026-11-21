@@ -100,12 +100,6 @@
         ],
       },
       {
-        "name": "LiveViewExtAbility",
-        "srcEntry": "./ets/liveview/LiveViewExtAbility.ets",
-        "type": "liveViewLockScreen",
-        "exported": false
-      },
-      {
         "name": "PlayerFormAbility",
         "srcEntry": "./ets/form/PlayerFormAbility.ets",
         "label": "$string:PlayerFormAbility_label",

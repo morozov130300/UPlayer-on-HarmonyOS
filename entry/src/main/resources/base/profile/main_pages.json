@@ -2,7 +2,6 @@
   "src": [
     "pages/Index",
     "pages/MusicPlayer",
-    "pages/SettingsDetailPage",
-    "liveview/LockScreenPage"
+    "pages/SettingsDetailPage"
   ]
 }

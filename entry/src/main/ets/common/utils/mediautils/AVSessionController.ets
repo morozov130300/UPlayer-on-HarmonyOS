@@ -36,6 +36,8 @@ export class AVSessionController {
   private playbackRetryAttempt: number = 0;
   private playbackGeneration: number = 0;
   private lastQueueRevision: number = -1;
+  // 最近一次下发的播放速率：切歌重建播放状态时复用，避免回落到假 1.0
+  private lastSubmittedSpeed: number = 1.0;
   private coverRetryAttempt: number = 0;
   private coverRetryTimer: number = -1;
   // 投播控制器（AVCastController）：投播建立后由 outputDeviceChange 触发获取，
@@ -113,7 +115,7 @@ export class AVSessionController {
     const loopMode: avSession.LoopMode = this.playModeToLoopMode(playMode);
     const playbackState: avSession.AVPlaybackState = {
       state: isPlay ? avSession.PlaybackState.PLAYBACK_STATE_PLAY : avSession.PlaybackState.PLAYBACK_STATE_PAUSE,
-      speed: 1.0,
+      speed: this.lastSubmittedSpeed,
       bufferedTime: 0,
       loopMode: loopMode,
       isFavorite: false,
@@ -735,6 +737,16 @@ export class AVSessionController {
     this.queuePlaybackState({ loopMode: AVSessionLoopMode });
   }
 
+  // 播放速率变化（倍速滑杆/设置页）同步播控中心：修复此前 speed 恒报 1.0 的假数据
+  public setSpeedState(speed: number): void {
+    const clamped: number = Number.isFinite(speed) && speed > 0 ? speed : 1.0;
+    if (clamped === this.lastSubmittedSpeed) {
+      return;
+    }
+    this.lastSubmittedSpeed = clamped;
+    this.queuePlaybackState({ speed: clamped });
+  }
+
   async unregisterSessionListener(): Promise<void> {
     this.metadataRequestId++;
     this.metadataCoverLease?.release();
@@ -760,6 +772,7 @@ export class AVSessionController {
     this.playbackStateInFlight = false;
     this.lastSubmittedPlayState = undefined;
     this.lastSubmittedActiveItemId = -1;
+    this.lastSubmittedSpeed = 1.0;
     this.lastQueueRevision = -1;
     this.AVSession = undefined;
     if (!session) {

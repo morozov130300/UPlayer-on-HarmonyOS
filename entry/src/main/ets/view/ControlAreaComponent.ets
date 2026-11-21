@@ -59,6 +59,9 @@ export struct ControlAreaComponent {
   @State songTimeFontSize: number = 10;
   @State songTimeFontColor: ResourceColor = '#B3FFFFFF';
   @State trackThickness: number = 6;
+  // 偏移拖动预览位置（ms）：与时间戳同源（按下位置+滑动变化量），驱动自绘进度图形；
+  // -1 表示非拖动态，此时图形回落到播放进度
+  @State previewProgressMs: number = -1;
   @State isShowMorePanel: boolean = false;
   // 「更多」面板内部层级：0 主列表 / 1 歌曲信息 / 2 定时关闭 / 3 输出设备。
   // 二级页在同一 sheet 内原地覆盖显示，不另开弹窗
@@ -91,8 +94,6 @@ export struct ControlAreaComponent {
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance();
   private songDataSource: SongDataSource = new SongDataSource([]);
   private seekGestureActive: boolean = false;
-  private seekStartSliderValue: number = 0;
-  private seekStartPosition: number = 0;
   private lastCommittedSeekValue: number = -1;
   private volumeManager: audio.AudioVolumeManager | undefined = undefined;
   private isVolumeListenerRegistered: boolean = false;
@@ -349,6 +350,18 @@ export struct ControlAreaComponent {
     }
     this.lastCommittedSeekValue = target;
     this.avPlayerService.seek(target);
+  }
+
+  // 自绘进度条已播放段的宽度（%）：拖动偏移期间与时间戳同源——都显示
+  // 「按下位置 + 滑动变化量」的预览值（previewProgressMs），随变化量实时变化；
+  // 非拖动态显示播放进度（KEY_PROGRESS）
+  private progressSelectedPercent(): number {
+    if (this.max <= 0) {
+      return 0;
+    }
+    const source: number = this.previewProgressMs >= 0 ? this.previewProgressMs : this.value;
+    const ratio: number = Math.min(Math.max(source, 0), this.max) / this.max;
+    return Math.round(Math.min(100, Math.max(0, ratio * 100)) * 100) / 100;
   }
 
   private resetProgressSliderStyle(): void {
@@ -714,47 +727,74 @@ export struct ControlAreaComponent {
     Column() {
       Column() {
         Column() {
-          Slider({
-            min: 0, max: this.max, step: 1, style: SliderStyle.NONE, value: this.value
-          })
-            .trackThickness(this.trackThickness)
-            .selectedColor('#FFFFFF')
-            .trackColor('#B3FFFFFF')
-            .enabled(this.max > 0)
-            .focusable(false)
-            .onChange((value: number, mode: SliderChangeMode) => {
-              if (mode === SliderChangeMode.Click) {
-                if (!this.seekGestureActive) {
-                  this.lastCommittedSeekValue = -1;
+          // ── 偏移调节进度条 ──
+          // 自绘进度图形与手势层分离：拖动期间图形显示预览位置（按下位置+滑动变化量），
+          // 与时间戳同源同帧变化；松手后回落到真实播放进度。Slider（style NONE）仅作为
+          // 透明手势层承接点击/滑动事件，自身不绘制任何可见图形
+          Stack({ alignContent: Alignment.Center }) {
+            // 可见轨道层：底轨 + 已播放段（粗细 = trackThickness，居中于 32vp 区域，仅负责显示）
+            Row() {
+              Row()
+                .width(`${this.progressSelectedPercent()}%`)
+                .height('100%')
+                .borderRadius(this.trackThickness / 2)
+                .backgroundColor('#FFFFFF')
+            }
+            .width('100%')
+            .height(this.trackThickness)
+            .borderRadius(this.trackThickness / 2)
+            .backgroundColor('#B3FFFFFF')
+
+            // 手势层：透明 Slider，承接点击与拖动；样式 NONE 且无可见图形
+            Slider({
+              min: 0, max: this.max, step: 1, style: SliderStyle.NONE, value: this.value
+            })
+              .selectedColor(Color.Transparent)
+              .trackColor(Color.Transparent)
+              .blockColor(Color.Transparent)
+              .blockSize({ width: 0, height: 0 })
+              .enabled(this.max > 0)
+              .focusable(false)
+              .onChange((value: number, mode: SliderChangeMode) => {
+                // 统一锚点：Click/Moving/End 一律用 Slider 绝对值（手指落点即目标位置），
+                // End 只做「同一手势的重复提交」去重；杜绝相对锚点（上次拖动残留的
+                // seekStart* 字段）在点击时算出陈旧偏移覆盖 Click 正确提交的问题
+                if (mode === SliderChangeMode.Click) {
+                  if (!this.seekGestureActive) {
+                    this.lastCommittedSeekValue = -1;
+                    this.previewProgressMs = -1;
+                    this.commitProgressSeek(value);
+                    this.resetProgressSliderStyle();
+                  }
+                } else if (mode === SliderChangeMode.Moving) {
+                  if (!this.seekGestureActive) {
+                    this.seekGestureActive = true;
+                    this.lastCommittedSeekValue = -1;
+                  }
+                  // 图形与时间戳同源：同一预览值同时驱动两者，随滑动实时变化
+                  this.previewProgressMs = value;
+                  this.currentTime = MediaTools.msToCountdownTime(value);
+                  this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
+                    this.trackThickness = 10;
+                    this.songTimeFontSize = 12;
+                    this.songTimeFontColor = '#FFFFFF';
+                  });
+                } else if (mode === SliderChangeMode.End) {
+                  // 点击手势序列 Begin→Click→End：End 与 Click 同值，经去重不二次 seek；
+                  // 拖动手势序列 Begin→Moving…→End：End 提交拖动终点的绝对值
+                  this.seekGestureActive = false;
+                  this.previewProgressMs = -1;
                   this.commitProgressSeek(value);
                   this.resetProgressSliderStyle();
                 }
-              } else if (mode === SliderChangeMode.Moving) {
-                if (!this.seekGestureActive) {
-                  this.seekGestureActive = true;
-                  this.seekStartSliderValue = value;
-                  this.seekStartPosition = this.avPlayerService.getCurrentPositionMs();
-                  this.lastCommittedSeekValue = -1;
-                }
-                const previewPosition: number = Math.max(0, Math.min(this.seekStartPosition +
-                  Math.round(value - this.seekStartSliderValue), this.max));
-                this.currentTime = MediaTools.msToCountdownTime(previewPosition);
-                this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
-                  this.trackThickness = 10;
-                  this.songTimeFontSize = 12;
-                  this.songTimeFontColor = '#FFFFFF';
-                });
-              } else if (mode === SliderChangeMode.End) {
-                this.seekGestureActive = false;
-                const targetPosition: number = Math.max(0, Math.min(this.seekStartPosition +
-                  Math.round(value - this.seekStartSliderValue), this.max));
-                this.commitProgressSeek(targetPosition);
-                this.resetProgressSliderStyle();
-              }
-              this.pageShowTime = 0;
-            })
-            .height($r('app.float.slider_height'))
-            .width(StyleConstants.FULL_WIDTH)
+                this.pageShowTime = 0;
+              })
+              // 手势层满高 32vp：点击/滑动命中带扩到整个容器，显示不变
+              .height('100%')
+              .width(StyleConstants.FULL_WIDTH)
+          }
+          .width(StyleConstants.FULL_WIDTH)
+          .height(this.scaledSize(32))
         }
         .height(this.scaledSize(32))
         .width(StyleConstants.FULL_WIDTH)
@@ -1186,16 +1226,16 @@ export struct ControlAreaComponent {
         }, 200);
       })
 
-      // 窄屏行内歌词开关行：仅窄屏断点渲染；写 AppStorage 即时生效（MusicInfoComponent
+      // 行内歌词开关行：仅窄屏断点渲染；写 AppStorage 即时生效（MusicInfoComponent
       // @Watch 响应），持久化由设置存储负责（saveSettings 全量字段落盘）
       if (this.isNarrow) {
         Row() {
           Column({ space: 2 }) {
-            Text('窄屏行内歌词')
+            Text('行内歌词')
               .fontSize(this.scaledFont(14))
               .fontWeight(FontWeight.Medium)
               .fontColor(this.settingTextColor())
-            Text('第一页歌名下方常驻单行歌词')
+            Text('播放页歌名下方常驻单行歌词')
               .fontSize(this.scaledFont(12))
               .fontColor($r('app.color.text_sixty_color'))
           }

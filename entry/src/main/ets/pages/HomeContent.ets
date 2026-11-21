@@ -7,7 +7,6 @@ import { DataService, AppSettingsData, LibraryDeleteResult, FilterDimensions } f
 import { importSongsWithToast } from '../service/SongScanner'
 import { AVPlayerService } from '../service/AVPlayerService'
 import { AVSessionController } from '../common/utils/mediautils/AVSessionController'
-import { LiveViewService } from '../service/LiveViewService'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import { DisplayItem, DisplayItemDataSource } from '../viewmodel/DisplayItemDataSource'
 import Logger from '../common/utils/Logger'
@@ -1514,9 +1513,6 @@ export struct HomeContent {
         Logger.error(TAG, `stop player after delete failed: ${JSON.stringify(err)}`)
       })
       AVSessionController.getInstance().clearCurrentMedia()
-      LiveViewService.getInstance().stopLiveView().catch((err: Error) => {
-        Logger.error(TAG, `stop live view after delete failed: ${JSON.stringify(err)}`)
-      })
     }
     this.loadData()
     this.refreshFilterLabel()

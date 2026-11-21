@@ -6,7 +6,6 @@ import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstan
 import { AVSessionController } from '../common/utils/mediautils/AVSessionController'
 import { MediaTools } from '../common/utils/mediautils/MediaTools'
 import { BackgroundUtil } from '../common/utils/BackgroundUtil'
-import { LiveViewService } from '../service/LiveViewService'
 import nativeAudio from 'libuplayer.so'
 import { SongInfo } from '../model/SongInfo'
 import { AlbumCoverSize, AudioMetadataService, CoverPriority } from './AudioMetadataService'
@@ -64,7 +63,6 @@ export class AVPlayerService {
   private static EQUALIZER_MAX_GAIN_DB: number = 10
   private static SEEK_SETTLE_MS: number = 2000
   private sessionController: AVSessionController = AVSessionController.getInstance()
-  private liveViewService: LiveViewService = LiveViewService.getInstance()
   private equalizerEnabled: boolean = false
   private equalizerBands: number[] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
   // OHAudioSuite 系统音效：类型 1-4；空间渲染模式 0=摆位(3值) 1=旋转(5值) 2=扩展(2值)
@@ -247,7 +245,6 @@ export class AVPlayerService {
     AppStorage.setOrCreate('uplayer_current_artist', song.artist)
     AppStorage.setOrCreate('uplayer_current_song_id', song.id)
     AppStorage.setOrCreate('uplayer_current_cover_state', 'placeholder')
-    AppStorage.setOrCreate('uplayer_current_album_art', '')
     AppStorage.setOrCreate('uplayer_current_song_path', song.filePath)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_PROGRESS, startMs > 0 ? startMs : 0)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_TIME, '00:00')
@@ -259,7 +256,6 @@ export class AVPlayerService {
     // 防抖中的旧位置落盘会被本次覆盖为最新值，不会写入新歌配旧位置
     SettingsStore.getInstance().set(KEY_LAST_SONG_ID, song.id, true)
     SettingsStore.getInstance().set(KEY_LAST_POSITION_MS, startMs > 0 ? startMs.toString() : '0', true)
-    this.liveViewService.updateLiveView()
     this.stageReplayGain(song)
     await this.play(song.uri.length > 0 ? song.uri : song.filePath, startMs, startPaused)
   }
@@ -768,6 +764,8 @@ export class AVPlayerService {
     const snapped: number = PlayerConstants.snapSpeedToStep(speed)
     this.desiredSpeed = snapped
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_SPEED, snapped)
+    // 播控中心/远端同步真实播放速率（此前 AVSession 恒报 1.0 假数据）
+    this.sessionController.setSpeedState(snapped)
     const settings: AppSettingsData = DataService.getInstance().getSettings()
     settings.playSpeed = snapped
     DataService.getInstance().saveSettings(settings)
