@@ -208,7 +208,7 @@ export struct LyricsComponent {
       }
 
       if (this.isNarrowLayout() && this.isShowControl) {
-        ControlAreaComponent()
+        ControlAreaComponent({ isNarrow: this.isNarrowLayout() })
           .margin({ top: $r('app.float.control_lyric_margin') })
           .transition({ type: TransitionType.Insert, translate: { x: 0, y: 40 }, opacity: 0 })
           .transition({ type: TransitionType.Delete, translate: { x: 0, y: 40 }, opacity: 0 })

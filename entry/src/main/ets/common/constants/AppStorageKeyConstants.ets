@@ -79,6 +79,9 @@ export class AppStorageKeyConstants {
   // 歌词偏移滑轨的显隐：「更多」面板里的条目只是触发器，点击后关面板并把它置 true，
   // 歌词区在原位置滑出滑轨，无操作 5 秒自动收起
   public static readonly KEY_LYRIC_OFFSET_PANEL: string = BaseConstants.KEY_PREFIX + 'LyricOffsetPanel'
+  // 窄屏播放器第一页行内歌词开关：「更多」面板条目切换，开启后封面区上移（margin 16）
+  // 并在歌名与进度条之间的空挡常驻单行歌词；关闭时空挡回落 32 且不显示歌词
+  public static readonly KEY_NARROW_INLINE_LYRIC: string = BaseConstants.KEY_PREFIX + 'NarrowInlineLyric'
   // 全局悬浮加号可见性（由各内容页上报）：滚动隐藏/多选/编辑态变化时写入，
   // Index 按当前激活页读取——首页↔歌单切换时加号不重建、不位移，设置页隐藏
   public static readonly KEY_HOME_PLUS_VISIBLE: string = BaseConstants.KEY_PREFIX + 'HomePlusVisible'
@@ -127,6 +130,8 @@ export class AppStorageKeyConstants {
   public static readonly KEY_GUIDE_REPLAY_REQUEST: string = BaseConstants.KEY_PREFIX + 'GuideReplayRequest'
   // 关于页「开启日志」开关：'1' = WARN/ERROR 写盘，'0' = 关闭（默认）。
   public static readonly SETTING_LOG_FILE_ENABLED: string = 'uplayer_log_file_enabled'
+  // 关于页「详细日志」开关：'1' = 详细模式下 DEBUG/INFO 也写盘（仅 WARN/ERROR 基础开关开启时生效），'0' = 仅 WARN/ERROR（默认）。
+  public static readonly SETTING_LOG_VERBOSE_ENABLED: string = 'uplayer_log_verbose_enabled'
   // 新手引导浮层激活标记：按页分开（首页 / 歌单页各一枚布尔）。
   // 不能用「挂载 +1、卸载 -1」的共享计数：两页浮层可能并存，跳过当前页后计数仍 >0，
   // Index 会永久拦截切页（表现为 Tab 有按压光效但切不动、整页点不动）。

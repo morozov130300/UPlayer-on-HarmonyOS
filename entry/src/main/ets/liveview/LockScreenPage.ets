@@ -1,6 +1,9 @@
 // ArkUI 26 Beta1: 接口定义变更（误报，本项目已是Stage模型）+ UX视觉布局变更（Text默认开启沉浸式材质，系统行为）
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants';
 import { AVPlayerService } from '../service/AVPlayerService';
+import Logger from '../common/utils/Logger';
+
+const TAG = 'LockScreenPage';
 
 @Entry
 @Component
@@ -72,7 +75,9 @@ struct LockScreenPage {
             if (this.isPlay) {
               this.playerService.pause();
             } else {
-              this.playerService.resume();
+              this.playerService.resume().catch((err: Error): void => {
+                Logger.error(TAG, `resume failed: ${JSON.stringify(err)}`);
+              });
             }
           })
 

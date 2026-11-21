@@ -889,7 +889,9 @@ struct MainPage {
     if (this.isPlaying) {
       this.avPlayerService.pause()
     } else {
-      this.avPlayerService.resume()
+      this.avPlayerService.resume().catch((err: Error): void => {
+        Logger.error(TAG, `resume failed: ${JSON.stringify(err)}`)
+      })
     }
   }
 

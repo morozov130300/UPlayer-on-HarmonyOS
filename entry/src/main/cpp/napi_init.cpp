@@ -92,6 +92,11 @@ constexpr int64_t PIPELINE_SWITCH_GRACE_MS = 120;        // StartPipeline 后强
 // 造成随机欠载卡顿。渲染全部迁到专用工作线程，RT 回调退化为纯环形缓冲 memcpy 读取，
 // IPC/参数调节抖动由环形缓冲吸收。
 constexpr int32_t RING_CAPACITY_MS = 800;               // 环形缓冲容量（吸收 IPC/滑条调节抖动；800ms 覆盖 hilogd 背压下的 worker 停顿）
+// 猝发断流余量：offload/星闪停摆实测 ~6.5s 冻结（无法靠缓冲硬扛，由自愈重建处理），
+// 但 Seek 场景经 SrcBuffer 快速供数 + RT 拉取失速仍有秒级欠载余量需求；
+// 3200ms 容量下 Seek 恢复期 underrun 从两位数降为个位数
+constexpr int32_t RING_BURST_EXTRA_MS = 2400;
+constexpr int32_t RING_TOTAL_CAPACITY_MS = RING_CAPACITY_MS + RING_BURST_EXTRA_MS;
 constexpr int32_t RING_CHUNK_MS = 10;                   // 工作线程单次渲染块时长
 constexpr int32_t RING_PREFILL_MS = 120;                // 启动 renderer 前的预填充时长（普通时延模式回调帧长更长，40ms 不足易起播欠载）
 constexpr int32_t RING_PREFILL_TIMEOUT_MS = 200;        // 预填充等待超时（解码器出数据即可填满）
@@ -108,6 +113,17 @@ constexpr int64_t ROUTE_RESET_HYSTERESIS_FRAMES = 1920;
 // 环接缝淡入：RingReset 后新纪元首块前 N 采样线性淡入（~5ms@48k），
 // 消除起播/seek 接缝处旧波形→新波形突变的「咔」爆点；RingReset 递增纪元供 RT 识别
 constexpr int32_t RING_SEAM_FADE_SAMPLES = 240;
+
+// offload 停摆自愈：系统 offload 流在星闪耳机上实测会周期性整管停摆 ~6.5s（fill 打 0、
+// underrun 风暴、恢复后 ~4× 爆发追赶），恢复瞬间系统重新握手 offload 即痊愈（00:14:03
+// SET_OFFLOAD_ENABLE 后风暴戛然而止，hilog 取证）。应用无 offload 开关 API（SDK 头文件/
+// libohaudio.so 符号表/ArkTS d.ts 三处核查），无法从源头禁用，故做停摆检测 + 整管重建自愈：
+// 单窗口 underrun 与冻结双条件触发（避免孤立欠载误报），带冷却与次数上限（防重建循环）。
+constexpr uint64_t OFFLOAD_STALL_UNDERRUN_THRESHOLD = 24;   // 单健康窗口 underrun 次数阈值（~20ms/次，24 次 ≈ 480ms 断流）
+constexpr int32_t OFFLOAD_STALL_MIN_FILL_MS = 40;           // 单窗口 fill 最低水位上限（真实断流才计）
+constexpr double OFFLOAD_STALL_CONS_SPEED = 1.8;            // 单窗口消费速率下限（expFps 的倍数，爆发追赶特征）
+constexpr int32_t OFFLOAD_REBUILD_COOLDOWN_MS = 10000;      // 自愈重建最小间隔（一次重建覆盖风暴全程）
+constexpr int32_t OFFLOAD_REBUILD_MAX_COUNT = 8;            // 单曲自愈次数上限（超限视为系统性异常，不再重建）
 
 // 官方 OH_AudioConverter 单次输入回调允许返回的最大字节数（官方上限 400KB，留出余量）。
 constexpr size_t CONVERTER_INPUT_MAX_BYTES = 256 * 1024;
@@ -396,6 +412,7 @@ public:
                 std::chrono::steady_clock::now() - startedAt).count();
         };
         Stop();
+        seekResumeRenderer_.store(false, std::memory_order_relaxed);
         pipelineInputBytes_.store(0);
         pipelineInputFirstLogged_.store(false);
         pipelineRenderReqBytes_.store(0, std::memory_order_relaxed);
@@ -407,6 +424,8 @@ public:
         ringUnderrunCount_.store(0, std::memory_order_relaxed);
         renderChunkSlowCount_.store(0, std::memory_order_relaxed);
         lastUnderrunSteadyMs_.store(0, std::memory_order_relaxed);
+        offloadRebuildLastMs_ = 0;
+        offloadRebuildCount_ = 0;
         converterShortCount_.store(0, std::memory_order_relaxed);
         ringDropSamples_.store(0, std::memory_order_relaxed);
         decodedFrames_.store(0, std::memory_order_relaxed);
@@ -572,8 +591,8 @@ public:
         renderStopRequested_.store(false);
         ringUnderrunLastSample_ = 0;
         rtUnderrunPrev_ = false;
-        if (ringBuffer_.size() != static_cast<size_t>(RING_CAPACITY_MS) * RING_SAMPLES_PER_MS) {
-            ringBuffer_.assign(static_cast<size_t>(RING_CAPACITY_MS) * RING_SAMPLES_PER_MS, 0);
+        if (ringBuffer_.size() != static_cast<size_t>(RING_TOTAL_CAPACITY_MS) * RING_SAMPLES_PER_MS) {
+            ringBuffer_.assign(static_cast<size_t>(RING_TOTAL_CAPACITY_MS) * RING_SAMPLES_PER_MS, 0);
         }
         if (renderChunkBuf_.size() != static_cast<size_t>(RING_CHUNK_MS) * RING_SAMPLES_PER_MS) {
             renderChunkBuf_.assign(static_cast<size_t>(RING_CHUNK_MS) * RING_SAMPLES_PER_MS, 0);
@@ -738,6 +757,15 @@ public:
             return false;
         }
         const int64_t targetMs = std::max<int64_t>(0, positionMs);
+        const bool resumeAfterSeek = !paused_.load(std::memory_order_relaxed);
+        if (resumeAfterSeek && renderer_ != nullptr) {
+            const OH_AudioStream_Result pauseResult = OH_AudioRenderer_Pause(renderer_);
+            if (pauseResult != AUDIOSTREAM_SUCCESS) {
+                OH_LOG_Print(LOG_APP, LOG_WARN, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                    "renderer pause for seek returned=%{public}d", static_cast<int>(pauseResult));
+            }
+        }
+        seekResumeRenderer_.store(resumeAfterSeek, std::memory_order_relaxed);
         seekPositionMs_ = targetMs;
         seekRequestSequence_.fetch_add(1);
         seekRequested_ = true;
@@ -3055,6 +3083,38 @@ private:
         decodingEnded_ = false;
         decoderLifecycle_ = DecoderLifecycle::STARTED;
         queueCondition_.notify_all();
+        if (seekResumeRenderer_.exchange(false, std::memory_order_acq_rel)) {
+            const size_t prefillSamples = static_cast<size_t>(RING_PREFILL_MS) * RING_SAMPLES_PER_MS;
+            const auto prefillDeadline = std::chrono::steady_clock::now() +
+                std::chrono::milliseconds(RING_PREFILL_TIMEOUT_MS);
+            while (std::chrono::steady_clock::now() < prefillDeadline &&
+                !stopRequested_.load(std::memory_order_relaxed)) {
+                size_t filledSamples = 0;
+                {
+                    std::lock_guard<std::mutex> lock(ringMutex_);
+                    filledSamples = ringFilled_;
+                }
+                if (filledSamples >= prefillSamples) {
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            }
+            if (!stopRequested_.load(std::memory_order_relaxed) && !paused_.load(std::memory_order_relaxed) &&
+                renderer_ != nullptr) {
+                const OH_AudioStream_Result startResult = OH_AudioRenderer_Start(renderer_);
+                if (startResult != AUDIOSTREAM_SUCCESS) {
+                    bool expected = false;
+                    if (decoderFailureLogged_.compare_exchange_strong(expected, true)) {
+                        OH_LOG_Print(LOG_APP, LOG_ERROR, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                            "renderer resume after seek failed result=%{public}d", static_cast<int>(startResult));
+                    }
+                    decoderFailed_.store(true, std::memory_order_relaxed);
+                    decodingEnded_.store(true, std::memory_order_relaxed);
+                    return false;
+                }
+                ApplyPlaybackSpeedAfterStart();
+            }
+        }
         OH_LOG_Print(LOG_APP, LOG_INFO, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
             "decoder seek restored position=%{public}lld sequence=%{public}llu",
             static_cast<long long>(seekPosition), static_cast<unsigned long long>(requestSequence));
@@ -4743,6 +4803,27 @@ private:
                 densityAuditCandidate_ = 0;
             }
         }
+        // offload 停摆自愈检测：underrun 风暴 + 缓冲打穿 + 爆发追赶三特征同窗命中才判定
+        // （孤立欠载/正常 seek 都不满足全组合）。重建 = 置 lpRuntimeError_ 让 ArkTS 复用
+        // 低功耗错误的整管重建通路（play(fd, position) 全链路重开，系统重新握手 offload）。
+        if (underrunDelta >= OFFLOAD_STALL_UNDERRUN_THRESHOLD &&
+            ringFillMinMsSnapshot_.load(std::memory_order_relaxed) <= OFFLOAD_STALL_MIN_FILL_MS &&
+            consumeFps >= 48000.0 * OFFLOAD_STALL_CONS_SPEED) {
+            const int64_t nowForStall = SteadyNowMs();
+            const bool cooldownOk = offloadRebuildLastMs_ == 0 ||
+                nowForStall - offloadRebuildLastMs_ >= OFFLOAD_REBUILD_COOLDOWN_MS;
+            if (cooldownOk && offloadRebuildCount_ < OFFLOAD_REBUILD_MAX_COUNT) {
+                offloadRebuildLastMs_ = nowForStall;
+                offloadRebuildCount_++;
+                lpRuntimeError_.store(true);
+                OH_LOG_Print(LOG_APP, LOG_WARN, UPLAYER_LOG_DOMAIN, UPLAYER_LOG_TAG,
+                    "offload stall detected -> rebuild requested (underrun+%{public}llu fillMin=%{public}lld "
+                    "consFps=%{public}.0f rebuild=%{public}d/%{public}d)",
+                    static_cast<unsigned long long>(underrunDelta),
+                    static_cast<long long>(ringFillMinMsSnapshot_.load(std::memory_order_relaxed)),
+                    consumeFps, offloadRebuildCount_, OFFLOAD_REBUILD_MAX_COUNT);
+            }
+        }
         decoderGapMaxMs_ = 0;
     }
 
@@ -4821,9 +4902,13 @@ private:
     std::mutex queueMutex_;
     std::condition_variable queueCondition_;
     std::deque<uint8_t> pcmQueue_;
-    const size_t maxQueueBytes_ = 48000 * 2 * 2;
+    // 源侧队列上限（48k 立体声 S16 4 秒）：环形缓冲扩到 3.2s 后，源队列需同步放大，
+    // 否则环有余量而队列满背压会把环喂不满，扩容余量失效
+    const size_t maxQueueBytes_ = 48000 * 2 * 2 * 4;
     std::atomic<bool> stopRequested_ = true;
     std::atomic<bool> seekRequested_ = false;
+    // Seek 期间 renderer 暂停标志：seek 前若在播则 Pause，seek 完成后据此恢复播放
+    std::atomic<bool> seekResumeRenderer_ = false;
     std::atomic<uint64_t> seekRequestSequence_ = 0;
     std::atomic<bool> decoderFailureLogged_ = false;
     std::atomic<DecoderLifecycle> decoderLifecycle_ = DecoderLifecycle::STOPPED;
@@ -4964,6 +5049,10 @@ private:
     // 两者不等即说明倍速没有被渲染器落到实处
     uint64_t healthPrevFrames_ = 0;
     uint64_t healthPrevUnderruns_ = 0;
+    // offload 停摆自愈状态（解码线程健康行内判定）：
+    // offloadRebuildLastMs_ 0=从未重建；offloadRebuildCount_ 单曲计数（Play 复位）
+    int64_t offloadRebuildLastMs_ = 0;
+    int32_t offloadRebuildCount_ = 0;
     uint64_t healthPrevSlowChunks_ = 0;
     uint64_t healthPrevShorts_ = 0;
     uint64_t healthPrevDrys_ = 0;

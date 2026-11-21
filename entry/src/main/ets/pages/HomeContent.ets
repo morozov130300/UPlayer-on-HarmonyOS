@@ -1770,6 +1770,15 @@ export struct HomeContent {
               if (this.isSearchActive) {
                 TextInput({ text: this.searchText, placeholder: '搜索歌曲 / 歌手 / 专辑 / 拼音' })
                   .id('home_search_input')
+                  // 挂树即请求焦点（onAppear 时节点已挂载，requestFocus 不会报 150003）；
+                  // 与 openSearch 的延迟兜底双保险，激活搜索后无需再点一次输入框
+                  .onAppear(() => {
+                    try {
+                      this.getUIContext()?.getFocusController().requestFocus('home_search_input')
+                    } catch (e) {
+                      // 焦点请求失败忽略，openSearch 的延迟兜底仍会再试
+                    }
+                  })
                   .layoutWeight(1)
                   // 光标高度跟随组件高度：不设 height（否则光标撑满 32vp 顶到胶囊圆角），
                   // 用 lineHeight 撑起输入框自然高度，由行 alignItems 居中

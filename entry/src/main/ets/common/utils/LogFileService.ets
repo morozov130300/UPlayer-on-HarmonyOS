@@ -16,6 +16,7 @@ export class LogFileService {
   private static instance: LogFileService = new LogFileService()
   private initialized: boolean = false
   private enabled: boolean = false
+  private verbose: boolean = false
   private logPath: string = ''
 
   public static getInstance(): LogFileService {
@@ -29,6 +30,8 @@ export class LogFileService {
       this.logPath = context.filesDir + '/' + LOG_FILE_NAME
       this.enabled = SettingsStore.getInstance()
         .get(AppStorageKeyConstants.SETTING_LOG_FILE_ENABLED, '0') === '1'
+      this.verbose = SettingsStore.getInstance()
+        .get(AppStorageKeyConstants.SETTING_LOG_VERBOSE_ENABLED, '0') === '1'
       this.initialized = true
     } catch (e) {
       hilog.error(LOG_DOMAIN, LOG_TAG, 'init failed: %{public}s', JSON.stringify(e))
@@ -39,17 +42,40 @@ export class LogFileService {
     return this.enabled
   }
 
+  // 详细日志开关状态：供 Logger 的 verboseGate 查询（DEBUG/INFO 是否写盘）。
+  // 基础开关未开启时详细模式无意义，恒为 false。
+  public isVerbose(): boolean {
+    return this.enabled && this.verbose
+  }
+
   // 开关落盘持久化；开启后只记录开启之后产生的日志，关闭期间不补录。
   // 关闭时删除本地日志残留，下次开启从空文件重新记录。
   public setEnabled(on: boolean): void {
     this.enabled = on
     if (!on) {
+      // 基础开关关闭时同步关闭详细模式，避免下次开启时带着隐藏的详细态
+      this.verbose = false
+      try {
+        SettingsStore.getInstance().set(AppStorageKeyConstants.SETTING_LOG_VERBOSE_ENABLED, '0')
+      } catch (e) {
+        hilog.error(LOG_DOMAIN, LOG_TAG, 'reset verbose failed: %{public}s', JSON.stringify(e))
+      }
       this.clearLogFile()
     }
     try {
       SettingsStore.getInstance().set(AppStorageKeyConstants.SETTING_LOG_FILE_ENABLED, on ? '1' : '0')
     } catch (e) {
       hilog.error(LOG_DOMAIN, LOG_TAG, 'setEnabled failed: %{public}s', JSON.stringify(e))
+    }
+  }
+
+  // 详细日志开关落盘持久化；仅影响 DEBUG/INFO 是否写盘，不改变基础开关。
+  public setVerbose(on: boolean): void {
+    this.verbose = on
+    try {
+      SettingsStore.getInstance().set(AppStorageKeyConstants.SETTING_LOG_VERBOSE_ENABLED, on ? '1' : '0')
+    } catch (e) {
+      hilog.error(LOG_DOMAIN, LOG_TAG, 'setVerbose failed: %{public}s', JSON.stringify(e))
     }
   }
 

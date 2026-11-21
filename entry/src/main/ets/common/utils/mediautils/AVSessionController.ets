@@ -589,7 +589,9 @@ export class AVSessionController {
 
   private onPlay: () => void = () => {
     Logger.info(TAG, `on play , do play task`);
-    this.getAvPlayerService().resume();
+    this.getAvPlayerService().resume().catch((err: Error): void => {
+      Logger.error(TAG, `resume failed: ${JSON.stringify(err)}`);
+    });
   }
 
   private onPause: () => void = () => {

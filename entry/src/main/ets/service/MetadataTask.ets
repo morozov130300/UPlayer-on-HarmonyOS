@@ -392,6 +392,10 @@ function coverWorkDir(): string {
 // native ID3 封面提取（主线程开 fd 传 fd，任务在 worker 中并行执行）
 export function extractCoverData(uri: string): Promise<CoverDataResult> {
   const failed: CoverDataResult = new CoverDataResult()
+  if (uri.length === 0) {
+    failed.errorMessage = 'empty source path'
+    return Promise.resolve(failed)
+  }
   let file: fs.File
   try {
     file = fs.openSync(uri, fs.OpenMode.READ_ONLY)
@@ -500,6 +504,10 @@ async function fetchFallbackCoverTask(fd: number, fileSize: number, workDir: str
 // fallback 封面提取（主线程开 fd 传 fd，任务在 worker 中执行）
 export function fetchFallbackCoverData(uri: string): Promise<CoverDataResult> {
   const failed: CoverDataResult = new CoverDataResult()
+  if (uri.length === 0) {
+    failed.errorMessage = 'empty source path'
+    return Promise.resolve(failed)
+  }
   let file: fs.File
   try {
     file = fs.openSync(uri, fs.OpenMode.READ_ONLY)

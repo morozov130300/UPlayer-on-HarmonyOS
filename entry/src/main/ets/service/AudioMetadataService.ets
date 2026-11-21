@@ -132,6 +132,9 @@ export class AudioMetadataService {
 
   async acquireAlbumCover(song: SongInfo, maxEdge: number = AlbumCoverSize.LARGE,
     priority: CoverPriority = CoverPriority.HIGH): Promise<AlbumCoverLease | undefined> {
+    if (song.uri.length === 0 && song.filePath.length === 0) {
+      return undefined
+    }
     const normalizedEdge: number = this.normalizeCoverEdge(maxEdge)
     const key: string = this.coverKey(song, normalizedEdge)
     let entry: AlbumCoverCacheEntry | undefined = this.coverCache.get(key)

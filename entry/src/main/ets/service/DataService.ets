@@ -8,7 +8,7 @@ import { fileIo as fs, fileShare } from '@kit.CoreFileKit'
 import { SongDatabase } from './SongDatabase'
 import Logger from '../common/utils/Logger'
 import { BusinessError } from '@kit.BasicServicesKit'
-import { MusicPlayMode } from '../common/constants/PlayerConstants'
+import { MusicPlayMode, PlayerConstants } from '../common/constants/PlayerConstants'
 import { AudioMetadataService } from './AudioMetadataService'
 import { clearLyricCache } from './LyricLoader'
 import { fillPinyinForSongs, hasChinese } from './PinyinTask'
@@ -147,6 +147,9 @@ export class AppSettingsData {
   tabMaterialLevel: string = 'adaptive'
   // 按压动效：全项目可点击元素的按下缩放/悬停放大开关（ScaleButton 统一消费，默认关）
   pressAnimation: boolean = false
+  // 窄屏播放器第一页行内歌词（默认开）：开启后封面区上移（margin 16）并在歌名与
+  // 进度条之间的空挡常驻单行歌词；关闭时空挡回落 32 且不显示歌词。仅窄屏（XS/SM）生效
+  narrowInlineLyric: boolean = true
   }
 
 export class DataService {
@@ -1120,7 +1123,9 @@ return result
       s.eqBands = this.pickNumArray(r, 'eqBands', s.eqBands)
       let eqBandsMigrated: boolean = rawEqBands !== undefined &&
         JSON.stringify(rawEqBands) !== JSON.stringify(s.eqBands)
-      s.playSpeed = this.pickNum(r, 'playSpeed', 1, 0.5, 3)
+      // 合法区间与统一倍速档位表对齐（PlayerConstants.SPEED_MIN/MAX）：0.25 档若被钳到 0.5，
+      // 重启后会出现「播放器 0.25x、恢复后 0.5x」的显示不一致
+      s.playSpeed = this.pickNum(r, 'playSpeed', 1, PlayerConstants.SPEED_MIN, PlayerConstants.SPEED_MAX)
       let rawSoundFieldEnabled: Object | undefined = r['soundFieldEnabled']
       s.soundFieldEnabled = rawSoundFieldEnabled !== undefined ? rawSoundFieldEnabled as boolean : false
       let rawSoundFieldType: Object | undefined = r['soundFieldType']
@@ -1176,6 +1181,7 @@ return result
       s.fadeInOut = rawFadeInOut !== undefined ? rawFadeInOut as boolean : false
       let rawPressAnimation: Object | undefined = r['pressAnimation']
       s.pressAnimation = rawPressAnimation !== undefined ? rawPressAnimation as boolean : false
+      s.narrowInlineLyric = this.pickBool(r, 'narrowInlineLyric', true)
       s.timerFadeSeconds = this.pickNum(r, 'timerFadeSeconds', 3, 0, 10)
       let rawResumePlaybackOnStart: Object | undefined = r['resumePlaybackOnStart']
       s.resumePlaybackOnStart = rawResumePlaybackOnStart !== undefined ?
@@ -1278,6 +1284,7 @@ return result
     r['folderSortMode'] = settings.folderSortMode
     r['fadeInOut'] = settings.fadeInOut
     r['pressAnimation'] = settings.pressAnimation
+    r['narrowInlineLyric'] = settings.narrowInlineLyric
     r['timerFadeSeconds'] = settings.timerFadeSeconds
     r['resumePlaybackOnStart'] = settings.resumePlaybackOnStart
     r['autoPlayAfterResume'] = settings.autoPlayAfterResume
@@ -1524,6 +1531,7 @@ return result
     AppStorage.setOrCreate('uplayer_theme_mode', 'system')
     AppStorage.setOrCreate('uplayer_fade_in_out', false)
     AppStorage.setOrCreate(KEY_PRESS_ANIMATION, false)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_NARROW_INLINE_LYRIC, true)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_FADE_SECONDS, 3)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_SONGS_REMAINING, 0)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_PRESET_SONGS, -1)
@@ -1578,6 +1586,7 @@ return result
     AppStorage.setOrCreate('uplayer_theme_mode', settings.themeMode)
     AppStorage.setOrCreate('uplayer_fade_in_out', settings.fadeInOut)
     AppStorage.setOrCreate(KEY_PRESS_ANIMATION, settings.pressAnimation)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_NARROW_INLINE_LYRIC, settings.narrowInlineLyric)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TIMER_FADE_SECONDS, settings.timerFadeSeconds)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CONTINUE_PLAY_ON_UNPLUG, settings.continuePlayOnHeadsetUnplug)
     AppStorage.setOrCreate(AppStorageKeyConstants.KEY_IGNORE_NOTIFICATION_DUCK, settings.ignoreNotificationDuck)

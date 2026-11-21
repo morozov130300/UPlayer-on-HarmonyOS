@@ -143,7 +143,9 @@ export default class EntryAbility extends UIAbility {
       if (playing) {
         AVPlayerService.getInstance().pause();
       } else if (songId.length > 0) {
-        AVPlayerService.getInstance().resume();
+        AVPlayerService.getInstance().resume().catch((err: Error): void => {
+          Logger.error(TAG, `card toggle resume failed: ${JSON.stringify(err)}`);
+        });
       } else {
         AVPlayerService.getInstance().restoreLastPlayback().catch((err: Error): void => {
           Logger.error(TAG, `card toggle restore failed: ${JSON.stringify(err)}`);
@@ -253,11 +255,15 @@ export default class EntryAbility extends UIAbility {
     Logger.info(TAG, 'post-frame init begin');
 
     // 日志写盘：PersistenceV2 必须在 loadContent 之后访问，故放在首帧后初始化。
-    // 注册 sink 后，Logger.warn/error 才会在开关开启时把 warn 及以上写入沙箱日志文件。
+    // 注册 sink 后，Logger.warn/error 才会在开关开启时把 warn 及以上写入沙箱日志文件；
+    // 详细日志开关开启时 DEBUG/INFO 也写盘（verboseGate 只读服务状态，切换开关即时生效）。
     this.safeRun('initLogFileService', () => {
       LogFileService.getInstance().init(this.context);
       Logger.setFileSink((level: string, prefix: string, message: string): void => {
         LogFileService.getInstance().append(level, prefix, message);
+      });
+      Logger.setVerboseGate((): boolean => {
+        return LogFileService.getInstance().isVerbose();
       });
     });
 

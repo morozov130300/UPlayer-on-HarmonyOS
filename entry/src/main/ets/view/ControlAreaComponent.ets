@@ -28,7 +28,6 @@ import { applyMetadataToSong, extractSongMetadata, saveSongTagsToFile, TagsWrite
 import { ScaleButton } from '../component/ScaleButton';
 
 const TAG = 'ControlAreaComponent';
-const SEEK_SETTLE_MS: number = 2000;
 const SKIP_MS: number = 15000;
 const TIMER_PRESET_MINUTES: number[] = [5, 10, 15, 20, 30, 45, 60];
 const TIMER_SONG_PRESETS: number[] = [1, 3, 5, 10];
@@ -91,6 +90,10 @@ export struct ControlAreaComponent {
   promptAction: PromptAction = this.uiContext.getPromptAction();
   private avPlayerService: AVPlayerService = AVPlayerService.getInstance();
   private songDataSource: SongDataSource = new SongDataSource([]);
+  private seekGestureActive: boolean = false;
+  private seekStartSliderValue: number = 0;
+  private seekStartPosition: number = 0;
+  private lastCommittedSeekValue: number = -1;
   private volumeManager: audio.AudioVolumeManager | undefined = undefined;
   private isVolumeListenerRegistered: boolean = false;
   // 系统媒体音量最大格数（getMaxVolumeByStream，API 20+）：手机常见 15，PC 可能是 20/100，
@@ -102,6 +105,10 @@ export struct ControlAreaComponent {
   private bluetoothAudioRevision: number = 0;
   @State bluetoothAudioLabel: string = '';
   private bluetoothAudioService: BluetoothAudioService = BluetoothAudioService.getInstance();
+  // 窄屏行内歌词开关（仅窄屏断点显示；宽态开关无意义，隐藏整行）。
+  // 窄屏判定由宿主传入（本组件不持有 WindowInfo）：MusicInfoComponent / LyricsComponent 各自判断
+  @Prop isNarrow: boolean = false;
+  @StorageLink(AppStorageKeyConstants.KEY_NARROW_INLINE_LYRIC) narrowInlineLyric: boolean = true;
 
   private settingTextColor(): ResourceColor {
     const themeMode: string = AppStorage.get<string>('uplayer_theme_mode') ?? 'system'
@@ -333,6 +340,23 @@ export struct ControlAreaComponent {
     } catch (err) {
       Logger.error(TAG, `openToast failed: ${JSON.stringify(err)}`);
     }
+  }
+
+  private commitProgressSeek(value: number): void {
+    const target: number = Math.max(0, Math.min(Math.floor(value), this.max));
+    if (target === this.lastCommittedSeekValue) {
+      return;
+    }
+    this.lastCommittedSeekValue = target;
+    this.avPlayerService.seek(target);
+  }
+
+  private resetProgressSliderStyle(): void {
+    this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
+      this.trackThickness = 6;
+      this.songTimeFontSize = 10;
+      this.songTimeFontColor = '#B3FFFFFF';
+    });
   }
 
   private skipForward(): void {
@@ -699,21 +723,33 @@ export struct ControlAreaComponent {
             .enabled(this.max > 0)
             .focusable(false)
             .onChange((value: number, mode: SliderChangeMode) => {
-              if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-                this.avPlayerService.seek(value);
-                this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
-                  this.trackThickness = 6;
-                  this.songTimeFontSize = 10;
-                  this.songTimeFontColor = '#B3FFFFFF';
-                });
-              }
-              if (mode === SliderChangeMode.Moving) {
-                this.currentTime = MediaTools.msToCountdownTime(value);
+              if (mode === SliderChangeMode.Click) {
+                if (!this.seekGestureActive) {
+                  this.lastCommittedSeekValue = -1;
+                  this.commitProgressSeek(value);
+                  this.resetProgressSliderStyle();
+                }
+              } else if (mode === SliderChangeMode.Moving) {
+                if (!this.seekGestureActive) {
+                  this.seekGestureActive = true;
+                  this.seekStartSliderValue = value;
+                  this.seekStartPosition = this.avPlayerService.getCurrentPositionMs();
+                  this.lastCommittedSeekValue = -1;
+                }
+                const previewPosition: number = Math.max(0, Math.min(this.seekStartPosition +
+                  Math.round(value - this.seekStartSliderValue), this.max));
+                this.currentTime = MediaTools.msToCountdownTime(previewPosition);
                 this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
                   this.trackThickness = 10;
                   this.songTimeFontSize = 12;
                   this.songTimeFontColor = '#FFFFFF';
                 });
+              } else if (mode === SliderChangeMode.End) {
+                this.seekGestureActive = false;
+                const targetPosition: number = Math.max(0, Math.min(this.seekStartPosition +
+                  Math.round(value - this.seekStartSliderValue), this.max));
+                this.commitProgressSeek(targetPosition);
+                this.resetProgressSliderStyle();
               }
               this.pageShowTime = 0;
             })
@@ -784,7 +820,9 @@ export struct ControlAreaComponent {
               if (this.isPlay) {
                 this.avPlayerService.pause();
               } else {
-                this.avPlayerService.resume();
+                this.avPlayerService.resume().catch((err: Error): void => {
+                  Logger.error(TAG, `resume failed: ${JSON.stringify(err)}`);
+                });
               }
               this.pageShowTime = 0;
             }
@@ -1147,6 +1185,40 @@ export struct ControlAreaComponent {
           AppStorage.setOrCreate(AppStorageKeyConstants.KEY_LYRIC_OFFSET_PANEL, true);
         }, 200);
       })
+
+      // 窄屏行内歌词开关行：仅窄屏断点渲染；写 AppStorage 即时生效（MusicInfoComponent
+      // @Watch 响应），持久化由设置存储负责（saveSettings 全量字段落盘）
+      if (this.isNarrow) {
+        Row() {
+          Column({ space: 2 }) {
+            Text('窄屏行内歌词')
+              .fontSize(this.scaledFont(14))
+              .fontWeight(FontWeight.Medium)
+              .fontColor(this.settingTextColor())
+            Text('第一页歌名下方常驻单行歌词')
+              .fontSize(this.scaledFont(12))
+              .fontColor($r('app.color.text_sixty_color'))
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+          Toggle({ type: ToggleType.Switch, isOn: this.narrowInlineLyric })
+            .selectedColor(this.primaryColor)
+            .systemMaterial(pageStyleGlassMaterial(this.tabStyle))
+            .alignSelf(ItemAlign.Center)
+            .onChange((val: boolean) => {
+              this.narrowInlineLyric = val
+              AppStorage.setOrCreate(AppStorageKeyConstants.KEY_NARROW_INLINE_LYRIC, val)
+              const settings: AppSettingsData = DataService.getInstance().getSettings()
+              settings.narrowInlineLyric = val
+              DataService.getInstance().saveSettings(settings)
+            })
+        }
+        .width('100%')
+        .height(52)
+        .padding({ left: 16, right: 16 })
+        .backgroundColor('rgba(206,206,210,0.22)')
+        .borderRadius(this.scaledSize(10))
+      }
     }
     .width(StyleConstants.FULL_WIDTH)
     .padding({ left: 16, right: 16 })
@@ -1255,6 +1327,7 @@ export struct ControlAreaComponent {
         .width(64)
       if (index === this.edittingFieldIndex && editable) {
         TextInput({ text: this.edittingValue })
+          .id('more_panel_edit_input')
           .fontSize(this.scaledFont(13))
           .fontColor($r('app.color.text_primary'))
           .backgroundColor('rgba(206,206,210,0.22)')
@@ -1264,7 +1337,15 @@ export struct ControlAreaComponent {
           // 点击行进入编辑时文字不再随输入框内边距横向位移
           .padding({ left: 0, right: 8 })
           .layoutWeight(1)
-          .defaultFocus(true)
+          // 进入编辑态即聚焦（defaultFocus 只在首次构建生效，二次编辑不再自动获焦）；
+          // onAppear 时节点已挂树，requestFocus 不报 150003；失败静默不影响点击聚焦
+          .onAppear(() => {
+            try {
+              this.getUIContext()?.getFocusController().requestFocus('more_panel_edit_input')
+            } catch (e) {
+              // 忽略焦点请求异常
+            }
+          })
           .enterKeyType(EnterKeyType.Done)
           .onChange((newValue: string) => {
             this.edittingValue = newValue
@@ -1392,11 +1473,20 @@ export struct ControlAreaComponent {
 
           Row({ space: this.scaledSize(8) }) {
             TextInput({ text: this.customSongCountText, placeholder: '1-99' })
+              .id('timer_song_count_input')
               .type(InputType.Number)
               .height(this.scaledSize(40))
               .fontSize(this.scaledFont(14))
               .fontColor(this.settingTextColor())
               .layoutWeight(1)
+              // 进入自定义歌曲数面板即聚焦，免再点一次输入框；失败静默不影响点击聚焦
+              .onAppear(() => {
+                try {
+                  this.getUIContext()?.getFocusController().requestFocus('timer_song_count_input')
+                } catch (e) {
+                  // 忽略焦点请求异常
+                }
+              })
               .onChange((newValue: string) => {
                 this.customSongCountText = newValue
               })
@@ -1696,17 +1786,14 @@ export struct ControlAreaComponent {
         .blockBorderWidth(3)
         .systemMaterial(pageStyleGlassMaterial(this.tabStyle))
         .onChange((value: number, mode: SliderChangeMode) => {
-          this.speed = Math.round(value * 4) / 4
+          // 档位量化用统一档位表（PlayerConstants），与设置页滑杆完全一致；
+          // 拖动中只广播 AppStorage：另一端（设置页滑杆）@StorageLink 实时跟随显示
+          this.speed = PlayerConstants.snapSpeedToStep(value)
           AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_SPEED, this.speed)
-          // 松手帧才下发：倍速会触发管线切换与节点 IPC，拖动中连续下发会造成进度抖动
+          // 松手帧才走 setSpeed：引擎下发 + playSpeed 落盘集中在服务层完成，
+          // 避免拖动过程连续触发管线切换与节点 IPC 造成进度抖动
           if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
             this.avPlayerService.setSpeed(this.speed)
-            // 倍速持久化：启动时 syncEffectsFromDisk 会用磁盘 playSpeed 覆盖当前值，
-            // 播放器界面调整不落盘的话「设 1x 重启跳回旧值」。设置页滑杆与这里共用
-            // playSpeed 单一事实源。
-            const settings: AppSettingsData = DataService.getInstance().getSettings()
-            settings.playSpeed = this.speed
-            DataService.getInstance().saveSettings(settings)
           }
         })
 

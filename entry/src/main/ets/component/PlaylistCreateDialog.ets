@@ -213,7 +213,19 @@ export struct PlaylistCreateDialog {
   build() {
     Column({ space: 14 }) {
       TextInput({ text: this.nameText, placeholder: '输入歌单名称' })
+        .id('playlist_create_name_input')
         .height(this.scaledSize(38))
+        .fontSize(Math.round(14 * this.fontSizeScale))
+        .backgroundColor('rgba(0,0,0,0.04)')
+        .borderRadius(12)
+        // 弹层出现即聚焦，免再点一次输入框；挂树后请求焦点，失败静默（不影响点击聚焦）
+        .onAppear(() => {
+          try {
+            this.getUIContext()?.getFocusController().requestFocus('playlist_create_name_input')
+          } catch (e) {
+            // 忽略焦点请求异常
+          }
+        })
         .fontSize(Math.round(14 * this.fontSizeScale))
         .backgroundColor('rgba(0,0,0,0.04)')
         .borderRadius(12)
@@ -231,6 +243,7 @@ export struct PlaylistCreateDialog {
           .padding({ top: 24, bottom: 24 })
       } else {
         TextInput({ text: this.searchText, placeholder: '搜索歌曲、歌手、专辑' })
+          .id('playlist_create_search_input')
           .height(this.scaledSize(36))
           .fontSize(Math.round(13 * this.fontSizeScale))
           .backgroundColor('rgba(0,0,0,0.04)')

@@ -12,7 +12,7 @@ import { SongInfo } from '../model/SongInfo'
 import { AlbumCoverSize, AudioMetadataService, CoverPriority } from './AudioMetadataService'
 import { DataService, AppSettingsData } from './DataService'
 import { AudioFocusService } from './AudioFocusService'
-import { MusicPlayMode } from '../common/constants/PlayerConstants'
+import { MusicPlayMode, PlayerConstants } from '../common/constants/PlayerConstants'
 import { WindowUtil } from '../common/utils/WindowUtil'
 import { showToastGlassMaterial } from '../common/utils/GlassUtil'
 import { loadLyricEntries } from './LyricLoader'
@@ -458,9 +458,14 @@ export class AVPlayerService {
     }
   }
 
-  resume(): void {
+  async resume(): Promise<void> {
     AudioFocusService.getInstance().ensureStrategy()
     if (!this.isEngineLoaded()) {
+      return
+    }
+    if (!await this.startBackground()) {
+      Logger.error(TAG, 'resume aborted: background audio task did not start')
+      this.notifyPlaybackFailed('后台音频任务启动失败，无法继续播放')
       return
     }
     const fadeInOut: boolean = AppStorage.get<boolean>('uplayer_fade_in_out') ?? false
@@ -478,7 +483,9 @@ export class AVPlayerService {
     const playing: boolean = nativeAudio.isPlaying()
     AppStorage.setOrCreate<boolean>(AppStorageKeyConstants.KEY_IS_PLAY, playing)
     this.sessionController.setPlayState(playing)
-    this.startBackground()
+    if (!playing) {
+      this.stopBackground()
+    }
   }
 
   pause(): void {
@@ -613,11 +620,14 @@ export class AVPlayerService {
     })
   }
 
-  private startBackground(): void {
-    const ctx: common.UIAbilityContext | undefined = AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
-    if (ctx !== undefined) {
-      BackgroundUtil.startContinuousTask(ctx)
+  private async startBackground(): Promise<boolean> {
+    const ctx: common.UIAbilityContext | undefined =
+      AppStorage.get<common.UIAbilityContext>(AppStorageKeyConstants.KEY_UI_ABILITY_CONTEXT)
+    if (ctx === undefined) {
+      Logger.error(TAG, 'background audio task unavailable: UIAbilityContext undefined')
+      return false
     }
+    return await BackgroundUtil.startContinuousTask(ctx)
   }
 
   private stopBackground(): void {
@@ -749,16 +759,27 @@ export class AVPlayerService {
   }
 
   setSpeed(speed: number): void {
+    // ═══ 倍速单一事实源同步点 ═══
+    // 任何入口（播放器倍速弹窗 / 设置页播放分区 / 启动恢复）调用本方法即完成三件事：
+    // ① 档位吸附后写 KEY_CURRENT_SPEED 广播——两处滑杆都是该键的 @StorageLink，
+    //   任一处调整，另一处 UI 立即跟随，杜绝「两处显示的倍率不一样」；
+    // ② playSpeed 落盘持久化（重启恢复）；
+    // ③ 下发原生引擎（未起播时原生层只记录请求值，起播统一下发）。
+    const snapped: number = PlayerConstants.snapSpeedToStep(speed)
+    this.desiredSpeed = snapped
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_SPEED, snapped)
+    const settings: AppSettingsData = DataService.getInstance().getSettings()
+    settings.playSpeed = snapped
+    DataService.getInstance().saveSettings(settings)
     // 倍速由原生渲染器执行（普通时延模式 NORMAL 支持 OH_AudioRenderer_SetSpeed）。
     // 曾经失败的 FAST 低时延流已不再启用，且变速节点（AudioSuite）不再参与播放倍速。
     // 这里只负责转发：渲染器未就绪时原生层仅记录请求值，起播时统一下发。
     // 引擎明确拒绝时（部分设备的普通模式也不支持调速）如实记日志，便于真机取证。
-    this.desiredSpeed = speed
     if (!this.isEngineLoaded()) {
       return
     }
-    if (!nativeAudio.setSpeed(speed)) {
-      Logger.warn(TAG, `setSpeed rejected by engine: ${speed}`)
+    if (!nativeAudio.setSpeed(snapped)) {
+      Logger.warn(TAG, `setSpeed rejected by engine: ${snapped}`)
     }
   }
 
@@ -880,9 +901,11 @@ export class AVPlayerService {
     this.separationEnabled = settings.separationEnabled
     this.separationOutput = settings.separationOutput
     // 播放速度：设置页滑杆是持久化的，重启后必须恢复，否则「设了 2x、重启变 1x」。
-    // 未起播时 setSpeed 只记录意图，起播由原生按该值统一下发；同时回填界面显示的倍速值
-    this.setSpeed(settings.playSpeed)
-    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_SPEED, settings.playSpeed)
+    // 未起播时 setSpeed 只记录意图，起播由原生按该值统一下发；同时回填界面显示的倍速值。
+    // 旧版 0.1 粒度存量值（如 0.8x）吸附到统一 0.25 档位，保证与两处滑杆显示一致
+    const snappedSpeed: number = PlayerConstants.snapSpeedToStep(settings.playSpeed)
+    this.setSpeed(snappedSpeed)
+    AppStorage.setOrCreate(AppStorageKeyConstants.KEY_CURRENT_SPEED, snappedSpeed)
     // 密度档位记忆回灌：上次会话收敛出的引擎拉取密度（1/2），起播前写入原生层
     const hintStr: string = SettingsStore.getInstance().get(KEY_DENSITY_HINT, '')
     if (hintStr.length > 0) {
@@ -1137,6 +1160,11 @@ export class AVPlayerService {
     try {
       file = fs.openSync(fileUri, fs.OpenMode.READ_ONLY)
       const size: number = fs.statSync(file.fd).size
+      if (!startPaused && !await this.startBackground()) {
+        Logger.error(TAG, 'playback aborted: background audio task did not start')
+        this.notifyPlaybackFailed('后台音频任务启动失败，无法开始播放')
+        return false
+      }
       this.applyAllEffectsToNative()
       // ReplayGain（P2-1）：按歌曲暂存的定增益同步进原生引擎（所有输出路径统一应用）
       nativeAudio.setReplayGainEnable(this.replayGainEnabled)
@@ -1181,9 +1209,6 @@ export class AVPlayerService {
       AppStorage.setOrCreate(AppStorageKeyConstants.KEY_TOTAL_TIME, MediaTools.msToMmss(nativeAudio.getDuration()))
       this.sessionController.setPlayState(!startPaused)
       this.sessionController.setAVMetadata()
-      if (!startPaused) {
-        this.startBackground()
-      }
       this.startNativeProgressTimer(fileUri, requestId)
       this.startNativeStartupCheck(fileUri, requestId)
       return true
@@ -1271,16 +1296,18 @@ export class AVPlayerService {
           this.seekingClearTimer = -1
         }
       }
-      // 低功耗链路运行期报错：native 侧已停喂并阻止低功耗重启，这里重建正常管线续播
+      // 低功耗链路运行期报错：native 侧已停喂并阻止低功耗重启，这里重建正常管线续播。
+      // 该标志同时承载 offload 停摆自愈：native 检测到 underrun 风暴（星闪耳机上 offload
+      // 流周期性整管停摆）时置位，同一重建通路重开 renderer 让系统重新握手 offload
       if (nativeAudio.consumeLowPowerRuntimeError()) {
         this.stopNativeProgressTimer()
-        Logger.warn(TAG, 'low-power sink runtime error, rebuilding full pipeline')
+        Logger.warn(TAG, 'native runtime error (low-power sink / offload stall), rebuilding full pipeline')
         const fallbackUri: string = this.currentFilePath
         const fallbackPosition: number = position
         if (fallbackUri.length > 0) {
           this.forcePipelineRebuild = true
           this.play(fallbackUri, fallbackPosition).catch((err: Error): void => {
-            Logger.error(TAG, `low-power runtime error fallback replay failed: ${JSON.stringify(err)}`)
+            Logger.error(TAG, `runtime error fallback replay failed: ${JSON.stringify(err)}`)
           })
         }
         return

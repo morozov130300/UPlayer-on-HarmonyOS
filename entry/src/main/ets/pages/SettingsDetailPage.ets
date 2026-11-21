@@ -9,6 +9,7 @@ import { AVPlayerService, EffectNodeSupport } from '../service/AVPlayerService'
 import nativeAudio from 'libuplayer.so'
 import { AudioFocusService } from '../service/AudioFocusService'
 import { AppStorageKeyConstants } from '../common/constants/AppStorageKeyConstants'
+import { PlayerConstants } from '../common/constants/PlayerConstants'
 import { ColorHelper } from '../common/utils/ColorHelper'
 import Logger from '../common/utils/Logger'
 import { BusinessError, deviceInfo, pasteboard, SuppressWarnings, SuppressWarningsType } from '@kit.BasicServicesKit'
@@ -128,9 +129,13 @@ class ShortcutEntry {
 }
 
 // toggleRow 唯一入参（按引用传递：@Builder 只有单参数对象字面量传参才能随状态变量刷新）
+// description 为标题下方的 12pt 说明小字，容器样式与「智感握姿」开关行完全统一
 class ToggleRowConfig {
   label: string = ''
+  description: string = ''
   isOn: boolean = false
+  // 设备能力不支持时禁用整行（与旧版外层 .enabled() 行为一致）
+  enabled: boolean = true
   onChange: (val: boolean) => void = (_val: boolean) => {
   }
 }
@@ -206,6 +211,9 @@ struct SettingsDetailPage {
   @StorageProp(AppStorageKeyConstants.KEY_SPATIALIZATION_ENABLED) spatializationEnabled: boolean = false
   // 低功耗播放：设备是否支持 OH_LowPowerAudioSink 链路（进入「播放」分区时探测一次）
   @State lowPowerSupported: boolean = true
+  // 播放倍速：与播放器倍速弹窗共用 KEY_CURRENT_SPEED（@StorageLink 双向绑定）。
+  // 任一处滑杆调整都会广播该键，另一处 UI 立即跟随，两处显示的倍率恒一致
+  @StorageLink(AppStorageKeyConstants.KEY_CURRENT_SPEED) playSpeedLinked: number = 1
   // 艺术家分隔符自定义输入框内容（「播放」分区「艺术家分隔符」卡片）
   @State artistSepInput: string = ''
   private context: common.UIAbilityContext
@@ -281,6 +289,8 @@ struct SettingsDetailPage {
   @State checkingUpdate: boolean = false
   // 关于页「开启日志」开关：默认关，持久化由 LogFileService/SettingsStore 负责
   @State logFileEnabled: boolean = false
+  // 关于页「详细日志」开关：默认关，开启后 DEBUG/INFO 也写盘（需先开启日志）
+  @State logVerboseEnabled: boolean = false
   @State exportingLog: boolean = false
 
   aboutToAppear(): void {
@@ -293,6 +303,7 @@ struct SettingsDetailPage {
     const route: string = params?.category ?? 'customize'
     this.pageTitle = this.titleMap[route] ?? '设置'
     this.logFileEnabled = LogFileService.getInstance().isEnabled()
+    this.logVerboseEnabled = LogFileService.getInstance().isVerbose()
     // 版本号动态读取 app.json5 的 versionName，避免每次升版本手动同步
     bundleManager.getBundleInfoForSelf(bundleManager.BundleFlag.GET_BUNDLE_INFO_DEFAULT)
       .then((info: bundleManager.BundleInfo) => {
@@ -319,6 +330,8 @@ struct SettingsDetailPage {
     if (this.pageTitle === '播放') {
       this.lowPowerSupported = nativeAudio.isLowPowerSupported()
     }
+    // 播放倍速：旧版 0.1 粒度存量值吸附到统一 0.25 档位（KEY_CURRENT_SPEED 与 settings 对齐）
+    this.normalizeStoredSpeed()
   }
 
   // 设备音效节点能力探测（按需、一次）：结果写入 9 个 @State 驱动对应卡片开关的禁用与提示。
@@ -680,16 +693,30 @@ struct SettingsDetailPage {
 
   // 预览容器：彩色渐变底衬 + 示例文字（模拟页面内容，让磨砂/液态玻璃的透视效果可见），
 
+  // ═══ 播放倍速（与播放器倍速弹窗统一档位表，单一事实源 KEY_CURRENT_SPEED）═══
+  // 撑住旧版 0.1 粒度存量值：读取时吸附到 0.25 档位并回写 AppStorage，两处滑杆显示一致
+  private normalizeStoredSpeed(): void {
+    const snapped: number = PlayerConstants.snapSpeedToStep(this.playSpeedLinked)
+    if (snapped !== this.playSpeedLinked) {
+      this.playSpeedLinked = snapped
+    }
+    // settings.playSpeed 由 aboutToAppear 的 getSettings() 填充，此处与吸附结果对齐，
+    // 避免本页其它保存路径（改主题/音效等）把未吸附的旧粒度值写回磁盘
+    if (this.settings.playSpeed !== snapped) {
+      this.settings.playSpeed = snapped
+    }
+  }
+
   onSpeedChange(value: number, mode: SliderChangeMode): void {
-    this.settings.playSpeed = 0.5 + value / 100
-    this.updateSetting(this.isSliderSettled(mode))
-    // 只在松手帧下发倍速：倍速会触发管线切换与节点 IPC，拖动过程连续下发会造成
-    // 频繁保持/重锚（进度抖动）与无谓开销
+    // 拖动中实时写 @StorageLink（= 同步广播 KEY_CURRENT_SPEED）：播放器弹窗滑杆即时跟随；
+    // 松手帧才走 setSpeed：引擎下发 + playSpeed 落盘集中在服务层完成，
+    // 避免拖动过程连续下发造成频繁保持/重锚（进度抖动）与无谓开销
+    this.playSpeedLinked = PlayerConstants.snapSpeedToStep(value)
     if (!this.isSliderSettled(mode)) {
       return
     }
     try {
-      this.avPlayerService.setSpeed(this.settings.playSpeed)
+      this.avPlayerService.setSpeed(this.playSpeedLinked)
     } catch (e) {
       Logger.error(TAG, 'setSpeed failed: ' + JSON.stringify(e))
     }
@@ -1406,20 +1433,16 @@ struct SettingsDetailPage {
         this.groupTitle('全局')
       }
 
-      Column() {
-        this.toggleRow({
-          label: '向下滑动时隐藏加号按钮',
-          isOn: this.settings.plusButtonScrollHide,
-          onChange: (val: boolean) => {
-            this.settings.plusButtonScrollHide = val
-            this.updateSetting()
-          }
-        })
-      }
-      .width('100%')
-      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(this.scaledSize(10))
+      this.toggleRow({
+        label: '向下滑动时隐藏加号按钮',
+        description: '首页下滑浏览歌曲列表时自动隐藏右下角的悬浮加号按钮，上滑返回时恢复。',
+        isOn: this.settings.plusButtonScrollHide,
+        enabled: true,
+        onChange: (val: boolean) => {
+          this.settings.plusButtonScrollHide = val
+          this.updateSetting()
+        }
+      })
 
       Column() {
         Row() {
@@ -1537,25 +1560,16 @@ struct SettingsDetailPage {
         this.groupTitle('交互反馈')
       }
 
-      Column() {
-        this.toggleRow({
-          label: '按压动效',
-          isOn: this.settings.pressAnimation,
-          onChange: (val: boolean) => {
-            this.settings.pressAnimation = val
-            this.updateSetting()
-          }
-        })
-        Text('按钮按下时缩小、松手弹簧回弹，鼠标悬停时放大。关闭后全局不再缩放。')
-          .fontSize(this.scaledFont(12))
-          .fontColor(this.settingSubTextColor())
-          .width('100%')
-          .padding({ bottom: this.scaledSize(10) })
-      }
-      .width('100%')
-      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(this.scaledSize(10))
+      this.toggleRow({
+        label: '按压动效',
+        description: '按钮按下时缩小、松手弹簧回弹，鼠标悬停时放大。关闭后全局不再缩放。',
+        isOn: this.settings.pressAnimation,
+        enabled: true,
+        onChange: (val: boolean) => {
+          this.settings.pressAnimation = val
+          this.updateSetting()
+        }
+      })
 
       // 智感握姿（设备不支持时隐藏）
       if (this.holdingHandSupported) {
@@ -2605,7 +2619,7 @@ struct SettingsDetailPage {
             .fontColor(this.settingTextColor())
             .fontWeight(FontWeight.Medium)
           Blank()
-          Text(this.settings.playSpeed.toFixed(1) + 'x')
+          Text(this.playSpeedLinked.toFixed(2) + 'x')
             .fontSize(this.scaledFont(12))
             .fontColor(this.primaryColor)
             .fontWeight(FontWeight.Medium)
@@ -2615,13 +2629,15 @@ struct SettingsDetailPage {
         .alignItems(VerticalAlign.Center)
 
         Slider({
-          value: (this.settings.playSpeed - 0.5) * 100,
-          min: 0,
-          max: 250,
-          step: 10,
+          // 与播放器倍速弹窗同一套档位参数（0.25–3.0x、步进 0.25、显示刻度）
+          value: this.playSpeedLinked,
+          min: PlayerConstants.SPEED_MIN,
+          max: PlayerConstants.SPEED_MAX,
+          step: PlayerConstants.SPEED_STEP,
           style: SliderStyle.OutSet
         })
           .width('100%')
+          .showSteps(true)
           .selectedColor(this.primaryColor)
           .trackColor(ColorHelper.hexToRgba(this.primaryColor, 0.12))
           .blockColor('#FFFFFF')
@@ -2633,7 +2649,22 @@ struct SettingsDetailPage {
           .onChange((value: number, mode: SliderChangeMode) => {
             this.onSpeedChange(value, mode)
           })
-          .margin({ top: this.scaledSize(4), bottom: this.scaledSize(12) })
+          .margin({ top: this.scaledSize(4), bottom: this.scaledSize(4) })
+
+        Row() {
+          Text('0.25').fontSize(9).fontColor($r('app.color.text_sixty_color'))
+          Text('0.5').fontSize(9).fontColor($r('app.color.text_sixty_color'))
+          Text('0.75').fontSize(9).fontColor($r('app.color.text_sixty_color'))
+          Text('1.0').fontSize(9).fontColor($r('app.color.text_sixty_color'))
+          Text('1.5').fontSize(9).fontColor($r('app.color.text_sixty_color'))
+          Text('2.0').fontSize(9).fontColor($r('app.color.text_sixty_color'))
+          Text('2.5').fontSize(9).fontColor($r('app.color.text_sixty_color'))
+          Text('3.0').fontSize(9).fontColor($r('app.color.text_sixty_color'))
+        }
+        .width('100%')
+        .justifyContent(FlexAlign.SpaceBetween)
+        .padding({ left: 4, right: 4 })
+        .margin({ bottom: this.scaledSize(12) })
       }
       .width('100%')
       .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
@@ -2797,24 +2828,20 @@ struct SettingsDetailPage {
   @Builder
   buildAudioSection(): void {
     Column({ space: this.scaledSize(10) }) {
-      Column() {
-        this.toggleRow({
-          label: '均衡器',
-          isOn: this.settings.eqEnabled,
-          onChange: (val: boolean) => {
-            // 面板显隐翻转必须包进统一触发动画，过渡才会播放
-            this.animateSettingChange(() => {
-              this.settings.eqEnabled = val
-            })
-            this.updateSetting()
-            this.avPlayerService.applyEqualizer(val, this.settings.eqBands)
-          }
-        })
-      }
-      .width('100%')
-      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(this.scaledSize(10))
+      this.toggleRow({
+        label: '均衡器',
+        description: '10 段图形均衡器，可调各频段增益并一键套用预设。',
+        isOn: this.settings.eqEnabled,
+        enabled: true,
+        onChange: (val: boolean) => {
+          // 面板显隐翻转必须包进统一触发动画，过渡才会播放
+          this.animateSettingChange(() => {
+            this.settings.eqEnabled = val
+          })
+          this.updateSetting()
+          this.avPlayerService.applyEqualizer(val, this.settings.eqBands)
+        }
+      })
 
       if (this.settings.eqEnabled) {
         Stack({ alignContent: Alignment.Bottom }) {
@@ -3018,31 +3045,19 @@ struct SettingsDetailPage {
       }
 
       // ═══ 声场 ═══
-      Column() {
-        this.toggleRow({
-          label: '声场',
-          isOn: this.settings.soundFieldEnabled,
-          onChange: (val: boolean) => {
-            this.animateSettingChange(() => {
-              this.settings.soundFieldEnabled = val
-            })
-            this.updateSetting()
-            this.avPlayerService.applySoundField(val, this.settings.soundFieldType)
-          }
-        })
-        if (!this.soundFieldSupported) {
-          Text('当前设备不支持声场效果')
-            .fontSize(this.scaledFont(12))
-            .fontColor(this.settingSubTextColor())
-            .width('100%')
-            .margin({ top: this.scaledSize(2) })
+      this.toggleRow({
+        label: '声场',
+        description: this.soundFieldSupported ? '基于声场模型模拟不同听音空间感。' : '当前设备不支持声场效果',
+        isOn: this.settings.soundFieldEnabled,
+        enabled: this.soundFieldSupported,
+        onChange: (val: boolean) => {
+          this.animateSettingChange(() => {
+            this.settings.soundFieldEnabled = val
+          })
+          this.updateSetting()
+          this.avPlayerService.applySoundField(val, this.settings.soundFieldType)
         }
-      }
-      .width('100%')
-      .enabled(this.soundFieldSupported)
-      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(this.scaledSize(10))
+      })
 
       if (this.settings.soundFieldEnabled && this.soundFieldSupported) {
         Column() {
@@ -3062,31 +3077,19 @@ struct SettingsDetailPage {
       }
 
       // ═══ 环境效果 ═══
-      Column() {
-        this.toggleRow({
-          label: '环境效果',
-          isOn: this.settings.environmentEnabled,
-          onChange: (val: boolean) => {
-            this.animateSettingChange(() => {
-              this.settings.environmentEnabled = val
-            })
-            this.updateSetting()
-            this.avPlayerService.applyEnvironment(val, this.settings.environmentType)
-          }
-        })
-        if (!this.environmentSupported) {
-          Text('当前设备不支持环境效果')
-            .fontSize(this.scaledFont(12))
-            .fontColor(this.settingSubTextColor())
-            .width('100%')
-            .margin({ top: this.scaledSize(2) })
+      this.toggleRow({
+        label: '环境效果',
+        description: this.environmentSupported ? '模拟广播、听筒、水下等特定环境的听感。' : '当前设备不支持环境效果',
+        isOn: this.settings.environmentEnabled,
+        enabled: this.environmentSupported,
+        onChange: (val: boolean) => {
+          this.animateSettingChange(() => {
+            this.settings.environmentEnabled = val
+          })
+          this.updateSetting()
+          this.avPlayerService.applyEnvironment(val, this.settings.environmentType)
         }
-      }
-      .width('100%')
-      .enabled(this.environmentSupported)
-      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(this.scaledSize(10))
+      })
 
       if (this.settings.environmentEnabled && this.environmentSupported) {
         Column() {
@@ -3106,31 +3109,19 @@ struct SettingsDetailPage {
       }
 
       // ═══ 声音美化 ═══
-      Column() {
-        this.toggleRow({
-          label: '声音美化',
-          isOn: this.settings.beautifierEnabled,
-          onChange: (val: boolean) => {
-            this.animateSettingChange(() => {
-              this.settings.beautifierEnabled = val
-            })
-            this.updateSetting()
-            this.avPlayerService.applyVoiceBeautifier(val, this.settings.beautifierType)
-          }
-        })
-        if (!this.beautifierSupported) {
-          Text('当前设备不支持声音美化')
-            .fontSize(this.scaledFont(12))
-            .fontColor(this.settingSubTextColor())
-            .width('100%')
-            .margin({ top: this.scaledSize(2) })
+      this.toggleRow({
+        label: '声音美化',
+        description: this.beautifierSupported ? '人声风格化美化，提供清澈、剧场等音色。' : '当前设备不支持声音美化',
+        isOn: this.settings.beautifierEnabled,
+        enabled: this.beautifierSupported,
+        onChange: (val: boolean) => {
+          this.animateSettingChange(() => {
+            this.settings.beautifierEnabled = val
+          })
+          this.updateSetting()
+          this.avPlayerService.applyVoiceBeautifier(val, this.settings.beautifierType)
         }
-      }
-      .width('100%')
-      .enabled(this.beautifierSupported)
-      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(this.scaledSize(10))
+      })
 
       if (this.settings.beautifierEnabled && this.beautifierSupported) {
         Column() {
@@ -3150,31 +3141,19 @@ struct SettingsDetailPage {
       }
 
       // ═══ 空间渲染 ═══
-      Column() {
-        this.toggleRow({
-          label: '空间渲染',
-          isOn: this.settings.spaceRenderEnabled,
-          onChange: (val: boolean) => {
-            this.animateSettingChange(() => {
-              this.settings.spaceRenderEnabled = val
-            })
-            this.updateSetting()
-            this.avPlayerService.applySpaceRender(val, this.settings.spaceRenderMode, this.settings.spaceRenderValues)
-          }
-        })
-        if (!this.spaceRenderSupported) {
-          Text('当前设备不支持空间渲染')
-            .fontSize(this.scaledFont(12))
-            .fontColor(this.settingSubTextColor())
-            .width('100%')
-            .margin({ top: this.scaledSize(2) })
+      this.toggleRow({
+        label: '空间渲染',
+        description: this.spaceRenderSupported ? '3D 空间摆位/环绕/扩展渲染，可调空间参数。' : '当前设备不支持空间渲染',
+        isOn: this.settings.spaceRenderEnabled,
+        enabled: this.spaceRenderSupported,
+        onChange: (val: boolean) => {
+          this.animateSettingChange(() => {
+            this.settings.spaceRenderEnabled = val
+          })
+          this.updateSetting()
+          this.avPlayerService.applySpaceRender(val, this.settings.spaceRenderMode, this.settings.spaceRenderValues)
         }
-      }
-      .width('100%')
-      .enabled(this.spaceRenderSupported)
-      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(this.scaledSize(10))
+      })
 
       if (this.settings.spaceRenderEnabled && this.spaceRenderSupported) {
         Column({ space: this.scaledSize(10) }) {
@@ -3214,31 +3193,19 @@ struct SettingsDetailPage {
       }
 
       // ═══ 通用变声（主链内，10 种风格化变声）═══
-      Column() {
-        this.toggleRow({
-          label: '通用变声',
-          isOn: this.settings.generalVoiceChangeEnabled,
-          onChange: (val: boolean) => {
-            this.animateSettingChange(() => {
-              this.settings.generalVoiceChangeEnabled = val
-            })
-            this.updateSetting()
-            this.avPlayerService.applyGeneralVoiceChange(val, this.settings.generalVoiceChangeType)
-          }
-        })
-        if (!this.generalVoiceChangeSupported) {
-          Text('当前设备不支持通用变声')
-            .fontSize(this.scaledFont(12))
-            .fontColor(this.settingSubTextColor())
-            .width('100%')
-            .margin({ top: this.scaledSize(2) })
+      this.toggleRow({
+        label: '通用变声',
+        description: this.generalVoiceChangeSupported ? '10 种风格化变声，随音乐主链实时生效。' : '当前设备不支持通用变声',
+        isOn: this.settings.generalVoiceChangeEnabled,
+        enabled: this.generalVoiceChangeSupported,
+        onChange: (val: boolean) => {
+          this.animateSettingChange(() => {
+            this.settings.generalVoiceChangeEnabled = val
+          })
+          this.updateSetting()
+          this.avPlayerService.applyGeneralVoiceChange(val, this.settings.generalVoiceChangeType)
         }
-      }
-      .width('100%')
-      .enabled(this.generalVoiceChangeSupported)
-      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(this.scaledSize(10))
+      })
 
       if (this.settings.generalVoiceChangeEnabled && this.generalVoiceChangeSupported) {
         Column() {
@@ -3258,58 +3225,36 @@ struct SettingsDetailPage {
       }
 
       // ═══ 降噪（无参数，仅开关）═══
-      Column() {
-        this.toggleRow({
-          label: '降噪',
-          isOn: this.settings.noiseReductionEnabled,
-          onChange: (val: boolean) => {
-            this.animateSettingChange(() => {
-              this.settings.noiseReductionEnabled = val
-            })
-            this.updateSetting()
-            this.avPlayerService.applyNoiseReduction(val)
-          }
-        })
-        Text(this.noiseReductionSupported ? '降低背景噪声，输出为 16kHz 单声道（语音向处理）'
-          : '当前设备不支持降噪')
-          .fontSize(this.scaledFont(12))
-          .fontColor(this.settingSubTextColor())
-          .width('100%')
-          .margin({ top: this.scaledSize(2) })
-      }
-      .width('100%')
-      .enabled(this.noiseReductionSupported)
-      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(this.scaledSize(10))
+      this.toggleRow({
+        label: '降噪',
+        description: this.noiseReductionSupported ? '降低背景噪声，输出为 16kHz 单声道（语音向处理）' :
+          '当前设备不支持降噪',
+        isOn: this.settings.noiseReductionEnabled,
+        enabled: this.noiseReductionSupported,
+        onChange: (val: boolean) => {
+          this.animateSettingChange(() => {
+            this.settings.noiseReductionEnabled = val
+          })
+          this.updateSetting()
+          this.avPlayerService.applyNoiseReduction(val)
+        }
+      })
 
       // ═══ 传统变声（性别 + 7 类型 + 音调）═══
-      Column() {
-        this.toggleRow({
-          label: '传统变声',
-          isOn: this.settings.pureVoiceChangeEnabled,
-          onChange: (val: boolean) => {
-            this.animateSettingChange(() => {
-              this.settings.pureVoiceChangeEnabled = val
-            })
-            this.updateSetting()
-            this.avPlayerService.applyPureVoiceChange(val, this.settings.pureVoiceChangeGender,
-              this.settings.pureVoiceChangeType, this.settings.pureVoiceChangePitch)
-          }
-        })
-        if (!this.pureVoiceChangeSupported) {
-          Text('当前设备不支持传统变声')
-            .fontSize(this.scaledFont(12))
-            .fontColor(this.settingSubTextColor())
-            .width('100%')
-            .margin({ top: this.scaledSize(2) })
+      this.toggleRow({
+        label: '传统变声',
+        description: this.pureVoiceChangeSupported ? '按性别与类型变换音色，并可微调音调。' : '当前设备不支持传统变声',
+        isOn: this.settings.pureVoiceChangeEnabled,
+        enabled: this.pureVoiceChangeSupported,
+        onChange: (val: boolean) => {
+          this.animateSettingChange(() => {
+            this.settings.pureVoiceChangeEnabled = val
+          })
+          this.updateSetting()
+          this.avPlayerService.applyPureVoiceChange(val, this.settings.pureVoiceChangeGender,
+            this.settings.pureVoiceChangeType, this.settings.pureVoiceChangePitch)
         }
-      }
-      .width('100%')
-      .enabled(this.pureVoiceChangeSupported)
-      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(this.scaledSize(10))
+      })
 
       if (this.settings.pureVoiceChangeEnabled && this.pureVoiceChangeSupported) {
         Column({ space: this.scaledSize(10) }) {
@@ -3376,31 +3321,19 @@ struct SettingsDetailPage {
       }
 
       // ═══ 变速变调（速度 + 音调，与播放倍速相互独立）═══
-      Column() {
-        this.toggleRow({
-          label: '变速变调',
-          isOn: this.settings.tempoPitchEnabled,
-          onChange: (val: boolean) => {
-            this.animateSettingChange(() => {
-              this.settings.tempoPitchEnabled = val
-            })
-            this.updateSetting()
-            this.avPlayerService.applyTempoPitch(val, this.settings.tempoSpeed, this.settings.tempoPitch)
-          }
-        })
-        if (!this.tempoPitchSupported) {
-          Text('当前设备不支持变速变调')
-            .fontSize(this.scaledFont(12))
-            .fontColor(this.settingSubTextColor())
-            .width('100%')
-            .margin({ top: this.scaledSize(2) })
+      this.toggleRow({
+        label: '变速变调',
+        description: this.tempoPitchSupported ? '独立调节播放速度与音调，不影响播放倍速设置。' : '当前设备不支持变速变调',
+        isOn: this.settings.tempoPitchEnabled,
+        enabled: this.tempoPitchSupported,
+        onChange: (val: boolean) => {
+          this.animateSettingChange(() => {
+            this.settings.tempoPitchEnabled = val
+          })
+          this.updateSetting()
+          this.avPlayerService.applyTempoPitch(val, this.settings.tempoSpeed, this.settings.tempoPitch)
         }
-      }
-      .width('100%')
-      .enabled(this.tempoPitchSupported)
-      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(this.scaledSize(10))
+      })
 
       if (this.settings.tempoPitchEnabled && this.tempoPitchSupported) {
         Column({ space: this.scaledSize(10) }) {
@@ -3425,31 +3358,19 @@ struct SettingsDetailPage {
       }
 
       // ═══ 音源分离（独立管线，多输出人声/伴奏）═══
-      Column() {
-        this.toggleRow({
-          label: '音源分离',
-          isOn: this.settings.separationEnabled,
-          onChange: (val: boolean) => {
-            this.animateSettingChange(() => {
-              this.settings.separationEnabled = val
-            })
-            this.updateSetting()
-            this.avPlayerService.applySeparation(val, this.settings.separationOutput)
-          }
-        })
-        if (!this.separationSupported) {
-          Text('当前设备不支持音源分离（依赖 NPU）')
-            .fontSize(this.scaledFont(12))
-            .fontColor(this.settingSubTextColor())
-            .width('100%')
-            .margin({ top: this.scaledSize(2) })
+      this.toggleRow({
+        label: '音源分离',
+        description: this.separationSupported ? 'AI 分离人声/伴奏双输出，独立管线播放。' : '当前设备不支持音源分离（依赖 NPU）',
+        isOn: this.settings.separationEnabled,
+        enabled: this.separationSupported,
+        onChange: (val: boolean) => {
+          this.animateSettingChange(() => {
+            this.settings.separationEnabled = val
+          })
+          this.updateSetting()
+          this.avPlayerService.applySeparation(val, this.settings.separationOutput)
         }
-      }
-      .width('100%')
-      .enabled(this.separationSupported)
-      .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-      .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-      .borderRadius(this.scaledSize(10))
+      })
 
       if (this.settings.separationEnabled && this.separationSupported) {
         Column({ space: this.scaledSize(8) }) {
@@ -3832,23 +3753,37 @@ struct SettingsDetailPage {
     }
   }
 
-  // 「开启日志」开关：复用设置页统一 toggleRow 卡片，开启后 warn/error 追加写入沙箱日志文件
+  // 「开启日志」「详细日志」开关：复用统一 toggleRow 卡片（智感握姿样式），
+  // 开启后 warn/error 追加写入沙箱日志文件；详细模式另写 DEBUG/INFO
   @Builder
   logFileToggleRow(): void {
-    Column() {
+    this.toggleRow({
+      label: '开启日志',
+      description: '开启后 WARN/ERROR 级日志追加写入本地日志文件，可随时导出。',
+      isOn: this.logFileEnabled,
+      enabled: true,
+      onChange: (val: boolean): void => {
+        this.logFileEnabled = val
+        LogFileService.getInstance().setEnabled(val)
+        // 基础开关关闭会连带关闭详细模式，UI 同步归位
+        if (!val) {
+          this.logVerboseEnabled = false
+        }
+      }
+    })
+    // 「详细日志」开关：仅基础开关开启时显示；开启后 DEBUG/INFO 等低等级日志也全部写盘
+    if (this.logFileEnabled) {
       this.toggleRow({
-        label: '开启日志',
-        isOn: this.logFileEnabled,
+        label: '详细日志',
+        description: '开启后记录 DEBUG/INFO 等低等级日志，排查播放相关问题时建议开启，日志文件体积可能较大',
+        isOn: this.logVerboseEnabled,
+        enabled: true,
         onChange: (val: boolean): void => {
-          this.logFileEnabled = val
-          LogFileService.getInstance().setEnabled(val)
+          this.logVerboseEnabled = val
+          LogFileService.getInstance().setVerbose(val)
         }
       })
     }
-    .width('100%')
-    .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
-    .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
-    .borderRadius(this.scaledSize(10))
   }
 
   // 导出日志：与「检查更新/快捷键」同款行卡片（标题 + 说明 + 右侧箭头），
@@ -4113,26 +4048,45 @@ struct SettingsDetailPage {
     .alignItems(VerticalAlign.Center)
   }
 
+  // 开关行容器（与「智感握姿」开关行完全统一）：左列「标题 + 说明小字」（间距 6），
+  // 右侧 Toggle 垂直居中；卡片高 52、左右 padding 14、背景 0.04、圆角 10。
   // 单参数对象字面量按引用传递：this.settings.* 变化会触发 Toggle 的 isOn 刷新
   @Builder
   toggleRow(cfg: ToggleRowConfig): void {
     Row() {
-      Text(cfg.label)
-        .fontSize(this.scaledFont(14))
-        .fontColor(this.settingTextColor())
-        .fontWeight(FontWeight.Medium)
-        .maxLines(1)
-      Blank()
+      Column({ space: this.scaledSize(6) }) {
+        Row() {
+          Text(cfg.label)
+            .fontSize(this.scaledFont(14))
+            .fontColor(this.settingTextColor())
+            .fontWeight(FontWeight.Medium)
+            .maxLines(1)
+        }
+        if (cfg.description.length > 0) {
+          Text(cfg.description)
+            .fontSize(this.scaledFont(12))
+            .fontColor(this.settingSubTextColor())
+        }
+      }
+      .layoutWeight(1)
+      .justifyContent(FlexAlign.Center)
+      .alignItems(HorizontalAlign.Start)
+
       Toggle({ type: ToggleType.Switch, isOn: cfg.isOn })
         .selectedColor(this.primaryColor)
         .systemMaterial(pageStyleGlassMaterial(this.settings.tabStyle))
+        .alignSelf(ItemAlign.Center)
+        .margin({ left: this.scaledSize(10) })
         .onChange((isOn: boolean) => {
           cfg.onChange(isOn)
         })
     }
     .width('100%')
-    .height(this.scaledSize(44))
-    .alignItems(VerticalAlign.Center)
+    .height(this.scaledSize(52))
+    .padding({ left: this.scaledSize(14), right: this.scaledSize(14) })
+    .backgroundColor(ColorHelper.hexToRgba(this.primaryColor, 0.04))
+    .borderRadius(this.scaledSize(10))
+    .enabled(cfg.enabled)
   }
 
   // 过渡规格：出现/消失对称的「淡入淡出 + 缩放 0.95」
