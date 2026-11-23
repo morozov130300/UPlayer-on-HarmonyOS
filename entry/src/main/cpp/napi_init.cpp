@@ -97,6 +97,14 @@ constexpr int32_t RING_CAPACITY_MS = 800;               // 环形缓冲容量（
 // 3200ms 容量下 Seek 恢复期 underrun 从两位数降为个位数
 constexpr int32_t RING_BURST_EXTRA_MS = 2400;
 constexpr int32_t RING_TOTAL_CAPACITY_MS = RING_CAPACITY_MS + RING_BURST_EXTRA_MS;
+// 稳态领先水位：产出最多领先实时消费 240ms。效果开关在生产侧即时生效，可闻端却要等
+// 环内存量播完——环常态灌满时开关延迟高达 3.2s，即「音效开关不跟手」的根因。水位钳住
+// 稳态延迟（≤240ms）；起播/seek 回填/严重欠载走限时放开期快速灌环，断流兜底能力由
+// 源队列（4s）+ 放开期保留。
+constexpr int32_t RING_STEADY_LEAD_MS = 240;
+constexpr int64_t RING_LEAD_BURST_WINDOW_MS = 1000;     // 放开期时长（窗口内不钳水位，快速灌环）
+constexpr int32_t RING_LEAD_BURST_TARGET_MS = 600;      // 放开期收口阈值：存量达此值提前收口
+constexpr int32_t RING_LEAD_REOPEN_FILL_MS = 60;        // 存量跌穿此值（严重欠载）重新放开限时回填
 constexpr int32_t RING_CHUNK_MS = 10;                   // 工作线程单次渲染块时长
 constexpr int32_t RING_PREFILL_MS = 120;                // 启动 renderer 前的预填充时长（普通时延模式回调帧长更长，40ms 不足易起播欠载）
 constexpr int32_t RING_PREFILL_TIMEOUT_MS = 200;        // 预填充等待超时（解码器出数据即可填满）
@@ -589,6 +597,10 @@ public:
         // RT 回调只做环形缓冲 memcpy。启动 renderer 前先预填充，消除起播欠载。
         RingReset();
         renderStopRequested_.store(false);
+        // 领先水位放开状态复位：上一次播放可能以放开期收场（Stop join 后写，无竞争），
+        // 复位后新起播经状态机首个 RingWrite 重新进入限时回填
+        ringLeadBurstActive_ = false;
+        ringLeadBurstStartMs_ = 0;
         ringUnderrunLastSample_ = 0;
         rtUnderrunPrev_ = false;
         if (ringBuffer_.size() != static_cast<size_t>(RING_TOTAL_CAPACITY_MS) * RING_SAMPLES_PER_MS) {
@@ -3897,12 +3909,27 @@ private:
                 // 20ms 超时兜底：任何一处无锁原子写 + 通知的丢唤醒窗口最多延迟一个周期自愈。
                 // 暂停冻结：首块就绪（firstPcmReady_）后暂停不再生产新块——否则暂停中
                 // 持续渲染会把整曲"隐形跑完"触发 completed_（启动窗口豁免保 isReady 探测）
+                // 稳态领先水位并入谓词：存量达 RING_STEADY_LEAD_MS 且无放开期时阻塞生产
+                // （绝不忙旋），RT 消费释放空间会 notify 唤醒。音效开关在生产侧即时生效，
+                // 可闻端却要等环内存量播完——钳住稳态领先量，开关延迟从常态灌满的 ~3.2s
+                // 收敛到 ≤240ms。
                 ringCondition_.wait_for(lock, std::chrono::milliseconds(20), [this, chunkSamples]() {
-                    return renderStopRequested_.load() || decoderFailed_.load() ||
-                        (!renderGateRequested_.load() &&
-                            (ringBuffer_.size() - ringFilled_ >= chunkSamples &&
-                                (!paused_.load(std::memory_order_relaxed) ||
-                                    !firstPcmReady_.load(std::memory_order_relaxed))));
+                    if (renderStopRequested_.load() || decoderFailed_.load()) {
+                        return true;
+                    }
+                    if (renderGateRequested_.load()) {
+                        return false;
+                    }
+                    if (paused_.load(std::memory_order_relaxed) &&
+                        firstPcmReady_.load(std::memory_order_relaxed)) {
+                        return false;
+                    }
+                    if (ringBuffer_.size() - ringFilled_ < chunkSamples) {
+                        return false;
+                    }
+                    const size_t leadCap =
+                        static_cast<size_t>(RING_STEADY_LEAD_MS) * RING_SAMPLES_PER_MS;
+                    return ringLeadBurstActive_ || ringFilled_ < leadCap;
                 });
                 if (renderStopRequested_.load() || decoderFailed_.load()) {
                     break;
@@ -3916,6 +3943,17 @@ private:
                     firstPcmReady_.load(std::memory_order_relaxed)) {
                     wasPaused = true;
                     continue;
+                }
+                // 稳态领先水位：存量超限时跳过本周期渲染（20ms 兜底重查）。判定在
+                // ringMutex_ 内完成：ringFilled_ 与放开标志读写同锁，无撕裂。
+                // 音效开关在生产侧即时生效，可闻端却要等环内存量播完——钳住稳态
+                // 领先量，开关延迟从常态灌满的 ~3.2s 收敛到 ≤240ms。
+                if (ringBuffer_.size() - ringFilled_ >= chunkSamples) {
+                    const size_t leadCap =
+                        static_cast<size_t>(RING_STEADY_LEAD_MS) * RING_SAMPLES_PER_MS;
+                    if (ringFilled_ >= leadCap && !ringLeadBurstActive_) {
+                        continue;
+                    }
                 }
                 // 环余量不足（wait_for 20ms 超时兜底路径会走到这里）：绝不进入渲染。
                 // 否则 RenderAudio 已经推进了源（转换器消费 pcmQueue），而 RingWrite 只能
@@ -3950,6 +3988,28 @@ private:
             // ReplayGain（P2-1）：所有可听输出（直通/hold/管线/分离）统一在进环形缓冲前定增益
             ApplyReplayGain(renderChunkBuf_.data(), chunkBytes);
             RingWrite(renderChunkBuf_.data(), chunkSamples);
+            // 领先水位状态机（worker 私有，无需加锁）：进入放开期 = 起播/seek 回填或严重欠载；
+            // 收口 = 存量达回填目标或窗口到期。仅欠载重开走延长，起播回填不延长，防暂停态灌满。
+            const int64_t nowMsLead = SteadyNowMs();
+            if (ringLeadBurstActive_) {
+                bool closeBurst = false;
+                {
+                    std::lock_guard<std::mutex> lock(ringMutex_);
+                    const size_t fillMs = ringFilled_ / RING_SAMPLES_PER_MS;
+                    closeBurst = fillMs >= static_cast<size_t>(RING_LEAD_BURST_TARGET_MS) ||
+                        nowMsLead - ringLeadBurstStartMs_ >= RING_LEAD_BURST_WINDOW_MS;
+                }
+                if (closeBurst) {
+                    ringLeadBurstActive_ = false;
+                }
+            } else {
+                std::lock_guard<std::mutex> lock(ringMutex_);
+                const size_t fillMs = ringFilled_ / RING_SAMPLES_PER_MS;
+                if (fillMs <= static_cast<size_t>(RING_LEAD_REOPEN_FILL_MS)) {
+                    ringLeadBurstActive_ = true;
+                    ringLeadBurstStartMs_ = nowMsLead;
+                }
+            }
             // Phase 4：worker 周期性日志（audio level 逐秒/慢块逐条）全部撤除——hilogd 背压下
             // 它们正是 worker 停顿源；电平改快照原子发布，水位/慢块进健康窗口，
             // 统一由解码线程 1Hz pipeline health 行汇总
@@ -4948,6 +5008,11 @@ private:
     size_t ringReadPos_ = 0;
     size_t ringFilled_ = 0;
     std::atomic<bool> renderStopRequested_ = true;
+    // 稳态领先水位放开标志（worker 私有 + ringMutex_ 内读写）：起播/seek 回填与严重欠载
+    // 期间临时豁免 RING_STEADY_LEAD_MS 水位，限时窗口到期或存量达回填目标即收口。
+    // 暂停态不会进入渲染路径，故放开期不会在暂停时灌环。
+    bool ringLeadBurstActive_ = false;
+    int64_t ringLeadBurstStartMs_ = 0;
     // seek 渲染门控：Seek() 置位冻结工作线程渲染（防 seek 前队列残留进环），
     // RestoreDecoderAfterSeek 清除；ExecutePlay 起播兜底复位
     std::atomic<bool> renderGateRequested_ = false;
