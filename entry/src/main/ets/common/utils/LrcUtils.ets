@@ -29,6 +29,11 @@ const lrcTagWithFractionRegex: RegExp = new RegExp('^\\[(\\d{1,3}):(\\d{1,2})[.:
 const lrcTagPlainRegex: RegExp = new RegExp('^\\[(\\d{1,3}):(\\d{1,2})\\]$');
 // 增强型 LRC 的逐字标签 <mm:ss.xx>，必须从正文剔除，否则会被原样渲染到界面
 const lrcEnhancedWordRegex: RegExp = new RegExp('<\\d{1,3}:\\d{1,2}(?:[.:]\\d{1,3})?>', 'g');
+// 全局偏移标签 [offset:+/-毫秒]：通用约定正值 = 歌词提前，应用为全部时间戳减去该值，
+// 与每歌 lyricOffsetMs（>0 歌词提前）同向叠加。文件级首个生效，其余忽略。
+// 与时间戳标签不同，[offset:...] 不以数字开头，lrcLineRegex 匹配不到，必须单独处理
+const lrcOffsetTagValueRegex: RegExp = new RegExp('\\[offset:\\s*([+-]?\\d{1,5})\\]', 'i');
+const lrcOffsetTagStripRegex: RegExp = new RegExp('\\[offset:\\s*[+-]?\\d{1,5}\\]', 'gi');
 
 /**
  * KRC format lyrics.
@@ -86,14 +91,28 @@ export function parseLrcLyric(text: string): Array<LrcEntry> {
   }
   let lyric: string[] = text.split('\n');
   let lrc: LrcEntry[] = [];
+  // 全局偏移取文件级首个出现的值（约定写在头部，但行内嵌也兼容），后续出现一律忽略
+  let offsetMs: number = 0;
+  let offsetFound: boolean = false;
   for (let i = 0; i < lyric.length; i++) {
+    if (!offsetFound) {
+      const offsetMatch: RegExpMatchArray | null = lyric[i].match(lrcOffsetTagValueRegex);
+      if (offsetMatch !== null) {
+        offsetFound = true;
+        offsetMs = Number.parseInt(offsetMatch[1]);
+        if (!Number.isFinite(offsetMs)) {
+          offsetMs = 0;
+        }
+      }
+    }
     let lineTime = lyric[i].match(lrcLineRegex);
     if (!lineTime || lineTime.length === 0) {
       continue;
     }
-    // 剔除时间标签与逐字标签后再裁剪，顺带去掉 CRLF 行尾残留的 \r
-    let lineText = lyric[i].replace(lrcLineRegex, '').replace(lrcEnhancedWordRegex, '').trim();
-    // 纯时间标签的间隔行没有正文，不产出条目
+    // 剔除时间标签、逐字标签与 offset 标签后再裁剪，顺带去掉 CRLF 行尾残留的 \r
+    let lineText = lyric[i].replace(lrcLineRegex, '').replace(lrcEnhancedWordRegex, '')
+      .replace(lrcOffsetTagStripRegex, '').trim();
+    // 纯时间标签/offset 标签的间隔行没有正文，不产出条目
     if (lineText.length === 0) {
       continue;
     }
@@ -110,6 +129,13 @@ export function parseLrcLyric(text: string): Array<LrcEntry> {
     }
   }
   if (lrc && lrc.length > 0) {
+    // 全局偏移统一平移：正 offset = 歌词提前，即时间戳减去该值；
+    // 平移后允许出现负起点（首行提前到 0 之前），点击跳转的 seek 已有 max(0,…) 兜底
+    if (offsetMs !== 0) {
+      for (let i = 0; i < lrc.length; i++) {
+        lrc[i].lineStartTime -= offsetMs;
+      }
+    }
     lrc.sort((a, b) => {
       return a.lineStartTime - b.lineStartTime;
     })

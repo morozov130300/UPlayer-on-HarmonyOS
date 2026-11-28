@@ -61,6 +61,10 @@ export class LogFileService {
         hilog.error(LOG_DOMAIN, LOG_TAG, 'reset verbose failed: %{public}s', JSON.stringify(e))
       }
       this.clearLogFile()
+    } else {
+      // 开启即建文件写入标记行：保证「开了日志但还没产生 warn/error」时导出也有产物，
+      // 用户可据此确认开关已生效
+      this.append('INFO', LOG_TAG, '=== 日志记录开启 ===')
     }
     try {
       SettingsStore.getInstance().set(AppStorageKeyConstants.SETTING_LOG_FILE_ENABLED, on ? '1' : '0')
@@ -72,6 +76,9 @@ export class LogFileService {
   // 详细日志开关落盘持久化；仅影响 DEBUG/INFO 是否写盘，不改变基础开关。
   public setVerbose(on: boolean): void {
     this.verbose = on
+    if (on && this.enabled) {
+      this.append('INFO', LOG_TAG, '=== 详细日志开启：debug/info 也写盘 ===')
+    }
     try {
       SettingsStore.getInstance().set(AppStorageKeyConstants.SETTING_LOG_VERBOSE_ENABLED, on ? '1' : '0')
     } catch (e) {

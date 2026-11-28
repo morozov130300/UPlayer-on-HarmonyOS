@@ -864,7 +864,7 @@ export struct PlaylistContent {
                       this.folderCard(item)
                     }
                   }
-                }, (item: FolderInfo) => item.id)
+                }, (item: FolderInfo) => item.id + '_' + item.songCount)
               }
               .columnsTemplate('1fr '.repeat(this.gridColumns).trim())
               .columnsGap(10)

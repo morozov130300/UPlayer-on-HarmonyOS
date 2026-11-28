@@ -587,18 +587,21 @@ struct MainPage {
       }
       ScaleButton({ pressScale: StyleConstants.PRESS_SCALE, hoverScale: StyleConstants.HOVER_SCALE, blockHitTest: true, onButtonTap: () => { this.playPrevious() } }) {
         Image($r('app.media.ic_public_play_last'))
+          .width(this.scaledSize(18))
           .height(this.scaledSize(18))
           .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
             $r('app.color.player_icon_inactive_color'))
       }
       ScaleButton({ pressScale: StyleConstants.PRESS_SCALE, hoverScale: StyleConstants.HOVER_SCALE, blockHitTest: true, onButtonTap: () => { this.togglePlay() } }) {
         Image(this.isPlaying ? $r('app.media.ic_public_play') : $r('app.media.ic_public_pause'))
+          .width(this.scaledSize(22))
           .height(this.scaledSize(22))
           .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
             $r('app.color.player_icon_inactive_color'))
       }
       ScaleButton({ pressScale: StyleConstants.PRESS_SCALE, hoverScale: StyleConstants.HOVER_SCALE, blockHitTest: true, onButtonTap: () => { this.playNext() } }) {
         Image($r('app.media.ic_public_play_next'))
+          .width(this.scaledSize(18))
           .height(this.scaledSize(18))
           .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
             $r('app.color.player_icon_inactive_color'))
@@ -748,18 +751,21 @@ struct MainPage {
 
       ScaleButton({ pressScale: StyleConstants.PRESS_SCALE, hoverScale: StyleConstants.HOVER_SCALE, blockHitTest: true, onButtonTap: () => { this.playPrevious() } }) {
         Image($r('app.media.ic_public_play_last'))
+          .width(this.scaledSize(24))
           .height(this.scaledSize(24))
           .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
             $r('app.color.player_icon_inactive_color'))
       }
       ScaleButton({ pressScale: StyleConstants.PRESS_SCALE, hoverScale: StyleConstants.HOVER_SCALE, blockHitTest: true, onButtonTap: () => { this.togglePlay() } }) {
         Image(this.isPlaying ? $r('app.media.ic_public_play') : $r('app.media.ic_public_pause'))
+          .width(this.scaledSize(28))
           .height(this.scaledSize(28))
           .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
             $r('app.color.player_icon_inactive_color'))
       }
       ScaleButton({ pressScale: StyleConstants.PRESS_SCALE, hoverScale: StyleConstants.HOVER_SCALE, blockHitTest: true, onButtonTap: () => { this.playNext() } }) {
         Image($r('app.media.ic_public_play_next'))
+          .width(this.scaledSize(24))
           .height(this.scaledSize(24))
           .fillColor(this.currentSongTitle.length > 0 ? $r('app.color.player_icon_color') :
             $r('app.color.player_icon_inactive_color'))

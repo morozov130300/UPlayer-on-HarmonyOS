@@ -1613,7 +1613,7 @@ export struct HomeContent {
               .zIndex(this.isDraggingSong(item) ? 100 : 0)
             }, (item: DisplayItem, index: number) => {
               if (item.isHeader) {
-                return 'h_' + item.headerText
+                return 'h_' + item.headerText + '_' + item.headerCount
               }
               if (!item.isHeader) {
                 return item.song.id + '_' + (item.song.isFavorite ? '1' : '0')
